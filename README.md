@@ -80,3 +80,60 @@ Overall, any contradicted sub-claim makes the claim `contradicted`; all
 supported sub-claims make it `supported`; otherwise it is
 `insufficient_evidence`. The result retains the model verdict and flags any
 model/program disagreement.
+
+## Evaluation
+
+The checked-in evaluation set has 30 natural-language claims in
+[`eval/claims.yaml`](eval/claims.yaml), with a stratified 20-claim `dev` split
+and 10-claim `test` split; the split assignments are recorded per claim.
+The JSON-compatible YAML is converted to [`eval/claims.jsonl`](eval/claims.jsonl)
+by the independent gold builder. It reads raw `.cache/companyfacts-*.json`
+files directly, records the selected SEC values, dates, accession numbers,
+concepts, and snapshot SHA-256 values, and writes
+[`eval/gold_facts.json`](eval/gold_facts.json) plus the human-review table
+[`eval/GOLD_REVIEW.md`](eval/GOLD_REVIEW.md). It never imports `claimcheck`.
+
+Rebuild the labels offline and check the hand-written verdicts:
+
+```bash
+.venv/bin/python eval/build_gold.py
+```
+
+Run the same model as either a no-tools single-shot judge or the existing
+tool-using agent. The default evaluation budget is $2.00 and is shared by all
+pairs through one append-only ledger. The run is sequential and resumable;
+each pair gets a JSON result, and agent traces are copied under the output
+directory:
+
+```bash
+.venv/bin/python -m claimcheck eval run \
+  --split all \
+  --systems single_shot,agent \
+  --budget 2 \
+  --out docs/evidence/eval-2026-10-27/
+```
+
+Before a live run, inspect the plan without a key, model call, or network:
+
+```bash
+.venv/bin/python -m claimcheck eval run --dry-run --split dev
+```
+
+Generate the metrics and report after a run:
+
+```bash
+.venv/bin/python -m claimcheck eval report \
+  --out docs/evidence/eval-2026-10-27/
+```
+
+The report includes accuracy, per-gold-class precision/recall,
+false-supported rate, insufficient rate, latency percentiles, cost, a
+per-claim comparison, and agent error categories. A failed or budget-stopped
+pair is recorded and counts as missing for scoring; it is not silently
+retried. `single_shot` receives no tools and is asked to judge from its own
+knowledge, while `agent` uses the SEC cache and the existing deterministic
+checks. The gold rules accept reader-style rounding, treat any false part of
+a multi-part claim as contradicted, and reserve insufficient evidence for
+facts outside the SEC snapshot. The sample is small, so the report makes no
+significance claims; live results are intentionally not part of the checked-in
+evaluation artifacts.

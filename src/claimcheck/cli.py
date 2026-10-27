@@ -6,12 +6,24 @@ import argparse
 import json
 import sys
 from dataclasses import replace
+from datetime import datetime, timezone
+from pathlib import Path
 from typing import Sequence
 
 from .agent import initial_request, verify_claim
 from .budget import BudgetExceeded, Ledger, UnknownModel
 from .config import SettingsError, load_settings
 from .edgar import EdgarClient
+from .evaluate import (
+    DEFAULT_BUDGET_USD as DEFAULT_EVAL_BUDGET_USD,
+    DEFAULT_CLAIMS_PATH,
+    EvaluationError,
+    SYSTEMS,
+    dry_run_plan,
+    load_claims,
+    report_evaluation,
+    run_evaluation,
+)
 from .trace import TraceRecorder, write_trace
 
 
@@ -31,6 +43,24 @@ def _parser() -> argparse.ArgumentParser:
     verify.add_argument("--max-output-tokens", type=_positive_int)
     verify.add_argument("--reasoning-effort")
     verify.add_argument("--dry-run", action="store_true")
+
+    evaluation = subparsers.add_parser("eval", help="run or report the labeled evaluation")
+    evaluation_subparsers = evaluation.add_subparsers(dest="eval_action", required=True)
+
+    run = evaluation_subparsers.add_parser("run", help="run evaluation pairs sequentially")
+    run.add_argument("--split", choices=("dev", "test", "all"), default="all")
+    run.add_argument("--systems", default=",".join(SYSTEMS))
+    run.add_argument("--model")
+    run.add_argument("--budget", type=float, default=None)
+    run.add_argument("--out", type=Path)
+    run.add_argument("--claims", type=Path, default=DEFAULT_CLAIMS_PATH)
+    run.add_argument("--max-output-tokens", type=_positive_int)
+    run.add_argument("--reasoning-effort")
+    run.add_argument("--dry-run", action="store_true")
+
+    report = evaluation_subparsers.add_parser("report", help="write summary.json and REPORT.md")
+    report.add_argument("--out", type=Path, required=True)
+    report.add_argument("--claims", type=Path, default=DEFAULT_CLAIMS_PATH)
     return parser
 
 
@@ -48,11 +78,34 @@ def _print_json(value: object) -> None:
     print(json.dumps(value, indent=2, ensure_ascii=False, default=str))
 
 
+def _parse_systems(raw: str) -> tuple[str, ...]:
+    systems = tuple(part.strip() for part in raw.split(",") if part.strip())
+    if not systems or any(system not in SYSTEMS for system in systems):
+        raise EvaluationError(
+            f"systems must be a comma-separated subset of {','.join(SYSTEMS)}"
+        )
+    if len(set(systems)) != len(systems):
+        raise EvaluationError("systems must not contain duplicates")
+    return systems
+
+
+def _default_eval_out() -> Path:
+    day = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    return Path("docs/evidence") / f"eval-{day}"
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     try:
-        # EDGAR and dry-run commands do not need to inspect a key file.
-        settings = load_settings(read_key=args.command == "verify" and not args.dry_run)
+        # EDGAR, evaluation reports, and dry runs do not need to inspect a key file.
+        reads_key = (
+            args.command == "verify" and not getattr(args, "dry_run", False)
+        ) or (
+            args.command == "eval"
+            and args.eval_action == "run"
+            and not args.dry_run
+        )
+        settings = load_settings(read_key=reads_key)
     except SettingsError as exc:
         print(f"Configuration error: {exc}", file=sys.stderr)
         return 2
@@ -65,6 +118,87 @@ def main(argv: Sequence[str] | None = None) -> int:
         result = edgar.lookup_fact(args.ticker, args.metric, args.period)
         _print_json(result)
         return 0 if "error" not in result else 1
+
+    if args.command == "eval":
+        if args.eval_action == "report":
+            try:
+                summary = report_evaluation(args.out, claims_path=args.claims)
+            except (EvaluationError, OSError, ValueError) as exc:
+                print(f"Evaluation report failed: {exc}", file=sys.stderr)
+                return 1
+            _print_json(
+                {
+                    "out": str(args.out),
+                    "summary": str(args.out / "summary.json"),
+                    "report": str(args.out / "REPORT.md"),
+                    "result_count": summary.get("result_count", 0),
+                }
+            )
+            return 0
+
+        try:
+            systems = _parse_systems(args.systems)
+            claims = load_claims(args.claims)
+            if args.split != "all":
+                claims = [claim for claim in claims if claim.get("split") == args.split]
+            model = args.model or settings.model
+            budget = DEFAULT_EVAL_BUDGET_USD if args.budget is None else args.budget
+            out_dir = args.out or _default_eval_out()
+            max_output_tokens = (
+                args.max_output_tokens
+                if args.max_output_tokens is not None
+                else settings.max_output_tokens
+            )
+            reasoning_effort = (
+                args.reasoning_effort
+                if args.reasoning_effort is not None
+                else settings.reasoning_effort
+            )
+            if args.dry_run:
+                _print_json(
+                    {
+                        "plan": dry_run_plan(
+                            claims,
+                            systems=systems,
+                            model=model,
+                            budget_usd=budget,
+                            max_output_tokens=max_output_tokens,
+                            reasoning_effort=reasoning_effort,
+                            out_dir=out_dir,
+                        )
+                    }
+                )
+                return 0
+            if not settings.model_api_key:
+                print(
+                    "Missing model API key. Set MODEL_API_KEY or put "
+                    f"MODEL_API_KEY=... in {settings.model_api_key_file}.",
+                    file=sys.stderr,
+                )
+                return 2
+            from openai import OpenAI
+
+            client = OpenAI(
+                base_url="https://api.meta.ai/v1",
+                api_key=settings.model_api_key,
+            )
+            manifest = run_evaluation(
+                claims,
+                systems=systems,
+                model=model,
+                budget_usd=budget,
+                out_dir=out_dir,
+                client=client,
+                cache_dir=settings.cache_dir,
+                max_output_tokens=max_output_tokens,
+                reasoning_effort=reasoning_effort,
+                secrets=[settings.model_api_key],
+            )
+        except (EvaluationError, BudgetExceeded, UnknownModel, ValueError) as exc:
+            print(f"Evaluation run failed: {exc}", file=sys.stderr)
+            return 1
+        _print_json(manifest)
+        return 0
 
     model = args.model or settings.model
     budget = settings.budget_usd if args.budget is None else args.budget

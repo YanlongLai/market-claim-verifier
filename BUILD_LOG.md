@@ -80,6 +80,24 @@ Goal: make the program check understand how claims are phrased (approximate valu
   offline suite to 90 passing tests.
 - Lesson: replay tests now use recorded tool output verbatim.
 
+## Evaluation set — 2026-10-27
+
+- Built a 30-claim labeled evaluation set in `eval/claims.yaml` and generated
+  `eval/claims.jsonl`, with 20 dev claims, 10 test claims, seven companies,
+  value, rounding, inequality, growth, period, unit, multi-part, record/first,
+  and SEC-insufficient-evidence categories.
+- Added the independent raw-companyfacts gold builder
+  `eval/build_gold.py`, which writes `eval/gold_facts.json` and
+  `eval/GOLD_REVIEW.md`, including selected values, periods, accessions,
+  concepts, and snapshot SHA-256 hashes.
+- Added the sequential, resumable `single_shot` versus `agent` evaluation
+  runner, shared budget accounting, pair result files, copied agent traces,
+  budget-stop recording, and the `eval run` / `eval report` CLI commands.
+- Added offline fake-client tests for the independent gold builder, report
+  metric math, no-tool single-shot requests, resume behavior, budget stops,
+  dataset validation, and report generation.
+- Live evaluation results will be added after the Claude Code live run.
+
 ### Live verification results (Muse Spark 1.3, 2026-10-27, traces in `docs/evidence/2026-10-27/`)
 
 Five claims were run live before and after the Day 2 fixes. Program verdicts:
