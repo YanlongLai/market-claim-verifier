@@ -343,7 +343,7 @@ def test_invalid_evidence_id_is_flagged(tmp_path: Path) -> None:
     assert result["verdict"] == "insufficient_evidence"
     assert result["model_program_disagreement"] is True
     assert result["program_checks"][0]["evidence_valid"] is False
-    assert result["program_checks"][0]["reason"] == "ambiguous_evidence"
+    assert result["program_checks"][0]["reason"] == "no_evidence"
 
 
 def test_trace_does_not_contain_model_key(tmp_path: Path) -> None:

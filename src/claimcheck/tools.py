@@ -92,9 +92,9 @@ COMPUTE_CHANGE_TOOL = {
     "description": (
         "Compute the absolute and year-over-year change for one SEC EDGAR XBRL "
         "metric. The period and base_period must be the same kind of period; "
-        "when base_period is null, use the same quarter or fiscal year one year "
-        "earlier. The result includes both cited lookup facts and a percentage "
-        "change in percent points."
+        "when base_period is omitted, null, empty, \"null\", or \"none\", use "
+        "the same quarter or fiscal year one year earlier. The result includes "
+        "both cited lookup facts and a percentage change in percent points."
     ),
     "parameters": {
         "type": "object",
@@ -111,6 +111,71 @@ COMPUTE_CHANGE_TOOL = {
         "additionalProperties": False,
     },
     "strict": True,
+}
+
+HISTORY_RANK_TOOL = {
+    "type": "function",
+    "name": "history_rank",
+    "description": (
+        "Compare one quarter or fiscal-year fact with every available comparable "
+        "period of the same period_type. Quarters include derived Q4 values when "
+        "available; annual periods are compared only with annual periods. Return "
+        "the rank, record flags, prior high/low, and the comparison window."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "ticker": {"type": "string"},
+            "metric": {"type": "string", "enum": list(METRICS)},
+            "period": {"type": "string", "pattern": PERIOD_PATTERN},
+        },
+        "required": ["ticker", "metric", "period"],
+        "additionalProperties": False,
+    },
+    "strict": True,
+}
+
+HISTORY_RANK_OUTPUT_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "ticker": {"type": "string"},
+        "metric": {"type": "string"},
+        "period": {"type": "string"},
+        "period_type": {
+            "type": "string",
+            "enum": ["quarter", "annual", "ytd", "instant"],
+        },
+        "value": {"type": ["number", "null"]},
+        "rank": {"type": ["integer", "null"]},
+        "count": {"type": ["integer", "null"]},
+        "is_highest": {"type": "boolean"},
+        "is_lowest": {"type": "boolean"},
+        "previous_high": {"type": ["object", "null"]},
+        "previous_low": {"type": ["object", "null"]},
+        "periods_considered": {"type": "object"},
+        "periods": {"type": "array"},
+        "comparable_periods": {"type": "array"},
+        "error": {"type": "string"},
+        "message": {"type": "string"},
+        "evidence_id": {"type": "string"},
+    },
+    "required": [
+        "ticker",
+        "metric",
+        "period",
+        "period_type",
+        "value",
+        "rank",
+        "count",
+        "is_highest",
+        "is_lowest",
+        "previous_high",
+        "previous_low",
+        "periods_considered",
+        "periods",
+        "evidence_id",
+    ],
+    "additionalProperties": True,
 }
 
 COMPUTE_CHANGE_OUTPUT_SCHEMA = {
@@ -162,19 +227,27 @@ LIST_PERIODS_TOOL = {
     "strict": True,
 }
 
-TOOL_DEFINITIONS = [LOOKUP_FACT_TOOL, LIST_PERIODS_TOOL, COMPUTE_CHANGE_TOOL]
+TOOL_DEFINITIONS = [
+    LOOKUP_FACT_TOOL,
+    LIST_PERIODS_TOOL,
+    COMPUTE_CHANGE_TOOL,
+    HISTORY_RANK_TOOL,
+]
 # Public aliases for callers that prefer schema terminology.
 LOOKUP_FACT_SCHEMA = LOOKUP_FACT_TOOL
 LIST_PERIODS_SCHEMA = LIST_PERIODS_TOOL
 COMPUTE_CHANGE_SCHEMA = COMPUTE_CHANGE_TOOL
+HISTORY_RANK_SCHEMA = HISTORY_RANK_TOOL
 TOOL_SCHEMAS = {
     "lookup_fact": LOOKUP_FACT_TOOL,
     "list_periods": LIST_PERIODS_TOOL,
     "compute_change": COMPUTE_CHANGE_TOOL,
+    "history_rank": HISTORY_RANK_TOOL,
 }
 TOOL_OUTPUT_SCHEMAS = {
     "lookup_fact": LOOKUP_FACT_OUTPUT_SCHEMA,
     "compute_change": COMPUTE_CHANGE_OUTPUT_SCHEMA,
+    "history_rank": HISTORY_RANK_OUTPUT_SCHEMA,
 }
 
 
@@ -240,10 +313,11 @@ def _validate_list(args: Any) -> dict[str, str]:
 def _validate_compute(args: Any) -> dict[str, str | None]:
     if not isinstance(args, dict):
         raise ToolValidationError("arguments must be an object")
-    required = {"ticker", "metric", "period", "base_period"}
-    if set(args) != required:
+    required = {"ticker", "metric", "period"}
+    allowed = required | {"base_period"}
+    if not required.issubset(args) or not set(args).issubset(allowed):
         missing = sorted(required - set(args))
-        extra = sorted(set(args) - required)
+        extra = sorted(set(args) - allowed)
         detail = []
         if missing:
             detail.append(f"missing={missing}")
@@ -252,7 +326,8 @@ def _validate_compute(args: Any) -> dict[str, str | None]:
         raise ToolValidationError("invalid arguments: " + ", ".join(detail))
     if not all(isinstance(args[key], str) for key in ("ticker", "metric", "period")):
         raise ToolValidationError("ticker, metric, and period must be strings")
-    if args["base_period"] is not None and not isinstance(args["base_period"], str):
+    raw_base = args.get("base_period")
+    if raw_base is not None and not isinstance(raw_base, str):
         raise ToolValidationError("base_period must be a string or null")
 
     ticker = args["ticker"].strip()
@@ -265,8 +340,10 @@ def _validate_compute(args: Any) -> dict[str, str | None]:
     if period != "LATEST" and not re.fullmatch(r"(?:FY\d{4}|\d{4}Q[1-4])", period):
         raise ToolValidationError(f"invalid period: {period}")
 
-    raw_base = args["base_period"]
-    base_period = raw_base.strip().upper() if isinstance(raw_base, str) else None
+    base_text = raw_base.strip() if isinstance(raw_base, str) else ""
+    base_period = base_text.upper()
+    if base_period.lower() in {"", "null", "none"}:
+        base_period = None
     if base_period is not None and not re.fullmatch(
         r"(?:FY\d{4}|\d{4}Q[1-4])", base_period
     ):
@@ -287,6 +364,35 @@ def _validate_compute(args: Any) -> dict[str, str | None]:
         "period": period,
         "base_period": base_period,
     }
+
+
+def _validate_history(args: Any) -> dict[str, str]:
+    if not isinstance(args, dict):
+        raise ToolValidationError("arguments must be an object")
+    required = {"ticker", "metric", "period"}
+    if set(args) != required:
+        missing = sorted(required - set(args))
+        extra = sorted(set(args) - required)
+        detail = []
+        if missing:
+            detail.append(f"missing={missing}")
+        if extra:
+            detail.append(f"additional={extra}")
+        raise ToolValidationError("invalid arguments: " + ", ".join(detail))
+    if not all(isinstance(args[key], str) for key in required):
+        raise ToolValidationError("ticker, metric, and period must be strings")
+    ticker = args["ticker"].strip()
+    metric = args["metric"].strip().lower()
+    period = args["period"].strip().upper()
+    if not ticker:
+        raise ToolValidationError("ticker must not be empty")
+    if metric not in METRICS:
+        raise ToolValidationError(f"unknown metric: {metric}")
+    if period != "LATEST" and not re.fullmatch(
+        r"(?:FY\d{4}|\d{4}Q[1-4])", period
+    ):
+        raise ToolValidationError(f"invalid period: {period}")
+    return {"ticker": ticker, "metric": metric, "period": period}
 
 
 def _period_kind(period: str) -> str:
@@ -410,6 +516,9 @@ class ToolRunner:
             elif name == "compute_change":
                 valid = _validate_compute(args)
                 result = self._compute_change(valid)
+            elif name == "history_rank":
+                valid = _validate_history(args)
+                result = self.edgar.history_rank(**valid)
             else:
                 raise ToolValidationError(f"unknown tool: {name}")
         except ToolValidationError as exc:

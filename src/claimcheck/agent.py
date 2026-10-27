@@ -29,7 +29,7 @@ SUB_CLAIM_SCHEMA = {
         "stated_text": {"type": "string"},
         "claim_type": {"type": "string", "enum": list(CLAIM_TYPES)},
         "comparator": {"type": "string", "enum": list(COMPARATORS)},
-        "stated_value": {"type": "number"},
+        "stated_value": {"type": ["number", "null"]},
         "evidence_ids": {"type": "array", "items": {"type": "string"}},
         "verdict": {"type": "string", "enum": list(VERDICTS)},
         "note": {"type": "string"},
@@ -62,22 +62,30 @@ VERDICT_SCHEMA = {
 
 
 SYSTEM_INSTRUCTIONS = """You verify financial claims against SEC EDGAR facts.
-Decompose the claim into atomic numeric sub-claims. Use lookup_fact for a value,
-compute_change for YoY or other period-to-period growth, and list_periods only
-to understand missing data. Never use memory for numbers. A quarter must have
-period_type=quarter and duration_days around 80-100, not period_type=ytd. If a
-result has derived=true, use its derivation and components as evidence and do
-not calculate that fact again. For compute_change, cite only its own evidence
-ID, not the two nested fact IDs.
+Decompose the claim into every atomic factual assertion. Every factual assertion
+in the user's claim must become a sub-claim, including a value, a change, a
+record, and a first-time assertion in the same sentence. Assertions that the
+tools cannot check must still become a sub-claim with claim_type other; the
+program will leave those unchecked. Use lookup_fact for a value,
+compute_change for YoY or other period-to-period growth, history_rank for
+record/first-time assertions, and list_periods only to understand missing data.
+Never use memory for numbers. A quarter must have period_type=quarter and
+duration_days around 80-100, not period_type=ytd. If a result has derived=true,
+use its derivation and components as evidence and do not calculate that fact
+again. For compute_change, cite its own evidence ID; its two nested component
+fact IDs may also be cited and are ignored by the verifier.
 
 Each final sub_claim must contain exactly these model fields:
-text, stated_text, claim_type (value, change_pct, or change_abs), comparator
-(eq, approx, gt, gte, lt, or lte), stated_value in base units (USD, USD/share,
-or percentage points), evidence_ids, verdict, note, and model_found_value.
-Copy stated_text verbatim from the claim, including words such as "about" or
-"up" (for example, "about $1.4 billion" or "up 22%"). For a change_pct,
-stated_value is 22 for 22%, not 0.22. model_found_value is the number read from
-the cited evidence in the same units, or null when it is missing.
+text, stated_text, claim_type (value, change_pct, change_abs, record_high,
+record_low, first_time_above, or other), comparator (eq, approx, gt, gte, lt,
+or lte), stated_value in base units (USD, USD/share, percentage points, or 1
+for a record boolean), evidence_ids, verdict, note, and model_found_value.
+Copy stated_text verbatim from the claim, including words such as "about",
+"up", or "fell" (for example, "about $1.4 billion", "up 22%", or
+"fell 10%"). For a change_pct, stated_value is 22 for 22%, not 0.22; the
+verifier applies the sign implied by direction words such as fell/down or
+rose/up. model_found_value is the number read from the cited evidence in the
+same units, or null when it is missing.
 
 Examples:
 1. "Tesla net income was about $1.4 billion": lookup_fact; stated_text
@@ -89,11 +97,20 @@ Examples:
 3. "Meta revenue was up 22% YoY": compute_change(META, revenue, 2025Q2,
    null); stated_text "up 22%", claim_type change_pct, comparator approx,
    stated_value 22, and cite the compute_change evidence ID.
-4. If the requested fact is unavailable, leave model_found_value null, cite any
-   relevant evidence, and set the sub-claim and overall verdict to
-   insufficient_evidence.
-
-Say insufficient_evidence when data is missing or evidence is ambiguous."""
+4. "Tesla revenue fell 10% YoY": compute_change(TSLA, revenue, 2025Q3,
+   null); stated_text "fell 10%", claim_type change_pct, comparator approx,
+   stated_value -10, and cite the compute_change evidence ID.
+5. "Alphabet Q3 2025 revenue was a record high": history_rank(GOOGL,
+   revenue, 2025Q3); claim_type record_high, comparator eq, stated_value 1,
+   and cite the history_rank evidence ID.
+6. "Alphabet Q3 2025 revenue topped $100 billion for the first time": create
+   two sub-claims: value gt 100000000000 and first_time_above with stated_value
+   100000000000, both citing the relevant evidence; the latter is supported
+   only when this period is above the threshold and no earlier comparable
+   period is above it.
+7. If a requested fact is unavailable, leave model_found_value null, cite any
+   relevant evidence, and set that sub-claim to insufficient_evidence. Say
+   insufficient_evidence when data is missing or evidence is ambiguous."""
 
 
 def _validate_output_tokens(value: Any) -> int:
@@ -512,9 +529,11 @@ def verify_claim(
                     "role": "user",
                     "content": (
                         "Return the final structured verdict now. Include every atomic "
-                        "numeric sub-claim with text, stated_text copied verbatim from "
-                        "the claim, claim_type, comparator, stated_value in base units, "
-                        "evidence_ids, verdict, model_found_value, and a concise note."
+                        "factual assertion as a sub-claim, including assertions that "
+                        "need claim_type other when the tools cannot check them. Copy "
+                        "stated_text verbatim from the claim; include claim_type, "
+                        "comparator, stated_value in base units, evidence_ids, verdict, "
+                        "model_found_value, and a concise note."
                     ),
                 }
             ],

@@ -60,3 +60,18 @@ Goal: make the program check understand how claims are phrased (approximate valu
   aggregation, offline parser/check tests, and replay coverage for the two
   live-trace claim shapes.
 - Documented the tolerance rules in README.md.
+- From the five 2026-10-27 live-run findings, accepted omitted, null, empty,
+  `"null"`, and `"none"` `compute_change.base_period` values as the default
+  prior-year period while retaining the required nullable strict-schema field.
+- From the live change traces, resolved one `compute_change` citation together
+  with its component fact IDs, deduplicated matching value evidence, and split
+  `no_evidence` from `ambiguous_evidence`.
+- Added direction-aware signed percentage/absolute-change checks, including
+  `stated_sign_corrected`, and capped value tolerances at 10% of the stated
+  magnitude.
+- Built `history_rank` with quarter/annual windows, derived Q4 coverage,
+  record-high/record-low and first-time-above sub-claims, plus `other` coverage
+  sub-claims that remain unchecked.
+- Added trimmed fixtures and fake-client replays for all five live traces,
+  including the exact recorded `[E3, E4, E5]` citations, and expanded the
+  offline suite to 90 passing tests.

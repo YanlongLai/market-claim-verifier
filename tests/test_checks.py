@@ -112,6 +112,197 @@ def test_meta_growth_uses_compute_change_evidence(
     assert result["program_verdict"] == "supported"
 
 
+def test_change_evidence_allows_its_two_component_fact_ids(tmp_path: Path) -> None:
+    runner = _fixture_runner(tmp_path)
+    change = runner.dispatch(
+        "compute_change",
+        {
+            "ticker": "META",
+            "metric": "revenue",
+            "period": "2025Q2",
+            "base_period": "2024Q2",
+        },
+    )
+    result = evaluate_sub_claim(
+        {
+            "text": "Meta revenue was up 22%",
+            "stated_text": "up 22%",
+            "claim_type": "change_pct",
+            "comparator": "approx",
+            "stated_value": 22.0,
+            "evidence_ids": [
+                change["current_fact"]["evidence_id"],
+                change["base_fact"]["evidence_id"],
+                change["evidence_id"],
+            ],
+            "verdict": "supported",
+            "model_found_value": change["pct_change"],
+            "note": "component citations are allowed",
+        },
+        runner,
+    )
+
+    assert result["program_verdict"] == "supported"
+    assert result["actual_value"] == pytest.approx(21.6144966855)
+
+
+def test_value_evidence_deduplicates_matching_lookup_and_compute_component(
+    tmp_path: Path,
+) -> None:
+    runner = _fixture_runner(tmp_path)
+    lookup = runner.dispatch(
+        "lookup_fact",
+        {"ticker": "META", "metric": "revenue", "period": "2025Q2"},
+    )
+    change = runner.dispatch(
+        "compute_change",
+        {
+            "ticker": "META",
+            "metric": "revenue",
+            "period": "2025Q2",
+            "base_period": "2024Q2",
+        },
+    )
+    result = evaluate_sub_claim(
+        claim(
+            evidence_ids=[lookup["evidence_id"], change["evidence_id"]],
+            stated_text="$47.5B",
+            stated_value=47.5e9,
+        ),
+        runner,
+    )
+
+    assert result["program_verdict"] == "supported"
+    assert result["evidence_valid"] is True
+
+
+def test_no_numeric_or_error_only_citations_are_no_evidence() -> None:
+    runner = SimpleNamespace(
+        evidence={"E1": {"error": "fact_not_found"}, "E2": {"value": ["2025Q2"]}},
+        evidence_kind={"E1": "lookup_fact", "E2": "list_periods"},
+    )
+    result = evaluate_sub_claim(claim(evidence_ids=["E1", "E2"]), runner)
+
+    assert result["program_verdict"] == "unchecked"
+    assert result["reason"] == "no_evidence"
+
+
+@pytest.mark.parametrize(
+    ("text", "stated_text", "stated_value", "actual", "expected", "sign_flag"),
+    [
+        ("Revenue fell 10%", "fell 10%", -10.0, 11.5678, "contradicted", False),
+        ("Revenue fell 10%", "10%", 10.0, -10.0, "supported", True),
+        ("Revenue grew 22%", "22%", -22.0, 21.6145, "supported", True),
+    ],
+)
+def test_change_direction_is_parsed_and_model_sign_can_be_corrected(
+    text: str,
+    stated_text: str,
+    stated_value: float,
+    actual: float,
+    expected: str,
+    sign_flag: bool,
+) -> None:
+    runner = runner_with_evidence()
+    runner.evidence = {"E1": {"pct_change": actual}}
+    runner.evidence_kind = {"E1": "compute_change"}
+    result = evaluate_sub_claim(
+        {
+            "text": text,
+            "stated_text": stated_text,
+            "claim_type": "change_pct",
+            "comparator": "approx",
+            "stated_value": stated_value,
+            "evidence_ids": ["E1"],
+            "verdict": expected,
+            "model_found_value": actual,
+            "note": "direction",
+        },
+        runner,
+    )
+
+    assert result["program_verdict"] == expected
+    assert result["stated_sign_corrected"] is sign_flag
+
+
+def test_value_tolerance_is_capped_at_ten_percent_of_stated() -> None:
+    result = evaluate_sub_claim(
+        claim(
+            stated_text="$2 trillion",
+            stated_value=2e12,
+            evidence_ids=["E1"],
+        ),
+        runner_with_evidence(2.25e12),
+    )
+
+    assert result["tolerance"] == pytest.approx(0.2e12)
+    assert result["program_verdict"] == "contradicted"
+
+
+def test_record_and_first_time_claims_use_history_rank(tmp_path: Path) -> None:
+    runner = _fixture_runner(tmp_path)
+    record_history = runner.dispatch(
+        "history_rank",
+        {"ticker": "META", "metric": "revenue", "period": "2026Q3"},
+    )
+    history = runner.dispatch(
+        "history_rank",
+        {"ticker": "META", "metric": "revenue", "period": "2025Q3"},
+    )
+    record = evaluate_sub_claim(
+        {
+            "text": "Meta Q3 2026 revenue was a record high",
+            "stated_text": "record high",
+            "claim_type": "record_high",
+            "comparator": "eq",
+            "stated_value": 1,
+            "evidence_ids": [record_history["evidence_id"]],
+            "verdict": "supported",
+            "model_found_value": 1,
+            "note": "history",
+        },
+        runner,
+    )
+    first_time = evaluate_sub_claim(
+        {
+            "text": "Meta Q3 2025 revenue topped $50B for the first time",
+            "stated_text": "$50B",
+            "claim_type": "first_time_above",
+            "comparator": "gt",
+            "stated_value": 50e9,
+            "evidence_ids": [history["evidence_id"]],
+            "verdict": "supported",
+            "model_found_value": history["value"],
+            "note": "history",
+        },
+        runner,
+    )
+
+    assert record["program_verdict"] == "supported"
+    assert "periods_considered" in record["reason"]
+    assert first_time["program_verdict"] == "supported"
+
+
+def test_other_claims_are_always_unchecked() -> None:
+    result = evaluate_sub_claim(
+        {
+            "text": "Meta is headquartered in Menlo Park",
+            "stated_text": "headquartered in Menlo Park",
+            "claim_type": "other",
+            "comparator": "eq",
+            "stated_value": None,
+            "evidence_ids": [],
+            "verdict": "supported",
+            "model_found_value": None,
+            "note": "not checked by SEC fact tools",
+        },
+        runner_with_evidence(),
+    )
+
+    assert result["program_verdict"] == "unchecked"
+    assert result["reason"] == "unchecked_other_claim"
+
+
 def test_subclaim_disagreement_is_model_verdict_vs_program_verdict() -> None:
     check = evaluate_sub_claim(
         claim(verdict="contradicted"), runner_with_evidence(1.373e9)

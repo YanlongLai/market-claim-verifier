@@ -49,10 +49,13 @@ working for non-calendar fiscal years.
 ## How verdicts are decided
 
 The model labels each atomic claim, but the program verdict is computed from
-the cited evidence. A value claim must cite exactly one numeric fact; a growth
-claim must cite exactly one `compute_change` result. Ambiguous or missing
-evidence is `unchecked` and produces overall `insufficient_evidence` unless
-another sub-claim is contradicted.
+the cited evidence. A value claim must cite one numeric `lookup_fact`; a
+matching lookup fact plus the same fact nested in a cited `compute_change` is
+treated as one. A growth claim must cite exactly one numeric `compute_change`
+result; its two component fact IDs may also be cited. Ambiguous evidence is
+`unchecked`. If no numeric evidence is cited, or every cited tool result is an
+error, the reason is `no_evidence`; otherwise unresolved competing citations
+are `ambiguous_evidence`.
 
 | Comparator | Program rule |
 | --- | --- |
@@ -61,6 +64,17 @@ another sub-claim is contradicted.
 | `approx` (percent change) | Difference is at most `max(2 × precision, 1.0 percentage point)` |
 | `gt`, `lt` | Strict comparison; no tolerance |
 | `gte`, `lte` | Comparison accepts equality within the stated precision |
+| value-claim cap | Every value tolerance is additionally capped at `10% × abs(stated value)` |
+
+The cap applies after the comparator-specific rule. For example, an approximate
+`$2 trillion` value cannot receive more than `$200 billion` of tolerance even
+though its displayed-number precision would otherwise allow a larger window.
+
+`history_rank` compares quarters only with quarters (including derived Q4) and
+annual periods only with annual periods. It supplies record-high/record-low
+checks and the chronological comparison window used by `first_time_above`.
+Every factual assertion must be represented as a sub-claim; assertions outside
+the available EDGAR checks use `claim_type=other` and remain unchecked.
 
 Overall, any contradicted sub-claim makes the claim `contradicted`; all
 supported sub-claims make it `supported`; otherwise it is

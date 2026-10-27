@@ -236,6 +236,17 @@ def _period_from_fact(fact: Mapping[str, Any]) -> str | None:
     return frame_period
 
 
+def _history_period_sort_key(period: str) -> tuple[int, int]:
+    """Sort comparable history labels from oldest to newest."""
+
+    match = PERIOD_RE.match(period)
+    if match is None:
+        return (0, 0)
+    if match.group("fy"):
+        return (int(match.group("fy_year")), 4)
+    return (int(match.group("year")), int(match.group("quarter")[1:]))
+
+
 def _period_end_start(period: str) -> tuple[date, date] | None:
     match = PERIOD_RE.match(period)
     if not match:
@@ -514,6 +525,241 @@ class EdgarClient:
         except EdgarError as exc:
             return self._error("companyfacts_unavailable", [], message=str(exc))
         return self._available_periods_from_facts(document.get("facts", {}), metric)
+
+    def _history_period_labels(
+        self, facts: Mapping[str, Any], metric: str
+    ) -> list[str]:
+        """Return every directly available period plus derivable Q4 labels."""
+
+        labels: set[str] = set()
+        groups = self._fact_groups(facts, metric)
+        for group in groups:
+            for selected in self._selected_by_period(group).values():
+                period = _period_from_fact(selected.fact)
+                if period and (_is_quarter(period) or _is_fy(period)):
+                    labels.add(period)
+            if metric not in ADDITIVE_METRICS:
+                continue
+            for candidate in self._derive_candidates_for_group(group):
+                if candidate.kind != "annual":
+                    continue
+                end = _date(candidate.current.get("end"))
+                if end is not None:
+                    labels.add(f"{end.year}Q4")
+        return sorted(labels, key=_history_period_sort_key)
+
+    def history_rank(
+        self, ticker: str, metric: str, period: str
+    ) -> dict[str, Any]:
+        """Rank a fact against all available comparable periods.
+
+        Quarters are compared with quarters, including Q4 values derived from
+        annual minus nine-month YTD facts. Fiscal years are compared only with
+        fiscal years. ``periods`` is chronological so callers can test
+        first-time assertions without reconstructing the SEC fact history.
+        """
+
+        metric = str(metric or "").strip().lower()
+        period = str(period or "").strip().upper()
+        if metric not in METRIC_ALIASES:
+            return {
+                "error": "unknown_metric",
+                "ticker": ticker,
+                "metric": metric,
+                "period": period,
+            }
+        if period != "LATEST" and PERIOD_RE.match(period) is None:
+            return {
+                "error": "invalid_period",
+                "ticker": ticker,
+                "metric": metric,
+                "period": period,
+            }
+
+        target = self.lookup_fact(ticker, metric, period)
+        if "error" in target:
+            return {
+                "ticker": str(ticker).strip().upper(),
+                "metric": metric,
+                "period": period,
+                "period_type": target.get("period_type", "quarter"),
+                "value": None,
+                "rank": None,
+                "count": None,
+                "is_highest": False,
+                "is_lowest": False,
+                "previous_high": None,
+                "previous_low": None,
+                "periods_considered": {"first": None, "last": None},
+                "periods": [],
+                "comparable_periods": [],
+                "error": target.get("error", "fact_not_found"),
+                "message": target.get(
+                    "message", "The requested fact is not available."
+                ),
+            }
+
+        resolved = self.resolve_ticker(ticker)
+        if "error" in resolved:
+            return {
+                "ticker": str(ticker).strip().upper(),
+                "metric": metric,
+                "period": period,
+                "period_type": target.get("period_type", "quarter"),
+                "value": None,
+                "rank": None,
+                "count": None,
+                "is_highest": False,
+                "is_lowest": False,
+                "previous_high": None,
+                "previous_low": None,
+                "periods_considered": {"first": None, "last": None},
+                "periods": [],
+                "comparable_periods": [],
+                "error": resolved.get("error", "unknown_ticker"),
+                "message": resolved.get("message", "Ticker could not be resolved."),
+            }
+        try:
+            document, _ = self._facts_document(str(resolved["cik"]))
+        except EdgarError as exc:
+            return {
+                "ticker": resolved.get("ticker", str(ticker).strip().upper()),
+                "metric": metric,
+                "period": period,
+                "period_type": target.get("period_type", "quarter"),
+                "value": None,
+                "rank": None,
+                "count": None,
+                "is_highest": False,
+                "is_lowest": False,
+                "previous_high": None,
+                "previous_low": None,
+                "periods_considered": {"first": None, "last": None},
+                "periods": [],
+                "comparable_periods": [],
+                "error": "companyfacts_unavailable",
+                "message": str(exc),
+            }
+
+        target_period = period
+        if period == "LATEST":
+            target_period = _period_from_fact(
+                {
+                    "start": target.get("start"),
+                    "end": target.get("end"),
+                    "frame": target.get("frame"),
+                }
+            ) or period
+        target_period_type = str(target.get("period_type") or "")
+        if target_period_type not in {"quarter", "annual"}:
+            return {
+                "ticker": resolved["ticker"],
+                "metric": metric,
+                "period": target_period,
+                "period_type": target_period_type,
+                "value": target.get("value"),
+                "rank": None,
+                "count": 0,
+                "is_highest": False,
+                "is_lowest": False,
+                "previous_high": None,
+                "previous_low": None,
+                "periods_considered": {"first": None, "last": None},
+                "periods": [],
+                "comparable_periods": [],
+                "error": "history_not_supported",
+                "message": "History ranking is defined for quarter and annual facts.",
+            }
+
+        period_values: list[dict[str, Any]] = []
+        for candidate_period in self._history_period_labels(
+            document.get("facts", {}), metric
+        ):
+            candidate = self.lookup_fact(ticker, metric, candidate_period)
+            value = candidate.get("value")
+            if (
+                "error" in candidate
+                or candidate.get("period_type") != target_period_type
+                or not isinstance(value, (int, float))
+                or isinstance(value, bool)
+            ):
+                continue
+            period_values.append(
+                {
+                    "period": candidate_period,
+                    "value": value,
+                    "period_type": candidate.get("period_type"),
+                }
+            )
+
+        period_values.sort(key=lambda item: _history_period_sort_key(item["period"]))
+        target_entry = next(
+            (item for item in period_values if item["period"] == target_period),
+            None,
+        )
+        if target_entry is None:
+            return {
+                "ticker": resolved["ticker"],
+                "metric": metric,
+                "period": target_period,
+                "period_type": target_period_type,
+                "value": target.get("value"),
+                "rank": None,
+                "count": len(period_values),
+                "is_highest": False,
+                "is_lowest": False,
+                "previous_high": None,
+                "previous_low": None,
+                "periods_considered": {
+                    "first": period_values[0]["period"] if period_values else None,
+                    "last": period_values[-1]["period"] if period_values else None,
+                },
+                "periods": period_values,
+                "comparable_periods": period_values,
+                "error": "fact_not_in_history",
+                "message": "The requested fact was not in the comparable history window.",
+            }
+
+        target_value = float(target_entry["value"])
+        rank = 1 + sum(
+            float(item["value"]) > target_value for item in period_values
+        )
+        prior = [
+            item
+            for item in period_values
+            if _history_period_sort_key(item["period"])
+            < _history_period_sort_key(target_period)
+        ]
+        previous_high = (
+            max(prior, key=lambda item: float(item["value"])) if prior else None
+        )
+        previous_low = (
+            min(prior, key=lambda item: float(item["value"])) if prior else None
+        )
+        window = {
+            "first": period_values[0]["period"] if period_values else None,
+            "last": period_values[-1]["period"] if period_values else None,
+        }
+        return {
+            "ticker": resolved["ticker"],
+            "metric": metric,
+            "period": target_period,
+            "period_type": target_period_type,
+            "value": target_entry["value"],
+            "rank": rank,
+            "count": len(period_values),
+            "is_highest": all(
+                float(item["value"]) <= target_value for item in period_values
+            ),
+            "is_lowest": all(
+                float(item["value"]) >= target_value for item in period_values
+            ),
+            "previous_high": previous_high,
+            "previous_low": previous_low,
+            "periods_considered": window,
+            "periods": period_values,
+            "comparable_periods": period_values,
+        }
 
     def _fact_groups(
         self, facts: Mapping[str, Any], metric: str

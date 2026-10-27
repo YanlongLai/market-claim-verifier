@@ -1,5 +1,8 @@
+import pytest
+
 from claimcheck.tools import (
     COMPUTE_CHANGE_TOOL,
+    HISTORY_RANK_TOOL,
     LOOKUP_FACT_OUTPUT_SCHEMA,
     LOOKUP_FACT_TOOL,
     ToolRunner,
@@ -35,6 +38,31 @@ def test_compute_change_rejects_mixed_period_kinds() -> None:
     )
     assert result["error"] == "invalid_tool_call"
     assert "same kind" in result["message"]
+
+
+@pytest.mark.parametrize("base_period", [None, "", "null", "none"])
+def test_compute_change_accepts_default_base_period_variants(base_period: object) -> None:
+    edgar = RecordingEdgar()
+    args = {
+        "ticker": "META",
+        "metric": "revenue",
+        "period": "FY2025",
+    }
+    if base_period is not None:
+        args["base_period"] = base_period
+    result = ToolRunner(edgar).dispatch("compute_change", args)
+
+    assert result["base_period"] == "FY2024"
+    assert edgar.periods == ["FY2025", "FY2024"]
+
+
+def test_history_rank_tool_is_strict() -> None:
+    assert HISTORY_RANK_TOOL["strict"] is True
+    assert HISTORY_RANK_TOOL["parameters"]["required"] == [
+        "ticker",
+        "metric",
+        "period",
+    ]
 
 
 class RecordingEdgar:

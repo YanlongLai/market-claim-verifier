@@ -111,6 +111,33 @@ def test_q4_is_derived_for_additive_flow(tmp_path: Path) -> None:
     assert result["value"] == result["components"][0]["value"] - result["components"][1]["value"]
 
 
+def test_history_rank_compares_quarters_and_includes_derived_q4(tmp_path: Path) -> None:
+    client = fixture_client(tmp_path)
+    result = client.history_rank("META", "revenue", "2025Q2")
+
+    assert result["period_type"] == "quarter"
+    assert result["value"] == 47_516_000_000
+    assert result["rank"] == 7
+    assert result["count"] == 21
+    assert result["periods_considered"] == {"first": "2018Q2", "last": "2026Q3"}
+    assert {item["period"] for item in result["periods"] if item["period"].endswith("Q4")} >= {
+        "2022Q4",
+        "2023Q4",
+        "2024Q4",
+        "2025Q4",
+    }
+    assert result["previous_high"]["period"] == "2024Q4"
+
+
+def test_history_rank_annual_does_not_mix_quarters(tmp_path: Path) -> None:
+    client = fixture_client(tmp_path)
+    result = client.history_rank("META", "revenue", "FY2025")
+
+    assert result["period_type"] == "annual"
+    assert result["count"] == 4
+    assert all(item["period"].startswith("FY") for item in result["periods"])
+
+
 def test_latest_flow_prefers_newest_derived_quarter(tmp_path: Path) -> None:
     client = fixture_client(tmp_path)
     result = client.lookup_fact("META", "capex", "latest")
