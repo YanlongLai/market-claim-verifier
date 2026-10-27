@@ -1,0 +1,953 @@
+{
+  "claim": "Meta's Q2 2025 revenue rose 30% from a year earlier.",
+  "model": "meta-models/muse-spark-open-1026",
+  "provider": "baseten",
+  "requests": [
+    {
+      "request": {
+        "model": "meta-models/muse-spark-open-1026",
+        "messages": [
+          {
+            "role": "system",
+            "content": "You verify financial claims against SEC EDGAR facts.\nDecompose the claim into every atomic factual assertion. Every factual assertion\nin the user's claim must become a sub-claim, including a value, a change, a\nrecord, and a first-time assertion in the same sentence. Assertions that the\ntools cannot check must still become a sub-claim with claim_type other; the\nprogram will leave those unchecked. Use lookup_fact for a value,\ncompute_change for YoY or other period-to-period growth, history_rank for\nrecord/first-time assertions, and list_periods only to understand missing data.\nNever use memory for numbers. A quarter must have period_type=quarter and\nduration_days around 80-100, not period_type=ytd. If a result has derived=true,\nuse its derivation and components as evidence and do not calculate that fact\nagain. For compute_change, cite its own evidence ID; its two nested component\nfact IDs may also be cited and are ignored by the verifier.\n\nEach final sub_claim must contain exactly these model fields:\ntext, stated_text, claim_type (value, change_pct, change_abs, record_high,\nrecord_low, first_time_above, or other), comparator (eq, approx, gt, gte, lt,\nor lte), stated_value in base units (USD, USD/share, percentage points, or 1\nfor a record boolean), evidence_ids, verdict, note, and model_found_value.\nCopy stated_text verbatim from the claim, including words such as \"about\",\n\"up\", or \"fell\" (for example, \"about $1.4 billion\", \"up 22%\", or\n\"fell 10%\"). For a change_pct, stated_value is 22 for 22%, not 0.22; the\nverifier applies the sign implied by direction words such as fell/down or\nrose/up. model_found_value is the number read from the cited evidence in the\nsame units, or null when it is missing.\n\nExamples:\n1. \"Tesla net income was about $1.4 billion\": lookup_fact; stated_text\n   \"about $1.4 billion\", claim_type value, comparator approx, stated_value\n   1400000000.\n2. \"Alphabet revenue exceeded $100 billion\": lookup_fact; stated_text\n   \"exceeded $100 billion\", claim_type value, comparator gt, stated_value\n   100000000000.\n3. \"Meta revenue was up 22% YoY\": compute_change(META, revenue, 2025Q2,\n   null); stated_text \"up 22%\", claim_type change_pct, comparator approx,\n   stated_value 22, and cite the compute_change evidence ID.\n4. \"Tesla revenue fell 10% YoY\": compute_change(TSLA, revenue, 2025Q3,\n   null); stated_text \"fell 10%\", claim_type change_pct, comparator approx,\n   stated_value -10, and cite the compute_change evidence ID.\n5. \"Alphabet Q3 2025 revenue was a record high\": history_rank(GOOGL,\n   revenue, 2025Q3); claim_type record_high, comparator eq, stated_value 1,\n   and cite the history_rank evidence ID.\n6. \"Alphabet Q3 2025 revenue topped $100 billion for the first time\": create\n   two sub-claims: value gt 100000000000 and first_time_above with stated_value\n   100000000000, both citing the relevant evidence; the latter is supported\n   only when this period is above the threshold and no earlier comparable\n   period is above it.\n7. If a requested fact is unavailable, leave model_found_value null, cite any\n   relevant evidence, and set that sub-claim to insufficient_evidence. Say\n   insufficient_evidence when data is missing or evidence is ambiguous."
+          },
+          {
+            "role": "user",
+            "content": "Meta's Q2 2025 revenue rose 30% from a year earlier."
+          }
+        ],
+        "tools": [
+          {
+            "type": "function",
+            "function": {
+              "name": "lookup_fact",
+              "description": "Look up one SEC EDGAR XBRL fact for a ticker, metric, and quarter or fiscal year. Successful results include period (the normalized requested label, or the resolved label for latest), duration_days, and period_type (quarter, ytd, annual, or instant). Additive flows may return derived=true with derivation and components; never treat a ytd result as a quarter or recompute a derived result.",
+              "parameters": {
+                "type": "object",
+                "properties": {
+                  "ticker": {
+                    "type": "string"
+                  },
+                  "metric": {
+                    "type": "string",
+                    "enum": [
+                      "revenue",
+                      "net_income",
+                      "operating_income",
+                      "eps_diluted",
+                      "gross_profit",
+                      "total_assets",
+                      "cash",
+                      "capex",
+                      "rd_expense",
+                      "shares_outstanding"
+                    ]
+                  },
+                  "period": {
+                    "type": "string",
+                    "pattern": "^(latest|FY\\d{4}|\\d{4}Q[1-4])$"
+                  }
+                },
+                "required": [
+                  "ticker",
+                  "metric",
+                  "period"
+                ],
+                "additionalProperties": false
+              }
+            }
+          },
+          {
+            "type": "function",
+            "function": {
+              "name": "list_periods",
+              "description": "List the recent directly available SEC EDGAR quarter and fiscal-year periods for a ticker and metric.",
+              "parameters": {
+                "type": "object",
+                "properties": {
+                  "ticker": {
+                    "type": "string"
+                  },
+                  "metric": {
+                    "type": "string",
+                    "enum": [
+                      "revenue",
+                      "net_income",
+                      "operating_income",
+                      "eps_diluted",
+                      "gross_profit",
+                      "total_assets",
+                      "cash",
+                      "capex",
+                      "rd_expense",
+                      "shares_outstanding"
+                    ]
+                  }
+                },
+                "required": [
+                  "ticker",
+                  "metric"
+                ],
+                "additionalProperties": false
+              }
+            }
+          },
+          {
+            "type": "function",
+            "function": {
+              "name": "compute_change",
+              "description": "Compute the absolute and year-over-year change for one SEC EDGAR XBRL metric. The period and base_period must be the same kind of period; when base_period is omitted, null, empty, \"null\", or \"none\", use the same quarter or fiscal year one year earlier. The result includes both cited lookup facts and a percentage change in percent points.",
+              "parameters": {
+                "type": "object",
+                "properties": {
+                  "ticker": {
+                    "type": "string"
+                  },
+                  "metric": {
+                    "type": "string",
+                    "enum": [
+                      "revenue",
+                      "net_income",
+                      "operating_income",
+                      "eps_diluted",
+                      "gross_profit",
+                      "total_assets",
+                      "cash",
+                      "capex",
+                      "rd_expense",
+                      "shares_outstanding"
+                    ]
+                  },
+                  "period": {
+                    "type": "string",
+                    "pattern": "^(latest|FY\\d{4}|\\d{4}Q[1-4])$"
+                  },
+                  "base_period": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "pattern": "^(FY\\d{4}|\\d{4}Q[1-4])$"
+                  }
+                },
+                "required": [
+                  "ticker",
+                  "metric",
+                  "period",
+                  "base_period"
+                ],
+                "additionalProperties": false
+              }
+            }
+          },
+          {
+            "type": "function",
+            "function": {
+              "name": "history_rank",
+              "description": "Compare one quarter or fiscal-year fact with every available comparable period of the same period_type. Quarters include derived Q4 values when available; annual periods are compared only with annual periods. Return the rank, record flags through the requested period, prior high/low, and the comparison window with period end dates.",
+              "parameters": {
+                "type": "object",
+                "properties": {
+                  "ticker": {
+                    "type": "string"
+                  },
+                  "metric": {
+                    "type": "string",
+                    "enum": [
+                      "revenue",
+                      "net_income",
+                      "operating_income",
+                      "eps_diluted",
+                      "gross_profit",
+                      "total_assets",
+                      "cash",
+                      "capex",
+                      "rd_expense",
+                      "shares_outstanding"
+                    ]
+                  },
+                  "period": {
+                    "type": "string",
+                    "pattern": "^(latest|FY\\d{4}|\\d{4}Q[1-4])$"
+                  }
+                },
+                "required": [
+                  "ticker",
+                  "metric",
+                  "period"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        ],
+        "parallel_tool_calls": true,
+        "max_tokens": 4000
+      },
+      "reservation": {
+        "reservation_id": "1ab8863f2c694fa49df0a06f5103af23",
+        "provider": "baseten",
+        "model": "meta-models/muse-spark-open-1026",
+        "estimated_input_tokens": 2176,
+        "max_output_tokens": 4000,
+        "amount": 0.01972,
+        "payload_chars": 6526,
+        "context_chars": 0
+      },
+      "raw_response": {
+        "id": "chatcmpl-79288567a775444bba65057f108410c4",
+        "choices": [
+          {
+            "finish_reason": "tool_calls",
+            "index": 0,
+            "logprobs": null,
+            "message": {
+              "content": null,
+              "refusal": null,
+              "role": "assistant",
+              "annotations": null,
+              "audio": null,
+              "function_call": null,
+              "tool_calls": [
+                {
+                  "id": "chatcmpl-tool-2e7c2558ce14431998112123e36049a6",
+                  "function": {
+                    "arguments": "{\"ticker\": \"META\", \"metric\": \"revenue\", \"period\": \"2025Q2\", \"base_period\": null}",
+                    "name": "compute_change"
+                  },
+                  "type": "function"
+                }
+              ],
+              "reasoning_content": "Need to decompose claim: Meta's Q2 2025 revenue rose 30% from a year earlier.\n\nWe need to verify.\n\nWe need to call compute_change for META, revenue, 2025Q2.\n\nTicker: META maybe? Need to check. Meta Platforms ticker is META. Could also be FB historically. Use META.\n\nNeed to call compute_change.\n\nAlso need lookup? The claim is about rise 30% . That is a change_pct.\n\nWe need to decompose. Possibly also need to check value assertions? Claim is \"Meta's Q2 2025 revenue rose 30% from a year earlier.\" That's one atomic assertion: change_pct.\n\nBut instructions: decompose into every atomic factual assertion. Every factual assertion including value, change, record, first-time. So this is single change_pct assertion.\n\nWe need to call compute_change.\n\nWe should also perhaps do list_periods? But compute_change will give us.\n\nWe must use tools, never memory.\n\nWe need to provide sub_claims with evidence_ids etc.\n\nWe need to call compute_change.\n\n"
+            }
+          }
+        ],
+        "created": 1793143964,
+        "model": "meta-models/muse-spark-open-1026",
+        "object": "chat.completion",
+        "metadata": null,
+        "moderation": null,
+        "service_tier": null,
+        "system_fingerprint": null,
+        "usage": {
+          "completion_tokens": 340,
+          "prompt_tokens": 2203,
+          "total_tokens": 2543,
+          "completion_tokens_details": {
+            "accepted_prediction_tokens": 236,
+            "audio_tokens": 0,
+            "reasoning_tokens": 216,
+            "rejected_prediction_tokens": 485,
+            "text_tokens": null
+          },
+          "prompt_tokens_details": {
+            "audio_tokens": 0,
+            "cache_write_tokens": null,
+            "cached_tokens": 2176,
+            "image_tokens": null,
+            "text_tokens": null
+          }
+        }
+      },
+      "usage": {
+        "input": 2203,
+        "cached": 2176,
+        "output": 340,
+        "reasoning": 216
+      },
+      "cost": 0.0018051499999999997,
+      "latency_ms": 1803.767,
+      "status": "completed",
+      "raw_usage": {
+        "completion_tokens": 340,
+        "prompt_tokens": 2203,
+        "total_tokens": 2543,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": 236,
+          "audio_tokens": 0,
+          "reasoning_tokens": 216,
+          "rejected_prediction_tokens": 485,
+          "text_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": 0,
+          "cache_write_tokens": null,
+          "cached_tokens": 2176,
+          "image_tokens": null,
+          "text_tokens": null
+        }
+      },
+      "normalized_usage": {
+        "input": 2203,
+        "cached": 2176,
+        "output": 340,
+        "reasoning": 216
+      },
+      "finish_reason": "tool_calls",
+      "rate_limit_headers": {
+        "x-ratelimit-limit-requests": "100",
+        "x-ratelimit-limit-tokens": "2000000",
+        "x-ratelimit-remaining-requests": "50",
+        "x-ratelimit-remaining-tokens": "2000000"
+      }
+    },
+    {
+      "request": {
+        "model": "meta-models/muse-spark-open-1026",
+        "messages": [
+          {
+            "role": "system",
+            "content": "You verify financial claims against SEC EDGAR facts.\nDecompose the claim into every atomic factual assertion. Every factual assertion\nin the user's claim must become a sub-claim, including a value, a change, a\nrecord, and a first-time assertion in the same sentence. Assertions that the\ntools cannot check must still become a sub-claim with claim_type other; the\nprogram will leave those unchecked. Use lookup_fact for a value,\ncompute_change for YoY or other period-to-period growth, history_rank for\nrecord/first-time assertions, and list_periods only to understand missing data.\nNever use memory for numbers. A quarter must have period_type=quarter and\nduration_days around 80-100, not period_type=ytd. If a result has derived=true,\nuse its derivation and components as evidence and do not calculate that fact\nagain. For compute_change, cite its own evidence ID; its two nested component\nfact IDs may also be cited and are ignored by the verifier.\n\nEach final sub_claim must contain exactly these model fields:\ntext, stated_text, claim_type (value, change_pct, change_abs, record_high,\nrecord_low, first_time_above, or other), comparator (eq, approx, gt, gte, lt,\nor lte), stated_value in base units (USD, USD/share, percentage points, or 1\nfor a record boolean), evidence_ids, verdict, note, and model_found_value.\nCopy stated_text verbatim from the claim, including words such as \"about\",\n\"up\", or \"fell\" (for example, \"about $1.4 billion\", \"up 22%\", or\n\"fell 10%\"). For a change_pct, stated_value is 22 for 22%, not 0.22; the\nverifier applies the sign implied by direction words such as fell/down or\nrose/up. model_found_value is the number read from the cited evidence in the\nsame units, or null when it is missing.\n\nExamples:\n1. \"Tesla net income was about $1.4 billion\": lookup_fact; stated_text\n   \"about $1.4 billion\", claim_type value, comparator approx, stated_value\n   1400000000.\n2. \"Alphabet revenue exceeded $100 billion\": lookup_fact; stated_text\n   \"exceeded $100 billion\", claim_type value, comparator gt, stated_value\n   100000000000.\n3. \"Meta revenue was up 22% YoY\": compute_change(META, revenue, 2025Q2,\n   null); stated_text \"up 22%\", claim_type change_pct, comparator approx,\n   stated_value 22, and cite the compute_change evidence ID.\n4. \"Tesla revenue fell 10% YoY\": compute_change(TSLA, revenue, 2025Q3,\n   null); stated_text \"fell 10%\", claim_type change_pct, comparator approx,\n   stated_value -10, and cite the compute_change evidence ID.\n5. \"Alphabet Q3 2025 revenue was a record high\": history_rank(GOOGL,\n   revenue, 2025Q3); claim_type record_high, comparator eq, stated_value 1,\n   and cite the history_rank evidence ID.\n6. \"Alphabet Q3 2025 revenue topped $100 billion for the first time\": create\n   two sub-claims: value gt 100000000000 and first_time_above with stated_value\n   100000000000, both citing the relevant evidence; the latter is supported\n   only when this period is above the threshold and no earlier comparable\n   period is above it.\n7. If a requested fact is unavailable, leave model_found_value null, cite any\n   relevant evidence, and set that sub-claim to insufficient_evidence. Say\n   insufficient_evidence when data is missing or evidence is ambiguous."
+          },
+          {
+            "role": "user",
+            "content": "Meta's Q2 2025 revenue rose 30% from a year earlier."
+          },
+          {
+            "role": "assistant",
+            "content": null,
+            "tool_calls": [
+              {
+                "id": "chatcmpl-tool-2e7c2558ce14431998112123e36049a6",
+                "type": "function",
+                "function": {
+                  "name": "compute_change",
+                  "arguments": "{\"ticker\": \"META\", \"metric\": \"revenue\", \"period\": \"2025Q2\", \"base_period\": null}"
+                }
+              }
+            ]
+          },
+          {
+            "role": "tool",
+            "tool_call_id": "chatcmpl-tool-2e7c2558ce14431998112123e36049a6",
+            "content": "{\"ticker\":\"META\",\"metric\":\"revenue\",\"period\":\"2025Q2\",\"base_period\":\"2024Q2\",\"current_fact\":{\"ticker\":\"META\",\"cik\":\"0001326801\",\"entity\":\"Meta Platforms, Inc.\",\"metric\":\"revenue\",\"concept\":\"RevenueFromContractWithCustomerExcludingAssessedTax\",\"unit\":\"USD\",\"value\":47516000000,\"start\":\"2025-04-01\",\"end\":\"2025-06-30\",\"form\":\"10-Q\",\"form_fallback\":false,\"accn\":\"0001628280-26-050705\",\"filed\":\"2026-07-30\",\"frame\":\"CY2025Q2\",\"duration_days\":91,\"period_type\":\"quarter\",\"derived\":false,\"filing_url\":\"https://www.sec.gov/Archives/edgar/data/1326801/000162828026050705/\",\"source_sha256\":\"52f806ebd7961834d5ac8073e516361e60e800a52ada0ed7f46fb5f615b6050d\",\"period\":\"2025Q2\",\"evidence_id\":\"E1\"},\"base_fact\":{\"ticker\":\"META\",\"cik\":\"0001326801\",\"entity\":\"Meta Platforms, Inc.\",\"metric\":\"revenue\",\"concept\":\"RevenueFromContractWithCustomerExcludingAssessedTax\",\"unit\":\"USD\",\"value\":39071000000,\"start\":\"2024-04-01\",\"end\":\"2024-06-30\",\"form\":\"10-Q\",\"form_fallback\":false,\"accn\":\"0001628280-25-036791\",\"filed\":\"2025-07-31\",\"frame\":\"CY2024Q2\",\"duration_days\":91,\"period_type\":\"quarter\",\"derived\":false,\"filing_url\":\"https://www.sec.gov/Archives/edgar/data/1326801/000162828025036791/\",\"source_sha256\":\"52f806ebd7961834d5ac8073e516361e60e800a52ada0ed7f46fb5f615b6050d\",\"period\":\"2024Q2\",\"evidence_id\":\"E2\"},\"current\":{\"ticker\":\"META\",\"cik\":\"0001326801\",\"entity\":\"Meta Platforms, Inc.\",\"metric\":\"revenue\",\"concept\":\"RevenueFromContractWithCustomerExcludingAssessedTax\",\"unit\":\"USD\",\"value\":47516000000,\"start\":\"2025-04-01\",\"end\":\"2025-06-30\",\"form\":\"10-Q\",\"form_fallback\":false,\"accn\":\"0001628280-26-050705\",\"filed\":\"2026-07-30\",\"frame\":\"CY2025Q2\",\"duration_days\":91,\"period_type\":\"quarter\",\"derived\":false,\"filing_url\":\"https://www.sec.gov/Archives/edgar/data/1326801/000162828026050705/\",\"source_sha256\":\"52f806ebd7961834d5ac8073e516361e60e800a52ada0ed7f46fb5f615b6050d\",\"period\":\"2025Q2\",\"evidence_id\":\"E1\"},\"base\":{\"ticker\":\"META\",\"cik\":\"0001326801\",\"entity\":\"Meta Platforms, Inc.\",\"metric\":\"revenue\",\"concept\":\"RevenueFromContractWithCustomerExcludingAssessedTax\",\"unit\":\"USD\",\"value\":39071000000,\"start\":\"2024-04-01\",\"end\":\"2024-06-30\",\"form\":\"10-Q\",\"form_fallback\":false,\"accn\":\"0001628280-25-036791\",\"filed\":\"2025-07-31\",\"frame\":\"CY2024Q2\",\"duration_days\":91,\"period_type\":\"quarter\",\"derived\":false,\"filing_url\":\"https://www.sec.gov/Archives/edgar/data/1326801/000162828025036791/\",\"source_sha256\":\"52f806ebd7961834d5ac8073e516361e60e800a52ada0ed7f46fb5f615b6050d\",\"period\":\"2024Q2\",\"evidence_id\":\"E2\"},\"abs_change\":8445000000,\"pct_change\":21.61449668552123,\"evidence_id\":\"E3\"}"
+          }
+        ],
+        "tools": [
+          {
+            "type": "function",
+            "function": {
+              "name": "lookup_fact",
+              "description": "Look up one SEC EDGAR XBRL fact for a ticker, metric, and quarter or fiscal year. Successful results include period (the normalized requested label, or the resolved label for latest), duration_days, and period_type (quarter, ytd, annual, or instant). Additive flows may return derived=true with derivation and components; never treat a ytd result as a quarter or recompute a derived result.",
+              "parameters": {
+                "type": "object",
+                "properties": {
+                  "ticker": {
+                    "type": "string"
+                  },
+                  "metric": {
+                    "type": "string",
+                    "enum": [
+                      "revenue",
+                      "net_income",
+                      "operating_income",
+                      "eps_diluted",
+                      "gross_profit",
+                      "total_assets",
+                      "cash",
+                      "capex",
+                      "rd_expense",
+                      "shares_outstanding"
+                    ]
+                  },
+                  "period": {
+                    "type": "string",
+                    "pattern": "^(latest|FY\\d{4}|\\d{4}Q[1-4])$"
+                  }
+                },
+                "required": [
+                  "ticker",
+                  "metric",
+                  "period"
+                ],
+                "additionalProperties": false
+              }
+            }
+          },
+          {
+            "type": "function",
+            "function": {
+              "name": "list_periods",
+              "description": "List the recent directly available SEC EDGAR quarter and fiscal-year periods for a ticker and metric.",
+              "parameters": {
+                "type": "object",
+                "properties": {
+                  "ticker": {
+                    "type": "string"
+                  },
+                  "metric": {
+                    "type": "string",
+                    "enum": [
+                      "revenue",
+                      "net_income",
+                      "operating_income",
+                      "eps_diluted",
+                      "gross_profit",
+                      "total_assets",
+                      "cash",
+                      "capex",
+                      "rd_expense",
+                      "shares_outstanding"
+                    ]
+                  }
+                },
+                "required": [
+                  "ticker",
+                  "metric"
+                ],
+                "additionalProperties": false
+              }
+            }
+          },
+          {
+            "type": "function",
+            "function": {
+              "name": "compute_change",
+              "description": "Compute the absolute and year-over-year change for one SEC EDGAR XBRL metric. The period and base_period must be the same kind of period; when base_period is omitted, null, empty, \"null\", or \"none\", use the same quarter or fiscal year one year earlier. The result includes both cited lookup facts and a percentage change in percent points.",
+              "parameters": {
+                "type": "object",
+                "properties": {
+                  "ticker": {
+                    "type": "string"
+                  },
+                  "metric": {
+                    "type": "string",
+                    "enum": [
+                      "revenue",
+                      "net_income",
+                      "operating_income",
+                      "eps_diluted",
+                      "gross_profit",
+                      "total_assets",
+                      "cash",
+                      "capex",
+                      "rd_expense",
+                      "shares_outstanding"
+                    ]
+                  },
+                  "period": {
+                    "type": "string",
+                    "pattern": "^(latest|FY\\d{4}|\\d{4}Q[1-4])$"
+                  },
+                  "base_period": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "pattern": "^(FY\\d{4}|\\d{4}Q[1-4])$"
+                  }
+                },
+                "required": [
+                  "ticker",
+                  "metric",
+                  "period",
+                  "base_period"
+                ],
+                "additionalProperties": false
+              }
+            }
+          },
+          {
+            "type": "function",
+            "function": {
+              "name": "history_rank",
+              "description": "Compare one quarter or fiscal-year fact with every available comparable period of the same period_type. Quarters include derived Q4 values when available; annual periods are compared only with annual periods. Return the rank, record flags through the requested period, prior high/low, and the comparison window with period end dates.",
+              "parameters": {
+                "type": "object",
+                "properties": {
+                  "ticker": {
+                    "type": "string"
+                  },
+                  "metric": {
+                    "type": "string",
+                    "enum": [
+                      "revenue",
+                      "net_income",
+                      "operating_income",
+                      "eps_diluted",
+                      "gross_profit",
+                      "total_assets",
+                      "cash",
+                      "capex",
+                      "rd_expense",
+                      "shares_outstanding"
+                    ]
+                  },
+                  "period": {
+                    "type": "string",
+                    "pattern": "^(latest|FY\\d{4}|\\d{4}Q[1-4])$"
+                  }
+                },
+                "required": [
+                  "ticker",
+                  "metric",
+                  "period"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        ],
+        "parallel_tool_calls": true,
+        "max_tokens": 4000
+      },
+      "reservation": {
+        "reservation_id": "c5ca6fd2c18d43beaff272b4a62652c6",
+        "provider": "baseten",
+        "model": "meta-models/muse-spark-open-1026",
+        "estimated_input_tokens": 3265,
+        "max_output_tokens": 4000,
+        "amount": 0.021081250000000003,
+        "payload_chars": 9793,
+        "context_chars": 0
+      },
+      "raw_response": {
+        "id": "chatcmpl-7644b60f822c422d957535bfcac7623e",
+        "choices": [
+          {
+            "finish_reason": "stop",
+            "index": 0,
+            "logprobs": null,
+            "message": {
+              "content": "[\n  {\n    \"text\": \"Meta's Q2 2025 revenue rose 30% from a year earlier\",\n    \"stated_text\": \"rose 30%\",\n    \"claim_type\": \"change_pct\",\n    \"comparator\": \"approx\",\n    \"stated_value\": 30,\n    \"evidence_ids\": [\n      \"E3\"\n    ],\n    \"verdict\": \"fail\",\n    \"note\": \"compute_change for META revenue 2025Q2 vs 2024Q2 shows +21.61% (47516000000 vs 39071000000), not ~30%.\",\n    \"model_found_value\": 21.61449668552123\n  }\n]",
+              "refusal": null,
+              "role": "assistant",
+              "annotations": null,
+              "audio": null,
+              "function_call": null,
+              "tool_calls": null,
+              "reasoning_content": "We need to decompose claim: Meta's Q2 2025 revenue rose 30% from a year earlier.\n\nSingle factual assertion: YoY change ~30%.\n\nBut we need to verify.\n\nWe have compute_change showing pct_change 21.614... So stated 30% is not correct.\n\nNeed to produce sub_claim(s).\n\nClaim: \"Meta's Q2 2025 revenue rose 30% from a year earlier.\"\n\nAtomic factual assertions: This is a change_pct claim. Possibly also implies revenue existence? But main is change.\n\nWe should create one sub-claim: text, stated_text \"rose 30%\", claim_type change_pct, comparator approx, stated_value 30, evidence E3, verdict fails, model_found_value 21.614...\n\nWe need to decide comparator. The claim says \"rose 30%\" - that is approx 30%. Could be eq or approx. Use approx. The verdict should be fail because 21.6% vs 30% - difference significant.\n\nNeed to set evidence_ids: [\"E3\"] perhaps also E1,E2 allowed but compute_change evidence_id is E3 includes them.\n\nWe must also ensure we explain verdict.\n\nNeed to produce final JSON? The example says each final sub_claim must contain exactly these model fields: text, stated_text, claim_type, comparator, stated_value in base units, evidence_ids, verdict, note, and model_found_value.\n\nSo we need to output list of sub-claims.\n\nPotentially also break into value assertion? But instruction says every factual assertion in user's claim must become sub-claim, including value, change, record... The claim \"Meta's Q2 2025 revenue rose 30% from a year earlier.\" Could be decomposed into one change_pct assertion. Some tasks also include a value assertion? But there is no value given.\n\nSo single sub-claim.\n\nWe need to specify text: reproduction of claim fragment. Provide stated_text verbatim: \"rose 30%\"\n\nUse claim_type change_pct, comparator approx, stated_value 30, evidence_ids [\"E3\"], verdict fail, note, model_found_value 21.614...\n\nWe should calculate correct tolerance? For approx, verifiers often allow some tolerance maybe 1-2% points. 30 vs 21.6 is 8.4 points off, clearly fail.\n\nWe should note: compute_change shows 21.61% increase, not 30%.\n\nWe need to ensure we follow output format expected. The system expects probably JSON array of sub_claims? The instruction says Each final sub_claim must contain exactly these model fields...\n\nWe should output JSON with sub_claims.\n\nPossibly need to wrap in something. Provide reasoning then JSON.\n\nCheck instruction: You verify financial claims against SEC EDGAR facts. Decompose... Use lookup_fact... Provide verdict.\n\nWe need to output sub_claims.\n\nWe should include model_found_value as number from evidence: 21.61449668552123\n\nMake sure to use correct units: percentage points.\n\nAlso need to ensure stated_value is 30.\n\nComparator approx.\n\nVerdict: fail.\n\nNote: something.\n\nWe might want to double-check if there are other interpretations: rise 30% YoY. Could also be approximated? Let's compute: 8445/39071 = 21.6%. So 30% is overstatement by ~38% relative.\n\nWe should produce final answer.\n\nPotentially need to include both evidence IDs: E1,E2,E3? But compute_change evidence is E3, which encompasses. The example says for compute_change cite its own evidence ID; its two nested component fact IDs may also be cited and are ignored. So citing E3 is required; citing E1,E2 optional.\n\nWe should provide evidence_ids [\"E3\"].\n\nWe also need to include text field: maybe \"Meta's Q2 2025 revenue rose 30% from a year earlier.\"\n\nLet's ensure we respect fields: text, stated_text, claim_type, comparator, stated_value, evidence_ids, verdict, note, model_found_value.\n\nWe need to produce valid JSON.\n\nPotentially they expect verdict values: \"pass\", \"fail\", \"insufficient_evidence\". Use \"fail\" or \"failed\"? Instruction example says fail. Let's use fail.\n\nAdd note: \"SEC EDGAR shows META Q2 2025 revenue $47.516B vs Q2 2024 $39.071B, YoY +21.61%, not ~30%.\"\n\nMake sure.\n\nWe should consider if need to add additional sub-claim for revenue existence? But instruction says every factual assertion must become sub-claim, including value, change, record, first-time assertion in same sentence. There's only change.\n\nProvide single subclaim.\n\nWe must ensure we output in correct format for verifier. Probably array.\n\nEnsure we include comparator approx.\n\nPotential nuance: direction word \"rose\" indicates positive change, so stated_value 30 positive.\n\nWe might also need to handle approximate tolerance: Should we use approx? Yes.\n\nProvide final answer.\n\n"
+            }
+          }
+        ],
+        "created": 1793143966,
+        "model": "meta-models/muse-spark-open-1026",
+        "object": "chat.completion",
+        "metadata": null,
+        "moderation": null,
+        "service_tier": null,
+        "system_fingerprint": null,
+        "usage": {
+          "completion_tokens": 1184,
+          "prompt_tokens": 3178,
+          "total_tokens": 4362,
+          "completion_tokens_details": {
+            "accepted_prediction_tokens": 813,
+            "audio_tokens": 0,
+            "reasoning_tokens": 1029,
+            "rejected_prediction_tokens": 1784,
+            "text_tokens": null
+          },
+          "prompt_tokens_details": {
+            "audio_tokens": 0,
+            "cache_write_tokens": null,
+            "cached_tokens": 2176,
+            "image_tokens": null,
+            "text_tokens": null
+          }
+        }
+      },
+      "usage": {
+        "input": 3178,
+        "cached": 2176,
+        "output": 1184,
+        "reasoning": 1029
+      },
+      "cost": 0.0066109,
+      "latency_ms": 4495.544,
+      "status": "completed",
+      "raw_usage": {
+        "completion_tokens": 1184,
+        "prompt_tokens": 3178,
+        "total_tokens": 4362,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": 813,
+          "audio_tokens": 0,
+          "reasoning_tokens": 1029,
+          "rejected_prediction_tokens": 1784,
+          "text_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": 0,
+          "cache_write_tokens": null,
+          "cached_tokens": 2176,
+          "image_tokens": null,
+          "text_tokens": null
+        }
+      },
+      "normalized_usage": {
+        "input": 3178,
+        "cached": 2176,
+        "output": 1184,
+        "reasoning": 1029
+      },
+      "finish_reason": "stop",
+      "rate_limit_headers": {
+        "x-ratelimit-limit-requests": "100",
+        "x-ratelimit-limit-tokens": "2000000",
+        "x-ratelimit-remaining-requests": "50",
+        "x-ratelimit-remaining-tokens": "2000000"
+      }
+    },
+    {
+      "request": {
+        "model": "meta-models/muse-spark-open-1026",
+        "messages": [
+          {
+            "role": "system",
+            "content": "You verify financial claims against SEC EDGAR facts.\nDecompose the claim into every atomic factual assertion. Every factual assertion\nin the user's claim must become a sub-claim, including a value, a change, a\nrecord, and a first-time assertion in the same sentence. Assertions that the\ntools cannot check must still become a sub-claim with claim_type other; the\nprogram will leave those unchecked. Use lookup_fact for a value,\ncompute_change for YoY or other period-to-period growth, history_rank for\nrecord/first-time assertions, and list_periods only to understand missing data.\nNever use memory for numbers. A quarter must have period_type=quarter and\nduration_days around 80-100, not period_type=ytd. If a result has derived=true,\nuse its derivation and components as evidence and do not calculate that fact\nagain. For compute_change, cite its own evidence ID; its two nested component\nfact IDs may also be cited and are ignored by the verifier.\n\nEach final sub_claim must contain exactly these model fields:\ntext, stated_text, claim_type (value, change_pct, change_abs, record_high,\nrecord_low, first_time_above, or other), comparator (eq, approx, gt, gte, lt,\nor lte), stated_value in base units (USD, USD/share, percentage points, or 1\nfor a record boolean), evidence_ids, verdict, note, and model_found_value.\nCopy stated_text verbatim from the claim, including words such as \"about\",\n\"up\", or \"fell\" (for example, \"about $1.4 billion\", \"up 22%\", or\n\"fell 10%\"). For a change_pct, stated_value is 22 for 22%, not 0.22; the\nverifier applies the sign implied by direction words such as fell/down or\nrose/up. model_found_value is the number read from the cited evidence in the\nsame units, or null when it is missing.\n\nExamples:\n1. \"Tesla net income was about $1.4 billion\": lookup_fact; stated_text\n   \"about $1.4 billion\", claim_type value, comparator approx, stated_value\n   1400000000.\n2. \"Alphabet revenue exceeded $100 billion\": lookup_fact; stated_text\n   \"exceeded $100 billion\", claim_type value, comparator gt, stated_value\n   100000000000.\n3. \"Meta revenue was up 22% YoY\": compute_change(META, revenue, 2025Q2,\n   null); stated_text \"up 22%\", claim_type change_pct, comparator approx,\n   stated_value 22, and cite the compute_change evidence ID.\n4. \"Tesla revenue fell 10% YoY\": compute_change(TSLA, revenue, 2025Q3,\n   null); stated_text \"fell 10%\", claim_type change_pct, comparator approx,\n   stated_value -10, and cite the compute_change evidence ID.\n5. \"Alphabet Q3 2025 revenue was a record high\": history_rank(GOOGL,\n   revenue, 2025Q3); claim_type record_high, comparator eq, stated_value 1,\n   and cite the history_rank evidence ID.\n6. \"Alphabet Q3 2025 revenue topped $100 billion for the first time\": create\n   two sub-claims: value gt 100000000000 and first_time_above with stated_value\n   100000000000, both citing the relevant evidence; the latter is supported\n   only when this period is above the threshold and no earlier comparable\n   period is above it.\n7. If a requested fact is unavailable, leave model_found_value null, cite any\n   relevant evidence, and set that sub-claim to insufficient_evidence. Say\n   insufficient_evidence when data is missing or evidence is ambiguous."
+          },
+          {
+            "role": "user",
+            "content": "Meta's Q2 2025 revenue rose 30% from a year earlier."
+          },
+          {
+            "role": "assistant",
+            "content": null,
+            "tool_calls": [
+              {
+                "id": "chatcmpl-tool-2e7c2558ce14431998112123e36049a6",
+                "type": "function",
+                "function": {
+                  "name": "compute_change",
+                  "arguments": "{\"ticker\": \"META\", \"metric\": \"revenue\", \"period\": \"2025Q2\", \"base_period\": null}"
+                }
+              }
+            ]
+          },
+          {
+            "role": "tool",
+            "tool_call_id": "chatcmpl-tool-2e7c2558ce14431998112123e36049a6",
+            "content": "{\"ticker\":\"META\",\"metric\":\"revenue\",\"period\":\"2025Q2\",\"base_period\":\"2024Q2\",\"current_fact\":{\"ticker\":\"META\",\"cik\":\"0001326801\",\"entity\":\"Meta Platforms, Inc.\",\"metric\":\"revenue\",\"concept\":\"RevenueFromContractWithCustomerExcludingAssessedTax\",\"unit\":\"USD\",\"value\":47516000000,\"start\":\"2025-04-01\",\"end\":\"2025-06-30\",\"form\":\"10-Q\",\"form_fallback\":false,\"accn\":\"0001628280-26-050705\",\"filed\":\"2026-07-30\",\"frame\":\"CY2025Q2\",\"duration_days\":91,\"period_type\":\"quarter\",\"derived\":false,\"filing_url\":\"https://www.sec.gov/Archives/edgar/data/1326801/000162828026050705/\",\"source_sha256\":\"52f806ebd7961834d5ac8073e516361e60e800a52ada0ed7f46fb5f615b6050d\",\"period\":\"2025Q2\",\"evidence_id\":\"E1\"},\"base_fact\":{\"ticker\":\"META\",\"cik\":\"0001326801\",\"entity\":\"Meta Platforms, Inc.\",\"metric\":\"revenue\",\"concept\":\"RevenueFromContractWithCustomerExcludingAssessedTax\",\"unit\":\"USD\",\"value\":39071000000,\"start\":\"2024-04-01\",\"end\":\"2024-06-30\",\"form\":\"10-Q\",\"form_fallback\":false,\"accn\":\"0001628280-25-036791\",\"filed\":\"2025-07-31\",\"frame\":\"CY2024Q2\",\"duration_days\":91,\"period_type\":\"quarter\",\"derived\":false,\"filing_url\":\"https://www.sec.gov/Archives/edgar/data/1326801/000162828025036791/\",\"source_sha256\":\"52f806ebd7961834d5ac8073e516361e60e800a52ada0ed7f46fb5f615b6050d\",\"period\":\"2024Q2\",\"evidence_id\":\"E2\"},\"current\":{\"ticker\":\"META\",\"cik\":\"0001326801\",\"entity\":\"Meta Platforms, Inc.\",\"metric\":\"revenue\",\"concept\":\"RevenueFromContractWithCustomerExcludingAssessedTax\",\"unit\":\"USD\",\"value\":47516000000,\"start\":\"2025-04-01\",\"end\":\"2025-06-30\",\"form\":\"10-Q\",\"form_fallback\":false,\"accn\":\"0001628280-26-050705\",\"filed\":\"2026-07-30\",\"frame\":\"CY2025Q2\",\"duration_days\":91,\"period_type\":\"quarter\",\"derived\":false,\"filing_url\":\"https://www.sec.gov/Archives/edgar/data/1326801/000162828026050705/\",\"source_sha256\":\"52f806ebd7961834d5ac8073e516361e60e800a52ada0ed7f46fb5f615b6050d\",\"period\":\"2025Q2\",\"evidence_id\":\"E1\"},\"base\":{\"ticker\":\"META\",\"cik\":\"0001326801\",\"entity\":\"Meta Platforms, Inc.\",\"metric\":\"revenue\",\"concept\":\"RevenueFromContractWithCustomerExcludingAssessedTax\",\"unit\":\"USD\",\"value\":39071000000,\"start\":\"2024-04-01\",\"end\":\"2024-06-30\",\"form\":\"10-Q\",\"form_fallback\":false,\"accn\":\"0001628280-25-036791\",\"filed\":\"2025-07-31\",\"frame\":\"CY2024Q2\",\"duration_days\":91,\"period_type\":\"quarter\",\"derived\":false,\"filing_url\":\"https://www.sec.gov/Archives/edgar/data/1326801/000162828025036791/\",\"source_sha256\":\"52f806ebd7961834d5ac8073e516361e60e800a52ada0ed7f46fb5f615b6050d\",\"period\":\"2024Q2\",\"evidence_id\":\"E2\"},\"abs_change\":8445000000,\"pct_change\":21.61449668552123,\"evidence_id\":\"E3\"}"
+          },
+          {
+            "role": "assistant",
+            "content": "[\n  {\n    \"text\": \"Meta's Q2 2025 revenue rose 30% from a year earlier\",\n    \"stated_text\": \"rose 30%\",\n    \"claim_type\": \"change_pct\",\n    \"comparator\": \"approx\",\n    \"stated_value\": 30,\n    \"evidence_ids\": [\n      \"E3\"\n    ],\n    \"verdict\": \"fail\",\n    \"note\": \"compute_change for META revenue 2025Q2 vs 2024Q2 shows +21.61% (47516000000 vs 39071000000), not ~30%.\",\n    \"model_found_value\": 21.61449668552123\n  }\n]"
+          },
+          {
+            "role": "user",
+            "content": "Return only one plain JSON object for the final verdict. Do not use Markdown fences or explanatory text. Include every atomic factual assertion as a sub-claim, including claim_type other when the tools cannot check it. Copy stated_text verbatim from the claim and include claim_type, comparator, stated_value in base units, evidence_ids, verdict, model_found_value, and a concise note. The object must match this existing verdict schema: {\"type\":\"object\",\"properties\":{\"verdict\":{\"type\":\"string\",\"enum\":[\"supported\",\"contradicted\",\"insufficient_evidence\"]},\"summary\":{\"type\":\"string\"},\"sub_claims\":{\"type\":\"array\",\"items\":{\"type\":\"object\",\"properties\":{\"text\":{\"type\":\"string\"},\"stated_text\":{\"type\":\"string\"},\"claim_type\":{\"type\":\"string\",\"enum\":[\"value\",\"change_pct\",\"change_abs\",\"record_high\",\"record_low\",\"first_time_above\",\"other\"]},\"comparator\":{\"type\":\"string\",\"enum\":[\"eq\",\"approx\",\"gt\",\"gte\",\"lt\",\"lte\"]},\"stated_value\":{\"type\":[\"number\",\"null\"]},\"evidence_ids\":{\"type\":\"array\",\"items\":{\"type\":\"string\"}},\"verdict\":{\"type\":\"string\",\"enum\":[\"supported\",\"contradicted\",\"insufficient_evidence\"]},\"note\":{\"type\":\"string\"},\"model_found_value\":{\"type\":[\"number\",\"null\"]}},\"required\":[\"text\",\"stated_text\",\"claim_type\",\"comparator\",\"stated_value\",\"evidence_ids\",\"verdict\",\"note\",\"model_found_value\"],\"additionalProperties\":false}}},\"required\":[\"verdict\",\"summary\",\"sub_claims\"],\"additionalProperties\":false}"
+          }
+        ],
+        "max_tokens": 3000
+      },
+      "reservation": {
+        "reservation_id": "2fece7477417490fbe707ae501b23be6",
+        "provider": "baseten",
+        "model": "meta-models/muse-spark-open-1026",
+        "estimated_input_tokens": 2953,
+        "max_output_tokens": 3000,
+        "amount": 0.016441249999999998,
+        "payload_chars": 8857,
+        "context_chars": 0
+      },
+      "raw_response": {
+        "id": "chatcmpl-45471b579f604fff869b1c03aadc9bb1",
+        "choices": [
+          {
+            "finish_reason": "stop",
+            "index": 0,
+            "logprobs": null,
+            "message": {
+              "content": "{\"verdict\":\"contradicted\",\"summary\":\"Meta's Q2 2025 revenue grew 21.61% YoY ($47.516B vs $39.071B), not ~30%.\",\"sub_claims\":[{\"text\":\"Meta's Q2 2025 revenue rose 30% from a year earlier\",\"stated_text\":\"rose 30%\",\"claim_type\":\"change_pct\",\"comparator\":\"approx\",\"stated_value\":30,\"evidence_ids\":[\"E3\"],\"verdict\":\"contradicted\",\"note\":\"compute_change shows +21.61% for META revenue 2025Q2 vs 2024Q2, materially below ~30%.\",\"model_found_value\":21.61449668552123}]}",
+              "refusal": null,
+              "role": "assistant",
+              "annotations": null,
+              "audio": null,
+              "function_call": null,
+              "tool_calls": null,
+              "reasoning_content": "Need to return final verdict JSON object. Claim: Meta's Q2 2025 revenue rose 30% from year earlier.\n\nWe have evidence: compute_change shows 21.61% increase. So verdict contradicted.\n\nWe must include sub_claims array.\n\nWe need to produce JSON with verdict, summary, sub_claims.\n\nEach sub_claim must contain text, stated_text, claim_type, comparator, stated_value, evidence_ids, verdict, note, model_found_value.\n\nWe have one atomic factual assertion: rose 30% => change_pct approx 30.\n\nWe need to set overall verdict: contradicted (since one claim fails). Summary: explain.\n\nMust ensure schema exactly matches.\n\nProvide plain JSON, no markdown fences.\n\nInclude evidence_ids: [\"E3\"] or also E1,E2? But compute_change evidence_id is E3. Use that.\n\nWe need to decide overall verdict mapping: sub_claim verdict is fail -> but schema expects supported/contradicted/insufficient_evidence. We used fail earlier, but now must use contradicted.\n\nSo sub_claim verdict = contradicted.\n\nOverall verdict = contradicted.\n\nNeed to provide stated_text verbatim: \"rose 30%\" – copy from claim: claim text \"Meta's Q2 2025 revenue rose 30% from a year earlier.\" So stated_text is \"rose 30%\"\n\nclaim_type change_pct, comparator approx, stated_value 30, model_found_value 21.614...\n\nevidence_ids: [\"E3\"]\n\nnote concise: actual growth 21.61% ...\n\nEnsure sub_claim text field: maybe full text: \"Meta's Q2 2025 revenue rose 30% from a year earlier\"\n\nMake it valid JSON.\n\nCheck that summary string required.\n\nProvide valid JSON object.\n\nBe careful no additionalProperties.\n\nReturn only one plain JSON object.\n\nWe should not use markdown fences.\n\nPotentially need to include rounding tolerance: approx 30 vs 21.6 is far, so contradicted.\n\nShould we also cite E1 and E2? But evidence_ids must reference computed. E3 is sufficient. Could include E1,E2,E3 but need to ensure they exist. Better include E3.\n\nProduce JSON."
+            }
+          }
+        ],
+        "created": 1793143971,
+        "model": "meta-models/muse-spark-open-1026",
+        "object": "chat.completion",
+        "metadata": null,
+        "moderation": null,
+        "service_tier": null,
+        "system_fingerprint": null,
+        "usage": {
+          "completion_tokens": 604,
+          "prompt_tokens": 2409,
+          "total_tokens": 3013,
+          "completion_tokens_details": {
+            "accepted_prediction_tokens": 433,
+            "audio_tokens": 0,
+            "reasoning_tokens": 446,
+            "rejected_prediction_tokens": 771,
+            "text_tokens": null
+          },
+          "prompt_tokens_details": {
+            "audio_tokens": 0,
+            "cache_write_tokens": null,
+            "cached_tokens": 896,
+            "image_tokens": null,
+            "text_tokens": null
+          }
+        }
+      },
+      "usage": {
+        "input": 2409,
+        "cached": 896,
+        "output": 604,
+        "reasoning": 446
+      },
+      "cost": 0.00459265,
+      "latency_ms": 2683.342,
+      "status": "completed",
+      "raw_usage": {
+        "completion_tokens": 604,
+        "prompt_tokens": 2409,
+        "total_tokens": 3013,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": 433,
+          "audio_tokens": 0,
+          "reasoning_tokens": 446,
+          "rejected_prediction_tokens": 771,
+          "text_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": 0,
+          "cache_write_tokens": null,
+          "cached_tokens": 896,
+          "image_tokens": null,
+          "text_tokens": null
+        }
+      },
+      "normalized_usage": {
+        "input": 2409,
+        "cached": 896,
+        "output": 604,
+        "reasoning": 446
+      },
+      "finish_reason": "stop",
+      "rate_limit_headers": {
+        "x-ratelimit-limit-requests": "100",
+        "x-ratelimit-limit-tokens": "2000000",
+        "x-ratelimit-remaining-requests": "50",
+        "x-ratelimit-remaining-tokens": "2000000"
+      }
+    }
+  ],
+  "tool_calls": [
+    {
+      "name": "compute_change",
+      "arguments": {
+        "ticker": "META",
+        "metric": "revenue",
+        "period": "2025Q2",
+        "base_period": null
+      },
+      "call_id": "chatcmpl-tool-2e7c2558ce14431998112123e36049a6",
+      "result": {
+        "ticker": "META",
+        "metric": "revenue",
+        "period": "2025Q2",
+        "base_period": "2024Q2",
+        "current_fact": {
+          "ticker": "META",
+          "cik": "0001326801",
+          "entity": "Meta Platforms, Inc.",
+          "metric": "revenue",
+          "concept": "RevenueFromContractWithCustomerExcludingAssessedTax",
+          "unit": "USD",
+          "value": 47516000000,
+          "start": "2025-04-01",
+          "end": "2025-06-30",
+          "form": "10-Q",
+          "form_fallback": false,
+          "accn": "0001628280-26-050705",
+          "filed": "2026-07-30",
+          "frame": "CY2025Q2",
+          "duration_days": 91,
+          "period_type": "quarter",
+          "derived": false,
+          "filing_url": "https://www.sec.gov/Archives/edgar/data/1326801/000162828026050705/",
+          "source_sha256": "52f806ebd7961834d5ac8073e516361e60e800a52ada0ed7f46fb5f615b6050d",
+          "period": "2025Q2",
+          "evidence_id": "E1"
+        },
+        "base_fact": {
+          "ticker": "META",
+          "cik": "0001326801",
+          "entity": "Meta Platforms, Inc.",
+          "metric": "revenue",
+          "concept": "RevenueFromContractWithCustomerExcludingAssessedTax",
+          "unit": "USD",
+          "value": 39071000000,
+          "start": "2024-04-01",
+          "end": "2024-06-30",
+          "form": "10-Q",
+          "form_fallback": false,
+          "accn": "0001628280-25-036791",
+          "filed": "2025-07-31",
+          "frame": "CY2024Q2",
+          "duration_days": 91,
+          "period_type": "quarter",
+          "derived": false,
+          "filing_url": "https://www.sec.gov/Archives/edgar/data/1326801/000162828025036791/",
+          "source_sha256": "52f806ebd7961834d5ac8073e516361e60e800a52ada0ed7f46fb5f615b6050d",
+          "period": "2024Q2",
+          "evidence_id": "E2"
+        },
+        "current": {
+          "ticker": "META",
+          "cik": "0001326801",
+          "entity": "Meta Platforms, Inc.",
+          "metric": "revenue",
+          "concept": "RevenueFromContractWithCustomerExcludingAssessedTax",
+          "unit": "USD",
+          "value": 47516000000,
+          "start": "2025-04-01",
+          "end": "2025-06-30",
+          "form": "10-Q",
+          "form_fallback": false,
+          "accn": "0001628280-26-050705",
+          "filed": "2026-07-30",
+          "frame": "CY2025Q2",
+          "duration_days": 91,
+          "period_type": "quarter",
+          "derived": false,
+          "filing_url": "https://www.sec.gov/Archives/edgar/data/1326801/000162828026050705/",
+          "source_sha256": "52f806ebd7961834d5ac8073e516361e60e800a52ada0ed7f46fb5f615b6050d",
+          "period": "2025Q2",
+          "evidence_id": "E1"
+        },
+        "base": {
+          "ticker": "META",
+          "cik": "0001326801",
+          "entity": "Meta Platforms, Inc.",
+          "metric": "revenue",
+          "concept": "RevenueFromContractWithCustomerExcludingAssessedTax",
+          "unit": "USD",
+          "value": 39071000000,
+          "start": "2024-04-01",
+          "end": "2024-06-30",
+          "form": "10-Q",
+          "form_fallback": false,
+          "accn": "0001628280-25-036791",
+          "filed": "2025-07-31",
+          "frame": "CY2024Q2",
+          "duration_days": 91,
+          "period_type": "quarter",
+          "derived": false,
+          "filing_url": "https://www.sec.gov/Archives/edgar/data/1326801/000162828025036791/",
+          "source_sha256": "52f806ebd7961834d5ac8073e516361e60e800a52ada0ed7f46fb5f615b6050d",
+          "period": "2024Q2",
+          "evidence_id": "E2"
+        },
+        "abs_change": 8445000000,
+        "pct_change": 21.61449668552123,
+        "evidence_id": "E3"
+      }
+    }
+  ],
+  "usage": [
+    {
+      "input": 2203,
+      "cached": 2176,
+      "output": 340,
+      "reasoning": 216
+    },
+    {
+      "input": 3178,
+      "cached": 2176,
+      "output": 1184,
+      "reasoning": 1029
+    },
+    {
+      "input": 2409,
+      "cached": 896,
+      "output": 604,
+      "reasoning": 446
+    }
+  ],
+  "tokens": {
+    "input": 7790,
+    "cached": 5248,
+    "output": 2128,
+    "reasoning": 1691
+  },
+  "model_calls": 3,
+  "cost": 0.0130087,
+  "cost_usd": 0.0130087,
+  "latency_ms": 8982.653,
+  "tool_call_count": 1,
+  "incomplete_turns": [],
+  "final_verdict": {
+    "verdict": "contradicted",
+    "summary": "Meta's Q2 2025 revenue grew 21.61% YoY ($47.516B vs $39.071B), not ~30%.",
+    "sub_claims": [
+      {
+        "text": "Meta's Q2 2025 revenue rose 30% from a year earlier",
+        "stated_text": "rose 30%",
+        "claim_type": "change_pct",
+        "comparator": "approx",
+        "stated_value": 30.0,
+        "verdict": "contradicted",
+        "evidence_ids": [
+          "E3"
+        ],
+        "model_found_value": 21.61449668552123,
+        "note": "compute_change shows +21.61% for META revenue 2025Q2 vs 2024Q2, materially below ~30%.",
+        "evidence_valid": true,
+        "program_verdict": "contradicted",
+        "actual_value": 21.61449668552123,
+        "tolerance": 1.0,
+        "reason": "actual 21.6145 is not consistent with stated 30 using approx tolerance 1",
+        "disagreement": false,
+        "precision": 0.5,
+        "stated_value_used": 30.0,
+        "stated_value_corrected": false,
+        "stated_text_unparsed": false,
+        "stated_sign_corrected": false,
+        "threshold_from_model": false
+      }
+    ],
+    "model_verdict": "contradicted",
+    "program_checks": [
+      {
+        "text": "Meta's Q2 2025 revenue rose 30% from a year earlier",
+        "stated_value": 30.0,
+        "evidence_ids": [
+          "E3"
+        ],
+        "evidence_valid": true,
+        "program_verdict": "contradicted",
+        "actual_value": 21.61449668552123,
+        "tolerance": 1.0,
+        "reason": "actual 21.6145 is not consistent with stated 30 using approx tolerance 1",
+        "disagreement": false,
+        "precision": 0.5,
+        "stated_value_used": 30.0,
+        "stated_value_corrected": false,
+        "stated_text_unparsed": false,
+        "stated_sign_corrected": false,
+        "threshold_from_model": false
+      }
+    ],
+    "model_program_disagreement": false
+  },
+  "program_checks": [
+    {
+      "text": "Meta's Q2 2025 revenue rose 30% from a year earlier",
+      "stated_value": 30.0,
+      "evidence_ids": [
+        "E3"
+      ],
+      "evidence_valid": true,
+      "program_verdict": "contradicted",
+      "actual_value": 21.61449668552123,
+      "tolerance": 1.0,
+      "reason": "actual 21.6145 is not consistent with stated 30 using approx tolerance 1",
+      "disagreement": false,
+      "precision": 0.5,
+      "stated_value_used": 30.0,
+      "stated_value_corrected": false,
+      "stated_text_unparsed": false,
+      "stated_sign_corrected": false,
+      "threshold_from_model": false
+    }
+  ]
+}
