@@ -7,15 +7,25 @@ traces.  This module is the only place that reads the optional key file.
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Mapping
 
+from .providers import (
+    BASETEN_DEFAULT_MODEL,
+    BASETEN_PROVIDER,
+    DEFAULT_PROVIDER,
+    META_DEFAULT_MODEL,
+    ProviderError,
+    normalize_provider,
+)
 
-DEFAULT_MODEL = "muse-spark-1.3"
+
+DEFAULT_MODEL = META_DEFAULT_MODEL
 DEFAULT_BUDGET_USD = 0.50
 DEFAULT_SEC_USER_AGENT = "DappGo market-claim-verifier admin@dappgo.com"
 DEFAULT_MODEL_API_KEY_FILE = Path("~/.config/dappgo/meta-model-api.env").expanduser()
+DEFAULT_BASETEN_API_KEY_FILE = Path("~/secret/baseten_api_key.txt").expanduser()
 
 
 class SettingsError(ValueError):
@@ -30,7 +40,7 @@ class Settings:
     kept here only long enough for the OpenAI-compatible client constructor.
     """
 
-    model_api_key: str | None
+    model_api_key: str | None = field(repr=False)
     model: str
     budget_usd: float
     sec_user_agent: str
@@ -39,6 +49,8 @@ class Settings:
     model_api_key_file: Path
     max_output_tokens: int | None = None
     reasoning_effort: str | None = None
+    provider: str = DEFAULT_PROVIDER
+    baseten_api_key_file: Path = DEFAULT_BASETEN_API_KEY_FILE
 
 
 def _key_from_env_file(path: Path) -> str | None:
@@ -65,6 +77,15 @@ def _key_from_env_file(path: Path) -> str | None:
     return None
 
 
+def _key_from_raw_file(path: Path) -> str | None:
+    """Read a raw key file without interpreting dotenv assignments."""
+
+    if not path.is_file():
+        return None
+    value = path.read_text(encoding="utf-8").strip()
+    return value or None
+
+
 def _path_setting(raw: str | None, default: str) -> Path:
     return Path(raw or default).expanduser()
 
@@ -85,16 +106,30 @@ def load_settings(
     environ: Mapping[str, str] | None = None,
     *,
     read_key: bool = True,
+    provider: str | None = None,
 ) -> Settings:
     """Load settings from environment variables and the optional key file."""
 
     env = os.environ if environ is None else environ
+    try:
+        selected_provider = normalize_provider(provider or env.get("CLAIMCHECK_PROVIDER", DEFAULT_PROVIDER))
+    except ProviderError as exc:
+        raise SettingsError(str(exc)) from exc
     key_file = _path_setting(
         env.get("MODEL_API_KEY_FILE"), str(DEFAULT_MODEL_API_KEY_FILE)
     )
-    api_key = env.get("MODEL_API_KEY") or None
-    if api_key is None and read_key:
-        api_key = _key_from_env_file(key_file)
+    baseten_key_file = _path_setting(
+        env.get("BASETEN_API_KEY_FILE"), str(DEFAULT_BASETEN_API_KEY_FILE)
+    )
+    api_key: str | None
+    if selected_provider == BASETEN_PROVIDER:
+        api_key = env.get("BASETEN_API_KEY") or None
+        if api_key is None and read_key:
+            api_key = _key_from_raw_file(baseten_key_file)
+    else:
+        api_key = env.get("MODEL_API_KEY") or None
+        if api_key is None and read_key:
+            api_key = _key_from_env_file(key_file)
 
     raw_budget = env.get("CLAIMCHECK_BUDGET_USD", str(DEFAULT_BUDGET_USD))
     try:
@@ -109,14 +144,20 @@ def load_settings(
         "CLAIMCHECK_MAX_OUTPUT_TOKENS",
     )
 
+    configured_model = env.get("CLAIMCHECK_MODEL")
+    if not configured_model:
+        configured_model = BASETEN_DEFAULT_MODEL if selected_provider == BASETEN_PROVIDER else META_DEFAULT_MODEL
+
     return Settings(
+        provider=selected_provider,
         model_api_key=api_key,
-        model=env.get("CLAIMCHECK_MODEL", DEFAULT_MODEL),
+        model=configured_model,
         budget_usd=budget,
         sec_user_agent=env.get("SEC_USER_AGENT", DEFAULT_SEC_USER_AGENT),
         cache_dir=_path_setting(env.get("CLAIMCHECK_CACHE_DIR"), ".cache"),
         runs_dir=_path_setting(env.get("CLAIMCHECK_RUNS_DIR"), "runs"),
         model_api_key_file=key_file,
+        baseten_api_key_file=baseten_key_file,
         max_output_tokens=max_output_tokens,
         reasoning_effort=env.get("CLAIMCHECK_REASONING_EFFORT") or None,
     )

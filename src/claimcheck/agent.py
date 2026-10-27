@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import math
 import os
+import re
 import time
 from collections.abc import Mapping
 from typing import Any
@@ -12,6 +13,7 @@ from typing import Any
 from .budget import Ledger
 from .checks import CLAIM_TYPES, COMPARATORS, evaluate_verdict
 from .edgar import EdgarClient
+from .providers import ParsedResponse, ProviderAdapter, get_provider
 from .tools import TOOL_DEFINITIONS, ToolRunner
 from .trace import TraceRecorder
 
@@ -164,7 +166,17 @@ def initial_request(
     *,
     max_output_tokens: int | None = None,
     reasoning_effort: str | None = None,
+    provider: str | ProviderAdapter = "meta",
 ) -> dict[str, Any]:
+    active_provider = get_provider(provider)
+    if active_provider.name != "meta":
+        configured_max = _configured_max_output_tokens(max_output_tokens)
+        return active_provider.initial_request(
+            claim,
+            model,
+            max_output_tokens=configured_max or MAX_TOOL_OUTPUT_TOKENS,
+            reasoning_effort=_configured_reasoning_effort(reasoning_effort),
+        )
     configured_max = _configured_max_output_tokens(max_output_tokens)
     payload = {
         "model": model,
@@ -200,11 +212,15 @@ def _get(value: Any, key: str, default: Any = None) -> Any:
 
 
 def _response_status(response: Any) -> str:
+    if isinstance(response, ParsedResponse):
+        return response.status
     status = _get(response, "status")
     return str(status) if status is not None else "completed"
 
 
 def _incomplete_reason(response: Any) -> Any:
+    if isinstance(response, ParsedResponse):
+        return response.incomplete_reason
     details = _get(response, "incomplete_details")
     return _get(details, "reason") if details is not None else None
 
@@ -258,6 +274,8 @@ def _call_name(call: Any) -> str:
 
 
 def _response_text(response: Any) -> str:
+    if isinstance(response, ParsedResponse):
+        return response.text
     output_text = _get(response, "output_text")
     if isinstance(output_text, str) and output_text.strip():
         return output_text
@@ -338,6 +356,85 @@ def _normalize_verdict(raw_text: str) -> dict[str, Any]:
     }
 
 
+def _schema_number(value: Any) -> bool:
+    return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(float(value))
+
+
+def _valid_verdict_schema(value: Any) -> bool:
+    """Validate the existing verdict schema without adding a dependency."""
+
+    if not isinstance(value, dict):
+        return False
+    if set(value) != {"verdict", "summary", "sub_claims"}:
+        return False
+    if value.get("verdict") not in VERDICTS or not isinstance(value.get("summary"), str):
+        return False
+    sub_claims = value.get("sub_claims")
+    if not isinstance(sub_claims, list):
+        return False
+    required = {
+        "text",
+        "stated_text",
+        "claim_type",
+        "comparator",
+        "stated_value",
+        "evidence_ids",
+        "verdict",
+        "note",
+        "model_found_value",
+    }
+    for sub_claim in sub_claims:
+        if not isinstance(sub_claim, dict) or set(sub_claim) != required:
+            return False
+        if not isinstance(sub_claim.get("text"), str) or not isinstance(sub_claim.get("stated_text"), str):
+            return False
+        if sub_claim.get("claim_type") not in CLAIM_TYPES or sub_claim.get("comparator") not in COMPARATORS:
+            return False
+        stated_value = sub_claim.get("stated_value")
+        found_value = sub_claim.get("model_found_value")
+        if stated_value is not None and not _schema_number(stated_value):
+            return False
+        if found_value is not None and not _schema_number(found_value):
+            return False
+        if not isinstance(sub_claim.get("evidence_ids"), list) or any(
+            not isinstance(item, str) for item in sub_claim["evidence_ids"]
+        ):
+            return False
+        if sub_claim.get("verdict") not in VERDICTS or not isinstance(sub_claim.get("note"), str):
+            return False
+    return True
+
+
+def _strip_json_fences(raw_text: str) -> str:
+    text = str(raw_text or "").strip()
+    match = re.fullmatch(r"```(?:json)?\s*(.*?)\s*```", text, flags=re.IGNORECASE | re.DOTALL)
+    return match.group(1).strip() if match else text
+
+
+def _parse_strict_verdict(raw_text: str) -> dict[str, Any] | None:
+    try:
+        value = json.loads(_strip_json_fences(raw_text))
+    except (TypeError, json.JSONDecodeError):
+        return None
+    if not _valid_verdict_schema(value):
+        return None
+    return _normalize_verdict(json.dumps(value, ensure_ascii=False))
+
+
+def _invalid_model_json_result(recorder: TraceRecorder) -> dict[str, Any]:
+    result = {
+        "verdict": "insufficient_evidence",
+        "summary": "The model did not return valid verdict JSON after one repair request.",
+        "sub_claims": [],
+        "program_checks": [],
+        "model_output_invalid": True,
+        "invalid_model_json": True,
+        "flags": ["invalid_model_json"],
+    }
+    recorder.finish(result)
+    return result
+
+
 def _already_structured_verdict(response: Any) -> bool:
     """Accept a fake/provider response that already returned final JSON.
 
@@ -365,28 +462,35 @@ def _request_with_retry(
     recorder: TraceRecorder,
     payload: dict[str, Any],
     model: str,
+    provider: ProviderAdapter | str = "meta",
     max_output_tokens: int,
     previous_context: Any,
     turn: int,
     phase: str,
+    retry_incomplete: bool = True,
 ) -> tuple[Any, bool]:
     """Make one request, retrying a max-token incomplete response once."""
 
-    for attempt in range(2):
+    active_provider = get_provider(provider)
+    attempts = 2 if retry_incomplete else 1
+    for attempt in range(attempts):
         request_limit = max_output_tokens * (2 if attempt else 1)
-        request_payload = {
-            **payload,
-            "max_output_tokens": request_limit,
-        }
+        request_payload = {**payload}
+        if active_provider.chat_completions:
+            request_payload.pop("max_output_tokens", None)
+            request_payload["max_tokens"] = request_limit
+        else:
+            request_payload["max_output_tokens"] = request_limit
         reservation = ledger.reserve(
             request_payload,
             model=model,
             max_output_tokens=request_limit,
             previous_context=previous_context,
+            provider=active_provider.name,
         )
         started = time.perf_counter()
         try:
-            response = client.responses.create(**request_payload)
+            response = active_provider.call(client, request_payload)
         except Exception as exc:
             latency_ms = (time.perf_counter() - started) * 1000
             recorder.record_request(
@@ -403,22 +507,26 @@ def _request_with_retry(
             )
             raise
         latency_ms = (time.perf_counter() - started) * 1000
-        usage = _usage_dict(response)
+        usage = response.usage
         cost = ledger.reconcile(reservation, usage)
-        status = _response_status(response)
+        status = response.status
         recorder.record_request(
             payload=request_payload,
-            response=response,
+            response=response.raw_response,
             reservation=reservation,
-            usage=usage,
+            usage=response.normalized_usage if active_provider.name == "baseten" else usage,
             cost=cost,
             latency_ms=latency_ms,
             status=status,
+            raw_usage=response.raw_usage if active_provider.name == "baseten" else None,
+            normalized_usage=response.normalized_usage if active_provider.name == "baseten" else None,
+            finish_reason=response.finish_reason,
+            rate_limit_headers=response.rate_limit_headers if active_provider.name == "baseten" else None,
         )
         if status == "completed":
             return response, True
 
-        reason = _incomplete_reason(response)
+        reason = response.incomplete_reason
         recorder.record_incomplete_turn(
             turn=turn,
             attempt=attempt + 1,
@@ -427,7 +535,7 @@ def _request_with_retry(
             reason=reason,
             max_output_tokens=request_limit,
         )
-        if attempt == 0 and status == "incomplete" and reason == "max_output_tokens":
+        if attempt == 0 and status == "incomplete" and reason == "max_output_tokens" and retry_incomplete:
             continue
         return response, False
 
@@ -468,18 +576,20 @@ def verify_claim(
     trace: TraceRecorder | None = None,
     max_output_tokens: int | None = None,
     reasoning_effort: str | None = None,
+    provider: str | ProviderAdapter = "meta",
 ) -> dict[str, Any]:
     """Run the model/tool loop, then apply program checks to its verdict."""
 
-    recorder = trace or TraceRecorder(claim, model)
+    active_provider = get_provider(provider)
+    recorder = trace or TraceRecorder(claim, model, provider=active_provider.name)
+    recorder.provider = active_provider.name
     runner = ToolRunner(edgar)
     configured_max = _configured_max_output_tokens(max_output_tokens)
     tool_output_tokens = configured_max or MAX_TOOL_OUTPUT_TOKENS
     final_output_tokens = configured_max or MAX_FINAL_OUTPUT_TOKENS
     configured_reasoning_effort = _configured_reasoning_effort(reasoning_effort)
-    response: Any = None
-    response_id: str | None = None
-    current_payload = initial_request(
+    response: ParsedResponse | None = None
+    current_payload = active_provider.initial_request(
         claim,
         model,
         max_output_tokens=tool_output_tokens,
@@ -495,6 +605,7 @@ def verify_claim(
             recorder=recorder,
             payload=current_payload,
             model=model,
+            provider=active_provider,
             max_output_tokens=tool_output_tokens,
             previous_context=previous_context,
             turn=turns + 1,
@@ -503,35 +614,47 @@ def verify_claim(
         if not completed:
             return _incomplete_response_result(recorder, response)
         turns += 1
-        response_id = _get(response, "id") or response_id
-        calls = _function_calls(response)
+        calls = response.tool_calls
         if not calls:
             break
 
-        outputs: list[dict[str, Any]] = []
+        tool_results: list[dict[str, Any]] = []
         for call in calls:
-            name = _call_name(call)
-            args = _call_arguments(call)
+            name = call.name
+            try:
+                args = json.loads(call.arguments)
+            except (TypeError, json.JSONDecodeError):
+                args = call.arguments
             result = runner.dispatch(name, args)
-            call_id = _call_id(call)
+            call_id = call.call_id
             recorder.record_tool_call(name=name, arguments=args, call_id=call_id, result=result)
-            outputs.append(
+            tool_results.append(
                 {
-                    "type": "function_call_output",
                     "call_id": call_id,
-                    "output": json.dumps(result, ensure_ascii=False, separators=(",", ":")),
+                    "name": name,
+                    "arguments": args,
+                    "result": result,
                 }
             )
-        previous_context = {"response_id": response_id, "tool_outputs": outputs}
-        current_payload = _request_payload(
-            {
-                "model": model,
-                "previous_response_id": response_id,
-                "input": outputs,
-                "tools": TOOL_DEFINITIONS,
-                "parallel_tool_calls": True,
-                "max_output_tokens": tool_output_tokens,
-            },
+        previous_context = None
+        if active_provider.name == "meta":
+            previous_context = {
+                "response_id": response.response_id,
+                "tool_outputs": [
+                    {
+                        "type": "function_call_output",
+                        "call_id": item["call_id"],
+                        "output": json.dumps(item["result"], ensure_ascii=False, separators=(",", ":")),
+                    }
+                    for item in tool_results
+                ],
+            }
+        current_payload = active_provider.continuation_request(
+            current_payload,
+            response,
+            tool_results,
+            model=model,
+            max_output_tokens=tool_output_tokens,
             reasoning_effort=configured_reasoning_effort,
         )
 
@@ -545,25 +668,16 @@ def verify_claim(
         recorder.finish(result)
         return result
 
-    if _already_structured_verdict(response):
+    if active_provider.name == "meta" and _already_structured_verdict(response):
         # Some OpenAI-compatible test doubles/providers complete the verdict on
         # the tool-output continuation itself.  Do not spend a redundant call.
         final_response = response
     else:
-        final_payload = {
-            "model": model,
-            "previous_response_id": response_id,
-            "input": [
-                {
-                    "role": "user",
-                    "content": AGENT_FINAL_VERDICT_PROMPT,
-                }
-            ],
-            "text": verdict_text_format(),
-            "max_output_tokens": final_output_tokens,
-        }
-        final_payload = _request_payload(
-            final_payload,
+        final_payload = active_provider.final_request(
+            current_payload,
+            response,
+            model=model,
+            max_output_tokens=final_output_tokens,
             reasoning_effort=configured_reasoning_effort,
         )
         final_response, completed = _request_with_retry(
@@ -572,6 +686,7 @@ def verify_claim(
             recorder=recorder,
             payload=final_payload,
             model=model,
+            provider=active_provider,
             max_output_tokens=final_output_tokens,
             previous_context=previous_context,
             turn=turns + 1,
@@ -580,7 +695,37 @@ def verify_claim(
         if not completed:
             return _incomplete_response_result(recorder, final_response)
 
-    verdict = _normalize_verdict(_response_text(final_response))
+    if active_provider.name == "baseten":
+        verdict = _parse_strict_verdict(_response_text(final_response))
+        if verdict is None:
+            repair_payload = active_provider.repair_request(
+                current_payload,
+                final_response,
+                model=model,
+                max_output_tokens=final_output_tokens,
+                reasoning_effort=configured_reasoning_effort,
+            )
+            repaired_response, repair_completed = _request_with_retry(
+                client=client,
+                ledger=ledger,
+                recorder=recorder,
+                payload=repair_payload,
+                model=model,
+                provider=active_provider,
+                max_output_tokens=final_output_tokens,
+                previous_context=None,
+                turn=turns + 2,
+                phase="final_repair",
+                retry_incomplete=False,
+            )
+            if not repair_completed:
+                return _invalid_model_json_result(recorder)
+            verdict = _parse_strict_verdict(_response_text(repaired_response))
+            if verdict is None:
+                return _invalid_model_json_result(recorder)
+            final_response = repaired_response
+    else:
+        verdict = _normalize_verdict(_response_text(final_response))
     model_verdict = verdict["verdict"]
     checks, program_verdict = evaluate_verdict(verdict["sub_claims"], runner)
     for sub_claim, check in zip(verdict["sub_claims"], checks):

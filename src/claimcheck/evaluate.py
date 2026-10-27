@@ -20,8 +20,10 @@ from .agent import (
     MAX_TOOL_OUTPUT_TOKENS,
     VERDICTS,
     _normalize_verdict,
+    _invalid_model_json_result,
+    _parse_strict_verdict,
     _response_text,
-    _usage_dict,
+    _request_with_retry,
     initial_request,
     verdict_text_format,
     verify_claim,
@@ -29,10 +31,25 @@ from .agent import (
 from .budget import BudgetExceeded, Ledger, UnknownModel
 from .edgar import EdgarClient
 from .prompts import prompt_registry, prompt_versions_for
+from .providers import (
+    BASETEN_PROVIDER,
+    META_PROVIDER,
+    ProviderAdapter,
+    canonical_system,
+    default_model,
+    get_provider,
+    system_parts,
+)
 from .trace import TraceRecorder, usage_tokens, write_trace
 
 
-SYSTEMS = ("single_shot", "agent")
+SYSTEMS = (
+    "single_shot@meta",
+    "agent@meta",
+    "single_shot@baseten",
+    "agent@baseten",
+)
+LEGACY_SYSTEMS = ("single_shot", "agent")
 DEFAULT_CLAIMS_PATH = Path("eval/claims.jsonl")
 DEFAULT_MODEL = "muse-spark-1.3"
 DEFAULT_BUDGET_USD = 2.00
@@ -160,10 +177,20 @@ def single_shot_request(
     today: str | None = None,
     max_output_tokens: int | None = None,
     reasoning_effort: str | None = None,
+    provider: str | ProviderAdapter = META_PROVIDER,
 ) -> dict[str, Any]:
     """Return the one-call, no-tools Responses request used by single-shot."""
 
     configured = _configured_max_output_tokens(max_output_tokens)
+    active_provider = get_provider(provider)
+    if active_provider.name != META_PROVIDER:
+        return active_provider.single_shot_request(
+            claim,
+            model,
+            today=today or datetime.now(timezone.utc).date().isoformat(),
+            max_output_tokens=configured or MAX_FINAL_OUTPUT_TOKENS,
+            reasoning_effort=reasoning_effort,
+        )
     payload: dict[str, Any] = {
         "model": model,
         "instructions": SINGLE_SHOT_INSTRUCTIONS.format(
@@ -188,60 +215,77 @@ def _call_single_shot(
     today: str | None = None,
     max_output_tokens: int | None = None,
     reasoning_effort: str | None = None,
+    provider: str | ProviderAdapter = META_PROVIDER,
 ) -> dict[str, Any]:
+    active_provider = get_provider(provider)
     if recorder is None:
-        recorder = TraceRecorder(claim, model)
-    payload = single_shot_request(
+        recorder = TraceRecorder(claim, model, provider=active_provider.name)
+    configured = _configured_max_output_tokens(max_output_tokens)
+    request_limit = configured or MAX_FINAL_OUTPUT_TOKENS
+    payload = active_provider.single_shot_request(
         claim,
         model,
-        today=today,
-        max_output_tokens=max_output_tokens,
+        today=today or datetime.now(timezone.utc).date().isoformat(),
+        max_output_tokens=request_limit,
         reasoning_effort=reasoning_effort,
     )
-    request_limit = int(payload["max_output_tokens"])
-    reservation = ledger.reserve(
-        payload,
-        model=model,
-        max_output_tokens=request_limit,
-    )
-    started = time.perf_counter()
-    try:
-        response = client.responses.create(**payload)
-    except Exception as exc:
-        latency_ms = (time.perf_counter() - started) * 1000
-        recorder.record_request(
-            payload=payload,
-            response={"error": type(exc).__name__, "message": str(exc)},
-            reservation=reservation,
-            usage=None,
-            cost=reservation.amount,
-            latency_ms=latency_ms,
-            status="error",
-        )
-        raise
-    latency_ms = (time.perf_counter() - started) * 1000
-    usage = _usage_dict(response)
-    status = str(_get(response, "status") or "completed")
-    cost = ledger.reconcile(reservation, usage)
-    recorder.record_request(
+    response, completed = _request_with_retry(
+        client=client,
+        ledger=ledger,
+        recorder=recorder,
         payload=payload,
-        response=response,
-        reservation=reservation,
-        usage=usage,
-        cost=cost,
-        latency_ms=latency_ms,
-        status=status,
+        model=model,
+        provider=active_provider,
+        max_output_tokens=request_limit,
+        previous_context=None,
+        turn=1,
+        phase="single_shot",
     )
-    if status != "completed":
-        raise EvaluationError(f"single-shot response status was {status}")
-    verdict = _normalize_verdict(_response_text(response))
+    if not completed:
+        raise EvaluationError(f"single-shot response status was {response.status}")
+    if active_provider.name == BASETEN_PROVIDER:
+        verdict = _parse_strict_verdict(_response_text(response))
+        if verdict is None:
+            repair_payload = active_provider.repair_request(
+                payload,
+                response,
+                model=model,
+                max_output_tokens=request_limit,
+                reasoning_effort=reasoning_effort,
+            )
+            repaired, repair_completed = _request_with_retry(
+                client=client,
+                ledger=ledger,
+                recorder=recorder,
+                payload=repair_payload,
+                model=model,
+                provider=active_provider,
+                max_output_tokens=request_limit,
+                previous_context=None,
+                turn=2,
+                phase="single_shot_repair",
+                retry_incomplete=False,
+            )
+            if not repair_completed:
+                result = _invalid_model_json_result(recorder)
+                result.update({"cost_usd": recorder.total_cost, "latency_ms": recorder.total_latency_ms})
+                return result
+            verdict = _parse_strict_verdict(_response_text(repaired))
+            if verdict is None:
+                result = _invalid_model_json_result(recorder)
+                result.update({"cost_usd": recorder.total_cost, "latency_ms": recorder.total_latency_ms})
+                return result
+        else:
+            repaired = None
+    else:
+        verdict = _normalize_verdict(_response_text(response))
     recorder.finish(verdict)
     return {
         "verdict": verdict.get("verdict"),
         "summary": verdict.get("summary", ""),
         "sub_claims": verdict.get("sub_claims", []),
-        "cost_usd": cost,
-        "latency_ms": latency_ms,
+        "cost_usd": recorder.total_cost,
+        "latency_ms": recorder.total_latency_ms,
         "model_output_invalid": bool(verdict.get("model_output_invalid")),
     }
 
@@ -418,7 +462,9 @@ def _base_pair(
         "split": claim["split"],
         "category": claim.get("category"),
         "claim": claim["claim"],
-        "system": system,
+        "system": canonical_system(system),
+        "method": system_parts(system)[0],
+        "provider": system_parts(system)[1],
         "model": model,
         "gold_verdict": claim["gold_verdict"],
         "status": "pending",
@@ -438,6 +484,26 @@ def _base_pair(
         "finished_at": None,
         "error": None,
     }
+
+
+def _model_for(model: str | None, provider: str) -> str:
+    return model or default_model(provider)
+
+
+def _client_for(client: Any, provider: str) -> Any:
+    if isinstance(client, Mapping):
+        try:
+            return client[provider]
+        except KeyError as exc:
+            raise EvaluationError(f"missing client for provider {provider}") from exc
+    return client
+
+
+def _secrets_for(secrets: Any, provider: str) -> Iterable[str]:
+    if isinstance(secrets, Mapping):
+        value = secrets.get(provider, ())
+        return value if isinstance(value, Iterable) and not isinstance(value, (str, bytes)) else (str(value),)
+    return secrets
 
 
 def _failure_pair(
@@ -470,9 +536,13 @@ def _aggregate_result_observations(results: Sequence[Mapping[str, Any]]) -> dict
     }
     per_system: dict[str, dict[str, Any]] = {}
     for result in results:
-        system = str(result.get("system") or "")
-        if not system:
+        raw_system = str(result.get("system") or "")
+        if not raw_system:
             continue
+        try:
+            system = canonical_system(raw_system)
+        except ValueError:
+            system = raw_system
         bucket = per_system.setdefault(
             system,
             {
@@ -514,7 +584,7 @@ def run_evaluation(
     claims: Sequence[Mapping[str, Any]],
     *,
     systems: Sequence[str] = SYSTEMS,
-    model: str = DEFAULT_MODEL,
+    model: str | None = None,
     budget_usd: float = DEFAULT_BUDGET_USD,
     out_dir: str | Path,
     client: Any,
@@ -530,9 +600,25 @@ def run_evaluation(
 ) -> dict[str, Any]:
     """Run selected systems sequentially, with resumable pair files and evidence manifests."""
 
-    systems = tuple(systems)
-    if not systems or any(system not in SYSTEMS for system in systems):
+    systems = tuple(str(system).strip() for system in systems)
+    if not systems:
         raise EvaluationError(f"systems must be a non-empty subset of {SYSTEMS}")
+    system_info: dict[str, tuple[str, str]] = {}
+    canonical_names: set[str] = set()
+    for system in systems:
+        if system not in SYSTEMS and system not in LEGACY_SYSTEMS:
+            raise EvaluationError(
+                f"systems must be a non-empty subset of {SYSTEMS} (legacy aliases: {LEGACY_SYSTEMS})"
+            )
+        try:
+            parts = system_parts(system)
+        except ValueError as exc:
+            raise EvaluationError(str(exc)) from exc
+        canonical_name = canonical_system(system)
+        if canonical_name in canonical_names:
+            raise EvaluationError("systems must not contain duplicate methods/providers")
+        canonical_names.add(canonical_name)
+        system_info[system] = parts
     if budget_usd < 0:
         raise EvaluationError("budget_usd must be non-negative")
     validate_dataset(claims, strict=False)
@@ -542,7 +628,7 @@ def run_evaluation(
     traces.mkdir(parents=True, exist_ok=True)
     ledger_file = Path(ledger_path) if ledger_path is not None else out / "ledger.jsonl"
     ledger = Ledger(ledger_file, budget_usd=budget_usd)
-    if edgar is None and "agent" in systems:
+    if edgar is None and any(method == "agent" for method, _ in system_info.values()):
         edgar = EdgarClient(cache_dir, fetcher=_offline_fetcher)
 
     existing_manifest: dict[str, Any] = {}
@@ -565,10 +651,7 @@ def run_evaluation(
     )
     claims_source, claims_digest = _claims_digest(claims, claims_path)
     prompt_manifest = _prompt_registry_manifest()
-    prompt_versions = {
-        system: prompt_versions_for(system)
-        for system in systems
-    }
+    prompt_versions = {system: prompt_versions_for(system) for system in systems}
     ledger_before = ledger.spent_total
     git = _git_metadata()
     versions = _version_metadata()
@@ -584,13 +667,27 @@ def run_evaluation(
         "python_version": versions["python_version"],
         "openai_version": versions["openai_version"],
         "versions": versions,
-        "model": model,
-        "systems": list(systems),
+        "model": model
+        or (
+            default_model(next(iter({provider for _, provider in system_info.values()})))
+            if len({provider for _, provider in system_info.values()}) == 1
+            else "mixed"
+        ),
+        "models": {
+            system: model or default_model(provider)
+            for system, (_, provider) in system_info.items()
+        },
+        "systems": [canonical_system(system) for system in systems],
         "split": split_value,
         "splits": sorted({str(claim.get("split")) for claim in claims}),
         "cli_args": list(cli_args or []),
         "budget_usd": budget_usd,
-        "budget": {"usd": budget_usd},
+        "budget": {
+            "usd": budget_usd,
+            "per_provider_usd": {
+                provider: budget_usd for _, provider in system_info.values()
+            },
+        },
         "ledger_path": str(ledger_file),
         "ledger_spend_before_usd": ledger_before,
         "ledger_spend_after_usd": ledger_before,
@@ -636,26 +733,33 @@ def run_evaluation(
             if stop:
                 break
             executed += 1
+            method, provider_name = system_info[system]
+            pair_model = _model_for(model, provider_name)
+            pair_client = _client_for(client, provider_name)
+            pair_secrets = _secrets_for(secrets, provider_name)
             base = _base_pair(
                 claim,
                 system,
-                model,
+                pair_model,
                 prompt_versions=prompt_versions[system],
             )
             pair_started = time.perf_counter()
             trace_path: Path | None = None
-            if system == "single_shot":
-                recorder = TraceRecorder(str(claim["claim"]), model, secrets=secrets)
+            if method == "single_shot":
+                recorder = TraceRecorder(
+                    str(claim["claim"]), pair_model, provider=provider_name, secrets=pair_secrets
+                )
                 try:
                     result = _call_single_shot(
                         str(claim["claim"]),
-                        client=client,
+                        client=pair_client,
                         ledger=ledger,
-                        model=model,
+                        model=pair_model,
                         recorder=recorder,
                         today=started_at[:10],
                         max_output_tokens=max_output_tokens,
                         reasoning_effort=reasoning_effort,
+                        provider=provider_name,
                     )
                     pair_latency_ms = (time.perf_counter() - pair_started) * 1000
                     summary = recorder.summary()
@@ -681,12 +785,17 @@ def run_evaluation(
                             "category": "invalid_response",
                             "message": "model output was not valid structured verdict JSON",
                         }
+                    if result.get("invalid_model_json"):
+                        base["error"] = {
+                            "category": "invalid_model_json",
+                            "message": "model output was invalid twice, including the repair request",
+                        }
                     completed += 1
                 except BudgetExceeded as exc:
                     base = _failure_pair(base, exc, status="budget_stopped")
                     budget_stop = {
                         "id": claim["id"],
-                        "system": system,
+                        "system": canonical_system(system),
                         "message": str(exc),
                     }
                     stop = True
@@ -709,17 +818,20 @@ def run_evaluation(
             else:
                 if edgar is None:
                     raise EvaluationError("agent system needs an EdgarClient")
-                recorder = TraceRecorder(str(claim["claim"]), model, secrets=secrets)
+                recorder = TraceRecorder(
+                    str(claim["claim"]), pair_model, provider=provider_name, secrets=pair_secrets
+                )
                 try:
                     result = verify_claim(
                         str(claim["claim"]),
-                        client,
+                        pair_client,
                         edgar,
                         ledger,
-                        model,
+                        pair_model,
                         trace=recorder,
                         max_output_tokens=max_output_tokens,
                         reasoning_effort=reasoning_effort,
+                        provider=provider_name,
                     )
                     pair_latency_ms = (time.perf_counter() - pair_started) * 1000
                     summary = recorder.summary()
@@ -747,7 +859,7 @@ def run_evaluation(
                     base = _failure_pair(base, exc, status="budget_stopped")
                     budget_stop = {
                         "id": claim["id"],
-                        "system": system,
+                        "system": canonical_system(system),
                         "message": str(exc),
                     }
                     stop = True
@@ -823,6 +935,10 @@ def run_evaluation(
             "skipped_pairs": skipped,
             "budget_stop": budget_stop,
             "ledger_spend_after_usd": ledger_after,
+            "ledger_spend_after_by_provider_usd": {
+                provider: ledger.spent_for_provider(provider)
+                for _, provider in system_info.values()
+            },
             "ledger_spend": {"before_usd": ledger_before, "after_usd": ledger_after},
             "sec_companyfacts_snapshot_sha256": snapshots,
             "totals": observations,
@@ -832,9 +948,32 @@ def run_evaluation(
     return manifest
 
 
-def _agent_final_payload(claim: str, model: str, max_output_tokens: int | None, reasoning_effort: str | None) -> dict[str, Any]:
+def _agent_final_payload(
+    claim: str,
+    model: str,
+    max_output_tokens: int | None,
+    reasoning_effort: str | None,
+    provider: str | ProviderAdapter = META_PROVIDER,
+) -> dict[str, Any]:
     # This is a planning-only payload.  No request is made and no tool output
     # is fabricated; the reservation is explicitly labeled as an upper bound.
+    active_provider = get_provider(provider)
+    if active_provider.name == BASETEN_PROVIDER:
+        from .providers import baseten_final_verdict_prompt, baseten_tool_loop_instructions
+
+        payload = {
+            "model": model,
+            "messages": [
+                {"role": "system", "content": baseten_tool_loop_instructions()},
+                {"role": "user", "content": claim},
+                {"role": "assistant", "content": None},
+                {"role": "user", "content": baseten_final_verdict_prompt()},
+            ],
+            "max_tokens": max_output_tokens or MAX_FINAL_OUTPUT_TOKENS,
+        }
+        if reasoning_effort:
+            payload["reasoning_effort"] = reasoning_effort
+        return payload
     payload: dict[str, Any] = {
         "model": model,
         "previous_response_id": "planning-response",
@@ -851,7 +990,7 @@ def dry_run_plan(
     claims: Sequence[Mapping[str, Any]],
     *,
     systems: Sequence[str] = SYSTEMS,
-    model: str = DEFAULT_MODEL,
+    model: str | None = None,
     budget_usd: float = DEFAULT_BUDGET_USD,
     max_output_tokens: int | None = None,
     reasoning_effort: str | None = None,
@@ -859,98 +998,119 @@ def dry_run_plan(
 ) -> dict[str, Any]:
     """Printable plan and conservative worst-case reservation, without calls."""
 
-    systems = tuple(systems)
+    systems = tuple(str(system).strip() for system in systems)
+    if not systems:
+        raise EvaluationError(f"systems must be a non-empty subset of {SYSTEMS}")
+    system_info: dict[str, tuple[str, str]] = {}
+    seen: set[str] = set()
+    for system in systems:
+        if system not in SYSTEMS and system not in LEGACY_SYSTEMS:
+            raise EvaluationError(f"systems must be a non-empty subset of {SYSTEMS}")
+        system_info[system] = system_parts(system)
+        canonical_name = canonical_system(system)
+        if canonical_name in seen:
+            raise EvaluationError("systems must not contain duplicate methods/providers")
+        seen.add(canonical_name)
     validate_dataset(claims, strict=False)
     if budget_usd < 0:
         raise EvaluationError("budget_usd must be non-negative")
     ledger = Ledger(budget_usd=budget_usd, persist=False)
-    single_amount = 0.0
-    agent_amount = 0.0
+    per_system_amount: dict[str, float] = {system: 0.0 for system in systems}
+    per_provider_amount: dict[str, float] = {provider: 0.0 for _, provider in system_info.values()}
     max_calls = 0
     for claim in claims:
-        if "single_shot" in systems:
-            payload = single_shot_request(
-                str(claim["claim"]),
-                model,
-                max_output_tokens=max_output_tokens,
-                reasoning_effort=reasoning_effort,
-            )
-            single_amount += ledger.estimate(
-                payload,
-                model=model,
-                max_output_tokens=int(payload["max_output_tokens"]),
-            ).amount
-            max_calls += 1
-        if "agent" in systems:
-            initial = initial_request(
-                str(claim["claim"]),
-                model,
-                max_output_tokens=max_output_tokens or MAX_TOOL_OUTPUT_TOKENS,
-                reasoning_effort=reasoning_effort,
-            )
-            # Every tool turn may get one max-token retry.  A final structured
-            # request may also get one retry.  The context sample makes the
-            # estimate conservative without making a network call.
-            context = {
-                "response_id": "planning-response",
-                "tool_outputs": [{"type": "function_call_output", "output": "x" * 4000}],
-            }
-            tool_limit = max_output_tokens or MAX_TOOL_OUTPUT_TOKENS
-            final_limit = max_output_tokens or MAX_FINAL_OUTPUT_TOKENS
-            for _ in range(DEFAULT_MAX_TURNS):
-                agent_amount += ledger.estimate(
-                    initial,
-                    model=model,
-                    max_output_tokens=tool_limit,
-                    previous_context=context,
+        for system in systems:
+            method, provider_name = system_info[system]
+            pair_model = _model_for(model, provider_name)
+            active_provider = get_provider(provider_name)
+            if method == "single_shot":
+                payload = single_shot_request(
+                    str(claim["claim"]),
+                    pair_model,
+                    max_output_tokens=max_output_tokens,
+                    reasoning_effort=reasoning_effort,
+                    provider=active_provider,
+                )
+                amount = ledger.estimate(
+                    payload,
+                    model=pair_model,
+                    provider=provider_name,
+                    max_output_tokens=int(payload.get("max_output_tokens", payload.get("max_tokens", MAX_FINAL_OUTPUT_TOKENS))),
                 ).amount
-                agent_amount += ledger.estimate(
-                    initial,
-                    model=model,
-                    max_output_tokens=tool_limit * 2,
-                    previous_context=context,
-                ).amount
-            final = _agent_final_payload(str(claim["claim"]), model, final_limit, reasoning_effort)
-            agent_amount += ledger.estimate(
-                final,
-                model=model,
-                max_output_tokens=final_limit,
-                previous_context=context,
-            ).amount
-            agent_amount += ledger.estimate(
-                final,
-                model=model,
-                max_output_tokens=final_limit * 2,
-                previous_context=context,
-            ).amount
-            max_calls += DEFAULT_MAX_TURNS * 2 + 2
-    reservation = (single_amount if "single_shot" in systems else 0.0) + (agent_amount if "agent" in systems else 0.0)
+                per_system_amount[system] += amount
+                per_provider_amount[provider_name] += amount
+                max_calls += 1
+            else:
+                initial = active_provider.initial_request(
+                    str(claim["claim"]),
+                    pair_model,
+                    max_output_tokens=max_output_tokens or MAX_TOOL_OUTPUT_TOKENS,
+                    reasoning_effort=reasoning_effort,
+                )
+                # Every tool turn may get one max-token retry.  A final structured
+                # request may also get one retry.  The context sample makes the
+                # estimate conservative without making a network call.
+                context = {
+                    "response_id": "planning-response",
+                    "tool_outputs": [{"type": "function_call_output", "output": "x" * 4000}],
+                }
+                tool_limit = max_output_tokens or MAX_TOOL_OUTPUT_TOKENS
+                final_limit = max_output_tokens or MAX_FINAL_OUTPUT_TOKENS
+                for _ in range(DEFAULT_MAX_TURNS):
+                    for limit in (tool_limit, tool_limit * 2):
+                        amount = ledger.estimate(
+                            initial,
+                            model=pair_model,
+                            provider=provider_name,
+                            max_output_tokens=limit,
+                            previous_context=context if provider_name == META_PROVIDER else None,
+                        ).amount
+                        per_system_amount[system] += amount
+                        per_provider_amount[provider_name] += amount
+                final = _agent_final_payload(
+                    str(claim["claim"]), pair_model, final_limit, reasoning_effort, provider_name
+                )
+                for limit in (final_limit, final_limit * 2):
+                    amount = ledger.estimate(
+                        final,
+                        model=pair_model,
+                        provider=provider_name,
+                        max_output_tokens=limit,
+                        previous_context=context if provider_name == META_PROVIDER else None,
+                    ).amount
+                    per_system_amount[system] += amount
+                    per_provider_amount[provider_name] += amount
+                max_calls += DEFAULT_MAX_TURNS * 2 + 2
+    reservation = sum(per_system_amount.values())
     per_system = {}
-    if "single_shot" in systems:
-        per_system["single_shot"] = {
+    for system, amount in per_system_amount.items():
+        method, provider_name = system_info[system]
+        per_system[system] = {
             "claims": len(claims),
-            "max_model_calls": len(claims),
-            "worst_case_reservation_usd": single_amount,
-            "tools": False,
-        }
-    if "agent" in systems:
-        per_system["agent"] = {
-            "claims": len(claims),
-            "max_model_calls": len(claims) * (DEFAULT_MAX_TURNS * 2 + 2),
-            "worst_case_reservation_usd": agent_amount,
-            "tools": True,
-            "max_turns": DEFAULT_MAX_TURNS,
+            "provider": provider_name,
+            "max_model_calls": len(claims) if method == "single_shot" else len(claims) * (DEFAULT_MAX_TURNS * 2 + 2),
+            "worst_case_reservation_usd": amount,
+            "tools": method == "agent",
+            **({"max_turns": DEFAULT_MAX_TURNS} if method == "agent" else {}),
         }
     return {
         "claims": len(claims),
         "splits": sorted({str(claim.get("split")) for claim in claims}),
-        "systems": list(systems),
-        "model": model,
+        "systems": [canonical_system(system) for system in systems],
+        "model": model
+        or (
+            default_model(next(iter({provider for _, provider in system_info.values()})))
+            if len({provider for _, provider in system_info.values()}) == 1
+            else "mixed"
+        ),
+        "models": {system: _model_for(model, provider) for system, (_, provider) in system_info.items()},
         "budget_usd": budget_usd,
         "out_dir": str(out_dir) if out_dir is not None else None,
         "max_model_calls": max_calls,
         "worst_case_reservation_usd": reservation,
-        "budget_would_be_exceeded": reservation > budget_usd,
+        "provider_worst_case_reservation_usd": per_provider_amount,
+        "provider_budgets_usd": {provider: budget_usd for provider in per_provider_amount},
+        "budget_would_be_exceeded": any(amount > budget_usd for amount in per_provider_amount.values()),
         "note": "Conservative upper bound: six tool turns and one max-token retry per turn, plus a retried final request for each agent claim; no model or network call is made.",
         "per_system": per_system,
     }
@@ -980,11 +1140,15 @@ def compute_metrics(
     """Compute one system/split metric block; kept pure for offline tests."""
 
     expected = [claim for claim in claims if claim.get("split") == split]
-    by_id = {
-        str(result.get("id")): result
-        for result in results
-        if result.get("system") == system and result.get("split") == split
-    }
+    requested_system = canonical_system(system)
+    by_id = {}
+    for result in results:
+        try:
+            result_system = canonical_system(str(result.get("system") or ""))
+        except ValueError:
+            continue
+        if result_system == requested_system and result.get("split") == split:
+            by_id[str(result.get("id"))] = result
     predicted: dict[str, str] = {}
     latencies: list[float] = []
     costs: list[float] = []
@@ -1061,7 +1225,7 @@ def compute_metrics(
         for claim in expected
     )
     return {
-        "system": system,
+        "system": requested_system,
         "split": split,
         "n_claims": len(expected),
         "n_completed": len(predicted),
@@ -1120,7 +1284,14 @@ def _system_report_totals(
 ) -> dict[str, dict[str, Any]]:
     totals: dict[str, dict[str, Any]] = {}
     for system in SYSTEMS:
-        matching = [result for result in results if result.get("system") == system]
+        matching = []
+        for result in results:
+            try:
+                result_system = canonical_system(str(result.get("system") or ""))
+            except ValueError:
+                continue
+            if result_system == system:
+                matching.append(result)
         latencies: list[float] = []
         costs = 0.0
         tokens = _zero_tokens()
@@ -1175,6 +1346,80 @@ def _tokens_cell(tokens: Any) -> str:
     return "/".join(str(int(tokens.get(key, 0) or 0)) for key in ("input", "cached", "output", "reasoning"))
 
 
+def _provider_comparison(
+    claims: Sequence[Mapping[str, Any]], results: Sequence[Mapping[str, Any]]
+) -> dict[str, dict[str, Any]]:
+    """Aggregate provider-level quality and resource metrics across methods."""
+
+    gold = {str(claim.get("id")): claim.get("gold_verdict") for claim in claims}
+    comparison: dict[str, dict[str, Any]] = {}
+    for provider in (META_PROVIDER, BASETEN_PROVIDER):
+        matching: list[Mapping[str, Any]] = []
+        for result in results:
+            try:
+                _, result_provider = system_parts(str(result.get("system") or ""))
+            except ValueError:
+                continue
+            if result_provider == provider:
+                matching.append(result)
+        completed = [
+            result
+            for result in matching
+            if result.get("status") == "completed" and result.get("verdict") in EVAL_VERDICTS
+        ]
+        harmful = sum(
+            gold.get(str(result.get("id"))) in {"contradicted", "insufficient_evidence"}
+            for result in matching
+        )
+        false_supported = sum(
+            result.get("status") == "completed"
+            and result.get("verdict") == "supported"
+            and gold.get(str(result.get("id"))) in {"contradicted", "insufficient_evidence"}
+            for result in matching
+        )
+        correct = sum(
+            result.get("status") == "completed"
+            and result.get("verdict") == gold.get(str(result.get("id")))
+            for result in matching
+        )
+        tokens = _zero_tokens()
+        costs: list[float] = []
+        latencies: list[float] = []
+        for result in matching:
+            _add_tokens(tokens, result.get("tokens"))
+            if result.get("status") == "completed":
+                try:
+                    costs.append(float(result.get("cost_usd", 0.0) or 0.0))
+                except (TypeError, ValueError):
+                    pass
+                try:
+                    latencies.append(float(result.get("latency_ms", 0.0) or 0.0))
+                except (TypeError, ValueError):
+                    pass
+        output_tokens = tokens["output"]
+        comparison[provider] = {
+            "provider": provider,
+            "pairs": len(matching),
+            "completed": len(completed),
+            "accuracy": correct / len(matching) if matching else 0.0,
+            "false_supported_rate": false_supported / harmful if harmful else 0.0,
+            "false_supported": false_supported,
+            "harmful_gold": harmful,
+            "cost_usd": {
+                "total": sum(costs),
+                "mean": sum(costs) / len(costs) if costs else None,
+            },
+            "latency_ms": {
+                "mean": sum(latencies) / len(latencies) if latencies else None,
+                "p50": _percentile(latencies, 50),
+                "p95": _percentile(latencies, 95),
+            },
+            "tokens": tokens,
+            "reasoning_share": tokens["reasoning"] / output_tokens if output_tokens else 0.0,
+        }
+    return comparison
+
+
 def _write_report(path: Path, summary: Mapping[str, Any], claims: Sequence[Mapping[str, Any]], results: Sequence[Mapping[str, Any]]) -> None:
     manifest = summary.get("manifest", {})
     if not isinstance(manifest, Mapping):
@@ -1222,6 +1467,46 @@ def _write_report(path: Path, summary: Mapping[str, Any], claims: Sequence[Mappi
                         _fmt_metric(_get(latency, "mean"), 1),
                         _fmt_metric(_get(latency, "p50"), 1),
                         _fmt_metric(_get(latency, "p95"), 1),
+                    ]
+                )
+                + " |"
+            )
+    lines.extend(
+        [
+            "",
+            "## Provider comparison",
+            "",
+            "Reasoning share is reasoning tokens divided by output tokens; provider totals include both methods.",
+            "",
+            "| Provider | Pairs | Completed | Accuracy | False-supported rate | Total cost | Mean latency ms | Input | Cached | Output | Reasoning | Reasoning share |",
+            "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
+        ]
+    )
+    provider_values = summary.get("provider_comparison", {})
+    if isinstance(provider_values, Mapping):
+        for provider in (META_PROVIDER, BASETEN_PROVIDER):
+            value = provider_values.get(provider, {})
+            if not isinstance(value, Mapping):
+                continue
+            tokens = value.get("tokens", {})
+            latency = value.get("latency_ms", {})
+            cost = value.get("cost_usd", {})
+            lines.append(
+                "| "
+                + " | ".join(
+                    [
+                        _md_cell(provider),
+                        _md_cell(value.get("pairs", 0)),
+                        _md_cell(value.get("completed", 0)),
+                        _fmt_metric(value.get("accuracy")),
+                        _fmt_metric(value.get("false_supported_rate")),
+                        _fmt_metric(_get(cost, "total"), 6),
+                        _fmt_metric(_get(latency, "mean"), 1),
+                        _md_cell(_get(tokens, "input", 0)),
+                        _md_cell(_get(tokens, "cached", 0)),
+                        _md_cell(_get(tokens, "output", 0)),
+                        _md_cell(_get(tokens, "reasoning", 0)),
+                        _fmt_metric(value.get("reasoning_share")),
                     ]
                 )
                 + " |"
@@ -1308,7 +1593,10 @@ def _write_report(path: Path, summary: Mapping[str, Any], claims: Sequence[Mappi
     )
     per_claim_header = ["ID", "Split", "Category", "Claim", "Gold"]
     for system in SYSTEMS:
-        label = system.replace("_", " ").title()
+        method, provider = system_parts(system)
+        label = method.replace("_", " ").title()
+        if provider != META_PROVIDER:
+            label = f"{label}@{provider.title()}"
         per_claim_header.extend(
             [
                 f"{label} verdict",
@@ -1320,7 +1608,13 @@ def _write_report(path: Path, summary: Mapping[str, Any], claims: Sequence[Mappi
         )
     lines.append("| " + " | ".join(per_claim_header) + " |")
     lines.append("|" + "---|" * len(per_claim_header))
-    by_pair = {(str(result.get("id")), str(result.get("system"))): result for result in results}
+    by_pair = {}
+    for result in results:
+        try:
+            result_system = canonical_system(str(result.get("system") or ""))
+        except ValueError:
+            continue
+        by_pair[(str(result.get("id")), result_system)] = result
     for claim in claims:
         values: list[str] = [
             str(claim["id"]),
@@ -1406,7 +1700,9 @@ def report_evaluation(
             metrics[system][split] = compute_metrics(claims, results, system=system, split=split)
     agent_errors = [
         error
-        for split_metrics in metrics.get("agent", {}).values()
+        for system in SYSTEMS
+        if system.startswith("agent@")
+        for split_metrics in metrics.get(system, {}).values()
         for error in split_metrics.get("errors", [])
     ]
     summary: dict[str, Any] = {
@@ -1415,6 +1711,7 @@ def report_evaluation(
         "manifest": manifest,
         "metrics": {system: dict(split_metrics) for system, split_metrics in metrics.items()},
         "system_totals": _system_report_totals(results),
+        "provider_comparison": _provider_comparison(claims, results),
         "agent_errors": agent_errors,
         "result_count": len(results),
     }

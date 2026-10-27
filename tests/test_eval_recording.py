@@ -136,6 +136,7 @@ def test_report_contains_audit_sections(tmp_path: Path) -> None:
         "Run window:",
         "Wall clock:",
         "Per-system totals",
+        "Provider comparison",
         "Prompt versions",
         "Single Shot correct?",
         "tokens (i/c/o/r)",

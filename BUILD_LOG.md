@@ -45,6 +45,28 @@ Goal: confirm the Meta Model API, create the repo, make the first tool call agai
 - Tests: 26 offline tests passing (fake model client, trimmed SEC fixtures).
 - Commits: `7c5670b`, `97b5365`, `f0acc85`. Model spend today ≈ $0.04.
 
+## Second provider: Muse Spark Open on Baseten — 2026-10-27
+
+- Baseten Model APIs are OpenAI-compatible at `https://inference.baseten.co/v1`.
+- The hackathon key works only with model id `meta-models/muse-spark-open-1026`.
+- Chat Completions tool definitions use the nested OpenAI chat format; the
+  smoke-test tool call returned `finish_reason: "tool_calls"` and JSON-string
+  function arguments, with tool results sent back as `role: "tool"` messages
+  in the full stateless history.
+- The model always reasons; reasoning text is returned in `reasoning_content`.
+  `reasoning_effort=low` worked.
+- Structured output and JSON mode are unavailable. Final verdicts must be
+  requested as plain JSON, parsed, schema-validated, and repaired once on
+  invalid output.
+- Usage includes prompt/completion tokens, reasoning-token details, cached
+  prompt-token details, and speculative accepted/rejected prediction-token
+  details. Pricing is $1.25 input, $0.15 cached input, and $4.25 output per
+  1M tokens.
+- Rate-limit headers report 100 requests and 2,000,000 tokens; the Baseten
+  credit pool is separate from the $150 Meta credit, with $100 Baseten credit.
+- Live smoke test: tool call correct, 1.5 s, 666 input / 156 output tokens,
+  52 reasoning tokens, ≈$0.0015.
+
 ## Day 2 scope — started 2026-10-27 (Tue) afternoon
 
 Goal: make the program check understand how claims are phrased (approximate values, inequalities, growth rates).

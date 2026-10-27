@@ -87,6 +87,13 @@ def _get(value: Any, key: str, default: Any = None) -> Any:
 def usage_tokens(usage: Any) -> dict[str, int]:
     """Normalize SDK usage into the four evaluation accounting buckets."""
 
+    if isinstance(usage, Mapping) and any(key in usage for key in ("input", "cached", "output", "reasoning")):
+        return {
+            "input": _number(usage.get("input")),
+            "cached": min(_number(usage.get("input")), _number(usage.get("cached"))),
+            "output": _number(usage.get("output")),
+            "reasoning": _number(usage.get("reasoning")),
+        }
     input_tokens = _number(_get(usage, "input_tokens"))
     input_details = _get(usage, "input_tokens_details")
     cached_tokens = min(input_tokens, _number(_get(input_details, "cached_tokens", 0)))
@@ -115,10 +122,12 @@ class TraceRecorder:
         claim: str,
         model: str,
         *,
+        provider: str = "meta",
         secrets: Iterable[str] = (),
     ) -> None:
         self.claim = claim
         self.model = model
+        self.provider = provider
         self.secrets = tuple(secrets)
         self.requests: list[dict[str, Any]] = []
         self.tool_calls: list[dict[str, Any]] = []
@@ -136,18 +145,29 @@ class TraceRecorder:
         cost: float,
         latency_ms: float,
         status: str = "completed",
+        raw_usage: Any = None,
+        normalized_usage: Any = None,
+        finish_reason: str | None = None,
+        rate_limit_headers: Mapping[str, Any] | None = None,
     ) -> None:
-        self.requests.append(
-            {
-                "request": redact(model_dump(payload), self.secrets),
-                "reservation": redact(model_dump(reservation), self.secrets),
-                "raw_response": redact(model_dump(response), self.secrets),
-                "usage": redact(model_dump(usage), self.secrets),
-                "cost": cost,
-                "latency_ms": round(latency_ms, 3),
-                "status": status,
-            }
-        )
+        entry: dict[str, Any] = {
+            "request": redact(model_dump(payload), self.secrets),
+            "reservation": redact(model_dump(reservation), self.secrets),
+            "raw_response": redact(model_dump(response), self.secrets),
+            "usage": redact(model_dump(usage), self.secrets),
+            "cost": cost,
+            "latency_ms": round(latency_ms, 3),
+            "status": status,
+        }
+        if raw_usage is not None:
+            entry["raw_usage"] = redact(model_dump(raw_usage), self.secrets)
+        if normalized_usage is not None:
+            entry["normalized_usage"] = redact(model_dump(normalized_usage), self.secrets)
+        if finish_reason is not None:
+            entry["finish_reason"] = finish_reason
+        if rate_limit_headers is not None:
+            entry["rate_limit_headers"] = redact(model_dump(rate_limit_headers), self.secrets)
+        self.requests.append(entry)
 
     def record_incomplete_turn(
         self,
@@ -225,6 +245,7 @@ class TraceRecorder:
         return {
             "claim": self.claim,
             "model": self.model,
+            "provider": self.provider,
             "requests": self.requests,
             "tool_calls": self.tool_calls,
             "usage": [item.get("usage") for item in self.requests],

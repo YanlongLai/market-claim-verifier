@@ -1,6 +1,6 @@
 # market-claim-verifier
 
-`market-claim-verifier` is a small agent that decomposes a financial claim, retrieves the relevant SEC EDGAR XBRL facts, and asks Meta Muse Spark to produce a cited verdict; deterministic checks in Python verify the model's numbers before returning `supported`, `contradicted`, or `insufficient_evidence`. Built during the Meta Global AI Developer Hackathon starting 2026-10-27.
+`market-claim-verifier` is a small agent that decomposes a financial claim, retrieves the relevant SEC EDGAR XBRL facts, and asks Muse Spark through Meta or Baseten to produce a cited verdict; deterministic checks in Python verify the model's numbers before returning `supported`, `contradicted`, or `insufficient_evidence`. Built during the Meta Global AI Developer Hackathon starting 2026-10-27.
 
 ## Setup
 
@@ -16,12 +16,26 @@ MODEL_API_KEY=your-key-here
 
 The SEC EDGAR data source is public. The checked-in code uses the local `.cache/` files when available and sends the configured contact User-Agent for a cache miss.
 
+## Providers
+
+The default provider is Meta (`CLAIMCHECK_PROVIDER=meta`) and keeps the existing
+Responses API path. Select Baseten with `--provider baseten` or
+`CLAIMCHECK_PROVIDER=baseten`; its default model is
+`meta-models/muse-spark-open-1026` and its OpenAI-compatible endpoint is
+`https://inference.baseten.co/v1`.
+
+Meta reads `MODEL_API_KEY` or `~/.config/dappgo/meta-model-api.env`. Baseten
+reads `BASETEN_API_KEY` or the raw key from `BASETEN_API_KEY_FILE` (default
+`~/secret/baseten_api_key.txt`). Keys are never written to traces or the
+budget ledger. Provider budgets are separate credit pools.
+
 ## CLI
 
 ```bash
 python -m claimcheck edgar META revenue 2025Q2
 python -m claimcheck verify 'Meta Q2 2025 revenue was $47.5B, up 22% YoY'
 python -m claimcheck verify --dry-run 'Meta Q2 2025 revenue was $47.5B'
+python -m claimcheck verify --provider baseten --dry-run 'Meta Q2 2025 revenue was $47.5B'
 ```
 
 Use `--model muse-wonder-1.0`, `--budget 0.10`, or
@@ -99,16 +113,18 @@ Rebuild the labels offline and check the hand-written verdicts:
 .venv/bin/python eval/build_gold.py
 ```
 
-Run the same model as either a no-tools single-shot judge or the existing
-tool-using agent. The default evaluation budget is $2.00 and is shared by all
-pairs through one append-only ledger. The run is sequential and resumable;
+Run either method against either provider. Systems are
+`single_shot@meta`, `agent@meta`, `single_shot@baseten`, and
+`agent@baseten`; legacy `single_shot` and `agent` mean their Meta variants.
+The default evaluation budget is $2.00 per provider credit pool and is recorded
+in one append-only ledger. The run is sequential and resumable;
 each pair gets a JSON result, and agent traces are copied under the output
 directory:
 
 ```bash
 .venv/bin/python -m claimcheck eval run \
   --split all \
-  --systems single_shot,agent \
+  --systems single_shot@meta,agent@meta,single_shot@baseten,agent@baseten \
   --budget 2 \
   --out docs/evidence/eval-2026-10-27/
 ```
@@ -126,13 +142,15 @@ Generate the metrics and report after a run:
   --out docs/evidence/eval-2026-10-27/
 ```
 
-The report includes accuracy, per-gold-class precision/recall,
-false-supported rate, insufficient rate, latency percentiles, cost, a
-per-claim comparison, and agent error categories. A failed or budget-stopped
+The report groups accuracy, per-gold-class precision/recall, false-supported
+rate, insufficient rate, latency percentiles, cost, tokens and reasoning share
+by system, and adds a provider comparison across methods. A failed or budget-stopped
 pair is recorded and counts as missing for scoring; it is not silently
-retried. `single_shot` receives no tools and is asked to judge from its own
-knowledge, while `agent` uses the SEC cache and the existing deterministic
-checks. The gold rules accept reader-style rounding, treat any false part of
+retried. `single_shot@*` receives no tools and is asked to judge from its own
+knowledge, while `agent@*` uses the SEC cache and the existing deterministic
+checks. The Baseten final step requests plain JSON, strips optional code
+fences, validates the existing verdict schema, and makes one budget-reserved
+repair request when needed. The gold rules accept reader-style rounding, treat any false part of
 a multi-part claim as contradicted, and reserve insufficient evidence for
 facts outside the SEC snapshot. The sample is small, so the report makes no
 significance claims; live results are intentionally not part of the checked-in

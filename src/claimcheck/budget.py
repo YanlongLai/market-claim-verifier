@@ -12,15 +12,20 @@ from typing import Any, Mapping
 
 
 MODEL_PRICES = {
-    "muse-spark-1.3": {
+    ("meta", "muse-spark-1.3"): {
         "input": 1.25 / 1_000_000,
         "cached_input": 0.15 / 1_000_000,
         "output": 4.25 / 1_000_000,
     },
-    "muse-wonder-1.0": {
+    ("meta", "muse-wonder-1.0"): {
         "input": 4.00 / 1_000_000,
         "cached_input": 0.20 / 1_000_000,
         "output": 20.00 / 1_000_000,
+    },
+    ("baseten", "meta-models/muse-spark-open-1026"): {
+        "input": 1.25 / 1_000_000,
+        "cached_input": 0.15 / 1_000_000,
+        "output": 4.25 / 1_000_000,
     },
 }
 
@@ -58,6 +63,7 @@ def _get(value: Any, key: str, default: Any = None) -> Any:
 @dataclass(frozen=True)
 class Reservation:
     reservation_id: str
+    provider: str
     model: str
     estimated_input_tokens: int
     max_output_tokens: int
@@ -68,6 +74,7 @@ class Reservation:
     def as_dict(self) -> dict[str, Any]:
         return {
             "reservation_id": self.reservation_id,
+            "provider": self.provider,
             "model": self.model,
             "estimated_input_tokens": self.estimated_input_tokens,
             "max_output_tokens": self.max_output_tokens,
@@ -92,19 +99,32 @@ class Ledger:
         path: str | Path = "runs/ledger.jsonl",
         *,
         budget_usd: float = 0.50,
-        model_prices: Mapping[str, Mapping[str, float]] | None = None,
+        model_prices: Mapping[Any, Mapping[str, float]] | None = None,
         persist: bool = True,
+        provider: str = "meta",
+        provider_budgets: Mapping[str, float] | None = None,
     ) -> None:
         self.path = Path(path)
         self.budget_usd = float(budget_usd)
         self.model_prices = dict(model_prices or MODEL_PRICES)
         self.persist = persist
+        self.provider = str(provider)
+        self.provider_budgets = {
+            str(key): float(value) for key, value in (provider_budgets or {}).items()
+        }
 
-    def price(self, model: str) -> Mapping[str, float]:
-        try:
-            return self.model_prices[model]
-        except KeyError as exc:
-            raise UnknownModel(f"unknown model id: {model}") from exc
+    def price(self, model: str, *, provider: str | None = None) -> Mapping[str, float]:
+        selected_provider = str(provider or self.provider)
+        candidates = (
+            (selected_provider, model),
+            model,
+        )
+        for key in candidates:
+            try:
+                return self.model_prices[key]
+            except KeyError:
+                continue
+        raise UnknownModel(f"unknown model for provider {selected_provider}: {model}")
 
     def _events(self) -> list[dict[str, Any]]:
         if not self.path.is_file():
@@ -122,10 +142,15 @@ class Ledger:
 
     @property
     def spent_total(self) -> float:
+        return self.spent_for_provider(None)
+
+    def spent_for_provider(self, provider: str | None) -> float:
         events = self._events()
         reconciled: dict[str, float] = {}
         reservations: dict[str, float] = {}
         for event in events:
+            if provider is not None and str(event.get("provider", "meta")) != str(provider):
+                continue
             event_type = event.get("event")
             rid = event.get("reservation_id")
             if not isinstance(rid, str):
@@ -138,6 +163,10 @@ class Ledger:
             amount for rid, amount in reservations.items() if rid not in reconciled
         )
 
+    def budget_for_provider(self, provider: str | None = None) -> float:
+        selected_provider = str(provider or self.provider)
+        return self.provider_budgets.get(selected_provider, self.budget_usd)
+
     def estimate(
         self,
         payload: Any,
@@ -145,8 +174,10 @@ class Ledger:
         model: str,
         max_output_tokens: int,
         previous_context: Any = None,
+        provider: str | None = None,
     ) -> Reservation:
-        prices = self.price(model)
+        selected_provider = str(provider or self.provider)
+        prices = self.price(model, provider=selected_provider)
         payload_chars = _json_chars(payload)
         context_chars = _json_chars(previous_context) if previous_context is not None else 0
         input_tokens = max(1, math.ceil((payload_chars + context_chars) / 3))
@@ -154,6 +185,7 @@ class Ledger:
         amount = input_tokens * prices["input"] + output_tokens * prices["output"]
         return Reservation(
             reservation_id=uuid.uuid4().hex,
+            provider=selected_provider,
             model=model,
             estimated_input_tokens=input_tokens,
             max_output_tokens=output_tokens,
@@ -169,6 +201,7 @@ class Ledger:
         model: str,
         max_output_tokens: int,
         previous_context: Any = None,
+        provider: str | None = None,
     ) -> Reservation:
         """Estimate and budget-check without appending a reservation."""
 
@@ -177,11 +210,15 @@ class Ledger:
             model=model,
             max_output_tokens=max_output_tokens,
             previous_context=previous_context,
+            provider=provider,
         )
-        if self.spent_total + reservation.amount > self.budget_usd:
+        selected_provider = reservation.provider
+        spent = self.spent_for_provider(selected_provider)
+        budget = self.budget_for_provider(selected_provider)
+        if spent + reservation.amount > budget:
             raise BudgetExceeded(
-                f"budget ${self.budget_usd:.4f} would be exceeded by reservation "
-                f"${reservation.amount:.4f} (spent ${self.spent_total:.4f})"
+                f"{selected_provider} budget ${budget:.4f} would be exceeded by reservation "
+                f"${reservation.amount:.4f} (spent ${spent:.4f})"
             )
         return reservation
 
@@ -192,6 +229,7 @@ class Ledger:
         model: str,
         max_output_tokens: int,
         previous_context: Any = None,
+        provider: str | None = None,
     ) -> Reservation:
         """Reserve worst-case cost, refusing before the caller invokes a model."""
 
@@ -200,6 +238,7 @@ class Ledger:
             model=model,
             max_output_tokens=max_output_tokens,
             previous_context=previous_context,
+            provider=provider,
         )
         self._append(
             {
@@ -224,11 +263,25 @@ class Ledger:
     ) -> float:
         """Replace a reservation with actual usage, or keep it if usage is absent."""
 
-        prices = self.price(reservation.model)
+        prices = self.price(reservation.model, provider=reservation.provider)
         input_tokens = _get(usage, "input_tokens")
         output_tokens = _get(usage, "output_tokens")
+        if input_tokens is None:
+            input_tokens = _get(usage, "input")
+        if input_tokens is None:
+            input_tokens = _get(usage, "prompt_tokens")
+        if output_tokens is None:
+            output_tokens = _get(usage, "output")
+        if output_tokens is None:
+            output_tokens = _get(usage, "completion_tokens")
         details = _get(usage, "input_tokens_details")
-        cached_tokens = _get(details, "cached_tokens", 0) or 0
+        cached_tokens = _get(details, "cached_tokens", None)
+        if cached_tokens is None:
+            cached_tokens = _get(usage, "cached", 0)
+        if not cached_tokens:
+            cached_details = _get(usage, "prompt_tokens_details")
+            cached_tokens = _get(cached_details, "cached_tokens", 0)
+        cached_tokens = cached_tokens or 0
         try:
             if input_tokens is None or output_tokens is None:
                 raise ValueError
@@ -250,6 +303,7 @@ class Ledger:
                 "event": "reconcile",
                 "timestamp": _now(),
                 "reservation_id": reservation.reservation_id,
+                "provider": reservation.provider,
                 "amount": amount,
                 "usage_missing": usage_missing,
                 "usage": {
