@@ -25,3 +25,16 @@ python -m claimcheck verify --dry-run 'Meta Q2 2025 revenue was $47.5B'
 ```
 
 Use `--model muse-wonder-1.0` or `--budget 0.10` on `verify` when needed. A run trace and append-only budget ledger are written under `runs/`; keys are never written to either file. This tool is not investment advice.
+
+## EDGAR result fields
+
+Successful `lookup_fact` results include `duration_days` and `period_type`:
+`quarter`, `ytd`, `annual`, or `instant`. Additive flows can be returned with
+`derived: true`, a human-readable `derivation`, and the source `components`
+used in the subtraction; `form_fallback` identifies a non-statement-form
+fallback. EPS and share counts are not derived.
+
+`YYYYQn` uses the fact's SEC `frame` when present. If there is no frame, it
+uses the calendar quarter containing the fact's `end` date; fiscal `fp` names
+are not used as calendar quarter labels. This keeps date-based YTD derivation
+working for non-calendar fiscal years.

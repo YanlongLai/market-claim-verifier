@@ -55,10 +55,10 @@ VERDICT_SCHEMA = {
 SYSTEM_INSTRUCTIONS = """You verify financial claims against SEC EDGAR facts.
 Decompose the claim into atomic numeric sub-claims. Use the lookup_fact and
 list_periods tools for every number; never use memory for numbers. A quarter
-must be a direct roughly 80-100 day fact, not a year-to-date fact. Q4 is
-insufficient when only an annual fact is available. Prefer the evidence IDs
-returned by tools, and say insufficient_evidence when data is missing. Do not
-silently calculate a quarter from annual or year-to-date data."""
+must have period_type=quarter and duration_days around 80-100, not
+period_type=ytd. If a result has derived=true, use its derivation and
+components as the evidence and do not calculate it again. Prefer the evidence
+IDs returned by tools, and say insufficient_evidence when data is missing."""
 
 
 def initial_request(claim: str, model: str) -> dict[str, Any]:
@@ -437,16 +437,27 @@ def verify_claim(
     unchecked = any(
         check.get("program_check") == "unchecked" for check in checks
     )
-    disagreement = verdict["verdict"] == "supported" and (
-        invalid_evidence or mismatch or unchecked or not verdict["sub_claims"]
+    checked_programs = [
+        check for check in checks if check.get("program_check") != "unchecked"
+    ]
+    all_checked_subclaims_match = bool(checked_programs) and all(
+        check.get("program_check") == "match" and check.get("evidence_valid")
+        for check in checked_programs
+    )
+    disagreement = (
+        verdict["verdict"] == "supported"
+        and (invalid_evidence or mismatch or unchecked or not verdict["sub_claims"])
+    ) or (
+        verdict["verdict"] == "contradicted" and all_checked_subclaims_match
     )
     if disagreement:
         verdict["verdict"] = "insufficient_evidence"
         verdict["model_program_disagreement"] = True
-        verdict["summary"] = (
-            verdict["summary"]
-            + " Program checks did not validate the model's supported verdict."
-        ).strip()
+        if all_checked_subclaims_match:
+            suffix = " Program checks matched every checked sub-claim, so the contradicted verdict was not accepted."
+        else:
+            suffix = " Program checks did not validate the model's supported verdict."
+        verdict["summary"] = (verdict["summary"] + suffix).strip()
     else:
         verdict["model_program_disagreement"] = False
     recorder.finish(verdict)

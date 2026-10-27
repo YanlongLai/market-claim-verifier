@@ -15,7 +15,13 @@ PERIOD_PATTERN = r"^(latest|FY\d{4}|\d{4}Q[1-4])$"
 LOOKUP_FACT_TOOL = {
     "type": "function",
     "name": "lookup_fact",
-    "description": "Look up one SEC EDGAR XBRL fact for a ticker, metric, and quarter or fiscal year.",
+    "description": (
+        "Look up one SEC EDGAR XBRL fact for a ticker, metric, and quarter or "
+        "fiscal year. Successful results include duration_days and "
+        "period_type (quarter, ytd, annual, or instant). Additive flows may "
+        "return derived=true with derivation and components; never treat a "
+        "ytd result as a quarter or recompute a derived result."
+    ),
     "parameters": {
         "type": "object",
         "properties": {
@@ -27,6 +33,55 @@ LOOKUP_FACT_TOOL = {
         "additionalProperties": False,
     },
     "strict": True,
+}
+
+# Responses API function definitions do not carry a result schema, so keep the
+# output contract next to the input definition for callers, tests, and prompt
+# authors.  Error objects may contain ``error`` instead of these fact fields.
+LOOKUP_FACT_OUTPUT_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "value": {"type": ["number", "null"]},
+        "start": {"type": ["string", "null"]},
+        "end": {"type": ["string", "null"]},
+        "duration_days": {"type": ["integer", "null"]},
+        "period_type": {
+            "type": "string",
+            "enum": ["quarter", "ytd", "annual", "instant"],
+        },
+        "form_fallback": {"type": "boolean"},
+        "derived": {"type": "boolean"},
+        "derivation": {"type": "string"},
+        "components": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "value": {"type": ["number", "null"]},
+                    "start": {"type": ["string", "null"]},
+                    "end": {"type": ["string", "null"]},
+                    "accn": {"type": "string"},
+                    "form": {"type": ["string", "null"]},
+                    "filed": {"type": ["string", "null"]},
+                    "duration_days": {"type": ["integer", "null"]},
+                    "period_type": {
+                        "type": "string",
+                        "enum": ["quarter", "ytd", "annual", "instant"],
+                    },
+                },
+                "required": [
+                    "value",
+                    "start",
+                    "end",
+                    "accn",
+                    "form",
+                    "filed",
+                    "duration_days",
+                    "period_type",
+                ],
+            },
+        },
+    },
 }
 
 LIST_PERIODS_TOOL = {
@@ -50,6 +105,7 @@ TOOL_DEFINITIONS = [LOOKUP_FACT_TOOL, LIST_PERIODS_TOOL]
 LOOKUP_FACT_SCHEMA = LOOKUP_FACT_TOOL
 LIST_PERIODS_SCHEMA = LIST_PERIODS_TOOL
 TOOL_SCHEMAS = {"lookup_fact": LOOKUP_FACT_TOOL, "list_periods": LIST_PERIODS_TOOL}
+TOOL_OUTPUT_SCHEMAS = {"lookup_fact": LOOKUP_FACT_OUTPUT_SCHEMA}
 
 
 class ToolValidationError(ValueError):

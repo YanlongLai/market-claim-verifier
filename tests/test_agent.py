@@ -169,6 +169,18 @@ def test_program_check_overrides_wrong_supported(tmp_path: Path) -> None:
     assert result["sub_claims"][0]["program_check"] == "mismatch"
 
 
+def test_program_check_flags_contradicted_when_all_values_match(tmp_path: Path) -> None:
+    final = supported_final(
+        verdict="contradicted",
+        summary="The model says the reported value is wrong.",
+    )
+    result, _ = run_agent(tmp_path, final)
+
+    assert result["verdict"] == "insufficient_evidence"
+    assert result["model_program_disagreement"] is True
+    assert result["program_checks"][0]["program_check"] == "match"
+
+
 def test_invalid_evidence_id_is_flagged(tmp_path: Path) -> None:
     final = supported_final(
         sub_claims=[
