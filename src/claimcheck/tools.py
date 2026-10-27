@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import copy
 import re
+from datetime import date
 from typing import Any
 
 from .edgar import METRICS, EdgarClient
@@ -18,8 +19,10 @@ LOOKUP_FACT_TOOL = {
     "name": "lookup_fact",
     "description": (
         "Look up one SEC EDGAR XBRL fact for a ticker, metric, and quarter or "
-        "fiscal year. Successful results include duration_days and "
-        "period_type (quarter, ytd, annual, or instant). Additive flows may "
+        "fiscal year. Successful results include period (the normalized "
+        "requested label, or the resolved label for latest), duration_days, "
+        "and period_type (quarter, ytd, annual, or "
+        "instant). Additive flows may "
         "return derived=true with derivation and components; never treat a "
         "ytd result as a quarter or recompute a derived result."
     ),
@@ -43,6 +46,7 @@ LOOKUP_FACT_OUTPUT_SCHEMA = {
     "type": "object",
     "properties": {
         "evidence_id": {"type": "string"},
+        "period": {"type": "string"},
         "value": {"type": ["number", "null"]},
         "start": {"type": ["string", "null"]},
         "end": {"type": ["string", "null"]},
@@ -120,7 +124,8 @@ HISTORY_RANK_TOOL = {
         "Compare one quarter or fiscal-year fact with every available comparable "
         "period of the same period_type. Quarters include derived Q4 values when "
         "available; annual periods are compared only with annual periods. Return "
-        "the rank, record flags, prior high/low, and the comparison window."
+        "the rank, record flags through the requested period, prior high/low, "
+        "and the comparison window with period end dates."
     ),
     "parameters": {
         "type": "object",
@@ -257,6 +262,52 @@ class ToolValidationError(ValueError):
 
 def _is_number(value: Any) -> bool:
     return isinstance(value, (int, float)) and not isinstance(value, bool)
+
+
+def _resolved_fact_period(result: dict[str, Any]) -> str | None:
+    """Infer the normalized period label for a ``latest`` fact result."""
+
+    frame = str(result.get("frame") or "").strip().upper()
+    match = re.fullmatch(r"CY(?P<year>\d{4})(?P<quarter>Q[1-4])(?:I)?", frame)
+    if match is not None:
+        return f"{match.group('year')}{match.group('quarter')}"
+    annual_match = re.fullmatch(r"CY(?P<year>\d{4})", frame)
+    if annual_match is not None:
+        return f"FY{annual_match.group('year')}"
+
+    end_text = result.get("end")
+    if not isinstance(end_text, str):
+        return None
+    try:
+        end = date.fromisoformat(end_text)
+    except ValueError:
+        return None
+
+    if result.get("period_type") == "annual":
+        return f"FY{end.year}"
+    start_text = result.get("start")
+    if isinstance(start_text, str):
+        try:
+            duration = (end - date.fromisoformat(start_text)).days + 1
+        except ValueError:
+            duration = None
+        if duration is not None and 300 <= duration <= 380:
+            return f"FY{end.year}"
+
+    # A quarter label is also the useful identity for an instant fact when
+    # EDGAR does not provide a CY...I frame.
+    return f"{end.year}Q{((end.month - 1) // 3) + 1}"
+
+
+def _add_lookup_period(result: Any, requested_period: str) -> Any:
+    """Attach the requested/resolved identity to numeric lookup evidence."""
+
+    if not isinstance(result, dict) or not _is_number(result.get("value")):
+        return result
+    period = requested_period
+    if requested_period == "LATEST":
+        period = _resolved_fact_period(result) or str(result.get("period") or "LATEST")
+    return {**result, "period": period.strip().upper()}
 
 
 def _validate_lookup(args: Any) -> dict[str, str]:
@@ -509,7 +560,9 @@ class ToolRunner:
         try:
             if name == "lookup_fact":
                 valid = _validate_lookup(args)
-                result = self.edgar.lookup_fact(**valid)
+                result = _add_lookup_period(
+                    self.edgar.lookup_fact(**valid), valid["period"]
+                )
             elif name == "list_periods":
                 valid = _validate_list(args)
                 result = self.edgar.list_periods(**valid)

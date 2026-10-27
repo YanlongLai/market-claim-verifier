@@ -11,8 +11,10 @@ from claimcheck.tools import (
 
 def test_lookup_tool_documents_period_and_derivation_fields() -> None:
     description = LOOKUP_FACT_TOOL["description"]
+    assert "resolved label" in description
     assert "period_type" in description
     assert "derived" in description
+    assert LOOKUP_FACT_OUTPUT_SCHEMA["properties"]["period"]
     assert LOOKUP_FACT_OUTPUT_SCHEMA["properties"]["duration_days"]
     assert LOOKUP_FACT_OUTPUT_SCHEMA["properties"]["components"]
 
@@ -90,11 +92,38 @@ def test_compute_change_defaults_to_prior_fiscal_year_and_numbers_all_evidence()
     assert result["base_period"] == "FY2024"
     assert result["abs_change"] == 20
     assert result["pct_change"] == 20
+    assert result["current"]["period"] == "FY2025"
+    assert result["base"]["period"] == "FY2024"
     assert result["current"]["evidence_id"] != result["base"]["evidence_id"]
     assert result["evidence_id"] not in {
         result["current"]["evidence_id"],
         result["base"]["evidence_id"],
     }
+
+
+class LatestRecordingEdgar:
+    def lookup_fact(self, ticker: str, metric: str, period: str) -> dict[str, object]:
+        return {
+            "value": 123,
+            "start": "2025-07-01",
+            "end": "2025-09-30",
+            "frame": "CY2025Q3",
+            "period_type": "quarter",
+        }
+
+
+def test_lookup_fact_adds_requested_or_resolved_period_identity() -> None:
+    requested = ToolRunner(RecordingEdgar()).dispatch(
+        "lookup_fact",
+        {"ticker": "META", "metric": "revenue", "period": "2025q3"},
+    )
+    latest = ToolRunner(LatestRecordingEdgar()).dispatch(
+        "lookup_fact",
+        {"ticker": "META", "metric": "revenue", "period": "latest"},
+    )
+
+    assert requested["period"] == "2025Q3"
+    assert latest["period"] == "2025Q3"
 
 
 class ErrorEdgar:

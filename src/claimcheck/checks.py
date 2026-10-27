@@ -5,6 +5,7 @@ from __future__ import annotations
 import math
 import re
 from collections.abc import Mapping, Sequence
+from datetime import date
 from typing import Any
 
 from .numbers import ParsedNumber, parse_stated_number
@@ -187,6 +188,243 @@ def _numeric_citation(evidence_ids: Sequence[str], runner: Any) -> bool:
     return False
 
 
+def _context_value(value: Any, field: str) -> str | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    if not text:
+        return None
+    if field == "metric":
+        return text.lower()
+    return text.upper()
+
+
+def _period_from_fact_context(
+    start: str | None, end: str | None, frame: str | None
+) -> str | None:
+    frame_match = re.fullmatch(r"CY(?P<year>\d{4})(?P<quarter>Q[1-4])(?:I)?", frame or "")
+    if frame_match is not None:
+        return f"{frame_match.group('year')}{frame_match.group('quarter')}"
+    if end is None:
+        return None
+    try:
+        end_date = date.fromisoformat(end)
+    except ValueError:
+        return None
+    if start is not None:
+        try:
+            duration = (end_date - date.fromisoformat(start)).days + 1
+        except ValueError:
+            duration = None
+        if duration is not None and 300 <= duration <= 380:
+            return f"FY{end_date.year}"
+    return f"{end_date.year}Q{((end_date.month - 1) // 3) + 1}"
+
+
+def _period_start(period: str | None) -> str | None:
+    if period is None:
+        return None
+    if match := re.fullmatch(r"FY(\d{4})", period):
+        return f"{match.group(1)}-01-01"
+    if match := re.fullmatch(r"(\d{4})Q([1-4])", period):
+        month = (int(match.group(2)) - 1) * 3 + 1
+        return f"{match.group(1)}-{month:02d}-01"
+    return None
+
+
+def _add_context(
+    contexts: set[tuple[str, ...]],
+    ticker: str | None,
+    metric: str | None,
+    period: str | None,
+    start: str | None,
+    end: str | None,
+    frame: str | None = None,
+) -> None:
+    if ticker is None or metric is None:
+        return
+    if period is not None:
+        contexts.add(("period", ticker, metric, period))
+    if start is not None and end is not None:
+        contexts.add(("dates", ticker, metric, start, end))
+    resolved_period = _period_from_fact_context(start, end, frame)
+    if resolved_period is not None:
+        contexts.add(("period", ticker, metric, resolved_period))
+
+
+def _evidence_contexts(value: Mapping[str, Any] | None) -> set[tuple[str, ...]]:
+    """Return period and date identities present in an evidence object.
+
+    Recorded lookup results from older traces may omit ``period`` while still
+    carrying SEC dates/frame.  History results carry the target period and can
+    expose its target row, so both forms resolve to a shared identity.
+    """
+
+    if value is None:
+        return set()
+    contexts: set[tuple[str, ...]] = set()
+    ticker = _context_value(value.get("ticker"), "ticker")
+    metric = _context_value(value.get("metric"), "metric")
+    period = _context_value(value.get("period"), "period")
+    start = _context_value(value.get("start"), "start")
+    end = _context_value(value.get("end"), "end")
+    frame = _context_value(value.get("frame"), "frame")
+    _add_context(contexts, ticker, metric, period, start, end, frame)
+
+    # history_rank's target row in older traces has period/value and may have
+    # only an end date.  Reconstruct the calendar-quarter/year start when
+    # possible so it can match an older lookup_fact result by SEC dates.
+    if period is not None:
+        for field in ("periods", "comparable_periods"):
+            rows = value.get(field)
+            if not isinstance(rows, list):
+                continue
+            for row in rows:
+                if not isinstance(row, Mapping):
+                    continue
+                row_period = _context_value(row.get("period"), "period")
+                if row_period != period:
+                    continue
+                row_start = _context_value(row.get("start"), "start") or _period_start(
+                    row_period
+                )
+                row_end = _context_value(row.get("end"), "end") or end
+                _add_context(
+                    contexts,
+                    ticker,
+                    metric,
+                    row_period,
+                    row_start,
+                    row_end,
+                    _context_value(row.get("frame"), "frame"),
+                )
+                break
+    for field in ("current_fact", "base_fact", "current", "base"):
+        nested = value.get(field)
+        if isinstance(nested, Mapping):
+            contexts.update(_evidence_contexts(nested))
+    return contexts
+
+
+def _same_fact_context(left: Mapping[str, Any], right: Mapping[str, Any]) -> bool:
+    return bool(_evidence_contexts(left) & _evidence_contexts(right))
+
+
+def _history_periods(history: Mapping[str, Any]) -> list[Mapping[str, Any]]:
+    for field in ("periods", "comparable_periods"):
+        value = history.get(field)
+        if not isinstance(value, list):
+            continue
+        periods = [
+            item
+            for item in value
+            if isinstance(item, Mapping)
+            and isinstance(item.get("period"), str)
+            and _is_number(item.get("value"))
+        ]
+        if periods:
+            return periods
+    return []
+
+
+def _history_period_key(period: str) -> tuple[int, int] | None:
+    match = re.fullmatch(
+        r"(?:FY(?P<fy>\d{4})|(?P<year>\d{4})Q(?P<quarter>[1-4]))",
+        period.upper(),
+    )
+    if match is None:
+        return None
+    if match.group("fy"):
+        return int(match.group("fy")), 4
+    return int(match.group("year")), int(match.group("quarter"))
+
+
+def _history_item_end(item: Mapping[str, Any]) -> str | None:
+    for field in ("end", "end_date"):
+        value = item.get(field)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return None
+
+
+def _history_window(
+    history: Mapping[str, Any],
+) -> tuple[Mapping[str, Any] | None, list[Mapping[str, Any]]]:
+    """Return the claimed period and only comparable periods before it."""
+
+    periods = _history_periods(history)
+    target_period = str(history.get("period") or "").strip().upper()
+    target_index = next(
+        (
+            index
+            for index, item in enumerate(periods)
+            if str(item["period"]).strip().upper() == target_period
+        ),
+        None,
+    )
+    if target_index is None:
+        return None, []
+
+    target = periods[target_index]
+    target_end = _history_item_end(target) or _history_item_end(history)
+    target_key = _history_period_key(target_period)
+    earlier: list[Mapping[str, Any]] = []
+    for index, item in enumerate(periods):
+        item_period = str(item["period"]).strip().upper()
+        if index == target_index or item_period == target_period:
+            continue
+        item_end = _history_item_end(item)
+        if item_end is not None and target_end is not None:
+            before = item_end < target_end
+        else:
+            item_key = _history_period_key(item_period)
+            if item_key is not None and target_key is not None:
+                before = item_key < target_key
+            else:
+                # history_rank documents ``periods`` as chronological.  This
+                # fallback keeps older recorded evidence usable when it lacks
+                # explicit SEC end dates.
+                before = index < target_index
+        if before:
+            earlier.append(item)
+    return target, earlier
+
+
+def _first_time_threshold(
+    sub_claim: Mapping[str, Any],
+    history: Mapping[str, Any],
+    evidence_ids: Sequence[str],
+    runner: Any,
+    related_sub_claims: Sequence[Mapping[str, Any]] | None,
+) -> tuple[float | None, float | None, list[str]]:
+    """Resolve a first-time threshold from a sibling claim or model value."""
+
+    current_ids = set(evidence_ids)
+    for candidate in related_sub_claims or ():
+        if candidate is sub_claim:
+            continue
+        candidate_ids = set(_normalise_evidence_ids(candidate.get("evidence_ids")))
+        if not candidate_ids:
+            continue
+        same_citation = bool(current_ids & candidate_ids)
+        same_context = any(
+            _same_fact_context(history, evidence)
+            for candidate_id in candidate_ids
+            if (evidence := _evidence(runner, candidate_id)) is not None
+        )
+        if not same_citation and not same_context:
+            continue
+        parsed = parse_stated_number(candidate.get("stated_text", ""))
+        if parsed is not None:
+            return parsed.value, parsed.precision, []
+
+    stated_value = sub_claim.get("stated_value")
+    if _is_number(stated_value):
+        model_value = float(stated_value)
+        return model_value, abs(model_value) * 0.005, ["threshold_from_model"]
+    return None, None, []
+
+
 def _value_evidence(
     evidence_ids: list[str], runner: Any
 ) -> tuple[float | None, bool, str]:
@@ -275,18 +513,36 @@ def _history_evidence(
     evidence_ids: list[str], runner: Any
 ) -> tuple[Mapping[str, Any] | None, bool, str]:
     ids = _unique_ids(evidence_ids)
-    if len(ids) != 1:
+    history_ids = [
+        evidence_id
+        for evidence_id in ids
+        if (evidence := _evidence(runner, evidence_id)) is not None
+        and "error" not in evidence
+        and _runner_evidence_kind(runner, evidence_id, evidence) == "history_rank"
+    ]
+    if len(history_ids) != 1:
         return None, False, (
             "no_evidence" if not _numeric_citation(ids, runner) else "ambiguous_evidence"
         )
-    evidence = _evidence(runner, ids[0])
-    if evidence is None or "error" in evidence:
-        return None, False, "no_evidence"
-    if _runner_evidence_kind(runner, ids[0], evidence) != "history_rank":
-        return None, False, (
-            "no_evidence" if not _numeric_citation(ids, runner) else "ambiguous_evidence"
-        )
-    return evidence, True, ""
+
+    history_id = history_ids[0]
+    history = _evidence(runner, history_id)
+    assert history is not None
+    for evidence_id in ids:
+        if evidence_id == history_id:
+            continue
+        evidence = _evidence(runner, evidence_id)
+        if (
+            evidence is None
+            or _runner_evidence_kind(runner, evidence_id, evidence) != "lookup_fact"
+            or not _same_fact_context(history, evidence)
+        ):
+            return None, False, (
+                "no_evidence"
+                if not _numeric_citation(ids, runner)
+                else "ambiguous_evidence"
+            )
+    return history, True, ""
 
 
 def _tolerance(claim_type: str, comparator: str, stated: float, precision: float) -> float:
@@ -329,7 +585,11 @@ def _history_reason(prefix: str, history: Mapping[str, Any]) -> str:
     return f"{prefix} over periods_considered={window}"
 
 
-def evaluate_sub_claim(sub_claim: Mapping[str, Any], runner: Any) -> dict[str, Any]:
+def evaluate_sub_claim(
+    sub_claim: Mapping[str, Any],
+    runner: Any,
+    related_sub_claims: Sequence[Mapping[str, Any]] | None = None,
+) -> dict[str, Any]:
     """Evaluate one normalized model sub-claim against cited evidence."""
 
     evidence_ids = _normalise_evidence_ids(sub_claim.get("evidence_ids"))
@@ -361,70 +621,84 @@ def evaluate_sub_claim(sub_claim: Mapping[str, Any], runner: Any) -> dict[str, A
     elif claim_type in {"record_high", "record_low", "first_time_above"}:
         history, evidence_valid, reason = _history_evidence(evidence_ids, runner)
         if evidence_valid and history is not None:
-            periods = [
-                item
-                for item in history.get("periods", [])
-                if isinstance(item, Mapping)
-                and isinstance(item.get("period"), str)
-                and _is_number(item.get("value"))
-            ]
-            if claim_type == "record_high":
-                actual = 1.0 if bool(history.get("is_highest")) else 0.0
+            target, earlier = _history_window(history)
+            if target is None:
+                evidence_valid = False
+                reason = "no_evidence"
+            elif claim_type == "record_high":
+                target_value = float(target["value"])
+                actual = 1.0 if all(
+                    float(item["value"]) <= target_value
+                    for item in [*earlier, target]
+                ) else 0.0
                 reason = ""
             elif claim_type == "record_low":
-                actual = 1.0 if bool(history.get("is_lowest")) else 0.0
+                target_value = float(target["value"])
+                actual = 1.0 if all(
+                    float(item["value"]) >= target_value
+                    for item in [*earlier, target]
+                ) else 0.0
                 reason = ""
             else:
-                target_period = str(history.get("period") or "")
-                target_index = next(
-                    (index for index, item in enumerate(periods) if item["period"] == target_period),
-                    None,
-                )
-                if target_index is None:
+                if "stated_text_unparsed" in flags:
+                    threshold, threshold_precision, threshold_flags = _first_time_threshold(
+                        sub_claim,
+                        history,
+                        evidence_ids,
+                        runner,
+                        related_sub_claims,
+                    )
+                    if threshold is not None:
+                        stated = threshold
+                        precision = threshold_precision
+                        flags = [
+                            flag for flag in flags if flag != "stated_text_unparsed"
+                        ]
+                        flags.extend(threshold_flags)
+
+                threshold = stated
+                current_value = float(target["value"])
+                above = [
+                    item
+                    for item in earlier
+                    if threshold is not None and float(item["value"]) > threshold
+                ]
+                actual = current_value
+                if threshold is None:
                     evidence_valid = False
-                    reason = "no_evidence"
+                    reason = "stated_text_unparsed"
                 else:
-                    threshold = stated
-                    current_value = float(periods[target_index]["value"])
-                    earlier = periods[:target_index]
-                    above = [
-                        item
-                        for item in earlier
-                        if threshold is not None and float(item["value"]) > threshold
-                    ]
-                    actual = current_value
-                    if threshold is None:
-                        evidence_valid = False
-                        reason = "stated_text_unparsed"
-                    else:
-                        is_first = current_value > threshold and not above
-                        reason = _history_reason(
-                            "first_time_above is "
-                            + ("true" if is_first else "false"),
-                            history,
-                        )
-                        if above:
-                            reason += f"; earlier_periods_above={above}"
-                        if not is_first:
-                            reason += f"; threshold={threshold:g}"
-                        model_verdict = sub_claim.get("verdict")
-                        program_verdict = "supported" if is_first else "contradicted"
-                        return {
-                            "text": str(sub_claim.get("text") or ""),
-                            "stated_value": stated,
-                            "evidence_ids": evidence_ids,
-                            "evidence_valid": evidence_valid,
-                            "program_verdict": program_verdict,
-                            "actual_value": actual,
-                            "tolerance": 0.0,
-                            "reason": reason,
-                            "disagreement": model_verdict != program_verdict,
-                            "precision": precision,
-                            "stated_value_used": stated,
-                            "stated_value_corrected": "stated_value_corrected" in flags,
-                            "stated_text_unparsed": "stated_text_unparsed" in flags,
-                            "stated_sign_corrected": "stated_sign_corrected" in flags,
-                        }
+                    is_first = current_value > threshold and not above
+                    reason = _history_reason(
+                        "first_time_above is "
+                        + ("true" if is_first else "false"),
+                        history,
+                    )
+                    if above:
+                        reason += f"; earlier_periods_above={above}"
+                    if not is_first:
+                        reason += f"; threshold={threshold:g}"
+                    if flags:
+                        reason = f"{', '.join(flags)}; {reason}"
+                    model_verdict = sub_claim.get("verdict")
+                    program_verdict = "supported" if is_first else "contradicted"
+                    return {
+                        "text": str(sub_claim.get("text") or ""),
+                        "stated_value": stated,
+                        "evidence_ids": evidence_ids,
+                        "evidence_valid": evidence_valid,
+                        "program_verdict": program_verdict,
+                        "actual_value": actual,
+                        "tolerance": 0.0,
+                        "reason": reason,
+                        "disagreement": model_verdict != program_verdict,
+                        "precision": precision,
+                        "stated_value_used": stated,
+                        "stated_value_corrected": "stated_value_corrected" in flags,
+                        "stated_text_unparsed": "stated_text_unparsed" in flags,
+                        "stated_sign_corrected": "stated_sign_corrected" in flags,
+                        "threshold_from_model": "threshold_from_model" in flags,
+                    }
     elif stated is None or precision is None:
         reason = "stated_text_unparsed"
     elif claim_type == "value":
@@ -471,9 +745,12 @@ def evaluate_sub_claim(sub_claim: Mapping[str, Any], runner: Any) -> dict[str, A
         "stated_value_corrected": "stated_value_corrected" in flags,
         "stated_text_unparsed": "stated_text_unparsed" in flags,
         "stated_sign_corrected": "stated_sign_corrected" in flags,
+        "threshold_from_model": "threshold_from_model" in flags,
     }
     if flags:
-        reason = f"{', '.join(flags)}; {reason}"
+        flag_reason = ", ".join(flags)
+        if reason != flag_reason and not reason.startswith(f"{flag_reason};"):
+            reason = f"{flag_reason}; {reason}"
 
     return {
         "text": str(sub_claim.get("text") or ""),
@@ -507,7 +784,10 @@ def evaluate_verdict(
 ) -> tuple[list[dict[str, Any]], str]:
     """Evaluate all sub-claims and return checks plus the program verdict."""
 
-    checks = [evaluate_sub_claim(sub_claim, runner) for sub_claim in sub_claims]
+    checks = [
+        evaluate_sub_claim(sub_claim, runner, sub_claims)
+        for sub_claim in sub_claims
+    ]
     return checks, overall_program_verdict(checks)
 
 

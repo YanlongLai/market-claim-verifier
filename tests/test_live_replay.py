@@ -10,10 +10,11 @@ import pytest
 
 from claimcheck.agent import verify_claim
 from claimcheck.budget import Ledger
-from claimcheck.checks import evaluate_verdict
+from claimcheck.checks import evaluate_sub_claim, evaluate_verdict
 
 
 FIXTURES = Path(__file__).parent / "fixtures" / "live"
+EVIDENCE = Path(__file__).parents[1] / "docs" / "evidence" / "2026-10-27"
 
 
 class ReplayCall:
@@ -79,6 +80,10 @@ class ReplayEdgar:
 
 def _load(name: str) -> dict[str, Any]:
     return json.loads((FIXTURES / name).read_text(encoding="utf-8"))
+
+
+def _load_evidence(name: str) -> dict[str, Any]:
+    return json.loads((EVIDENCE / name).read_text(encoding="utf-8"))
 
 
 def _fact(value: float, **extra: Any) -> dict[str, Any]:
@@ -269,6 +274,8 @@ def _recorded_runner(fixture: dict[str, Any]) -> SimpleNamespace:
         "20261027T220019Z-d41d5d2a.json",
         "20261027T220105Z-60aa1eb7.json",
         "20261027T220157Z-8a35d825.json",
+        "20261027T221423Z-aca6a7ca.json",
+        "20261027T222216Z-21a72526.json",
     ],
 )
 def test_exact_recorded_model_outputs_replay_with_evidence_resolution(filename: str) -> None:
@@ -289,5 +296,80 @@ def test_exact_recorded_model_outputs_replay_with_evidence_resolution(filename: 
             "supported",
             "contradicted",
         ]
+    elif filename.endswith("221423Z-aca6a7ca.json"):
+        assert verdict == "supported"
+        assert [check["program_verdict"] for check in checks] == [
+            "supported",
+            "supported",
+        ]
+        assert checks[1]["stated_text_unparsed"] is False
+        assert checks[1]["threshold_from_model"] is False
+    elif filename.endswith("222216Z-21a72526.json"):
+        assert verdict == "supported"
+        assert [check["program_verdict"] for check in checks] == [
+            "supported",
+            "supported",
+        ]
     else:
         assert all(check["program_verdict"] == "supported" for check in checks)
+
+
+@pytest.mark.parametrize("include_period", [False, True])
+def test_recorded_first_time_trace_matches_by_dates_or_period(
+    include_period: bool,
+) -> None:
+    trace = _load_evidence("20261027T222216Z-21a72526.json")
+    if include_period:
+        trace["tool_calls"][0]["result"]["period"] = "2025Q3"
+
+    runner = _recorded_runner(trace)
+    checks, verdict = evaluate_verdict(trace["final_verdict"]["sub_claims"], runner)
+
+    assert checks[1]["program_verdict"] == "supported"
+    assert verdict == "supported"
+
+
+def test_first_time_above_is_contradicted_when_an_earlier_period_exceeds_threshold() -> None:
+    fixture = _load("20261027T221423Z-aca6a7ca.json")
+    fixture["tool_calls"][1]["result"]["periods"][0]["value"] = 101_000_000_000
+    fixture["tool_calls"][1]["result"]["comparable_periods"][0]["value"] = 101_000_000_000
+    runner = _recorded_runner(fixture)
+
+    checks, verdict = evaluate_verdict(fixture["final_verdict"]["sub_claims"], runner)
+
+    assert checks[1]["program_verdict"] == "contradicted"
+    assert verdict == "contradicted"
+    assert "earlier_periods_above" in checks[1]["reason"]
+
+
+def test_first_time_above_fallback_threshold_is_flagged_without_unparsed_text() -> None:
+    fixture = _load("20261027T221423Z-aca6a7ca.json")
+    runner = _recorded_runner(fixture)
+    first_time = copy.deepcopy(fixture["final_verdict"]["sub_claims"][1])
+    first_time["evidence_ids"] = ["E2"]
+
+    check = evaluate_sub_claim(first_time, runner)
+
+    assert check["program_verdict"] == "supported"
+    assert check["threshold_from_model"] is True
+    assert check["stated_text_unparsed"] is False
+
+
+def test_record_high_ignores_later_periods() -> None:
+    fixture = _load("20261027T221423Z-aca6a7ca.json")
+    runner = _recorded_runner(fixture)
+    record_claim = {
+        "text": "Alphabet's Q3 2025 revenue was a record high",
+        "stated_text": "record high",
+        "claim_type": "record_high",
+        "comparator": "eq",
+        "stated_value": 1,
+        "evidence_ids": ["E2"],
+        "verdict": "supported",
+        "model_found_value": 1,
+        "note": "Highest through the claimed quarter.",
+    }
+
+    check = evaluate_sub_claim(record_claim, runner)
+
+    assert check["program_verdict"] == "supported"

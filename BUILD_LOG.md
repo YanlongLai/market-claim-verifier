@@ -72,6 +72,26 @@ Goal: make the program check understand how claims are phrased (approximate valu
 - Built `history_rank` with quarter/annual windows, derived Q4 coverage,
   record-high/record-low and first-time-above sub-claims, plus `other` coverage
   sub-claims that remain unchecked.
+- Resolved `first_time_above`, `record_high`, and `record_low` against one
+  `history_rank` evidence window, using only periods through the claimed period
+  and resolving phrase-only thresholds from matching sibling sub-claims.
 - Added trimmed fixtures and fake-client replays for all five live traces,
   including the exact recorded `[E3, E4, E5]` citations, and expanded the
   offline suite to 90 passing tests.
+- Lesson: replay tests now use recorded tool output verbatim.
+
+### Live verification results (Muse Spark 1.3, 2026-10-27, traces in `docs/evidence/2026-10-27/`)
+
+Five claims were run live before and after the Day 2 fixes. Program verdicts:
+
+| Claim | Before fixes | After fixes | Actual (SEC) |
+|---|---|---|---|
+| Meta Q2 2025 revenue was $47.5B, up 22% YoY | insufficient (growth unchecked) | **supported** | $47.516B, +21.6% |
+| Tesla Q3 2025 net income about $1.4B; Alphabet Q4 2024 revenue exceeded $100B | contradicted | **contradicted** (Tesla part supported) | $1.373B; $96.469B |
+| Alphabet Q3 2025 revenue topped $100B for the first time | supported ("first time" silently ignored) | **supported**, both parts checked | $102.346B; no earlier quarter above $100B |
+| Tesla revenue fell 10% YoY in Q3 2025 | insufficient (growth unchecked) | **contradicted** | +11.6% |
+| Meta Q4 2026 revenue was $60B | insufficient | **insufficient_evidence** (not yet filed) | — |
+
+Each run: 3–4 model calls, $0.015–0.029, 25–52 s. Two bugs were found only by live runs and fixed: the model passing
+`"null"` as a string argument, and real `lookup_fact` output lacking the `period` field that a hand-trimmed test fixture
+had. Offline suite: 98 tests. Model spend so far ≈ $0.29 (ledger in `runs/`, not committed).

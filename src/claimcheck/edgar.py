@@ -247,6 +247,20 @@ def _history_period_sort_key(period: str) -> tuple[int, int]:
     return (int(match.group("year")), int(match.group("quarter")[1:]))
 
 
+def _history_item_before(
+    item: Mapping[str, Any], target: Mapping[str, Any]
+) -> bool:
+    """Compare history entries by SEC end date, with a label fallback."""
+
+    item_end = _date(item.get("end"))
+    target_end = _date(target.get("end"))
+    if item_end is not None and target_end is not None:
+        return item_end < target_end
+    return _history_period_sort_key(str(item["period"])) < _history_period_sort_key(
+        str(target["period"])
+    )
+
+
 def _period_end_start(period: str) -> tuple[date, date] | None:
     match = PERIOD_RE.match(period)
     if not match:
@@ -555,8 +569,10 @@ class EdgarClient:
 
         Quarters are compared with quarters, including Q4 values derived from
         annual minus nine-month YTD facts. Fiscal years are compared only with
-        fiscal years. ``periods`` is chronological so callers can test
-        first-time assertions without reconstructing the SEC fact history.
+        fiscal years. ``periods`` is chronological and includes each SEC end
+        date so callers can test first-time assertions without reconstructing
+        the SEC fact history. Record flags are evaluated through the requested
+        period; ``rank`` and ``count`` still describe the full window.
         """
 
         metric = str(metric or "").strip().lower()
@@ -689,6 +705,7 @@ class EdgarClient:
                     "period": candidate_period,
                     "value": value,
                     "period_type": candidate.get("period_type"),
+                    "end": candidate.get("end"),
                 }
             )
 
@@ -725,11 +742,9 @@ class EdgarClient:
             float(item["value"]) > target_value for item in period_values
         )
         prior = [
-            item
-            for item in period_values
-            if _history_period_sort_key(item["period"])
-            < _history_period_sort_key(target_period)
+            item for item in period_values if _history_item_before(item, target_entry)
         ]
+        through_target = [*prior, target_entry]
         previous_high = (
             max(prior, key=lambda item: float(item["value"])) if prior else None
         )
@@ -749,10 +764,10 @@ class EdgarClient:
             "rank": rank,
             "count": len(period_values),
             "is_highest": all(
-                float(item["value"]) <= target_value for item in period_values
+                float(item["value"]) <= target_value for item in through_target
             ),
             "is_lowest": all(
-                float(item["value"]) >= target_value for item in period_values
+                float(item["value"]) >= target_value for item in through_target
             ),
             "previous_high": previous_high,
             "previous_low": previous_low,
