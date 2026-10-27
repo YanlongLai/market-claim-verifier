@@ -37,6 +37,8 @@ class Settings:
     cache_dir: Path
     runs_dir: Path
     model_api_key_file: Path
+    max_output_tokens: int | None = None
+    reasoning_effort: str | None = None
 
 
 def _key_from_env_file(path: Path) -> str | None:
@@ -67,6 +69,18 @@ def _path_setting(raw: str | None, default: str) -> Path:
     return Path(raw or default).expanduser()
 
 
+def _optional_positive_int(raw: str | None, name: str) -> int | None:
+    if raw is None or not raw.strip():
+        return None
+    try:
+        value = int(raw)
+    except (TypeError, ValueError) as exc:
+        raise SettingsError(f"{name} must be a positive integer") from exc
+    if value <= 0:
+        raise SettingsError(f"{name} must be a positive integer")
+    return value
+
+
 def load_settings(
     environ: Mapping[str, str] | None = None,
     *,
@@ -90,6 +104,11 @@ def load_settings(
     if budget < 0:
         raise SettingsError("CLAIMCHECK_BUDGET_USD must be non-negative")
 
+    max_output_tokens = _optional_positive_int(
+        env.get("CLAIMCHECK_MAX_OUTPUT_TOKENS"),
+        "CLAIMCHECK_MAX_OUTPUT_TOKENS",
+    )
+
     return Settings(
         model_api_key=api_key,
         model=env.get("CLAIMCHECK_MODEL", DEFAULT_MODEL),
@@ -98,4 +117,6 @@ def load_settings(
         cache_dir=_path_setting(env.get("CLAIMCHECK_CACHE_DIR"), ".cache"),
         runs_dir=_path_setting(env.get("CLAIMCHECK_RUNS_DIR"), "runs"),
         model_api_key_file=key_file,
+        max_output_tokens=max_output_tokens,
+        reasoning_effort=env.get("CLAIMCHECK_REASONING_EFFORT") or None,
     )

@@ -85,6 +85,7 @@ class TraceRecorder:
         self.tool_calls: list[dict[str, Any]] = []
         self.final_verdict: dict[str, Any] | None = None
         self.program_checks: list[dict[str, Any]] = []
+        self.incomplete_turns: list[dict[str, Any]] = []
 
     def record_request(
         self,
@@ -95,6 +96,7 @@ class TraceRecorder:
         usage: Any,
         cost: float,
         latency_ms: float,
+        status: str = "completed",
     ) -> None:
         self.requests.append(
             {
@@ -104,6 +106,28 @@ class TraceRecorder:
                 "usage": redact(model_dump(usage), self.secrets),
                 "cost": cost,
                 "latency_ms": round(latency_ms, 3),
+                "status": status,
+            }
+        )
+
+    def record_incomplete_turn(
+        self,
+        *,
+        turn: int,
+        attempt: int,
+        phase: str,
+        status: str,
+        reason: Any,
+        max_output_tokens: int,
+    ) -> None:
+        self.incomplete_turns.append(
+            {
+                "turn": turn,
+                "attempt": attempt,
+                "phase": phase,
+                "status": status,
+                "reason": reason,
+                "max_output_tokens": max_output_tokens,
             }
         )
 
@@ -123,8 +147,23 @@ class TraceRecorder:
         self.final_verdict = redact(model_dump(verdict), self.secrets)
         self.program_checks = list(verdict.get("program_checks", []))
 
+    @property
+    def total_cost(self) -> float:
+        return sum(float(item.get("cost", 0.0)) for item in self.requests)
+
+    @property
+    def total_latency_ms(self) -> float:
+        return sum(float(item.get("latency_ms", 0.0)) for item in self.requests)
+
+    def summary(self) -> dict[str, float]:
+        return {
+            "cost_usd": self.total_cost,
+            "latency_ms": self.total_latency_ms,
+        }
+
     def as_dict(self) -> dict[str, Any]:
-        total_cost = sum(float(item.get("cost", 0.0)) for item in self.requests)
+        total_cost = self.total_cost
+        total_latency_ms = self.total_latency_ms
         return {
             "claim": self.claim,
             "model": self.model,
@@ -132,6 +171,9 @@ class TraceRecorder:
             "tool_calls": self.tool_calls,
             "usage": [item.get("usage") for item in self.requests],
             "cost": total_cost,
+            "cost_usd": total_cost,
+            "latency_ms": total_latency_ms,
+            "incomplete_turns": self.incomplete_turns,
             "final_verdict": self.final_verdict,
             "program_checks": self.program_checks,
         }

@@ -52,12 +52,16 @@ class FakeResponse:
         output: list[Any] | None = None,
         output_text: str | None = None,
         api_key: str | None = None,
+        status: str | None = None,
+        incomplete_details: Any = None,
     ) -> None:
         self.id = response_id
         self.output = output or []
         self.output_text = output_text
         self.usage = FakeUsage()
         self.api_key = api_key
+        self.status = status
+        self.incomplete_details = incomplete_details
 
     def model_dump(self) -> dict[str, Any]:
         return {
@@ -66,6 +70,8 @@ class FakeResponse:
             "output_text": self.output_text,
             "usage": self.usage.__dict__,
             "api_key": self.api_key,
+            "status": self.status,
+            "incomplete_details": self.incomplete_details,
         }
 
 
@@ -101,6 +107,21 @@ class FakeResponses:
 class FakeClient:
     def __init__(self, final: dict[str, Any], *, response_api_key: str | None = None) -> None:
         self.responses = FakeResponses(final, response_api_key=response_api_key)
+
+
+class ScriptedResponses:
+    def __init__(self, responses: list[FakeResponse]) -> None:
+        self.calls: list[dict[str, Any]] = []
+        self.responses = responses
+
+    def create(self, **kwargs: Any) -> FakeResponse:
+        self.calls.append(kwargs)
+        return self.responses.pop(0)
+
+
+class ScriptedClient:
+    def __init__(self, responses: list[FakeResponse]) -> None:
+        self.responses = ScriptedResponses(responses)
 
 
 def run_agent(tmp_path: Path, final: dict[str, Any], *, recorder: TraceRecorder | None = None):
@@ -147,6 +168,116 @@ def test_agent_handles_parallel_calls_and_final_schema(tmp_path: Path) -> None:
     assert client.responses.calls[1]["previous_response_id"] == "r1"
     assert "text" in client.responses.calls[2]
     assert "tools" not in client.responses.calls[2]
+
+
+def test_incomplete_max_tokens_retries_and_reserves_both_attempts(tmp_path: Path) -> None:
+    client = ScriptedClient(
+        [
+            FakeResponse(
+                "incomplete-1",
+                status="incomplete",
+                incomplete_details={"reason": "max_output_tokens"},
+            ),
+            FakeResponse(
+                "r1",
+                output=[
+                    FakeCall(
+                        "lookup_fact",
+                        json.dumps(
+                            {"ticker": "META", "metric": "revenue", "period": "2025Q2"}
+                        ),
+                        "call-1",
+                    )
+                ],
+                status="completed",
+            ),
+            FakeResponse("r2", status="completed"),
+            FakeResponse(
+                "r3",
+                output_text=json.dumps(supported_final()),
+                status="completed",
+            ),
+        ]
+    )
+    recorder = TraceRecorder("Meta Q2 2025 revenue was $47.5B", "muse-spark-1.3")
+    edgar = fixture_client(tmp_path / "edgar")
+    ledger = Ledger(tmp_path / "runs" / "ledger.jsonl", budget_usd=0.50)
+
+    result = verify_claim(
+        "Meta Q2 2025 revenue was $47.5B",
+        client,
+        edgar,
+        ledger,
+        "muse-spark-1.3",
+        trace=recorder,
+    )
+
+    assert result["verdict"] == "supported"
+    assert [call["max_output_tokens"] for call in client.responses.calls] == [
+        4_000,
+        8_000,
+        4_000,
+        3_000,
+    ]
+    reservations = [
+        json.loads(line)
+        for line in (tmp_path / "runs" / "ledger.jsonl").read_text().splitlines()
+        if json.loads(line)["event"] == "reserve"
+    ]
+    assert [item["max_output_tokens"] for item in reservations] == [
+        4_000,
+        8_000,
+        4_000,
+        3_000,
+    ]
+    assert recorder.as_dict()["incomplete_turns"] == [
+        {
+            "turn": 1,
+            "attempt": 1,
+            "phase": "tool",
+            "status": "incomplete",
+            "reason": "max_output_tokens",
+            "max_output_tokens": 4_000,
+        }
+    ]
+
+
+def test_incomplete_twice_fails_closed_without_verdict(tmp_path: Path) -> None:
+    client = ScriptedClient(
+        [
+            FakeResponse(
+                "incomplete-1",
+                status="incomplete",
+                incomplete_details={"reason": "max_output_tokens"},
+            ),
+            FakeResponse(
+                "incomplete-2",
+                status="incomplete",
+                incomplete_details={"reason": "max_output_tokens"},
+            ),
+        ]
+    )
+    recorder = TraceRecorder("Meta Q2 2025 revenue was $47.5B", "muse-spark-1.3")
+    edgar = fixture_client(tmp_path / "edgar")
+    ledger = Ledger(tmp_path / "runs" / "ledger.jsonl", budget_usd=0.50)
+
+    result = verify_claim(
+        "Meta Q2 2025 revenue was $47.5B",
+        client,
+        edgar,
+        ledger,
+        "muse-spark-1.3",
+        trace=recorder,
+    )
+
+    assert result["verdict"] == "insufficient_evidence"
+    assert result["incomplete_response"] is True
+    assert len(client.responses.calls) == 2
+    assert [item["status"] for item in recorder.as_dict()["requests"]] == [
+        "incomplete",
+        "incomplete",
+    ]
+    assert len(recorder.as_dict()["incomplete_turns"]) == 2
 
 
 def test_program_check_overrides_wrong_supported(tmp_path: Path) -> None:

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import math
+import os
 import time
 from collections.abc import Mapping
 from typing import Any
@@ -15,8 +16,10 @@ from .trace import TraceRecorder
 
 
 VERDICTS = ("supported", "contradicted", "insufficient_evidence")
-MAX_TOOL_OUTPUT_TOKENS = 1_200
-MAX_FINAL_OUTPUT_TOKENS = 1_200
+MAX_TOOL_OUTPUT_TOKENS = 4_000
+MAX_FINAL_OUTPUT_TOKENS = 3_000
+MAX_OUTPUT_TOKENS_ENV = "CLAIMCHECK_MAX_OUTPUT_TOKENS"
+REASONING_EFFORT_ENV = "CLAIMCHECK_REASONING_EFFORT"
 
 VERDICT_SCHEMA = {
     "type": "object",
@@ -61,15 +64,63 @@ components as the evidence and do not calculate it again. Prefer the evidence
 IDs returned by tools, and say insufficient_evidence when data is missing."""
 
 
-def initial_request(claim: str, model: str) -> dict[str, Any]:
-    return {
+def _validate_output_tokens(value: Any) -> int:
+    if isinstance(value, bool):
+        raise ValueError("max_output_tokens must be a positive integer")
+    try:
+        output_tokens = int(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("max_output_tokens must be a positive integer") from exc
+    if output_tokens <= 0:
+        raise ValueError("max_output_tokens must be a positive integer")
+    return output_tokens
+
+
+def _configured_max_output_tokens(value: int | None = None) -> int | None:
+    if value is not None:
+        return _validate_output_tokens(value)
+    raw = os.environ.get(MAX_OUTPUT_TOKENS_ENV)
+    if raw is None or not raw.strip():
+        return None
+    return _validate_output_tokens(raw)
+
+
+def _configured_reasoning_effort(value: str | None = None) -> str | None:
+    if value is not None:
+        return value or None
+    return os.environ.get(REASONING_EFFORT_ENV) or None
+
+
+def _request_payload(
+    payload: dict[str, Any],
+    *,
+    reasoning_effort: str | None,
+) -> dict[str, Any]:
+    if reasoning_effort:
+        payload["reasoning"] = {"effort": reasoning_effort}
+    return payload
+
+
+def initial_request(
+    claim: str,
+    model: str,
+    *,
+    max_output_tokens: int | None = None,
+    reasoning_effort: str | None = None,
+) -> dict[str, Any]:
+    configured_max = _configured_max_output_tokens(max_output_tokens)
+    payload = {
         "model": model,
         "instructions": SYSTEM_INSTRUCTIONS,
         "input": [{"role": "user", "content": claim}],
         "tools": TOOL_DEFINITIONS,
         "parallel_tool_calls": True,
-        "max_output_tokens": MAX_TOOL_OUTPUT_TOKENS,
+        "max_output_tokens": configured_max or MAX_TOOL_OUTPUT_TOKENS,
     }
+    return _request_payload(
+        payload,
+        reasoning_effort=_configured_reasoning_effort(reasoning_effort),
+    )
 
 
 def verdict_text_format() -> dict[str, Any]:
@@ -89,6 +140,16 @@ def _get(value: Any, key: str, default: Any = None) -> Any:
     if isinstance(value, Mapping):
         return value.get(key, default)
     return getattr(value, key, default)
+
+
+def _response_status(response: Any) -> str:
+    status = _get(response, "status")
+    return str(status) if status is not None else "completed"
+
+
+def _incomplete_reason(response: Any) -> Any:
+    details = _get(response, "incomplete_details")
+    return _get(details, "reason") if details is not None else None
 
 
 def _usage_dict(response: Any) -> dict[str, Any] | None:
@@ -314,6 +375,89 @@ def _program_checks(verdict: dict[str, Any], runner: ToolRunner) -> tuple[list[d
     return checks, invalid_evidence, mismatch
 
 
+def _request_with_retry(
+    *,
+    client: Any,
+    ledger: Ledger,
+    recorder: TraceRecorder,
+    payload: dict[str, Any],
+    model: str,
+    max_output_tokens: int,
+    previous_context: Any,
+    turn: int,
+    phase: str,
+) -> tuple[Any, bool]:
+    """Make one request, retrying a max-token incomplete response once."""
+
+    for attempt in range(2):
+        request_limit = max_output_tokens * (2 if attempt else 1)
+        request_payload = {
+            **payload,
+            "max_output_tokens": request_limit,
+        }
+        reservation = ledger.reserve(
+            request_payload,
+            model=model,
+            max_output_tokens=request_limit,
+            previous_context=previous_context,
+        )
+        started = time.perf_counter()
+        response = client.responses.create(**request_payload)
+        latency_ms = (time.perf_counter() - started) * 1000
+        usage = _usage_dict(response)
+        cost = ledger.reconcile(reservation, usage)
+        status = _response_status(response)
+        recorder.record_request(
+            payload=request_payload,
+            response=response,
+            reservation=reservation,
+            usage=usage,
+            cost=cost,
+            latency_ms=latency_ms,
+            status=status,
+        )
+        if status == "completed":
+            return response, True
+
+        reason = _incomplete_reason(response)
+        recorder.record_incomplete_turn(
+            turn=turn,
+            attempt=attempt + 1,
+            phase=phase,
+            status=status,
+            reason=reason,
+            max_output_tokens=request_limit,
+        )
+        if attempt == 0 and status == "incomplete" and reason == "max_output_tokens":
+            continue
+        return response, False
+
+    raise AssertionError("request retry loop did not return")
+
+
+def _incomplete_response_result(
+    recorder: TraceRecorder,
+    response: Any,
+) -> dict[str, Any]:
+    status = _response_status(response)
+    reason = _incomplete_reason(response)
+    if status == "incomplete":
+        summary = "The model response was incomplete; no verdict was accepted."
+    else:
+        summary = f"The model response had non-completed status {status!r}; no verdict was accepted."
+    if reason:
+        summary += f" Reason: {reason}."
+    result = {
+        "verdict": "insufficient_evidence",
+        "summary": summary,
+        "sub_claims": [],
+        "program_checks": [],
+        "incomplete_response": True,
+    }
+    recorder.finish(result)
+    return result
+
+
 def verify_claim(
     claim: str,
     client: Any,
@@ -323,37 +467,42 @@ def verify_claim(
     max_turns: int = 6,
     *,
     trace: TraceRecorder | None = None,
+    max_output_tokens: int | None = None,
+    reasoning_effort: str | None = None,
 ) -> dict[str, Any]:
     """Run the model/tool loop, then apply program checks to its verdict."""
 
     recorder = trace or TraceRecorder(claim, model)
     runner = ToolRunner(edgar)
+    configured_max = _configured_max_output_tokens(max_output_tokens)
+    tool_output_tokens = configured_max or MAX_TOOL_OUTPUT_TOKENS
+    final_output_tokens = configured_max or MAX_FINAL_OUTPUT_TOKENS
+    configured_reasoning_effort = _configured_reasoning_effort(reasoning_effort)
     response: Any = None
     response_id: str | None = None
-    current_payload = initial_request(claim, model)
+    current_payload = initial_request(
+        claim,
+        model,
+        max_output_tokens=tool_output_tokens,
+        reasoning_effort=configured_reasoning_effort,
+    )
     previous_context: Any = None
     turns = 0
 
     while turns < max(1, max_turns):
-        reservation = ledger.reserve(
-            current_payload,
-            model=model,
-            max_output_tokens=MAX_TOOL_OUTPUT_TOKENS,
-            previous_context=previous_context,
-        )
-        started = time.perf_counter()
-        response = client.responses.create(**current_payload)
-        latency_ms = (time.perf_counter() - started) * 1000
-        usage = _usage_dict(response)
-        cost = ledger.reconcile(reservation, usage)
-        recorder.record_request(
+        response, completed = _request_with_retry(
+            client=client,
+            ledger=ledger,
+            recorder=recorder,
             payload=current_payload,
-            response=response,
-            reservation=reservation,
-            usage=usage,
-            cost=cost,
-            latency_ms=latency_ms,
+            model=model,
+            max_output_tokens=tool_output_tokens,
+            previous_context=previous_context,
+            turn=turns + 1,
+            phase="tool",
         )
+        if not completed:
+            return _incomplete_response_result(recorder, response)
         turns += 1
         response_id = _get(response, "id") or response_id
         calls = _function_calls(response)
@@ -375,14 +524,17 @@ def verify_claim(
                 }
             )
         previous_context = {"response_id": response_id, "tool_outputs": outputs}
-        current_payload = {
-            "model": model,
-            "previous_response_id": response_id,
-            "input": outputs,
-            "tools": TOOL_DEFINITIONS,
-            "parallel_tool_calls": True,
-            "max_output_tokens": MAX_TOOL_OUTPUT_TOKENS,
-        }
+        current_payload = _request_payload(
+            {
+                "model": model,
+                "previous_response_id": response_id,
+                "input": outputs,
+                "tools": TOOL_DEFINITIONS,
+                "parallel_tool_calls": True,
+                "max_output_tokens": tool_output_tokens,
+            },
+            reasoning_effort=configured_reasoning_effort,
+        )
 
     if response is None:
         result = {
@@ -409,27 +561,25 @@ def verify_claim(
                 }
             ],
             "text": verdict_text_format(),
-            "max_output_tokens": MAX_FINAL_OUTPUT_TOKENS,
+            "max_output_tokens": final_output_tokens,
         }
-        final_reservation = ledger.reserve(
+        final_payload = _request_payload(
             final_payload,
-            model=model,
-            max_output_tokens=MAX_FINAL_OUTPUT_TOKENS,
-            previous_context=previous_context,
+            reasoning_effort=configured_reasoning_effort,
         )
-        started = time.perf_counter()
-        final_response = client.responses.create(**final_payload)
-        latency_ms = (time.perf_counter() - started) * 1000
-        final_usage = _usage_dict(final_response)
-        final_cost = ledger.reconcile(final_reservation, final_usage)
-        recorder.record_request(
+        final_response, completed = _request_with_retry(
+            client=client,
+            ledger=ledger,
+            recorder=recorder,
             payload=final_payload,
-            response=final_response,
-            reservation=final_reservation,
-            usage=final_usage,
-            cost=final_cost,
-            latency_ms=latency_ms,
+            model=model,
+            max_output_tokens=final_output_tokens,
+            previous_context=previous_context,
+            turn=turns + 1,
+            phase="final",
         )
+        if not completed:
+            return _incomplete_response_result(recorder, final_response)
 
     verdict = _normalize_verdict(_response_text(final_response))
     checks, invalid_evidence, mismatch = _program_checks(verdict, runner)

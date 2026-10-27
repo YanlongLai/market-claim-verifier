@@ -8,7 +8,7 @@ import sys
 from dataclasses import replace
 from typing import Sequence
 
-from .agent import MAX_TOOL_OUTPUT_TOKENS, initial_request, verify_claim
+from .agent import initial_request, verify_claim
 from .budget import BudgetExceeded, Ledger, UnknownModel
 from .config import SettingsError, load_settings
 from .edgar import EdgarClient
@@ -28,8 +28,20 @@ def _parser() -> argparse.ArgumentParser:
     verify.add_argument("claim")
     verify.add_argument("--model")
     verify.add_argument("--budget", type=float)
+    verify.add_argument("--max-output-tokens", type=_positive_int)
+    verify.add_argument("--reasoning-effort")
     verify.add_argument("--dry-run", action="store_true")
     return parser
+
+
+def _positive_int(raw: str) -> int:
+    try:
+        value = int(raw)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("must be a positive integer") from exc
+    if value <= 0:
+        raise argparse.ArgumentTypeError("must be a positive integer")
+    return value
 
 
 def _print_json(value: object) -> None:
@@ -56,15 +68,36 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     model = args.model or settings.model
     budget = settings.budget_usd if args.budget is None else args.budget
-    settings = replace(settings, model=model, budget_usd=budget)
+    max_output_tokens = (
+        args.max_output_tokens
+        if args.max_output_tokens is not None
+        else settings.max_output_tokens
+    )
+    reasoning_effort = (
+        args.reasoning_effort
+        if args.reasoning_effort is not None
+        else settings.reasoning_effort
+    )
+    settings = replace(
+        settings,
+        model=model,
+        budget_usd=budget,
+        max_output_tokens=max_output_tokens,
+        reasoning_effort=reasoning_effort,
+    )
     ledger = Ledger(settings.runs_dir / "ledger.jsonl", budget_usd=settings.budget_usd)
-    request = initial_request(args.claim, model)
+    request = initial_request(
+        args.claim,
+        model,
+        max_output_tokens=max_output_tokens,
+        reasoning_effort=reasoning_effort,
+    )
     if args.dry_run:
         try:
             reservation = ledger.preview(
                 request,
                 model=model,
-                max_output_tokens=MAX_TOOL_OUTPUT_TOKENS,
+                max_output_tokens=request["max_output_tokens"],
             )
         except (BudgetExceeded, UnknownModel) as exc:
             print(f"Dry-run refused: {exc}", file=sys.stderr)
@@ -103,9 +136,11 @@ def main(argv: Sequence[str] | None = None) -> int:
             ledger,
             model,
             trace=recorder,
+            max_output_tokens=max_output_tokens,
+            reasoning_effort=reasoning_effort,
         )
         trace_path = write_trace(settings.runs_dir, recorder)
-        result = {**result, "trace_path": str(trace_path)}
+        result = {**result, "trace_path": str(trace_path), **recorder.summary()}
         _print_json(result)
         return 0
     except (BudgetExceeded, UnknownModel) as exc:

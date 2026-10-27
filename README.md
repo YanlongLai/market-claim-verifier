@@ -24,7 +24,14 @@ python -m claimcheck verify 'Meta Q2 2025 revenue was $47.5B, up 22% YoY'
 python -m claimcheck verify --dry-run 'Meta Q2 2025 revenue was $47.5B'
 ```
 
-Use `--model muse-wonder-1.0` or `--budget 0.10` on `verify` when needed. A run trace and append-only budget ledger are written under `runs/`; keys are never written to either file. This tool is not investment advice.
+Use `--model muse-wonder-1.0`, `--budget 0.10`, or
+`--max-output-tokens 5000` on `verify` when needed. Tool turns default to
+4,000 output tokens and the final verdict to 3,000; the CLI flag or
+`CLAIMCHECK_MAX_OUTPUT_TOKENS` overrides both. Set
+`--reasoning-effort` or `CLAIMCHECK_REASONING_EFFORT` to pass a reasoning
+effort through to the model. A run trace and append-only budget ledger are
+written under `runs/`; keys are never written to either file. This tool is not
+investment advice.
 
 ## EDGAR result fields
 
