@@ -8,7 +8,7 @@ from collections.abc import Mapping, Sequence
 from datetime import date
 from typing import Any
 
-from .numbers import ParsedNumber, parse_stated_number
+from .numbers import ParsedNumber, infer_comparator, parse_stated_number
 
 
 CLAIM_TYPES = (
@@ -80,6 +80,124 @@ def _normalise_evidence_ids(value: Any) -> list[str]:
     if not isinstance(value, list):
         return []
     return [str(item) for item in value]
+
+
+def _period_basis(evidence: Mapping[str, Any] | None) -> str | None:
+    if evidence is None:
+        return None
+    basis = str(evidence.get("period_basis") or "").strip().lower()
+    if basis in {"calendar", "fiscal"}:
+        return basis
+    period = str(evidence.get("period") or "").strip().upper()
+    if re.fullmatch(r"FY\d{4}(?:Q[1-4])?", period):
+        return "fiscal"
+    if re.fullmatch(r"\d{4}Q[1-4]", period):
+        return "calendar"
+    return None
+
+
+def _period_type(evidence: Mapping[str, Any] | None) -> str | None:
+    if evidence is None:
+        return None
+    value = str(evidence.get("period_type") or "").strip().lower()
+    if value in {"quarter", "annual", "ytd", "instant"}:
+        return value
+    period = str(evidence.get("period") or "").strip().upper()
+    if re.fullmatch(r"(?:FY\d{4})?Q[1-4]", period):
+        return "quarter"
+    if re.fullmatch(r"FY\d{4}", period):
+        return "annual"
+    start = evidence.get("start")
+    end = evidence.get("end")
+    if isinstance(start, str) and isinstance(end, str):
+        try:
+            duration = (date.fromisoformat(end) - date.fromisoformat(start)).days + 1
+        except ValueError:
+            duration = None
+        if duration is not None:
+            if 80 <= duration <= 100:
+                return "quarter"
+            if 300 <= duration <= 380:
+                return "annual"
+    return None
+
+
+def _period_scope(sub_claim: Mapping[str, Any]) -> str | None:
+    text = " ".join(
+        str(sub_claim.get(field) or "")
+        for field in ("stated_text", "text", "original_claim", "claim", "claim_text")
+    ).lower()
+    if re.search(r"\bfiscal\b|\bfy\s*\d{4}", text):
+        return "fiscal"
+    if re.search(r"\bcalendar\b", text):
+        return "calendar"
+    return None
+
+
+def _mentions_quarter(sub_claim: Mapping[str, Any]) -> bool:
+    text = " ".join(
+        str(sub_claim.get(field) or "")
+        for field in ("stated_text", "text", "original_claim", "claim", "claim_text")
+    ).lower()
+    return bool(
+        re.search(
+            r"\bq[1-4]\b|\b(?:first|second|third|fourth)[ -]quarter\b",
+            text,
+        )
+    )
+
+
+def _interpretation_ids(
+    sub_claim: Mapping[str, Any], evidence_ids: Sequence[str], runner: Any
+) -> list[str]:
+    """Resolve explicit or legacy period-interpretation citations.
+
+    Older traces predate the ``interpretations`` field and often cite a
+    calendar quarter plus an annual fiscal fact.  For a quarter claim, annual
+    evidence is not a quarter interpretation, so it is excluded during this
+    compatibility path.  New traces should cite explicit fiscal and calendar
+    quarter evidence IDs.
+    """
+
+    explicit = _unique_ids(_normalise_evidence_ids(sub_claim.get("interpretations")))
+    candidates = explicit or _unique_ids(evidence_ids)
+    if not candidates:
+        return []
+
+    if not explicit:
+        bases = {
+            basis
+            for evidence_id in candidates
+            if (basis := _period_basis(_evidence(runner, evidence_id))) is not None
+        }
+        if len(bases) < 2 or not _mentions_quarter(sub_claim):
+            return []
+
+    if _mentions_quarter(sub_claim):
+        quarter_candidates = [
+            evidence_id
+            for evidence_id in candidates
+            if _period_type(_evidence(runner, evidence_id)) == "quarter"
+        ]
+        if quarter_candidates:
+            candidates = quarter_candidates
+
+    scope = _period_scope(sub_claim)
+    if scope is not None:
+        scoped = [
+            evidence_id
+            for evidence_id in candidates
+            if _period_basis(_evidence(runner, evidence_id)) == scope
+        ]
+        # A legacy trace may not have period_basis on a derived fiscal
+        # quarter.  Keep its quarter evidence rather than treating an annual
+        # FY fact as the fiscal-quarter interpretation.
+        if scoped:
+            candidates = scoped
+        elif explicit:
+            candidates = []
+
+    return _unique_ids(candidates)
 
 
 def _unique_ids(evidence_ids: Sequence[str]) -> list[str]:
@@ -573,6 +691,109 @@ def _compare(actual: float, stated: float, comparator: str, tolerance: float) ->
     return False
 
 
+def _interpretation_reason(
+    evidence_ids: Sequence[str], child_checks: Sequence[Mapping[str, Any]]
+) -> str:
+    parts: list[str] = []
+    for evidence_id, child in zip(evidence_ids, child_checks):
+        actual = child.get("actual_value")
+        actual_text = "none" if actual is None else f"{float(actual):g}"
+        parts.append(
+            f"{evidence_id} actual {actual_text} -> {child.get('program_verdict')}"
+        )
+    return "; ".join(parts)
+
+
+def _evaluate_period_interpretations(
+    sub_claim: Mapping[str, Any],
+    runner: Any,
+    related_sub_claims: Sequence[Mapping[str, Any]] | None,
+    evidence_ids: list[str],
+    interpretation_ids: list[str],
+) -> dict[str, Any]:
+    child_claims = []
+    for evidence_id in interpretation_ids:
+        child = dict(sub_claim)
+        child["evidence_ids"] = [evidence_id]
+        child["interpretations"] = []
+        child_claims.append(child)
+    child_checks = [
+        evaluate_sub_claim(
+            child,
+            runner,
+            related_sub_claims,
+            _allow_interpretations=False,
+        )
+        for child in child_claims
+    ]
+    if not child_checks:
+        # This is only reachable when an explicit interpretation list was
+        # incompatible with an explicit fiscal/calendar qualifier.  The
+        # ordinary checker reports the missing evidence cleanly.
+        fallback = dict(sub_claim)
+        fallback["interpretations"] = []
+        result = evaluate_sub_claim(
+            fallback,
+            runner,
+            related_sub_claims,
+            _allow_interpretations=False,
+        )
+        result["evidence_ids"] = evidence_ids
+        result["interpretations"] = []
+        return result
+
+    child_verdicts = [str(child.get("program_verdict")) for child in child_checks]
+    if all(value == "supported" for value in child_verdicts):
+        program_verdict = "supported"
+    elif all(value == "contradicted" for value in child_verdicts):
+        program_verdict = "contradicted"
+    else:
+        program_verdict = "unchecked"
+
+    period_ambiguous = (
+        program_verdict == "unchecked"
+        and "supported" in child_verdicts
+        and "contradicted" in child_verdicts
+    )
+    first = dict(child_checks[0])
+    model_verdict = sub_claim.get("verdict")
+    values = [child.get("actual_value") for child in child_checks]
+    detail = _interpretation_reason(interpretation_ids, child_checks)
+    if program_verdict == "unchecked":
+        reason = f"period_ambiguous; interpretations: {detail}"
+    else:
+        reason = f"period interpretations all {program_verdict}: {detail}"
+    if first.get("comparator_corrected"):
+        reason = f"comparator_corrected; {reason}"
+
+    first.update(
+        {
+            "evidence_ids": evidence_ids,
+            "interpretations": interpretation_ids,
+            "interpretation_results": [
+                {
+                    "evidence_id": evidence_id,
+                    "program_verdict": child.get("program_verdict"),
+                    "actual_value": child.get("actual_value"),
+                    "reason": child.get("reason"),
+                }
+                for evidence_id, child in zip(interpretation_ids, child_checks)
+            ],
+            "interpretation_values": values,
+            "evidence_valid": all(child.get("evidence_valid") for child in child_checks),
+            "program_verdict": program_verdict,
+            "actual_value": values[0] if len(values) == 1 else None,
+            "tolerance": first.get("tolerance") if len(values) == 1 else None,
+            "reason": reason,
+            "period_ambiguous": period_ambiguous,
+            "disagreement": (
+                program_verdict != "unchecked" and model_verdict != program_verdict
+            ),
+        }
+    )
+    return first
+
+
 def _record_number_and_precision(sub_claim: Mapping[str, Any]) -> tuple[float, float, list[str]]:
     stated_value = sub_claim.get("stated_value")
     if _is_number(stated_value):
@@ -589,12 +810,50 @@ def evaluate_sub_claim(
     sub_claim: Mapping[str, Any],
     runner: Any,
     related_sub_claims: Sequence[Mapping[str, Any]] | None = None,
+    *,
+    _allow_interpretations: bool = True,
 ) -> dict[str, Any]:
     """Evaluate one normalized model sub-claim against cited evidence."""
 
     evidence_ids = _normalise_evidence_ids(sub_claim.get("evidence_ids"))
+    interpretation_ids = (
+        _interpretation_ids(sub_claim, evidence_ids, runner)
+        if _allow_interpretations
+        else []
+    )
     claim_type = str(sub_claim.get("claim_type") or "")
-    comparator = sub_claim.get("comparator")
+    model_comparator = sub_claim.get("comparator")
+    model_comparator_text = (
+        str(model_comparator) if model_comparator is not None else ""
+    )
+    original_claim = next(
+        (
+            str(sub_claim.get(field))
+            for field in ("original_claim", "claim", "claim_text")
+            if sub_claim.get(field)
+        ),
+        "",
+    )
+    comparator = infer_comparator(
+        sub_claim.get("stated_text"),
+        sub_claim.get("text"),
+        original_claim,
+    )
+    comparator_corrected = model_comparator_text != comparator
+    if comparator_corrected:
+        flags_for_comparator = ["comparator_corrected"]
+    else:
+        flags_for_comparator = []
+
+    if interpretation_ids:
+        return _evaluate_period_interpretations(
+            sub_claim,
+            runner,
+            related_sub_claims,
+            evidence_ids,
+            interpretation_ids,
+        )
+
     if claim_type in {"record_high", "record_low"}:
         stated, precision, flags = _record_number_and_precision(sub_claim)
     elif claim_type == "other":
@@ -604,6 +863,7 @@ def evaluate_sub_claim(
         flags = []
     else:
         stated, precision, flags = _number_and_precision(sub_claim)
+    flags.extend(flags_for_comparator)
     if claim_type in {"change_pct", "change_abs"}:
         stated = _apply_change_direction(sub_claim, stated, flags)
 
@@ -698,6 +958,11 @@ def evaluate_sub_claim(
                         "stated_text_unparsed": "stated_text_unparsed" in flags,
                         "stated_sign_corrected": "stated_sign_corrected" in flags,
                         "threshold_from_model": "threshold_from_model" in flags,
+                        "comparator": comparator,
+                        "model_comparator": model_comparator_text,
+                        "comparator_corrected": comparator_corrected,
+                        "interpretations": [],
+                        "period_ambiguous": False,
                     }
     elif stated is None or precision is None:
         reason = "stated_text_unparsed"
@@ -746,6 +1011,8 @@ def evaluate_sub_claim(
         "stated_text_unparsed": "stated_text_unparsed" in flags,
         "stated_sign_corrected": "stated_sign_corrected" in flags,
         "threshold_from_model": "threshold_from_model" in flags,
+        "model_comparator": model_comparator_text,
+        "comparator_corrected": comparator_corrected,
     }
     if flags:
         flag_reason = ", ".join(flags)
@@ -764,6 +1031,9 @@ def evaluate_sub_claim(
         "disagreement": disagreement,
         "precision": precision,
         "stated_value_used": stated,
+        "comparator": comparator,
+        "interpretations": [],
+        "period_ambiguous": False,
         **flag_fields,
     }
 

@@ -134,6 +134,7 @@ class TraceRecorder:
         self.final_verdict: dict[str, Any] | None = None
         self.program_checks: list[dict[str, Any]] = []
         self.incomplete_turns: list[dict[str, Any]] = []
+        self.previous_response_fallback = False
 
     def record_request(
         self,
@@ -149,6 +150,7 @@ class TraceRecorder:
         normalized_usage: Any = None,
         finish_reason: str | None = None,
         rate_limit_headers: Mapping[str, Any] | None = None,
+        previous_response_fallback: bool = False,
     ) -> None:
         entry: dict[str, Any] = {
             "request": redact(model_dump(payload), self.secrets),
@@ -167,7 +169,12 @@ class TraceRecorder:
             entry["finish_reason"] = finish_reason
         if rate_limit_headers is not None:
             entry["rate_limit_headers"] = redact(model_dump(rate_limit_headers), self.secrets)
+        if previous_response_fallback:
+            entry["previous_response_fallback"] = True
         self.requests.append(entry)
+
+    def mark_previous_response_fallback(self) -> None:
+        self.previous_response_fallback = True
 
     def record_incomplete_turn(
         self,
@@ -256,6 +263,7 @@ class TraceRecorder:
             "latency_ms": total_latency_ms,
             "tool_call_count": self.tool_call_count,
             "incomplete_turns": self.incomplete_turns,
+            "previous_response_fallback": self.previous_response_fallback,
             "final_verdict": self.final_verdict,
             "program_checks": self.program_checks,
         }

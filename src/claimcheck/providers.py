@@ -240,6 +240,7 @@ class ParsedResponse:
     raw_usage: Any
     rate_limit_headers: dict[str, str]
     assistant_message: dict[str, Any] | None = None
+    output_items: list[Any] | None = None
 
 
 def _common_usage(
@@ -343,6 +344,19 @@ class ProviderAdapter:
     def call(self, client: Any, payload: Mapping[str, Any]) -> ParsedResponse:
         raise NotImplementedError
 
+    def fallback_request(
+        self,
+        payload: Mapping[str, Any],
+        conversation: Sequence[Mapping[str, Any]],
+        *,
+        model: str,
+        max_output_tokens: int,
+        reasoning_effort: str | None,
+    ) -> dict[str, Any]:
+        """Build a request that does not depend on provider response state."""
+
+        return dict(payload)
+
     def tool_result_records(
         self, response: ParsedResponse, results: Sequence[Mapping[str, Any]]
     ) -> list[dict[str, Any]]:
@@ -402,6 +416,27 @@ class MetaProvider(ProviderAdapter):
             final_payload["reasoning"] = {"effort": reasoning_effort}
         return final_payload
 
+    def fallback_request(
+        self,
+        payload: Mapping[str, Any],
+        conversation: Sequence[Mapping[str, Any]],
+        *,
+        model: str,
+        max_output_tokens: int,
+        reasoning_effort: str | None,
+    ) -> dict[str, Any]:
+        fallback_payload = copy.deepcopy(dict(payload))
+        fallback_payload.pop("previous_response_id", None)
+        fallback_payload["input"] = copy.deepcopy(list(conversation))
+        # A previous-response continuation normally inherits the initial
+        # instructions from the server-side response.  A standalone replay
+        # does not, so carry them explicitly with the fallback request.
+        if "instructions" not in fallback_payload:
+            from .agent import SYSTEM_INSTRUCTIONS
+
+            fallback_payload["instructions"] = SYSTEM_INSTRUCTIONS
+        return fallback_payload
+
     def repair_request(
         self, payload: Mapping[str, Any], response: ParsedResponse, *, model: str, max_output_tokens: int, reasoning_effort: str | None
     ) -> dict[str, Any]:
@@ -426,6 +461,9 @@ class MetaProvider(ProviderAdapter):
 
         usage = _usage_dict(response)
         normalized = _usage_buckets_from_ledger(usage)
+        output_items = _model_dump(_get(response, "output", []))
+        if not isinstance(output_items, list):
+            output_items = [output_items]
         calls = [
             ToolCall(
                 call_id=str(_get(item, "call_id") or _get(item, "id") or ""),
@@ -448,6 +486,7 @@ class MetaProvider(ProviderAdapter):
             normalized_usage=normalized,
             raw_usage=_model_dump(_get(response, "usage")),
             rate_limit_headers={},
+            output_items=output_items,
         )
 
 

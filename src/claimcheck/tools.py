@@ -10,18 +10,19 @@ from typing import Any
 from .edgar import METRICS, EdgarClient
 
 
-PERIOD_PATTERN = r"^(latest|FY\d{4}|\d{4}Q[1-4])$"
-BASE_PERIOD_PATTERN = r"^(FY\d{4}|\d{4}Q[1-4])$"
+PERIOD_PATTERN = r"^(latest|FY\d{4}(?:Q[1-4])?|\d{4}Q[1-4])$"
+BASE_PERIOD_PATTERN = r"^(FY\d{4}(?:Q[1-4])?|\d{4}Q[1-4])$"
 
 
 LOOKUP_FACT_TOOL = {
     "type": "function",
     "name": "lookup_fact",
     "description": (
-        "Look up one SEC EDGAR XBRL fact for a ticker, metric, and quarter or "
-        "fiscal year. Successful results include period (the normalized "
-        "requested label, or the resolved label for latest), duration_days, "
-        "and period_type (quarter, ytd, annual, or "
+        "Look up one SEC EDGAR XBRL fact for a ticker, metric, and calendar "
+        "quarter, fiscal quarter (FY2025Q4), or fiscal year. Successful results "
+        "include period (the normalized requested label, or the resolved label "
+        "for latest), period_basis (calendar or fiscal), duration_days, and "
+        "period_type (quarter, ytd, annual, or "
         "instant). Additive flows may "
         "return derived=true with derivation and components; never treat a "
         "ytd result as a quarter or recompute a derived result."
@@ -47,6 +48,7 @@ LOOKUP_FACT_OUTPUT_SCHEMA = {
     "properties": {
         "evidence_id": {"type": "string"},
         "period": {"type": "string"},
+        "period_basis": {"type": "string", "enum": ["calendar", "fiscal"]},
         "value": {"type": ["number", "null"]},
         "start": {"type": ["string", "null"]},
         "end": {"type": ["string", "null"]},
@@ -146,6 +148,7 @@ HISTORY_RANK_OUTPUT_SCHEMA = {
         "ticker": {"type": "string"},
         "metric": {"type": "string"},
         "period": {"type": "string"},
+        "period_basis": {"type": "string", "enum": ["calendar", "fiscal"]},
         "period_type": {
             "type": "string",
             "enum": ["quarter", "annual", "ytd", "instant"],
@@ -168,6 +171,7 @@ HISTORY_RANK_OUTPUT_SCHEMA = {
         "ticker",
         "metric",
         "period",
+        "period_basis",
         "period_type",
         "value",
         "rank",
@@ -190,6 +194,7 @@ COMPUTE_CHANGE_OUTPUT_SCHEMA = {
         "metric": {"type": "string"},
         "period": {"type": "string"},
         "base_period": {"type": "string"},
+        "period_basis": {"type": "string", "enum": ["calendar", "fiscal"]},
         "current_fact": {"$ref": "#/$defs/fact"},
         "base_fact": {"$ref": "#/$defs/fact"},
         "current": {"$ref": "#/$defs/fact"},
@@ -206,6 +211,7 @@ COMPUTE_CHANGE_OUTPUT_SCHEMA = {
         "metric",
         "period",
         "base_period",
+        "period_basis",
         "current_fact",
         "base_fact",
         "abs_change",
@@ -267,6 +273,17 @@ def _is_number(value: Any) -> bool:
 def _resolved_fact_period(result: dict[str, Any]) -> str | None:
     """Infer the normalized period label for a ``latest`` fact result."""
 
+    fiscal_year = result.get("fiscal_year", result.get("fy"))
+    fiscal_period = str(result.get("fiscal_period", result.get("fp")) or "").upper()
+    try:
+        fiscal_year_int = int(fiscal_year)
+    except (TypeError, ValueError):
+        fiscal_year_int = None
+    if fiscal_year_int is not None and fiscal_period in {"Q1", "Q2", "Q3", "Q4"}:
+        return f"FY{fiscal_year_int:04d}{fiscal_period}"
+    if fiscal_year_int is not None and fiscal_period == "FY":
+        return f"FY{fiscal_year_int:04d}"
+
     frame = str(result.get("frame") or "").strip().upper()
     match = re.fullmatch(r"CY(?P<year>\d{4})(?P<quarter>Q[1-4])(?:I)?", frame)
     if match is not None:
@@ -299,15 +316,27 @@ def _resolved_fact_period(result: dict[str, Any]) -> str | None:
     return f"{end.year}Q{((end.month - 1) // 3) + 1}"
 
 
+def _period_basis_for_label(period: str) -> str:
+    return (
+        "fiscal"
+        if re.fullmatch(r"FY\d{4}(?:Q[1-4])?", str(period).strip().upper())
+        else "calendar"
+    )
+
+
 def _add_lookup_period(result: Any, requested_period: str) -> Any:
     """Attach the requested/resolved identity to numeric lookup evidence."""
 
-    if not isinstance(result, dict) or not _is_number(result.get("value")):
+    if not isinstance(result, dict):
         return result
     period = requested_period
     if requested_period == "LATEST":
         period = _resolved_fact_period(result) or str(result.get("period") or "LATEST")
-    return {**result, "period": period.strip().upper()}
+    period = period.strip().upper()
+    basis = str(result.get("period_basis") or "").strip().lower()
+    if basis not in {"calendar", "fiscal"}:
+        basis = _period_basis_for_label(period)
+    return {**result, "period": period, "period_basis": basis}
 
 
 def _validate_lookup(args: Any) -> dict[str, str]:
@@ -332,7 +361,9 @@ def _validate_lookup(args: Any) -> dict[str, str]:
         raise ToolValidationError("ticker must not be empty")
     if metric not in METRICS:
         raise ToolValidationError(f"unknown metric: {metric}")
-    if period != "LATEST" and not re.fullmatch(r"(?:FY\d{4}|\d{4}Q[1-4])", period):
+    if period != "LATEST" and not re.fullmatch(
+        r"(?:FY\d{4}(?:Q[1-4])?|\d{4}Q[1-4])", period
+    ):
         raise ToolValidationError(f"invalid period: {period}")
     return {"ticker": ticker, "metric": metric, "period": period}
 
@@ -388,7 +419,9 @@ def _validate_compute(args: Any) -> dict[str, str | None]:
         raise ToolValidationError("ticker must not be empty")
     if metric not in METRICS:
         raise ToolValidationError(f"unknown metric: {metric}")
-    if period != "LATEST" and not re.fullmatch(r"(?:FY\d{4}|\d{4}Q[1-4])", period):
+    if period != "LATEST" and not re.fullmatch(
+        r"(?:FY\d{4}(?:Q[1-4])?|\d{4}Q[1-4])", period
+    ):
         raise ToolValidationError(f"invalid period: {period}")
 
     base_text = raw_base.strip() if isinstance(raw_base, str) else ""
@@ -396,7 +429,7 @@ def _validate_compute(args: Any) -> dict[str, str | None]:
     if base_period.lower() in {"", "null", "none"}:
         base_period = None
     if base_period is not None and not re.fullmatch(
-        r"(?:FY\d{4}|\d{4}Q[1-4])", base_period
+        r"(?:FY\d{4}(?:Q[1-4])?|\d{4}Q[1-4])", base_period
     ):
         raise ToolValidationError(f"invalid base_period: {base_period}")
     if base_period is None:
@@ -440,21 +473,25 @@ def _validate_history(args: Any) -> dict[str, str]:
     if metric not in METRICS:
         raise ToolValidationError(f"unknown metric: {metric}")
     if period != "LATEST" and not re.fullmatch(
-        r"(?:FY\d{4}|\d{4}Q[1-4])", period
+        r"(?:FY\d{4}(?:Q[1-4])?|\d{4}Q[1-4])", period
     ):
         raise ToolValidationError(f"invalid period: {period}")
     return {"ticker": ticker, "metric": metric, "period": period}
 
 
 def _period_kind(period: str) -> str:
+    if re.fullmatch(r"FY\d{4}Q[1-4]", period):
+        return "fiscal_quarter"
     if period.startswith("FY"):
         return "annual"
     if re.fullmatch(r"\d{4}Q[1-4]", period):
-        return "quarter"
+        return "calendar_quarter"
     return "latest"
 
 
 def _prior_year_period(period: str) -> str | None:
+    if match := re.fullmatch(r"FY(\d{4})Q([1-4])", period):
+        return f"FY{int(match.group(1)) - 1:04d}Q{match.group(2)}"
     if match := re.fullmatch(r"FY(\d{4})", period):
         return f"FY{int(match.group(1)) - 1:04d}"
     if match := re.fullmatch(r"(\d{4})Q([1-4])", period):
@@ -507,6 +544,7 @@ class ToolRunner:
             "metric": valid["metric"],
             "period": valid["period"],
             "base_period": valid["base_period"],
+            "period_basis": _period_basis_for_label(valid["period"]),
             "current_fact": current,
             "base_fact": base,
             # Short aliases make the relationship obvious to callers inspecting

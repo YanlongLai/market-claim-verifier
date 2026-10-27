@@ -46,7 +46,12 @@ def test_approx_about_1_4b_supports_tesla_1_373b() -> None:
 def test_exact_1_4b_uses_rounding_math_not_a_fixed_1_5_percent_rule() -> None:
     # $1.4B has precision $0.05B, so 1.373B is inside 1.35B..1.45B.
     check = evaluate_sub_claim(
-        claim(stated_text="$1.4B", comparator="eq"), runner_with_evidence(1.373e9)
+        claim(
+            text="Tesla Q3 2025 net income was $1.4B",
+            stated_text="$1.4B",
+            comparator="eq",
+        ),
+        runner_with_evidence(1.373e9),
     )
     assert check["program_verdict"] == "supported"
     assert check["tolerance"] == pytest.approx(50e6)

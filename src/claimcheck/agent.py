@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import json
 import math
 import os
@@ -33,6 +34,7 @@ SUB_CLAIM_SCHEMA = {
         "comparator": {"type": "string", "enum": list(COMPARATORS)},
         "stated_value": {"type": ["number", "null"]},
         "evidence_ids": {"type": "array", "items": {"type": "string"}},
+        "interpretations": {"type": "array", "items": {"type": "string"}},
         "verdict": {"type": "string", "enum": list(VERDICTS)},
         "note": {"type": "string"},
         "model_found_value": {"type": ["number", "null"]},
@@ -44,6 +46,7 @@ SUB_CLAIM_SCHEMA = {
         "comparator",
         "stated_value",
         "evidence_ids",
+        "interpretations",
         "verdict",
         "note",
         "model_found_value",
@@ -81,13 +84,29 @@ Each final sub_claim must contain exactly these model fields:
 text, stated_text, claim_type (value, change_pct, change_abs, record_high,
 record_low, first_time_above, or other), comparator (eq, approx, gt, gte, lt,
 or lte), stated_value in base units (USD, USD/share, percentage points, or 1
-for a record boolean), evidence_ids, verdict, note, and model_found_value.
+for a record boolean), evidence_ids, interpretations, verdict, note, and
+model_found_value. interpretations is required and may be empty.
 Copy stated_text verbatim from the claim, including words such as "about",
 "up", or "fell" (for example, "about $1.4 billion", "up 22%", or
 "fell 10%"). For a change_pct, stated_value is 22 for 22%, not 0.22; the
 verifier applies the sign implied by direction words such as fell/down or
 rose/up. model_found_value is the number read from the cited evidence in the
 same units, or null when it is missing.
+
+Comparator wording is deterministic: a plain numeric statement with no hedge
+or inequality phrase is eq; about/around/roughly/approximately/nearly/almost,
+close to, some, or ~ means approx; topped/exceeded/above/more than/over/
+surpassed/beat means gt; at least/no less than means gte; below/under/less
+than/short of means lt; at most/no more than/up to means lte. The program
+records and may correct the model comparator from these words. "up" and
+"fell" describe change direction, not approximation.
+
+For a quarter claim at a non-calendar-fiscal issuer, use period_basis from
+the tool results. If the claim says neither fiscal nor calendar, look up both
+the calendar label (for example 2025Q4) and the fiscal label (for example
+FY2025Q4), cite both IDs in evidence_ids, and put those two IDs in
+interpretations. If the claim says fiscal, cite only the fiscal reading; if it
+says calendar, cite only the calendar reading.
 
 Examples:
 1. "Tesla net income was about $1.4 billion": lookup_fact; stated_text
@@ -97,10 +116,10 @@ Examples:
    "exceeded $100 billion", claim_type value, comparator gt, stated_value
    100000000000.
 3. "Meta revenue was up 22% YoY": compute_change(META, revenue, 2025Q2,
-   null); stated_text "up 22%", claim_type change_pct, comparator approx,
+   null); stated_text "up 22%", claim_type change_pct, comparator eq,
    stated_value 22, and cite the compute_change evidence ID.
 4. "Tesla revenue fell 10% YoY": compute_change(TSLA, revenue, 2025Q3,
-   null); stated_text "fell 10%", claim_type change_pct, comparator approx,
+   null); stated_text "fell 10%", claim_type change_pct, comparator eq,
    stated_value -10, and cite the compute_change evidence ID.
 5. "Alphabet Q3 2025 revenue was a record high": history_rank(GOOGL,
    revenue, 2025Q3); claim_type record_high, comparator eq, stated_value 1,
@@ -119,7 +138,8 @@ AGENT_FINAL_VERDICT_PROMPT = (
     "assertion as a sub-claim, including assertions that need claim_type other "
     "when the tools cannot check them. Copy stated_text verbatim from the claim; "
     "include claim_type, comparator, stated_value in base units, evidence_ids, "
-    "verdict, model_found_value, and a concise note."
+    "interpretations (an array, possibly empty), verdict, model_found_value, "
+    "and a concise note."
 )
 
 
@@ -345,6 +365,12 @@ def _normalize_verdict(raw_text: str) -> dict[str, Any]:
                     "stated_value": _number(item.get("stated_value")),
                     "verdict": sub_verdict,
                     "evidence_ids": [str(evidence_id) for evidence_id in ids],
+                    "interpretations": [
+                        str(evidence_id)
+                        for evidence_id in item.get("interpretations", [])
+                    ]
+                    if isinstance(item.get("interpretations", []), list)
+                    else [],
                     "model_found_value": _number(item.get("model_found_value")),
                     "note": str(item.get("note") or ""),
                 }
@@ -379,6 +405,7 @@ def _valid_verdict_schema(value: Any) -> bool:
         "comparator",
         "stated_value",
         "evidence_ids",
+        "interpretations",
         "verdict",
         "note",
         "model_found_value",
@@ -400,6 +427,10 @@ def _valid_verdict_schema(value: Any) -> bool:
             not isinstance(item, str) for item in sub_claim["evidence_ids"]
         ):
             return False
+        if not isinstance(sub_claim.get("interpretations"), list) or any(
+            not isinstance(item, str) for item in sub_claim["interpretations"]
+        ):
+            return False
         if sub_claim.get("verdict") not in VERDICTS or not isinstance(sub_claim.get("note"), str):
             return False
     return True
@@ -416,6 +447,12 @@ def _parse_strict_verdict(raw_text: str) -> dict[str, Any] | None:
         value = json.loads(_strip_json_fences(raw_text))
     except (TypeError, json.JSONDecodeError):
         return None
+    # Traces produced before the period-interpretation field remain replayable;
+    # the published schema is strict and normalized output always contains it.
+    if isinstance(value, dict) and isinstance(value.get("sub_claims"), list):
+        for sub_claim in value["sub_claims"]:
+            if isinstance(sub_claim, dict) and "interpretations" not in sub_claim:
+                sub_claim["interpretations"] = []
     if not _valid_verdict_schema(value):
         return None
     return _normalize_verdict(json.dumps(value, ensure_ascii=False))
@@ -455,6 +492,47 @@ def _already_structured_verdict(response: Any) -> bool:
     )
 
 
+def _exception_status_code(exc: BaseException) -> int | None:
+    for value in (
+        getattr(exc, "status_code", None),
+        getattr(exc, "status", None),
+        _get(getattr(exc, "response", None), "status_code"),
+        _get(getattr(exc, "response", None), "status"),
+    ):
+        try:
+            return int(value) if value is not None else None
+        except (TypeError, ValueError):
+            continue
+    return None
+
+
+def _is_previous_response_not_found_error(
+    exc: BaseException, payload: Mapping[str, Any]
+) -> bool:
+    """Recognize the Meta response-chain expiration/not-found error."""
+
+    if "previous_response_id" not in payload:
+        return False
+    message = str(exc).lower()
+    status_code = _exception_status_code(exc)
+    not_found = (
+        ("response" in message and "not found" in message)
+        or "expired" in message
+        or ("previous_response_id" in message and "not" in message)
+    )
+    if not not_found:
+        return False
+    # Meta normally returns HTTP 400, but test doubles and SDK wrappers may
+    # expose only the error text.  Text matching is enough for an explicit
+    # previous-response expiration; an unrelated HTTP 400 is never retried.
+    return (
+        status_code in {400, 404}
+        or "previous_response_id" in message
+        or "referenced response" in message
+        or "previous response" in message
+    )
+
+
 def _request_with_retry(
     *,
     client: Any,
@@ -468,74 +546,105 @@ def _request_with_retry(
     turn: int,
     phase: str,
     retry_incomplete: bool = True,
+    fallback_payload: dict[str, Any] | None = None,
+    fallback_previous_context: Any = None,
 ) -> tuple[Any, bool]:
-    """Make one request, retrying a max-token incomplete response once."""
+    """Make one request, retrying expiration and max-token failures safely."""
 
     active_provider = get_provider(provider)
     attempts = 2 if retry_incomplete else 1
+    active_payload = payload
+    active_context = previous_context
+    fallback_used = False
     for attempt in range(attempts):
         request_limit = max_output_tokens * (2 if attempt else 1)
-        request_payload = {**payload}
-        if active_provider.chat_completions:
-            request_payload.pop("max_output_tokens", None)
-            request_payload["max_tokens"] = request_limit
-        else:
-            request_payload["max_output_tokens"] = request_limit
-        reservation = ledger.reserve(
-            request_payload,
-            model=model,
-            max_output_tokens=request_limit,
-            previous_context=previous_context,
-            provider=active_provider.name,
-        )
-        started = time.perf_counter()
-        try:
-            response = active_provider.call(client, request_payload)
-        except Exception as exc:
+        retry_after_incomplete = False
+        while True:
+            using_fallback = fallback_used
+            request_payload = {**active_payload}
+            if active_provider.chat_completions:
+                request_payload.pop("max_output_tokens", None)
+                request_payload["max_tokens"] = request_limit
+            else:
+                request_payload["max_output_tokens"] = request_limit
+            reservation = ledger.reserve(
+                request_payload,
+                model=model,
+                max_output_tokens=request_limit,
+                previous_context=(
+                    fallback_previous_context if using_fallback else active_context
+                ),
+                provider=active_provider.name,
+            )
+            started = time.perf_counter()
+            try:
+                response = active_provider.call(client, request_payload)
+            except Exception as exc:
+                latency_ms = (time.perf_counter() - started) * 1000
+                recorder.record_request(
+                    payload=request_payload,
+                    response={
+                        "error": type(exc).__name__,
+                        "message": str(exc),
+                    },
+                    reservation=reservation,
+                    usage=None,
+                    cost=reservation.amount,
+                    latency_ms=latency_ms,
+                    status="error",
+                    previous_response_fallback=using_fallback,
+                )
+                if (
+                    not using_fallback
+                    and not fallback_used
+                    and fallback_payload is not None
+                    and active_provider.name == "meta"
+                    and _is_previous_response_not_found_error(exc, request_payload)
+                ):
+                    fallback_used = True
+                    recorder.mark_previous_response_fallback()
+                    active_payload = fallback_payload
+                    active_context = fallback_previous_context
+                    continue
+                raise
             latency_ms = (time.perf_counter() - started) * 1000
+            usage = response.usage
+            cost = ledger.reconcile(reservation, usage)
+            status = response.status
             recorder.record_request(
                 payload=request_payload,
-                response={
-                    "error": type(exc).__name__,
-                    "message": str(exc),
-                },
+                response=response.raw_response,
                 reservation=reservation,
-                usage=None,
-                cost=reservation.amount,
+                usage=response.normalized_usage if active_provider.name == "baseten" else usage,
+                cost=cost,
                 latency_ms=latency_ms,
-                status="error",
+                status=status,
+                raw_usage=response.raw_usage if active_provider.name == "baseten" else None,
+                normalized_usage=response.normalized_usage if active_provider.name == "baseten" else None,
+                finish_reason=response.finish_reason,
+                rate_limit_headers=response.rate_limit_headers if active_provider.name == "baseten" else None,
+                previous_response_fallback=using_fallback,
             )
-            raise
-        latency_ms = (time.perf_counter() - started) * 1000
-        usage = response.usage
-        cost = ledger.reconcile(reservation, usage)
-        status = response.status
-        recorder.record_request(
-            payload=request_payload,
-            response=response.raw_response,
-            reservation=reservation,
-            usage=response.normalized_usage if active_provider.name == "baseten" else usage,
-            cost=cost,
-            latency_ms=latency_ms,
-            status=status,
-            raw_usage=response.raw_usage if active_provider.name == "baseten" else None,
-            normalized_usage=response.normalized_usage if active_provider.name == "baseten" else None,
-            finish_reason=response.finish_reason,
-            rate_limit_headers=response.rate_limit_headers if active_provider.name == "baseten" else None,
-        )
-        if status == "completed":
-            return response, True
+            if status == "completed":
+                return response, True
 
-        reason = response.incomplete_reason
-        recorder.record_incomplete_turn(
-            turn=turn,
-            attempt=attempt + 1,
-            phase=phase,
-            status=status,
-            reason=reason,
-            max_output_tokens=request_limit,
-        )
-        if attempt == 0 and status == "incomplete" and reason == "max_output_tokens" and retry_incomplete:
+            reason = response.incomplete_reason
+            recorder.record_incomplete_turn(
+                turn=turn,
+                attempt=attempt + 1,
+                phase=phase,
+                status=status,
+                reason=reason,
+                max_output_tokens=request_limit,
+            )
+            retry_after_incomplete = (
+                attempt == 0
+                and status == "incomplete"
+                and reason == "max_output_tokens"
+                and retry_incomplete
+            )
+            break
+        if retry_after_incomplete:
             continue
         return response, False
 
@@ -596,6 +705,12 @@ def verify_claim(
         reasoning_effort=configured_reasoning_effort,
     )
     previous_context: Any = None
+    meta_history: list[dict[str, Any]] = [
+        copy.deepcopy(item)
+        for item in current_payload.get("input", [])
+        if isinstance(item, dict)
+    ] if active_provider.name == "meta" else []
+    fallback_payload: dict[str, Any] | None = None
     turns = 0
 
     while turns < max(1, max_turns):
@@ -610,10 +725,14 @@ def verify_claim(
             previous_context=previous_context,
             turn=turns + 1,
             phase="tool",
+            fallback_payload=fallback_payload,
+            fallback_previous_context=None,
         )
         if not completed:
             return _incomplete_response_result(recorder, response)
         turns += 1
+        if active_provider.name == "meta" and response.output_items:
+            meta_history.extend(copy.deepcopy(response.output_items))
         calls = response.tool_calls
         if not calls:
             break
@@ -637,17 +756,21 @@ def verify_claim(
                 }
             )
         previous_context = None
+        tool_input_items = [
+            {
+                "type": "function_call_output",
+                "call_id": item["call_id"],
+                "output": json.dumps(
+                    item["result"], ensure_ascii=False, separators=(",", ":")
+                ),
+            }
+            for item in tool_results
+        ]
         if active_provider.name == "meta":
+            meta_history.extend(copy.deepcopy(tool_input_items))
             previous_context = {
                 "response_id": response.response_id,
-                "tool_outputs": [
-                    {
-                        "type": "function_call_output",
-                        "call_id": item["call_id"],
-                        "output": json.dumps(item["result"], ensure_ascii=False, separators=(",", ":")),
-                    }
-                    for item in tool_results
-                ],
+                "tool_outputs": tool_input_items,
             }
         current_payload = active_provider.continuation_request(
             current_payload,
@@ -657,6 +780,14 @@ def verify_claim(
             max_output_tokens=tool_output_tokens,
             reasoning_effort=configured_reasoning_effort,
         )
+        if active_provider.name == "meta":
+            fallback_payload = active_provider.fallback_request(
+                current_payload,
+                meta_history,
+                model=model,
+                max_output_tokens=tool_output_tokens,
+                reasoning_effort=configured_reasoning_effort,
+            )
 
     if response is None:
         result = {
@@ -680,6 +811,20 @@ def verify_claim(
             max_output_tokens=final_output_tokens,
             reasoning_effort=configured_reasoning_effort,
         )
+        final_fallback_payload: dict[str, Any] | None = None
+        if active_provider.name == "meta":
+            final_input = [
+                copy.deepcopy(item)
+                for item in final_payload.get("input", [])
+                if isinstance(item, dict)
+            ]
+            final_fallback_payload = active_provider.fallback_request(
+                final_payload,
+                [*meta_history, *final_input],
+                model=model,
+                max_output_tokens=final_output_tokens,
+                reasoning_effort=configured_reasoning_effort,
+            )
         final_response, completed = _request_with_retry(
             client=client,
             ledger=ledger,
@@ -691,6 +836,8 @@ def verify_claim(
             previous_context=previous_context,
             turn=turns + 1,
             phase="final",
+            fallback_payload=final_fallback_payload,
+            fallback_previous_context=None,
         )
         if not completed:
             return _incomplete_response_result(recorder, final_response)

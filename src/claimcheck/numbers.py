@@ -52,6 +52,37 @@ _UNIT_MULTIPLIERS = {
     "t": 1e12,
 }
 
+# These phrases are deliberately kept small and literal.  The program uses
+# the words immediately before a number, rather than trusting a model's
+# comparator field.  In particular, ``nearly`` and ``almost`` are treated as
+# ordinary approximation language; we do not attempt to model their semantic
+# difference from ``about``.
+_COMPARATOR_NUMBER = (
+    r"(?:[$€£]\s*)?(?:\d{1,3}(?:,\d{3})+|\d+(?:\.\d+)?|\.\d+)"
+    r"(?:\s*(?:trillion|trillions|tn|t|billion|billions|bn|b|million|"
+    r"millions|mn|m|thousand|thousands|k|percent|%))?"
+)
+_COMPARATOR_PHRASES: tuple[tuple[str, tuple[str, ...]], ...] = (
+    (
+        "approx",
+        (
+            r"about",
+            r"around",
+            r"roughly",
+            r"approximately",
+            r"nearly",
+            r"almost",
+            r"close\s+to",
+            r"some",
+            r"~",
+        ),
+    ),
+    ("gte", (r"at\s+least", r"no\s+less\s+than")),
+    ("lte", (r"at\s+most", r"no\s+more\s+than", r"up\s+to")),
+    ("gt", (r"topped", r"exceeded", r"above", r"more\s+than", r"over", r"surpassed", r"beat")),
+    ("lt", (r"below", r"under", r"less\s+than", r"short\s+of")),
+)
+
 
 def _decimal_places(raw_number: str) -> int:
     mantissa = raw_number.replace(",", "")
@@ -113,6 +144,84 @@ def parse_stated_number(stated_text: str) -> ParsedNumber | None:
     return ParsedNumber(float(value), float(precision))
 
 
+def _phrase_precedes_number(
+    text: str, phrase: str, target_value: float | None = None
+) -> bool:
+    """Return whether a comparator phrase is attached to a number."""
+
+    # ``the`` and ``a`` cover common prose such as "more than the $100B
+    # threshold" without allowing an arbitrary sentence-wide match.
+    pattern = re.compile(
+        rf"(?<![a-z])(?:{phrase})(?![a-z])"
+        rf"(?:\s+(?:a|an|the))?\s*(?P<number>{_COMPARATOR_NUMBER})",
+        re.IGNORECASE,
+    )
+    for match in pattern.finditer(text):
+        if target_value is None:
+            return True
+        parsed = parse_stated_number(match.group("number"))
+        if parsed is not None and parsed.value == target_value:
+            return True
+    return False
+
+
+def infer_comparator(
+    stated_text: str | None = "",
+    sub_claim_text: str | None = "",
+    original_claim: str | None = "",
+) -> str:
+    """Infer the program comparator from the wording around the number.
+
+    The search considers the literal ``stated_text``, the sub-claim text, and
+    an optional original-claim sentence.  If no listed hedge or inequality
+    phrase is attached to a number, the comparator is ``eq``.  ``nearly`` and
+    ``almost`` intentionally map to ``approx`` as a simple, conservative rule.
+    """
+
+    texts = [
+        value.strip().replace("≈", "~")
+        for value in (stated_text, sub_claim_text, original_claim)
+        if isinstance(value, str) and value.strip()
+    ]
+    if not texts:
+        return "eq"
+
+    # The literal stated_text is the closest available span.  A broader
+    # sub-claim/original sentence is still consulted for inequality words such
+    # as "exceeded" when the model supplied only the number as stated_text.
+    for comparator, phrases in _COMPARATOR_PHRASES:
+        if any(_phrase_precedes_number(texts[0], phrase) for phrase in phrases):
+            return comparator
+    stated_numbers = list(
+        re.finditer(_COMPARATOR_NUMBER, texts[0], flags=re.IGNORECASE)
+    )
+    parsed_stated = (
+        parse_stated_number(stated_numbers[-1].group(0))
+        if stated_numbers
+        else parse_stated_number(texts[0])
+    )
+    target_value = parsed_stated.value if parsed_stated is not None else None
+    for comparator, phrases in _COMPARATOR_PHRASES[1:]:
+        if any(
+            _phrase_precedes_number(text, phrase, target_value)
+            for text in texts[1:]
+            for phrase in phrases
+        ):
+            return comparator
+
+    for text in texts[1:]:
+        for phrase in _COMPARATOR_PHRASES[0][1]:
+            if _phrase_precedes_number(text, phrase, target_value):
+                return "approx"
+    return "eq"
+
+
+# Descriptive aliases keep the pure helper easy to discover for callers and
+# older integrations that use a noun-first name.
+comparator_from_text = infer_comparator
+infer_claim_comparator = infer_comparator
+
+
 # Small aliases keep the pure helper discoverable for callers that describe the
 # operation as parsing a number rather than parsing stated text.
 parse_number = parse_stated_number
@@ -121,6 +230,9 @@ parse_stated_text = parse_stated_number
 
 __all__ = [
     "ParsedNumber",
+    "comparator_from_text",
+    "infer_claim_comparator",
+    "infer_comparator",
     "parse_number",
     "parse_stated_number",
     "parse_stated_text",

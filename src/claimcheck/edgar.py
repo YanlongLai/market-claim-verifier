@@ -17,9 +17,10 @@ SEC_DATA_BASE = "https://data.sec.gov"
 SEC_FILES_BASE = "https://www.sec.gov/files"
 SEC_ARCHIVES_BASE = "https://www.sec.gov/Archives/edgar/data"
 PERIOD_RE = re.compile(
-    r"^(?:(?P<fy>FY)(?P<fy_year>\d{4})|(?P<year>\d{4})(?P<quarter>Q[1-4]))$",
+    r"^(?:(?P<fy>FY)(?P<fy_year>\d{4})(?P<fy_quarter>Q[1-4])?|(?P<year>\d{4})(?P<quarter>Q[1-4]))$",
     re.I,
 )
+FISCAL_QUARTER_RE = re.compile(r"^FY(?P<year>\d{4})Q(?P<quarter>[1-4])$", re.I)
 FRAME_RE = re.compile(r"^CY(?P<year>\d{4})(?P<quarter>Q[1-4])(?:I)?$", re.I)
 
 STATEMENT_FORMS = frozenset(
@@ -236,6 +237,68 @@ def _period_from_fact(fact: Mapping[str, Any]) -> str | None:
     return frame_period
 
 
+def _fact_fiscal_year(fact: Mapping[str, Any]) -> int | None:
+    value = fact.get("fy", fact.get("fiscal_year"))
+    try:
+        year = int(value)
+    except (TypeError, ValueError):
+        return None
+    return year if 1900 <= year <= 2200 else None
+
+
+def _fiscal_period_from_fact(fact: Mapping[str, Any]) -> str | None:
+    """Return a fiscal-quarter label from SEC ``fy``/``fp`` metadata."""
+
+    fiscal_year = _fact_fiscal_year(fact)
+    fiscal_period = str(fact.get("fp") or "").strip().upper()
+    if fiscal_year is None or fiscal_period not in {"Q1", "Q2", "Q3", "Q4"}:
+        return None
+    if _period_type(fact) != "quarter":
+        return None
+    return f"FY{fiscal_year:04d}{fiscal_period}"
+
+
+def _is_fiscal_quarter(period: str) -> bool:
+    return FISCAL_QUARTER_RE.fullmatch(period) is not None
+
+
+def _period_basis(period: str, result: Mapping[str, Any] | None = None) -> str:
+    label = str(period or "").strip().upper()
+    if _is_fiscal_quarter(label) or _is_fy(label):
+        return "fiscal"
+    if _is_quarter(label):
+        return "calendar"
+    if result is not None:
+        existing = str(result.get("period_basis") or "").strip().lower()
+        if existing in {"calendar", "fiscal"}:
+            return existing
+        resolved = str(result.get("period") or "").strip().upper()
+        if _is_fiscal_quarter(resolved) or _is_fy(resolved):
+            return "fiscal"
+    return "calendar"
+
+
+def _with_period_metadata(
+    result: Mapping[str, Any], requested_period: str
+) -> dict[str, Any]:
+    value = dict(result)
+    period = str(requested_period or "").strip().upper()
+    if period == "LATEST":
+        fiscal_year = _fact_fiscal_year(value)
+        fiscal_period = str(value.get("fiscal_period") or "").strip().upper()
+        if fiscal_year is not None and fiscal_period in {"Q1", "Q2", "Q3", "Q4"}:
+            period = f"FY{fiscal_year:04d}{fiscal_period}"
+        elif fiscal_year is not None and fiscal_period == "FY":
+            period = f"FY{fiscal_year:04d}"
+        resolved = str(value.get("period") or "").strip().upper()
+        if period == "LATEST" and resolved:
+            period = resolved
+    if period:
+        value["period"] = period
+    value["period_basis"] = _period_basis(period, value)
+    return value
+
+
 def _history_period_sort_key(period: str) -> tuple[int, int]:
     """Sort comparable history labels from oldest to newest."""
 
@@ -243,7 +306,12 @@ def _history_period_sort_key(period: str) -> tuple[int, int]:
     if match is None:
         return (0, 0)
     if match.group("fy"):
-        return (int(match.group("fy_year")), 4)
+        return (
+            int(match.group("fy_year")),
+            int(match.group("fy_quarter")[1:])
+            if match.group("fy_quarter")
+            else 4,
+        )
     return (int(match.group("year")), int(match.group("quarter")[1:]))
 
 
@@ -300,6 +368,9 @@ def _matches_annual_period(fact: Mapping[str, Any], period: str) -> bool:
     end = _date(fact.get("end"))
     if end is None:
         return False
+    fiscal_year = _fact_fiscal_year(fact)
+    if fiscal_year is not None:
+        return fiscal_year == year
     frame = str(fact.get("frame") or "").upper()
     if frame == f"CY{year}":
         return True
@@ -535,7 +606,47 @@ class EdgarClient:
                     period = _period_from_fact(fact)
                     if period:
                         periods[period] = str(fact.get("end") or "")
-        return [period for period, _ in sorted(periods.items(), key=lambda item: item[1], reverse=True)[:8]]
+                    fiscal_period = _fiscal_period_from_fact(fact)
+                    if fiscal_period:
+                        periods[fiscal_period] = str(fact.get("end") or "")
+
+        # A fiscal Q4 is often absent as a direct SEC fact.  Add the label when
+        # annual minus 9M YTD can derive it, so a model can discover the
+        # fiscal interpretation without guessing the issuer's year end.
+        if metric in ADDITIVE_METRICS:
+            for group in self._fact_groups(facts, metric):
+                for candidate in self._derive_candidates_for_group(group):
+                    annual = candidate.current
+                    fiscal_year = _fact_fiscal_year(annual)
+                    if fiscal_year is not None and str(annual.get("fp") or "").upper() == "FY":
+                        periods[f"FY{fiscal_year:04d}Q4"] = str(
+                            annual.get("end") or ""
+                        )
+            fiscal_years = {
+                fiscal_year
+                for group in self._fact_groups(facts, metric)
+                for fact in group.values
+                if (fiscal_year := _fact_fiscal_year(fact)) is not None
+                and str(fact.get("fp") or "").strip().upper() == "FY"
+            }
+            for fiscal_year in fiscal_years:
+                fiscal_label = f"FY{fiscal_year:04d}Q4"
+                candidate = self._fiscal_quarter_candidate(
+                    facts, metric, fiscal_label
+                )
+                if candidate is not None:
+                    current = (
+                        candidate.fact
+                        if isinstance(candidate, _SelectedFact)
+                        else candidate.current
+                    )
+                    periods[fiscal_label] = str(current.get("end") or "")
+        return [
+            period
+            for period, _ in sorted(
+                periods.items(), key=lambda item: (item[1], item[0]), reverse=True
+            )[:8]
+        ]
 
     def list_periods(self, ticker: str, metric: str) -> list[str] | dict[str, Any]:
         """List directly queryable quarter/FY periods, newest first."""
@@ -553,16 +664,33 @@ class EdgarClient:
         return self._available_periods_from_facts(document.get("facts", {}), metric)
 
     def _history_period_labels(
-        self, facts: Mapping[str, Any], metric: str
+        self,
+        facts: Mapping[str, Any],
+        metric: str,
+        *,
+        period_basis: str = "calendar",
     ) -> list[str]:
         """Return every directly available period plus derivable Q4 labels."""
 
         labels: set[str] = set()
         groups = self._fact_groups(facts, metric)
         for group in groups:
-            for selected in self._selected_by_period(group).values():
-                period = _period_from_fact(selected.fact)
-                if period and (_is_quarter(period) or _is_fy(period)):
+            selected_facts: Iterable[Mapping[str, Any]] = (
+                group.values
+                if period_basis == "fiscal"
+                else (selected.fact for selected in self._selected_by_period(group).values())
+            )
+            for fact in selected_facts:
+                period = (
+                    _fiscal_period_from_fact(fact)
+                    if period_basis == "fiscal"
+                    else _period_from_fact(fact)
+                )
+                if period and (
+                    _is_quarter(period)
+                    or _is_fy(period)
+                    or _is_fiscal_quarter(period)
+                ):
                     labels.add(period)
             if metric not in ADDITIVE_METRICS:
                 continue
@@ -571,7 +699,24 @@ class EdgarClient:
                     continue
                 end = _date(candidate.current.get("end"))
                 if end is not None:
-                    labels.add(f"{end.year}Q4")
+                    if period_basis == "fiscal":
+                        fiscal_year = _fact_fiscal_year(candidate.current)
+                        if fiscal_year is not None:
+                            labels.add(f"FY{fiscal_year:04d}Q4")
+                    else:
+                        labels.add(f"{end.year}Q4")
+        if period_basis == "fiscal" and metric in ADDITIVE_METRICS:
+            fiscal_years = {
+                fiscal_year
+                for group in groups
+                for fact in group.values
+                if (fiscal_year := _fact_fiscal_year(fact)) is not None
+                and str(fact.get("fp") or "").strip().upper() == "FY"
+            }
+            for fiscal_year in fiscal_years:
+                fiscal_label = f"FY{fiscal_year:04d}Q4"
+                if self._fiscal_quarter_candidate(facts, metric, fiscal_label) is not None:
+                    labels.add(fiscal_label)
         return sorted(labels, key=_history_period_sort_key)
 
     def history_rank(
@@ -595,6 +740,7 @@ class EdgarClient:
                 "ticker": ticker,
                 "metric": metric,
                 "period": period,
+                "period_basis": _period_basis(period),
             }
         if period != "LATEST" and PERIOD_RE.match(period) is None:
             return {
@@ -602,6 +748,7 @@ class EdgarClient:
                 "ticker": ticker,
                 "metric": metric,
                 "period": period,
+                "period_basis": _period_basis(period),
             }
 
         target = self.lookup_fact(ticker, metric, period)
@@ -610,6 +757,7 @@ class EdgarClient:
                 "ticker": str(ticker).strip().upper(),
                 "metric": metric,
                 "period": period,
+                "period_basis": _period_basis(period),
                 "period_type": target.get("period_type", "quarter"),
                 "value": None,
                 "rank": None,
@@ -633,6 +781,7 @@ class EdgarClient:
                 "ticker": str(ticker).strip().upper(),
                 "metric": metric,
                 "period": period,
+                "period_basis": _period_basis(period),
                 "period_type": target.get("period_type", "quarter"),
                 "value": None,
                 "rank": None,
@@ -654,6 +803,7 @@ class EdgarClient:
                 "ticker": resolved.get("ticker", str(ticker).strip().upper()),
                 "metric": metric,
                 "period": period,
+                "period_basis": _period_basis(period),
                 "period_type": target.get("period_type", "quarter"),
                 "value": None,
                 "rank": None,
@@ -684,6 +834,7 @@ class EdgarClient:
                 "ticker": resolved["ticker"],
                 "metric": metric,
                 "period": target_period,
+                "period_basis": _period_basis(target_period),
                 "period_type": target_period_type,
                 "value": target.get("value"),
                 "rank": None,
@@ -701,7 +852,9 @@ class EdgarClient:
 
         period_values: list[dict[str, Any]] = []
         for candidate_period in self._history_period_labels(
-            document.get("facts", {}), metric
+            document.get("facts", {}),
+            metric,
+            period_basis=("fiscal" if _is_fiscal_quarter(period) else "calendar"),
         ):
             candidate = self.lookup_fact(ticker, metric, candidate_period)
             value = candidate.get("value")
@@ -715,6 +868,7 @@ class EdgarClient:
             period_values.append(
                 {
                     "period": candidate_period,
+                    "period_basis": _period_basis(candidate_period),
                     "value": value,
                     "period_type": candidate.get("period_type"),
                     "end": candidate.get("end"),
@@ -731,6 +885,7 @@ class EdgarClient:
                 "ticker": resolved["ticker"],
                 "metric": metric,
                 "period": target_period,
+                "period_basis": _period_basis(target_period),
                 "period_type": target_period_type,
                 "value": target.get("value"),
                 "rank": None,
@@ -771,6 +926,7 @@ class EdgarClient:
             "ticker": resolved["ticker"],
             "metric": metric,
             "period": target_period,
+            "period_basis": _period_basis(target_period),
             "period_type": target_period_type,
             "value": target_entry["value"],
             "rank": rank,
@@ -861,6 +1017,110 @@ class EdgarClient:
                     _SelectedFact(group, preferred[0], form_fallback)
                 )
         return selected
+
+    def _fiscal_quarter_candidate(
+        self,
+        facts: Mapping[str, Any],
+        metric: str,
+        period: str,
+    ) -> _SelectedFact | _DerivedCandidate | None:
+        """Resolve ``FYyyyyQn`` using the issuer's SEC fiscal metadata."""
+
+        match = FISCAL_QUARTER_RE.fullmatch(period)
+        if match is None:
+            return None
+        fiscal_year = int(match.group("year"))
+        quarter = f"Q{match.group('quarter')}"
+        groups = self._fact_groups(facts, metric)
+
+        direct_candidates: list[tuple[_FactGroup, list[Mapping[str, Any]], bool]] = []
+        for group in groups:
+            matching = [
+                fact
+                for fact in group.values
+                if _fiscal_period_from_fact(fact) == period
+            ]
+            if matching:
+                preferred, form_fallback = _preferred_facts(
+                    matching, prefer_direct=True
+                )
+                if preferred:
+                    direct_candidates.append((group, preferred, form_fallback))
+        if direct_candidates:
+            statement_candidates = [
+                candidate for candidate in direct_candidates if not candidate[2]
+            ]
+            group, matching, form_fallback = (
+                statement_candidates[0]
+                if statement_candidates
+                else direct_candidates[0]
+            )
+            return _SelectedFact(
+                group=group,
+                fact=matching[0],
+                form_fallback=form_fallback,
+            )
+
+        if quarter != "Q4" or metric not in ADDITIVE_METRICS:
+            return None
+
+        derived_candidates: list[_DerivedCandidate] = []
+        for group in groups:
+            annual_values = [
+                fact
+                for fact in group.values
+                if _fact_fiscal_year(fact) == fiscal_year
+                and str(fact.get("fp") or "").strip().upper() == "FY"
+                and _period_type(fact) == "annual"
+            ]
+            annual_preferred, annual_fallback = _preferred_facts(
+                annual_values, prefer_direct=True
+            )
+            for annual in annual_preferred[:1]:
+                annual_start = _date(annual.get("start"))
+                annual_end = _date(annual.get("end"))
+                if annual_start is None or annual_end is None:
+                    continue
+                ytd_values = [
+                    fact
+                    for fact in group.values
+                    if _fact_fiscal_year(fact) == fiscal_year
+                    and str(fact.get("fp") or "").strip().upper() == "Q3"
+                    and _period_type(fact) == "ytd"
+                    and _date(fact.get("start")) == annual_start
+                    and (_date(fact.get("end")) or date.min) < annual_end
+                    and 240
+                    <= (_days(_date(fact.get("start")), _date(fact.get("end"))) or 0)
+                    <= 300
+                ]
+                ytd_preferred, ytd_fallback = _preferred_facts(
+                    ytd_values, prefer_direct=False
+                )
+                if not ytd_preferred:
+                    continue
+                derived_candidates.append(
+                    _DerivedCandidate(
+                        group=group,
+                        current=annual,
+                        previous=ytd_preferred[0],
+                        form_fallback=annual_fallback or ytd_fallback,
+                        derivation=f"FY{fiscal_year} - 9M YTD",
+                        kind="annual",
+                    )
+                )
+        if not derived_candidates:
+            return None
+        non_fallback = [
+            candidate for candidate in derived_candidates if not candidate.form_fallback
+        ]
+        eligible = non_fallback or derived_candidates
+        return min(
+            eligible,
+            key=lambda candidate: (
+                candidate.group.order,
+                _fact_filed(candidate.current),
+            ),
+        )
 
     def _matching_facts_details(
         self,
@@ -1144,6 +1404,8 @@ class EdgarClient:
             "accn": accn,
             "filed": fact.get("filed"),
             "frame": fact.get("frame"),
+            "fiscal_year": fact.get("fy"),
+            "fiscal_period": fact.get("fp"),
             "duration_days": _days(_date(fact.get("start")), _date(fact.get("end"))),
             "period_type": _period_type(fact),
             "derived": False,
@@ -1190,6 +1452,8 @@ class EdgarClient:
             )
             or None,
             "frame": _frame_period(candidate.current),
+            "fiscal_year": candidate.current.get("fy"),
+            "fiscal_period": candidate.current.get("fp"),
             "duration_days": _days(derived_start, current_end),
             "period_type": "quarter",
             "derived": True,
@@ -1205,56 +1469,106 @@ class EdgarClient:
     def lookup_fact(
         self, ticker: str, metric: str, period: str
     ) -> dict[str, Any]:
-        """Return one latest-filed fact for a requested period."""
+        """Return one latest-filed fact for a requested period.
+
+        Calendar quarters use ``YYYYQn``. Fiscal quarters use ``FYyyyyQn``
+        and are resolved from SEC ``fy``/``fp`` metadata; fiscal Q4 is
+        derived from the annual fact minus the issuer's nine-month YTD fact
+        when SEC does not publish a standalone Q4 row.
+        """
 
         metric = str(metric or "").strip().lower()
         period = str(period or "").strip().upper()
         if metric not in METRIC_ALIASES:
-            return self._error("unknown_metric", [], metric=metric, period=period)
+            return _with_period_metadata(
+                self._error("unknown_metric", [], metric=metric, period=period),
+                period,
+            )
         if period != "LATEST" and PERIOD_RE.match(period) is None:
-            return self._error("invalid_period", [], metric=metric, period=period)
+            return _with_period_metadata(
+                self._error("invalid_period", [], metric=metric, period=period),
+                period,
+            )
         normalized_period = "latest" if period == "LATEST" else period
 
         resolved = self.resolve_ticker(ticker)
         if "error" in resolved:
-            return {
-                **resolved,
-                "metric": metric,
-                "period": period,
-            }
+            return _with_period_metadata(
+                {
+                    **resolved,
+                    "metric": metric,
+                    "period": period,
+                },
+                period,
+            )
         try:
             document, source_sha256 = self._facts_document(str(resolved["cik"]))
         except EdgarError as exc:
-            return self._error(
-                "companyfacts_unavailable",
-                [],
-                ticker=resolved.get("ticker"),
-                cik=resolved.get("cik"),
-                metric=metric,
-                period=period,
-                message=str(exc),
+            return _with_period_metadata(
+                self._error(
+                    "companyfacts_unavailable",
+                    [],
+                    ticker=resolved.get("ticker"),
+                    cik=resolved.get("cik"),
+                    metric=metric,
+                    period=period,
+                    message=str(exc),
+                ),
+                period,
             )
 
         facts = document.get("facts", {})
         available_periods = self._available_periods_from_facts(facts, metric)
+
+        if _is_fiscal_quarter(normalized_period):
+            fiscal_candidate = self._fiscal_quarter_candidate(
+                facts, metric, normalized_period
+            )
+            if fiscal_candidate is None:
+                return _with_period_metadata(
+                    self._error(
+                        "fact_not_found",
+                        available_periods,
+                        ticker=resolved["ticker"],
+                        cik=resolved["cik"],
+                        metric=metric,
+                        period=period,
+                    ),
+                    period,
+                )
+            if isinstance(fiscal_candidate, _SelectedFact):
+                result = self._direct_result(
+                    resolved, document, source_sha256, metric, fiscal_candidate
+                )
+            else:
+                result = self._derived_result(
+                    resolved, document, source_sha256, metric, fiscal_candidate
+                )
+            return _with_period_metadata(result, period)
+
         if normalized_period == "latest":
             latest = self._latest_fact(facts, metric)
             if latest is None:
-                return self._error(
-                    "fact_not_found",
-                    available_periods,
-                    ticker=resolved["ticker"],
-                    cik=resolved["cik"],
-                    metric=metric,
-                    period=period,
+                return _with_period_metadata(
+                    self._error(
+                        "fact_not_found",
+                        available_periods,
+                        ticker=resolved["ticker"],
+                        cik=resolved["cik"],
+                        metric=metric,
+                        period=period,
+                    ),
+                    period,
                 )
             if isinstance(latest, _SelectedFact):
-                return self._direct_result(
+                result = self._direct_result(
                     resolved, document, source_sha256, metric, latest
                 )
-            return self._derived_result(
-                resolved, document, source_sha256, metric, latest
-            )
+            else:
+                result = self._derived_result(
+                    resolved, document, source_sha256, metric, latest
+                )
+            return _with_period_metadata(result, period)
 
         details = self._matching_facts_details(facts, metric, normalized_period)
         if details is not None:
@@ -1264,35 +1578,47 @@ class EdgarClient:
                 fact=matches[0],
                 form_fallback=form_fallback,
             )
-            return self._direct_result(
-                resolved, document, source_sha256, metric, selected
+            return _with_period_metadata(
+                self._direct_result(
+                    resolved, document, source_sha256, metric, selected
+                ),
+                period,
             )
 
         if _is_quarter(period) and metric in ADDITIVE_METRICS:
             derived = self._derive_for_period(facts, metric, period)
             if derived is not None:
-                return self._derived_result(
-                    resolved, document, source_sha256, metric, derived
+                return _with_period_metadata(
+                    self._derived_result(
+                        resolved, document, source_sha256, metric, derived
+                    ),
+                    period,
                 )
         elif _is_quarter(period) and metric in NON_ADDITIVE_METRICS:
-            return self._error(
-                "not_additive_cannot_derive",
+            return _with_period_metadata(
+                self._error(
+                    "not_additive_cannot_derive",
+                    available_periods,
+                    ticker=resolved["ticker"],
+                    cik=resolved["cik"],
+                    metric=metric,
+                    period=period,
+                    message=(
+                        "The requested quarter is not directly available and "
+                        f"{metric} is non-additive, so it cannot be derived."
+                    ),
+                ),
+                period,
+            )
+
+        return _with_period_metadata(
+            self._error(
+                "fact_not_found",
                 available_periods,
                 ticker=resolved["ticker"],
                 cik=resolved["cik"],
                 metric=metric,
                 period=period,
-                message=(
-                    "The requested quarter is not directly available and "
-                    f"{metric} is non-additive, so it cannot be derived."
-                ),
-            )
-
-        return self._error(
-            "fact_not_found",
-            available_periods,
-            ticker=resolved["ticker"],
-            cik=resolved["cik"],
-            metric=metric,
-            period=period,
+            ),
+            period,
         )
