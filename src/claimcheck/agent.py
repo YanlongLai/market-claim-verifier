@@ -10,6 +10,7 @@ from collections.abc import Mapping
 from typing import Any
 
 from .budget import Ledger
+from .checks import CLAIM_TYPES, COMPARATORS, evaluate_verdict
 from .edgar import EdgarClient
 from .tools import TOOL_DEFINITIONS, ToolRunner
 from .trace import TraceRecorder
@@ -21,34 +22,39 @@ MAX_FINAL_OUTPUT_TOKENS = 3_000
 MAX_OUTPUT_TOKENS_ENV = "CLAIMCHECK_MAX_OUTPUT_TOKENS"
 REASONING_EFFORT_ENV = "CLAIMCHECK_REASONING_EFFORT"
 
+SUB_CLAIM_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "text": {"type": "string"},
+        "stated_text": {"type": "string"},
+        "claim_type": {"type": "string", "enum": list(CLAIM_TYPES)},
+        "comparator": {"type": "string", "enum": list(COMPARATORS)},
+        "stated_value": {"type": "number"},
+        "evidence_ids": {"type": "array", "items": {"type": "string"}},
+        "verdict": {"type": "string", "enum": list(VERDICTS)},
+        "note": {"type": "string"},
+        "model_found_value": {"type": ["number", "null"]},
+    },
+    "required": [
+        "text",
+        "stated_text",
+        "claim_type",
+        "comparator",
+        "stated_value",
+        "evidence_ids",
+        "verdict",
+        "note",
+        "model_found_value",
+    ],
+    "additionalProperties": False,
+}
+
 VERDICT_SCHEMA = {
     "type": "object",
     "properties": {
         "verdict": {"type": "string", "enum": list(VERDICTS)},
         "summary": {"type": "string"},
-        "sub_claims": {
-            "type": "array",
-            "items": {
-                "type": "object",
-                "properties": {
-                    "text": {"type": "string"},
-                    "verdict": {"type": "string", "enum": list(VERDICTS)},
-                    "evidence_ids": {"type": "array", "items": {"type": "string"}},
-                    "expected_value": {"type": ["number", "null"]},
-                    "found_value": {"type": ["number", "null"]},
-                    "note": {"type": "string"},
-                },
-                "required": [
-                    "text",
-                    "verdict",
-                    "evidence_ids",
-                    "expected_value",
-                    "found_value",
-                    "note",
-                ],
-                "additionalProperties": False,
-            },
-        },
+        "sub_claims": {"type": "array", "items": SUB_CLAIM_SCHEMA},
     },
     "required": ["verdict", "summary", "sub_claims"],
     "additionalProperties": False,
@@ -56,12 +62,38 @@ VERDICT_SCHEMA = {
 
 
 SYSTEM_INSTRUCTIONS = """You verify financial claims against SEC EDGAR facts.
-Decompose the claim into atomic numeric sub-claims. Use the lookup_fact and
-list_periods tools for every number; never use memory for numbers. A quarter
-must have period_type=quarter and duration_days around 80-100, not
-period_type=ytd. If a result has derived=true, use its derivation and
-components as the evidence and do not calculate it again. Prefer the evidence
-IDs returned by tools, and say insufficient_evidence when data is missing."""
+Decompose the claim into atomic numeric sub-claims. Use lookup_fact for a value,
+compute_change for YoY or other period-to-period growth, and list_periods only
+to understand missing data. Never use memory for numbers. A quarter must have
+period_type=quarter and duration_days around 80-100, not period_type=ytd. If a
+result has derived=true, use its derivation and components as evidence and do
+not calculate that fact again. For compute_change, cite only its own evidence
+ID, not the two nested fact IDs.
+
+Each final sub_claim must contain exactly these model fields:
+text, stated_text, claim_type (value, change_pct, or change_abs), comparator
+(eq, approx, gt, gte, lt, or lte), stated_value in base units (USD, USD/share,
+or percentage points), evidence_ids, verdict, note, and model_found_value.
+Copy stated_text verbatim from the claim, including words such as "about" or
+"up" (for example, "about $1.4 billion" or "up 22%"). For a change_pct,
+stated_value is 22 for 22%, not 0.22. model_found_value is the number read from
+the cited evidence in the same units, or null when it is missing.
+
+Examples:
+1. "Tesla net income was about $1.4 billion": lookup_fact; stated_text
+   "about $1.4 billion", claim_type value, comparator approx, stated_value
+   1400000000.
+2. "Alphabet revenue exceeded $100 billion": lookup_fact; stated_text
+   "exceeded $100 billion", claim_type value, comparator gt, stated_value
+   100000000000.
+3. "Meta revenue was up 22% YoY": compute_change(META, revenue, 2025Q2,
+   null); stated_text "up 22%", claim_type change_pct, comparator approx,
+   stated_value 22, and cite the compute_change evidence ID.
+4. If the requested fact is unavailable, leave model_found_value null, cite any
+   relevant evidence, and set the sub-claim and overall verdict to
+   insufficient_evidence.
+
+Say insufficient_evidence when data is missing or evidence is ambiguous."""
 
 
 def _validate_output_tokens(value: Any) -> int:
@@ -259,10 +291,13 @@ def _normalize_verdict(raw_text: str) -> dict[str, Any]:
             sub_claims.append(
                 {
                     "text": str(item.get("text") or ""),
+                    "stated_text": str(item.get("stated_text") or ""),
+                    "claim_type": str(item.get("claim_type") or ""),
+                    "comparator": str(item.get("comparator") or ""),
+                    "stated_value": _number(item.get("stated_value")),
                     "verdict": sub_verdict,
                     "evidence_ids": [str(evidence_id) for evidence_id in ids],
-                    "expected_value": _number(item.get("expected_value")),
-                    "found_value": _number(item.get("found_value")),
+                    "model_found_value": _number(item.get("model_found_value")),
                     "note": str(item.get("note") or ""),
                 }
             )
@@ -291,88 +326,6 @@ def _already_structured_verdict(response: Any) -> bool:
         and isinstance(value.get("summary"), str)
         and isinstance(value.get("sub_claims"), list)
     )
-
-
-def _round_sig(value: float, digits: int = 3) -> float:
-    if value == 0:
-        return 0.0
-    return round(value, digits - int(math.floor(math.log10(abs(value)))) - 1)
-
-
-def _scaled_difference(left: float, right: float) -> float:
-    if left == right:
-        return 0.0
-    scales = (1.0, 1e3, 1e6, 1e9, 1e-3, 1e-6, 1e-9)
-    best = float("inf")
-    for scale in scales:
-        candidate = left * scale
-        denominator = max(abs(candidate), abs(right), 1e-12)
-        best = min(best, abs(candidate - right) / denominator)
-    return best
-
-
-def _matches_tool_value(found: float, tool_value: Any) -> bool:
-    if not isinstance(tool_value, (int, float)) or isinstance(tool_value, bool):
-        return False
-    found_float = float(found)
-    tool_float = float(tool_value)
-    if _scaled_difference(found_float, tool_float) <= 1e-9:
-        return True
-    for scale in (1.0, 1e3, 1e6, 1e9, 1e-3, 1e-6, 1e-9):
-        if _round_sig(found_float * scale) == _round_sig(tool_float):
-            return True
-    return False
-
-
-def _program_checks(verdict: dict[str, Any], runner: ToolRunner) -> tuple[list[dict[str, Any]], bool, bool]:
-    checks: list[dict[str, Any]] = []
-    invalid_evidence = False
-    mismatch = False
-    for sub_claim in verdict["sub_claims"]:
-        evidence_ids = sub_claim["evidence_ids"]
-        evidence_results = [runner.evidence.get(evidence_id) for evidence_id in evidence_ids]
-        ids_exist = bool(evidence_ids) and all(result is not None for result in evidence_results)
-        numeric_results = [
-            result
-            for result in evidence_results
-            if isinstance(result, dict) and isinstance(result.get("value"), (int, float))
-        ]
-        found_value = sub_claim["found_value"]
-        found_matches = (
-            found_value is not None
-            and bool(evidence_results)
-            and all(
-                isinstance(result, dict)
-                and isinstance(result.get("value"), (int, float))
-                and _matches_tool_value(float(found_value), result["value"])
-                for result in evidence_results
-            )
-        )
-        evidence_valid = ids_exist and (
-            found_matches if numeric_results or found_value is not None else True
-        )
-        if not evidence_valid:
-            invalid_evidence = True
-
-        expected = sub_claim["expected_value"]
-        program_check = "unchecked"
-        relative_diff: float | None = None
-        if expected is not None and found_value is not None:
-            relative_diff = _scaled_difference(float(expected), float(found_value))
-            program_check = "match" if relative_diff <= 0.015 else "mismatch"
-            if program_check == "mismatch":
-                mismatch = True
-        sub_claim["program_check"] = program_check
-        checks.append(
-            {
-                "text": sub_claim["text"],
-                "evidence_valid": evidence_valid,
-                "evidence_ids": evidence_ids,
-                "program_check": program_check,
-                "relative_diff": relative_diff,
-            }
-        )
-    return checks, invalid_evidence, mismatch
 
 
 def _request_with_retry(
@@ -557,7 +510,12 @@ def verify_claim(
             "input": [
                 {
                     "role": "user",
-                    "content": "Return the final structured verdict now. Include every atomic numeric sub-claim, its evidence IDs, expected value, found value, and a concise note.",
+                    "content": (
+                        "Return the final structured verdict now. Include every atomic "
+                        "numeric sub-claim with text, stated_text copied verbatim from "
+                        "the claim, claim_type, comparator, stated_value in base units, "
+                        "evidence_ids, verdict, model_found_value, and a concise note."
+                    ),
                 }
             ],
             "text": verdict_text_format(),
@@ -582,33 +540,16 @@ def verify_claim(
             return _incomplete_response_result(recorder, final_response)
 
     verdict = _normalize_verdict(_response_text(final_response))
-    checks, invalid_evidence, mismatch = _program_checks(verdict, runner)
+    model_verdict = verdict["verdict"]
+    checks, program_verdict = evaluate_verdict(verdict["sub_claims"], runner)
+    for sub_claim, check in zip(verdict["sub_claims"], checks):
+        sub_claim.update(check)
+    verdict["model_verdict"] = model_verdict
+    verdict["verdict"] = program_verdict
     verdict["program_checks"] = checks
-    unchecked = any(
-        check.get("program_check") == "unchecked" for check in checks
+    verdict["model_program_disagreement"] = (
+        model_verdict != program_verdict
+        or any(check.get("disagreement") for check in checks)
     )
-    checked_programs = [
-        check for check in checks if check.get("program_check") != "unchecked"
-    ]
-    all_checked_subclaims_match = bool(checked_programs) and all(
-        check.get("program_check") == "match" and check.get("evidence_valid")
-        for check in checked_programs
-    )
-    disagreement = (
-        verdict["verdict"] == "supported"
-        and (invalid_evidence or mismatch or unchecked or not verdict["sub_claims"])
-    ) or (
-        verdict["verdict"] == "contradicted" and all_checked_subclaims_match
-    )
-    if disagreement:
-        verdict["verdict"] = "insufficient_evidence"
-        verdict["model_program_disagreement"] = True
-        if all_checked_subclaims_match:
-            suffix = " Program checks matched every checked sub-claim, so the contradicted verdict was not accepted."
-        else:
-            suffix = " Program checks did not validate the model's supported verdict."
-        verdict["summary"] = (verdict["summary"] + suffix).strip()
-    else:
-        verdict["model_program_disagreement"] = False
     recorder.finish(verdict)
     return verdict

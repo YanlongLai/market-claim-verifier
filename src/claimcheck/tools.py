@@ -10,6 +10,7 @@ from .edgar import METRICS, EdgarClient
 
 
 PERIOD_PATTERN = r"^(latest|FY\d{4}|\d{4}Q[1-4])$"
+BASE_PERIOD_PATTERN = r"^(FY\d{4}|\d{4}Q[1-4])$"
 
 
 LOOKUP_FACT_TOOL = {
@@ -41,6 +42,7 @@ LOOKUP_FACT_TOOL = {
 LOOKUP_FACT_OUTPUT_SCHEMA = {
     "type": "object",
     "properties": {
+        "evidence_id": {"type": "string"},
         "value": {"type": ["number", "null"]},
         "start": {"type": ["string", "null"]},
         "end": {"type": ["string", "null"]},
@@ -84,6 +86,66 @@ LOOKUP_FACT_OUTPUT_SCHEMA = {
     },
 }
 
+COMPUTE_CHANGE_TOOL = {
+    "type": "function",
+    "name": "compute_change",
+    "description": (
+        "Compute the absolute and year-over-year change for one SEC EDGAR XBRL "
+        "metric. The period and base_period must be the same kind of period; "
+        "when base_period is null, use the same quarter or fiscal year one year "
+        "earlier. The result includes both cited lookup facts and a percentage "
+        "change in percent points."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "ticker": {"type": "string"},
+            "metric": {"type": "string", "enum": list(METRICS)},
+            "period": {"type": "string", "pattern": PERIOD_PATTERN},
+            "base_period": {
+                "type": ["string", "null"],
+                "pattern": BASE_PERIOD_PATTERN,
+            },
+        },
+        "required": ["ticker", "metric", "period", "base_period"],
+        "additionalProperties": False,
+    },
+    "strict": True,
+}
+
+COMPUTE_CHANGE_OUTPUT_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "ticker": {"type": "string"},
+        "metric": {"type": "string"},
+        "period": {"type": "string"},
+        "base_period": {"type": "string"},
+        "current_fact": {"$ref": "#/$defs/fact"},
+        "base_fact": {"$ref": "#/$defs/fact"},
+        "current": {"$ref": "#/$defs/fact"},
+        "base": {"$ref": "#/$defs/fact"},
+        "abs_change": {"type": ["number", "null"]},
+        "pct_change": {"type": ["number", "null"]},
+        "error": {"type": "string"},
+        "message": {"type": "string"},
+        "available_periods": {"type": "array", "items": {"type": "string"}},
+        "evidence_id": {"type": "string"},
+    },
+    "required": [
+        "ticker",
+        "metric",
+        "period",
+        "base_period",
+        "current_fact",
+        "base_fact",
+        "abs_change",
+        "pct_change",
+        "evidence_id",
+    ],
+    "additionalProperties": True,
+    "$defs": {"fact": LOOKUP_FACT_OUTPUT_SCHEMA},
+}
+
 LIST_PERIODS_TOOL = {
     "type": "function",
     "name": "list_periods",
@@ -100,16 +162,28 @@ LIST_PERIODS_TOOL = {
     "strict": True,
 }
 
-TOOL_DEFINITIONS = [LOOKUP_FACT_TOOL, LIST_PERIODS_TOOL]
+TOOL_DEFINITIONS = [LOOKUP_FACT_TOOL, LIST_PERIODS_TOOL, COMPUTE_CHANGE_TOOL]
 # Public aliases for callers that prefer schema terminology.
 LOOKUP_FACT_SCHEMA = LOOKUP_FACT_TOOL
 LIST_PERIODS_SCHEMA = LIST_PERIODS_TOOL
-TOOL_SCHEMAS = {"lookup_fact": LOOKUP_FACT_TOOL, "list_periods": LIST_PERIODS_TOOL}
-TOOL_OUTPUT_SCHEMAS = {"lookup_fact": LOOKUP_FACT_OUTPUT_SCHEMA}
+COMPUTE_CHANGE_SCHEMA = COMPUTE_CHANGE_TOOL
+TOOL_SCHEMAS = {
+    "lookup_fact": LOOKUP_FACT_TOOL,
+    "list_periods": LIST_PERIODS_TOOL,
+    "compute_change": COMPUTE_CHANGE_TOOL,
+}
+TOOL_OUTPUT_SCHEMAS = {
+    "lookup_fact": LOOKUP_FACT_OUTPUT_SCHEMA,
+    "compute_change": COMPUTE_CHANGE_OUTPUT_SCHEMA,
+}
 
 
 class ToolValidationError(ValueError):
     """Raised internally for a malformed model tool call."""
+
+
+def _is_number(value: Any) -> bool:
+    return isinstance(value, (int, float)) and not isinstance(value, bool)
 
 
 def _validate_lookup(args: Any) -> dict[str, str]:
@@ -163,6 +237,74 @@ def _validate_list(args: Any) -> dict[str, str]:
     return {"ticker": ticker, "metric": metric}
 
 
+def _validate_compute(args: Any) -> dict[str, str | None]:
+    if not isinstance(args, dict):
+        raise ToolValidationError("arguments must be an object")
+    required = {"ticker", "metric", "period", "base_period"}
+    if set(args) != required:
+        missing = sorted(required - set(args))
+        extra = sorted(set(args) - required)
+        detail = []
+        if missing:
+            detail.append(f"missing={missing}")
+        if extra:
+            detail.append(f"additional={extra}")
+        raise ToolValidationError("invalid arguments: " + ", ".join(detail))
+    if not all(isinstance(args[key], str) for key in ("ticker", "metric", "period")):
+        raise ToolValidationError("ticker, metric, and period must be strings")
+    if args["base_period"] is not None and not isinstance(args["base_period"], str):
+        raise ToolValidationError("base_period must be a string or null")
+
+    ticker = args["ticker"].strip()
+    metric = args["metric"].strip().lower()
+    period = args["period"].strip().upper()
+    if not ticker:
+        raise ToolValidationError("ticker must not be empty")
+    if metric not in METRICS:
+        raise ToolValidationError(f"unknown metric: {metric}")
+    if period != "LATEST" and not re.fullmatch(r"(?:FY\d{4}|\d{4}Q[1-4])", period):
+        raise ToolValidationError(f"invalid period: {period}")
+
+    raw_base = args["base_period"]
+    base_period = raw_base.strip().upper() if isinstance(raw_base, str) else None
+    if base_period is not None and not re.fullmatch(
+        r"(?:FY\d{4}|\d{4}Q[1-4])", base_period
+    ):
+        raise ToolValidationError(f"invalid base_period: {base_period}")
+    if base_period is None:
+        base_period = _prior_year_period(period)
+        if base_period is None:
+            raise ToolValidationError(
+                "base_period is required when period is latest"
+            )
+    if _period_kind(period) != _period_kind(base_period):
+        raise ToolValidationError(
+            "period and base_period must be the same kind: both fiscal years or both quarters"
+        )
+    return {
+        "ticker": ticker,
+        "metric": metric,
+        "period": period,
+        "base_period": base_period,
+    }
+
+
+def _period_kind(period: str) -> str:
+    if period.startswith("FY"):
+        return "annual"
+    if re.fullmatch(r"\d{4}Q[1-4]", period):
+        return "quarter"
+    return "latest"
+
+
+def _prior_year_period(period: str) -> str | None:
+    if match := re.fullmatch(r"FY(\d{4})", period):
+        return f"FY{int(match.group(1)) - 1:04d}"
+    if match := re.fullmatch(r"(\d{4})Q([1-4])", period):
+        return f"{int(match.group(1)) - 1:04d}Q{match.group(2)}"
+    return None
+
+
 class ToolRunner:
     """Dispatch tools and assign stable evidence IDs for one verification run."""
 
@@ -170,9 +312,10 @@ class ToolRunner:
         self.edgar = edgar
         self._next_evidence = 1
         self.evidence: dict[str, dict[str, Any]] = {}
+        self.evidence_kind: dict[str, str] = {}
         self.calls: list[dict[str, Any]] = []
 
-    def _number_result(self, result: Any) -> dict[str, Any]:
+    def _number_result(self, result: Any, kind: str | None = None) -> dict[str, Any]:
         if isinstance(result, dict):
             numbered = copy.deepcopy(result)
         else:
@@ -181,7 +324,78 @@ class ToolRunner:
         self._next_evidence += 1
         numbered["evidence_id"] = evidence_id
         self.evidence[evidence_id] = numbered
+        if kind is not None:
+            self.evidence_kind[evidence_id] = kind
         return numbered
+
+    def _compute_change(self, valid: dict[str, str | None]) -> dict[str, Any]:
+        current = self.dispatch(
+            "lookup_fact",
+            {
+                "ticker": valid["ticker"],
+                "metric": valid["metric"],
+                "period": valid["period"],
+            },
+        )
+        base = self.dispatch(
+            "lookup_fact",
+            {
+                "ticker": valid["ticker"],
+                "metric": valid["metric"],
+                "period": valid["base_period"],
+            },
+        )
+        result: dict[str, Any] = {
+            "ticker": valid["ticker"],
+            "metric": valid["metric"],
+            "period": valid["period"],
+            "base_period": valid["base_period"],
+            "current_fact": current,
+            "base_fact": base,
+            # Short aliases make the relationship obvious to callers inspecting
+            # a tool result while the *_fact names stay unambiguous in schemas.
+            "current": current,
+            "base": base,
+            "abs_change": None,
+            "pct_change": None,
+        }
+        failed = current if "error" in current else base if "error" in base else None
+        if failed is not None:
+            result.update(
+                {
+                    "error": failed.get("error", "fact_not_found"),
+                    "message": failed.get(
+                        "message", "One of the requested facts could not be found."
+                    ),
+                }
+            )
+            if isinstance(failed.get("available_periods"), list):
+                result["available_periods"] = failed["available_periods"]
+            return result
+
+        current_value = current.get("value")
+        base_value = base.get("value")
+        if not _is_number(current_value) or not _is_number(base_value):
+            result.update(
+                {
+                    "error": "non_numeric_fact",
+                    "message": "Both requested facts must have numeric values.",
+                }
+            )
+            return result
+        if float(base_value) == 0:
+            result.update(
+                {
+                    "error": "zero_base_value",
+                    "message": "Cannot compute percentage change from a zero base value.",
+                }
+            )
+            return result
+        abs_change = current_value - base_value
+        pct_change = abs_change / abs(base_value) * 100
+        result["abs_change"] = abs_change
+        result["pct_change"] = pct_change
+        return result
 
     def dispatch(self, name: str, args: Any) -> dict[str, Any]:
         """Validate and dispatch one tool call, returning an evidence object."""
@@ -193,6 +407,9 @@ class ToolRunner:
             elif name == "list_periods":
                 valid = _validate_list(args)
                 result = self.edgar.list_periods(**valid)
+            elif name == "compute_change":
+                valid = _validate_compute(args)
+                result = self._compute_change(valid)
             else:
                 raise ToolValidationError(f"unknown tool: {name}")
         except ToolValidationError as exc:
@@ -200,7 +417,7 @@ class ToolRunner:
         except Exception as exc:  # tool errors are evidence, not a model crash
             result = {"error": "tool_error", "message": str(exc)}
 
-        numbered = self._number_result(result)
+        numbered = self._number_result(result, name)
         self.calls.append({"name": name, "arguments": args, "result": numbered})
         return numbered
 

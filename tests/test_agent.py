@@ -146,10 +146,13 @@ def supported_final(**overrides: Any) -> dict[str, Any]:
         "sub_claims": [
             {
                 "text": "Q2 2025 revenue",
+                "stated_text": "$47.5B",
+                "claim_type": "value",
+                "comparator": "eq",
+                "stated_value": 47_500_000_000,
                 "verdict": "supported",
                 "evidence_ids": ["E1"],
-                "expected_value": 47.5,
-                "found_value": 47.516,
+                "model_found_value": 47_516_000_000,
                 "note": "Values are in billions of dollars.",
             }
         ],
@@ -162,7 +165,9 @@ def test_agent_handles_parallel_calls_and_final_schema(tmp_path: Path) -> None:
     result, client = run_agent(tmp_path, supported_final())
 
     assert result["verdict"] == "supported"
-    assert result["sub_claims"][0]["program_check"] == "match"
+    assert result["model_verdict"] == "supported"
+    assert result["sub_claims"][0]["program_verdict"] == "supported"
+    assert result["sub_claims"][0]["disagreement"] is False
     assert len(client.responses.calls) == 3
     assert len(client.responses.calls[1]["input"]) == 2
     assert client.responses.calls[1]["previous_response_id"] == "r1"
@@ -280,36 +285,41 @@ def test_incomplete_twice_fails_closed_without_verdict(tmp_path: Path) -> None:
     assert len(recorder.as_dict()["incomplete_turns"]) == 2
 
 
-def test_program_check_overrides_wrong_supported(tmp_path: Path) -> None:
+def test_program_check_uses_cited_evidence_not_model_found_value(tmp_path: Path) -> None:
     final = supported_final(
         sub_claims=[
             {
                 "text": "Q2 2025 revenue",
+                "stated_text": "$47.5B",
+                "claim_type": "value",
+                "comparator": "eq",
+                "stated_value": 47_500_000_000,
                 "verdict": "supported",
                 "evidence_ids": ["E1"],
-                "expected_value": 47.5,
-                "found_value": 99.9,
+                "model_found_value": 99_900_000_000,
                 "note": "wrong value",
             }
         ]
     )
     result, _ = run_agent(tmp_path, final)
 
-    assert result["verdict"] == "insufficient_evidence"
-    assert result["model_program_disagreement"] is True
-    assert result["sub_claims"][0]["program_check"] == "mismatch"
+    assert result["verdict"] == "supported"
+    assert result["model_program_disagreement"] is False
+    assert result["sub_claims"][0]["model_found_value"] == 99_900_000_000
+    assert result["sub_claims"][0]["program_verdict"] == "supported"
 
 
-def test_program_check_flags_contradicted_when_all_values_match(tmp_path: Path) -> None:
+def test_program_verdict_wins_when_model_overall_is_wrong(tmp_path: Path) -> None:
     final = supported_final(
         verdict="contradicted",
         summary="The model says the reported value is wrong.",
     )
     result, _ = run_agent(tmp_path, final)
 
-    assert result["verdict"] == "insufficient_evidence"
+    assert result["verdict"] == "supported"
     assert result["model_program_disagreement"] is True
-    assert result["program_checks"][0]["program_check"] == "match"
+    assert result["model_verdict"] == "contradicted"
+    assert result["program_checks"][0]["program_verdict"] == "supported"
 
 
 def test_invalid_evidence_id_is_flagged(tmp_path: Path) -> None:
@@ -317,10 +327,13 @@ def test_invalid_evidence_id_is_flagged(tmp_path: Path) -> None:
         sub_claims=[
             {
                 "text": "Q2 2025 revenue",
+                "stated_text": "$47.5B",
+                "claim_type": "value",
+                "comparator": "eq",
+                "stated_value": 47_500_000_000,
                 "verdict": "supported",
                 "evidence_ids": ["E999"],
-                "expected_value": 47.5,
-                "found_value": 47.5,
+                "model_found_value": 47_500_000_000,
                 "note": "unknown evidence",
             }
         ]
@@ -330,6 +343,7 @@ def test_invalid_evidence_id_is_flagged(tmp_path: Path) -> None:
     assert result["verdict"] == "insufficient_evidence"
     assert result["model_program_disagreement"] is True
     assert result["program_checks"][0]["evidence_valid"] is False
+    assert result["program_checks"][0]["reason"] == "ambiguous_evidence"
 
 
 def test_trace_does_not_contain_model_key(tmp_path: Path) -> None:
@@ -344,3 +358,100 @@ def test_trace_does_not_contain_model_key(tmp_path: Path) -> None:
 
     assert "secret-key" not in trace_path.read_text()
     assert "[REDACTED]" in trace_path.read_text()
+
+
+class ReplayEdgar:
+    def __init__(self, facts: dict[tuple[str, str, str], dict[str, Any]]) -> None:
+        self.facts = facts
+
+    def lookup_fact(self, ticker: str, metric: str, period: str) -> dict[str, Any]:
+        return dict(self.facts[(ticker, metric, period)])
+
+    def list_periods(self, ticker: str, metric: str) -> list[str]:
+        return []
+
+
+def test_replay_two_live_claims_with_new_schema(tmp_path: Path) -> None:
+    final = {
+        "verdict": "contradicted",
+        "summary": "Tesla is supported; Alphabet is contradicted.",
+        "sub_claims": [
+            {
+                "text": "Tesla's Q3 2025 net income was about $1.4 billion",
+                "stated_text": "about $1.4 billion",
+                "claim_type": "value",
+                "comparator": "approx",
+                "stated_value": 1_400_000_000,
+                "evidence_ids": ["E1"],
+                "verdict": "supported",
+                "note": "$1.373B rounds to about $1.4B.",
+                "model_found_value": 1_373_000_000,
+            },
+            {
+                "text": "Alphabet's Q4 2024 revenue exceeded $100 billion",
+                "stated_text": "exceeded $100 billion",
+                "claim_type": "value",
+                "comparator": "gt",
+                "stated_value": 100_000_000_000,
+                "evidence_ids": ["E2"],
+                "verdict": "contradicted",
+                "note": "$96.469B is below $100B.",
+                "model_found_value": 96_469_000_000,
+            },
+        ],
+    }
+    client = ScriptedClient(
+        [
+            FakeResponse(
+                "r1",
+                output=[
+                    FakeCall(
+                        "lookup_fact",
+                        json.dumps(
+                            {
+                                "ticker": "TSLA",
+                                "metric": "net_income",
+                                "period": "2025Q3",
+                            }
+                        ),
+                        "call-1",
+                    ),
+                    FakeCall(
+                        "lookup_fact",
+                        json.dumps(
+                            {
+                                "ticker": "GOOGL",
+                                "metric": "revenue",
+                                "period": "2024Q4",
+                            }
+                        ),
+                        "call-2",
+                    ),
+                ],
+            ),
+            FakeResponse("r2"),
+            FakeResponse("r3", output_text=json.dumps(final)),
+        ]
+    )
+    edgar = ReplayEdgar(
+        {
+            ("TSLA", "net_income", "2025Q3"): {"value": 1_373_000_000},
+            ("GOOGL", "revenue", "2024Q4"): {"value": 96_469_000_000},
+        }
+    )
+    ledger = Ledger(tmp_path / "runs" / "ledger.jsonl", budget_usd=0.50)
+    result = verify_claim(
+        "Tesla's Q3 2025 net income was about $1.4 billion and Alphabet's Q4 2024 revenue exceeded $100 billion.",
+        client,
+        edgar,
+        ledger,
+        "muse-spark-1.3",
+    )
+
+    assert result["verdict"] == "contradicted"
+    assert result["model_verdict"] == "contradicted"
+    assert [item["program_verdict"] for item in result["sub_claims"]] == [
+        "supported",
+        "contradicted",
+    ]
+    assert result["model_program_disagreement"] is False

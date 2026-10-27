@@ -49,4 +49,14 @@ Goal: confirm the Meta Model API, create the repo, make the first tool call agai
 
 Goal: make the program check understand how claims are phrased (approximate values, inequalities, growth rates).
 
-- (in progress)
+- Added strict `compute_change` tool support with an optional prior-year base
+  period, two underlying `lookup_fact` facts, absolute change, percentage
+  change, and separate evidence IDs.
+- Added pure number-phrase parsing with scale suffixes, percentage points, and
+  precision derived from the last stated digit.
+- Replaced expected/found program checks with claim-type and comparator-aware
+  checks for values, inequalities, absolute changes, and percentage changes.
+- Added model/program disagreement fields, program-derived overall verdict
+  aggregation, offline parser/check tests, and replay coverage for the two
+  live-trace claim shapes.
+- Documented the tolerance rules in README.md.

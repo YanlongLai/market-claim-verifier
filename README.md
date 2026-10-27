@@ -45,3 +45,24 @@ fallback. EPS and share counts are not derived.
 uses the calendar quarter containing the fact's `end` date; fiscal `fp` names
 are not used as calendar quarter labels. This keeps date-based YTD derivation
 working for non-calendar fiscal years.
+
+## How verdicts are decided
+
+The model labels each atomic claim, but the program verdict is computed from
+the cited evidence. A value claim must cite exactly one numeric fact; a growth
+claim must cite exactly one `compute_change` result. Ambiguous or missing
+evidence is `unchecked` and produces overall `insufficient_evidence` unless
+another sub-claim is contradicted.
+
+| Comparator | Program rule |
+| --- | --- |
+| `eq` | Difference is at most the precision implied by the stated number |
+| `approx` (value or absolute change) | Difference is at most `max(2 × precision, 2.5% of abs(stated))` |
+| `approx` (percent change) | Difference is at most `max(2 × precision, 1.0 percentage point)` |
+| `gt`, `lt` | Strict comparison; no tolerance |
+| `gte`, `lte` | Comparison accepts equality within the stated precision |
+
+Overall, any contradicted sub-claim makes the claim `contradicted`; all
+supported sub-claims make it `supported`; otherwise it is
+`insufficient_evidence`. The result retains the model verdict and flags any
+model/program disagreement.
