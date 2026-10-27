@@ -24,6 +24,7 @@ from .evaluate import (
     report_evaluation,
     run_evaluation,
 )
+from .prompts import export_prompt_files
 from .trace import TraceRecorder, write_trace
 
 
@@ -61,6 +62,10 @@ def _parser() -> argparse.ArgumentParser:
     report = evaluation_subparsers.add_parser("report", help="write summary.json and REPORT.md")
     report.add_argument("--out", type=Path, required=True)
     report.add_argument("--claims", type=Path, default=DEFAULT_CLAIMS_PATH)
+
+    prompts = subparsers.add_parser("prompts", help="export versioned prompt source files")
+    prompts_subparsers = prompts.add_subparsers(dest="prompts_action", required=True)
+    prompts_subparsers.add_parser("export", help="write prompts/*.md from the code prompts")
     return parser
 
 
@@ -95,6 +100,7 @@ def _default_eval_out() -> Path:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
+    cli_args = list(argv) if argv is not None else sys.argv[1:]
     args = _parser().parse_args(argv)
     try:
         # EDGAR, evaluation reports, and dry runs do not need to inspect a key file.
@@ -118,6 +124,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         result = edgar.lookup_fact(args.ticker, args.metric, args.period)
         _print_json(result)
         return 0 if "error" not in result else 1
+
+    if args.command == "prompts":
+        if args.prompts_action == "export":
+            paths = export_prompt_files()
+            _print_json({"directory": "prompts", "files": [str(path) for path in paths]})
+            return 0
 
     if args.command == "eval":
         if args.eval_action == "report":
@@ -193,6 +205,9 @@ def main(argv: Sequence[str] | None = None) -> int:
                 max_output_tokens=max_output_tokens,
                 reasoning_effort=reasoning_effort,
                 secrets=[settings.model_api_key],
+                split=args.split,
+                cli_args=cli_args,
+                claims_path=args.claims,
             )
         except (EvaluationError, BudgetExceeded, UnknownModel, ValueError) as exc:
             print(f"Evaluation run failed: {exc}", file=sys.stderr)

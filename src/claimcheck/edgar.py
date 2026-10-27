@@ -420,6 +420,18 @@ class EdgarClient:
         self.fetcher = fetcher or self._http_fetch
         self._document_cache: dict[str, tuple[dict[str, Any], str]] = {}
 
+    def companyfacts_snapshot_hashes(self) -> dict[str, str]:
+        """Return hashes for companyfacts files actually loaded by this client."""
+
+        return {
+            str(filename): str(document_and_hash[1])
+            for filename, document_and_hash in self._document_cache.items()
+            if str(filename).startswith("companyfacts-")
+            and isinstance(document_and_hash, (tuple, list))
+            and len(document_and_hash) >= 2
+            and document_and_hash[1]
+        }
+
     def _http_fetch(self, url: str) -> bytes:
         response = httpx.get(
             url,

@@ -137,3 +137,12 @@ a multi-part claim as contradicted, and reserve insufficient evidence for
 facts outside the SEC snapshot. The sample is small, so the report makes no
 significance claims; live results are intentionally not part of the checked-in
 evaluation artifacts.
+
+Each evaluation records the complete audit trail: every rendered request
+(instructions, input, and structured-output format), raw response, reservation,
+usage and cost in a trace; per-pair prompt hashes, input/cached/output/reasoning
+tokens, model/tool-call counts, start/finish timestamps, verdict and scoring
+fields; and a run manifest with the run window, wall clock, code/runtime
+versions, git state, CLI arguments, budget and ledger spend, claims and SEC
+snapshot hashes, and the full prompt registry. Prompt source files are exported
+and checked for drift with `python -m claimcheck prompts export`.

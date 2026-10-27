@@ -93,6 +93,13 @@ Goal: make the program check understand how claims are phrased (approximate valu
 - Added the sequential, resumable `single_shot` versus `agent` evaluation
   runner, shared budget accounting, pair result files, copied agent traces,
   budget-stop recording, and the `eval run` / `eval report` CLI commands.
+- Completed the evaluation evidence ledger: single-shot traces now retain the
+  rendered prompt and raw response, every pair records prompt hashes, timing,
+  token buckets, model/tool calls and cost, and each run has a versioned
+  manifest plus an auditable report. The first six-claim partial dev run was
+  aborted by the author because its single-shot prompts/raw responses were not
+  recorded; it is kept in `docs/evidence/eval-2026-10-27-aborted-partial/` as
+  evidence and superseded by `eval-2026-10-27/`.
 - Added offline fake-client tests for the independent gold builder, report
   metric math, no-tool single-shot requests, resume behavior, budget stops,
   dataset validation, and report generation.

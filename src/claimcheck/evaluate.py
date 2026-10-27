@@ -3,8 +3,13 @@
 from __future__ import annotations
 
 import json
+import hashlib
+import importlib.metadata
 import math
+import platform
+import subprocess
 import time
+import uuid
 from collections import Counter, defaultdict
 from datetime import datetime, timezone
 from pathlib import Path
@@ -23,7 +28,8 @@ from .agent import (
 )
 from .budget import BudgetExceeded, Ledger, UnknownModel
 from .edgar import EdgarClient
-from .trace import TraceRecorder, write_trace
+from .prompts import prompt_registry, prompt_versions_for
+from .trace import TraceRecorder, usage_tokens, write_trace
 
 
 SYSTEMS = ("single_shot", "agent")
@@ -178,12 +184,17 @@ def _call_single_shot(
     client: Any,
     ledger: Ledger,
     model: str,
+    recorder: TraceRecorder | None = None,
+    today: str | None = None,
     max_output_tokens: int | None = None,
     reasoning_effort: str | None = None,
 ) -> dict[str, Any]:
+    if recorder is None:
+        recorder = TraceRecorder(claim, model)
     payload = single_shot_request(
         claim,
         model,
+        today=today,
         max_output_tokens=max_output_tokens,
         reasoning_effort=reasoning_effort,
     )
@@ -194,13 +205,37 @@ def _call_single_shot(
         max_output_tokens=request_limit,
     )
     started = time.perf_counter()
-    response = client.responses.create(**payload)
+    try:
+        response = client.responses.create(**payload)
+    except Exception as exc:
+        latency_ms = (time.perf_counter() - started) * 1000
+        recorder.record_request(
+            payload=payload,
+            response={"error": type(exc).__name__, "message": str(exc)},
+            reservation=reservation,
+            usage=None,
+            cost=reservation.amount,
+            latency_ms=latency_ms,
+            status="error",
+        )
+        raise
     latency_ms = (time.perf_counter() - started) * 1000
-    cost = ledger.reconcile(reservation, _usage_dict(response))
+    usage = _usage_dict(response)
     status = str(_get(response, "status") or "completed")
+    cost = ledger.reconcile(reservation, usage)
+    recorder.record_request(
+        payload=payload,
+        response=response,
+        reservation=reservation,
+        usage=usage,
+        cost=cost,
+        latency_ms=latency_ms,
+        status=status,
+    )
     if status != "completed":
         raise EvaluationError(f"single-shot response status was {status}")
     verdict = _normalize_verdict(_response_text(response))
+    recorder.finish(verdict)
     return {
         "verdict": verdict.get("verdict"),
         "summary": verdict.get("summary", ""),
@@ -228,7 +263,15 @@ def _existing_pair(path: Path) -> dict[str, Any] | None:
         return None
     if not isinstance(value, dict):
         return None
-    if value.get("status") in {"completed", "failed", "budget_stopped"}:
+    required_recording_fields = {
+        "prompt_versions",
+        "tokens",
+        "model_calls",
+        "tool_calls",
+        "started_at",
+        "finished_at",
+    }
+    if value.get("status") in {"completed", "failed", "budget_stopped"} and required_recording_fields <= set(value):
         return value
     return None
 
@@ -237,7 +280,139 @@ def _write_pair(path: Path, value: Mapping[str, Any]) -> None:
     path.write_text(json.dumps(dict(value), indent=2, ensure_ascii=False, default=str) + "\n", encoding="utf-8")
 
 
-def _base_pair(claim: Mapping[str, Any], system: str, model: str) -> dict[str, Any]:
+def _zero_tokens() -> dict[str, int]:
+    return {"input": 0, "cached": 0, "output": 0, "reasoning": 0}
+
+
+def _add_tokens(target: dict[str, int], value: Any) -> None:
+    if isinstance(value, Mapping) and any(key in value for key in target):
+        normalized: dict[str, int] = {}
+        for key in target:
+            raw = value.get(key, 0)
+            try:
+                normalized[key] = max(0, int(raw or 0)) if not isinstance(raw, bool) else 0
+            except (TypeError, ValueError):
+                normalized[key] = 0
+    else:
+        normalized = usage_tokens(value)
+    for key in target:
+        target[key] += normalized.get(key, 0)
+
+
+def _sha256_bytes(value: bytes) -> str:
+    return hashlib.sha256(value).hexdigest()
+
+
+def _sha256_file(path: Path) -> str | None:
+    try:
+        return _sha256_bytes(path.read_bytes())
+    except OSError:
+        return None
+
+
+def _git_metadata() -> dict[str, Any]:
+    """Capture local repository identity without invoking any network command."""
+
+    repo_root = Path(__file__).resolve().parents[2]
+
+    def run(*arguments: str) -> str | None:
+        try:
+            completed = subprocess.run(
+                ["git", *arguments],
+                cwd=repo_root,
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+        except (OSError, subprocess.CalledProcessError):
+            return None
+        return completed.stdout.strip()
+
+    commit = run("rev-parse", "HEAD")
+    dirty_listing = run("status", "--porcelain", "--untracked-files=all")
+    return {
+        "commit": commit,
+        "dirty": bool(dirty_listing),
+    }
+
+
+def _package_version(name: str) -> str | None:
+    try:
+        return importlib.metadata.version(name)
+    except importlib.metadata.PackageNotFoundError:
+        return None
+
+
+def _version_metadata() -> dict[str, Any]:
+    python_version = platform.python_version()
+    openai_version = _package_version("openai")
+    return {
+        "python": python_version,
+        "openai": openai_version,
+        "python_version": python_version,
+        "openai_version": openai_version,
+    }
+
+
+def _claims_digest(
+    claims: Sequence[Mapping[str, Any]],
+    claims_path: str | Path | None,
+) -> tuple[str | None, str | None]:
+    if claims_path is not None:
+        path = Path(claims_path)
+        return str(path), _sha256_file(path)
+    default_path = DEFAULT_CLAIMS_PATH
+    if default_path.is_file():
+        return str(default_path), _sha256_file(default_path)
+    # Direct library callers may provide an in-memory fixture.  Preserve a
+    # reproducible JSONL digest even though there is no source file to name.
+    serialized = "".join(
+        json.dumps(dict(claim), ensure_ascii=False, separators=(",", ":")) + "\n"
+        for claim in claims
+    ).encode("utf-8")
+    return None, _sha256_bytes(serialized)
+
+
+def _snapshot_hashes(edgar: Any) -> dict[str, str]:
+    getter_or_value = getattr(edgar, "companyfacts_snapshot_hashes", None)
+    if callable(getter_or_value):
+        value = getter_or_value()
+    else:
+        value = getter_or_value
+    if isinstance(value, Mapping):
+        return {str(key): str(item) for key, item in value.items()}
+    cache = getattr(edgar, "_document_cache", None)
+    if not isinstance(cache, Mapping):
+        return {}
+    snapshots: dict[str, str] = {}
+    for filename, document_and_hash in cache.items():
+        if not str(filename).startswith("companyfacts-"):
+            continue
+        if isinstance(document_and_hash, (tuple, list)) and len(document_and_hash) >= 2:
+            digest = document_and_hash[1]
+            if digest:
+                snapshots[str(filename)] = str(digest)
+    return snapshots
+
+
+def _prompt_registry_manifest() -> dict[str, dict[str, str]]:
+    return {
+        name: {
+            "text": entry["text"],
+            "sha256": entry["sha256"],
+            "file": entry["file"],
+        }
+        for name, entry in prompt_registry().items()
+    }
+
+
+def _base_pair(
+    claim: Mapping[str, Any],
+    system: str,
+    model: str,
+    *,
+    prompt_versions: Mapping[str, str],
+) -> dict[str, Any]:
     return {
         "id": claim["id"],
         "split": claim["split"],
@@ -255,6 +430,12 @@ def _base_pair(claim: Mapping[str, Any], system: str, model: str) -> dict[str, A
         "latency_ms": 0.0,
         "latency": 0.0,
         "trace_path": None,
+        "prompt_versions": dict(prompt_versions),
+        "tokens": _zero_tokens(),
+        "model_calls": 0,
+        "tool_calls": 0,
+        "started_at": _now(),
+        "finished_at": None,
         "error": None,
     }
 
@@ -279,6 +460,56 @@ def _failure_pair(
     return value
 
 
+def _aggregate_result_observations(results: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
+    totals: dict[str, Any] = {
+        "pairs": 0,
+        "cost_usd": 0.0,
+        "tokens": _zero_tokens(),
+        "model_calls": 0,
+        "tool_calls": 0,
+    }
+    per_system: dict[str, dict[str, Any]] = {}
+    for result in results:
+        system = str(result.get("system") or "")
+        if not system:
+            continue
+        bucket = per_system.setdefault(
+            system,
+            {
+                "pairs": 0,
+                "cost_usd": 0.0,
+                "tokens": _zero_tokens(),
+                "model_calls": 0,
+                "tool_calls": 0,
+            },
+        )
+        bucket["pairs"] += 1
+        totals["pairs"] += 1
+        try:
+            cost = float(result.get("cost_usd", 0.0) or 0.0)
+        except (TypeError, ValueError):
+            cost = 0.0
+        bucket["cost_usd"] += cost
+        totals["cost_usd"] += cost
+        _add_tokens(bucket["tokens"], result.get("tokens"))
+        _add_tokens(totals["tokens"], result.get("tokens"))
+        for key in ("model_calls", "tool_calls"):
+            try:
+                calls = max(0, int(result.get(key, 0) or 0))
+            except (TypeError, ValueError):
+                calls = 0
+            bucket[key] += calls
+            totals[key] += calls
+    return {**totals, "per_system": per_system}
+
+
+def _write_manifest(path: Path, value: Mapping[str, Any]) -> None:
+    path.write_text(
+        json.dumps(dict(value), indent=2, ensure_ascii=False, default=str) + "\n",
+        encoding="utf-8",
+    )
+
+
 def run_evaluation(
     claims: Sequence[Mapping[str, Any]],
     *,
@@ -293,8 +524,11 @@ def run_evaluation(
     reasoning_effort: str | None = None,
     ledger_path: str | Path | None = None,
     secrets: Iterable[str] = (),
+    split: str | None = None,
+    cli_args: Sequence[str] | None = None,
+    claims_path: str | Path | None = None,
 ) -> dict[str, Any]:
-    """Run selected systems sequentially, with resumable pair files."""
+    """Run selected systems sequentially, with resumable pair files and evidence manifests."""
 
     systems = tuple(systems)
     if not systems or any(system not in SYSTEMS for system in systems):
@@ -311,7 +545,80 @@ def run_evaluation(
     if edgar is None and "agent" in systems:
         edgar = EdgarClient(cache_dir, fetcher=_offline_fetcher)
 
-    started_at = _now()
+    existing_manifest: dict[str, Any] = {}
+    manifest_path = out / "manifest.json"
+    if manifest_path.is_file():
+        try:
+            loaded = json.loads(manifest_path.read_text(encoding="utf-8"))
+            if isinstance(loaded, dict):
+                existing_manifest = loaded
+        except (OSError, json.JSONDecodeError):
+            existing_manifest = {}
+
+    invocation_started = time.perf_counter()
+    started_at = str(existing_manifest.get("started_at") or _now())
+    run_id = str(existing_manifest.get("run_id") or f"eval-{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}-{uuid.uuid4().hex[:8]}")
+    split_value = split or (
+        "all"
+        if len({str(claim.get("split")) for claim in claims}) != 1
+        else str(next(iter(claims), {}).get("split", "all"))
+    )
+    claims_source, claims_digest = _claims_digest(claims, claims_path)
+    prompt_manifest = _prompt_registry_manifest()
+    prompt_versions = {
+        system: prompt_versions_for(system)
+        for system in systems
+    }
+    ledger_before = ledger.spent_total
+    git = _git_metadata()
+    versions = _version_metadata()
+    manifest: dict[str, Any] = {
+        "run_id": run_id,
+        "status": "running",
+        "started_at": started_at,
+        "finished_at": None,
+        "wall_clock_s": None,
+        "git_commit": git["commit"],
+        "git_dirty": git["dirty"],
+        "git": git,
+        "python_version": versions["python_version"],
+        "openai_version": versions["openai_version"],
+        "versions": versions,
+        "model": model,
+        "systems": list(systems),
+        "split": split_value,
+        "splits": sorted({str(claim.get("split")) for claim in claims}),
+        "cli_args": list(cli_args or []),
+        "budget_usd": budget_usd,
+        "budget": {"usd": budget_usd},
+        "ledger_path": str(ledger_file),
+        "ledger_spend_before_usd": ledger_before,
+        "ledger_spend_after_usd": ledger_before,
+        "ledger_spend": {"before_usd": ledger_before, "after_usd": ledger_before},
+        "claims_jsonl_path": claims_source,
+        "claims_jsonl_sha256": claims_digest,
+        "sec_companyfacts_snapshot_sha256": {},
+        "prompt_registry": prompt_manifest,
+        "claim_count": len(claims),
+        "claim_ids": [str(claim["id"]) for claim in claims],
+        "expected_pairs": len(claims) * len(systems),
+        "executed_pairs": 0,
+        "completed_pairs": 0,
+        "failed_pairs": 0,
+        "not_attempted_pairs": 0,
+        "skipped_pairs": 0,
+        "budget_stop": None,
+        "totals": {
+            "pairs": 0,
+            "cost_usd": 0.0,
+            "tokens": _zero_tokens(),
+            "model_calls": 0,
+            "tool_calls": 0,
+            "per_system": {},
+        },
+    }
+    _write_manifest(manifest_path, manifest)
+
     skipped = 0
     executed = 0
     completed = 0
@@ -329,17 +636,30 @@ def run_evaluation(
             if stop:
                 break
             executed += 1
-            base = _base_pair(claim, system, model)
+            base = _base_pair(
+                claim,
+                system,
+                model,
+                prompt_versions=prompt_versions[system],
+            )
+            pair_started = time.perf_counter()
+            trace_path: Path | None = None
             if system == "single_shot":
+                recorder = TraceRecorder(str(claim["claim"]), model, secrets=secrets)
                 try:
                     result = _call_single_shot(
                         str(claim["claim"]),
                         client=client,
                         ledger=ledger,
                         model=model,
+                        recorder=recorder,
+                        today=started_at[:10],
                         max_output_tokens=max_output_tokens,
                         reasoning_effort=reasoning_effort,
                     )
+                    pair_latency_ms = (time.perf_counter() - pair_started) * 1000
+                    summary = recorder.summary()
+                    trace_path = write_trace(traces, recorder)
                     base.update(
                         {
                             "status": "completed",
@@ -348,8 +668,12 @@ def run_evaluation(
                             "sub_claims": result["sub_claims"],
                             "cost_usd": result["cost_usd"],
                             "cost": result["cost_usd"],
-                            "latency_ms": result["latency_ms"],
-                            "latency": result["latency_ms"],
+                            "latency_ms": pair_latency_ms,
+                            "latency": pair_latency_ms,
+                            "tokens": summary["tokens"],
+                            "model_calls": summary["model_calls"],
+                            "tool_calls": summary["tool_calls"],
+                            "trace_path": str(trace_path.relative_to(out)),
                         }
                     )
                     if result.get("model_output_invalid"):
@@ -369,11 +693,23 @@ def run_evaluation(
                 except Exception as exc:  # one failed pair is recorded, never retried
                     base = _failure_pair(base, exc)
                     failed += 1
+                finally:
+                    if trace_path is None:
+                        trace_path = write_trace(traces, recorder)
+                    base["trace_path"] = str(trace_path.relative_to(out))
+                    base["finished_at"] = _now()
+                    base["latency_ms"] = base.get("latency_ms") or (time.perf_counter() - pair_started) * 1000
+                    base["latency"] = base["latency_ms"]
+                    summary = recorder.summary()
+                    base["cost_usd"] = summary["cost_usd"]
+                    base["cost"] = summary["cost_usd"]
+                    base["tokens"] = summary["tokens"]
+                    base["model_calls"] = summary["model_calls"]
+                    base["tool_calls"] = summary["tool_calls"]
             else:
                 if edgar is None:
                     raise EvaluationError("agent system needs an EdgarClient")
                 recorder = TraceRecorder(str(claim["claim"]), model, secrets=secrets)
-                started = time.perf_counter()
                 try:
                     result = verify_claim(
                         str(claim["claim"]),
@@ -385,9 +721,9 @@ def run_evaluation(
                         max_output_tokens=max_output_tokens,
                         reasoning_effort=reasoning_effort,
                     )
-                    latency_ms = (time.perf_counter() - started) * 1000
+                    pair_latency_ms = (time.perf_counter() - pair_started) * 1000
+                    summary = recorder.summary()
                     trace_path = write_trace(traces, recorder)
-                    relative_trace = str(trace_path.relative_to(out))
                     base.update(
                         {
                             "status": "completed",
@@ -396,18 +732,19 @@ def run_evaluation(
                             "sub_claims": result.get("sub_claims", []),
                             "program_checks": result.get("program_checks", []),
                             "model_verdict": result.get("model_verdict"),
-                            "cost_usd": recorder.total_cost,
-                            "cost": recorder.total_cost,
-                            "latency_ms": latency_ms,
-                            "latency": latency_ms,
-                            "trace_path": relative_trace,
+                            "cost_usd": summary["cost_usd"],
+                            "cost": summary["cost_usd"],
+                            "latency_ms": pair_latency_ms,
+                            "latency": pair_latency_ms,
+                            "tokens": summary["tokens"],
+                            "model_calls": summary["model_calls"],
+                            "tool_calls": summary["tool_calls"],
+                            "trace_path": str(trace_path.relative_to(out)),
                         }
                     )
                     completed += 1
                 except BudgetExceeded as exc:
-                    trace_path = write_trace(traces, recorder)
                     base = _failure_pair(base, exc, status="budget_stopped")
-                    base["trace_path"] = str(trace_path.relative_to(out))
                     budget_stop = {
                         "id": claim["id"],
                         "system": system,
@@ -415,10 +752,21 @@ def run_evaluation(
                     }
                     stop = True
                 except Exception as exc:  # one failed pair is recorded, never retried
-                    trace_path = write_trace(traces, recorder)
                     base = _failure_pair(base, exc)
-                    base["trace_path"] = str(trace_path.relative_to(out))
                     failed += 1
+                finally:
+                    if trace_path is None:
+                        trace_path = write_trace(traces, recorder)
+                    base["trace_path"] = str(trace_path.relative_to(out))
+                    base["finished_at"] = _now()
+                    base["latency_ms"] = base.get("latency_ms") or (time.perf_counter() - pair_started) * 1000
+                    base["latency"] = base["latency_ms"]
+                    summary = recorder.summary()
+                    base["cost_usd"] = summary["cost_usd"]
+                    base["cost"] = summary["cost_usd"]
+                    base["tokens"] = summary["tokens"]
+                    base["model_calls"] = summary["model_calls"]
+                    base["tool_calls"] = summary["tool_calls"]
             _write_pair(path, base)
         if stop:
             break
@@ -432,7 +780,12 @@ def run_evaluation(
                 remaining_path = _pair_path(out, str(remaining_claim["id"]), remaining_system)
                 if remaining_path.exists():
                     continue
-                placeholder = _base_pair(remaining_claim, remaining_system, model)
+                placeholder = _base_pair(
+                    remaining_claim,
+                    remaining_system,
+                    model,
+                    prompt_versions=prompt_versions[remaining_system],
+                )
                 placeholder.update(
                     {
                         "status": "budget_stopped",
@@ -440,31 +793,42 @@ def run_evaluation(
                             "category": "budget_not_attempted",
                             "message": "run stopped after the shared budget was refused",
                         },
+                        "finished_at": _now(),
                     }
                 )
                 _write_pair(remaining_path, placeholder)
                 not_attempted += 1
 
-    manifest = {
-        "started_at": started_at,
-        "finished_at": _now(),
-        "model": model,
-        "budget_usd": budget_usd,
-        "systems": list(systems),
-        "claim_count": len(claims),
-        "splits": sorted({str(claim.get("split")) for claim in claims}),
-        "claim_ids": [str(claim["id"]) for claim in claims],
-        "expected_pairs": len(claims) * len(systems),
-        "executed_pairs": executed,
-        "completed_pairs": completed,
-        "failed_pairs": failed,
-        "not_attempted_pairs": not_attempted,
-        "skipped_pairs": skipped,
-        "budget_stop": budget_stop,
-        "ledger_path": str(ledger_file),
-        "spent_total_usd": ledger.spent_total,
+    result_records = _load_result_files(out)
+    observations = _aggregate_result_observations(result_records)
+    finished_at = _now()
+    ledger_after = ledger.spent_total
+    previous_snapshots = existing_manifest.get("sec_companyfacts_snapshot_sha256", {})
+    if not isinstance(previous_snapshots, Mapping):
+        previous_snapshots = {}
+    snapshots = {
+        str(key): str(value)
+        for key, value in previous_snapshots.items()
     }
-    (out / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+    snapshots.update(_snapshot_hashes(edgar))
+    manifest.update(
+        {
+            "status": "completed",
+            "finished_at": finished_at,
+            "wall_clock_s": round(time.perf_counter() - invocation_started, 6),
+            "executed_pairs": executed,
+            "completed_pairs": completed,
+            "failed_pairs": failed,
+            "not_attempted_pairs": not_attempted,
+            "skipped_pairs": skipped,
+            "budget_stop": budget_stop,
+            "ledger_spend_after_usd": ledger_after,
+            "ledger_spend": {"before_usd": ledger_before, "after_usd": ledger_after},
+            "sec_companyfacts_snapshot_sha256": snapshots,
+            "totals": observations,
+        }
+    )
+    _write_manifest(manifest_path, manifest)
     return manifest
 
 
@@ -624,6 +988,9 @@ def compute_metrics(
     predicted: dict[str, str] = {}
     latencies: list[float] = []
     costs: list[float] = []
+    tokens = _zero_tokens()
+    model_calls = 0
+    tool_calls = 0
     errors: list[dict[str, Any]] = []
     for claim in expected:
         result = by_id.get(str(claim["id"]))
@@ -633,6 +1000,15 @@ def compute_metrics(
         verdict = result.get("verdict")
         if result.get("status") == "completed" and verdict in EVAL_VERDICTS:
             predicted[str(claim["id"])] = str(verdict)
+            _add_tokens(tokens, result.get("tokens"))
+            try:
+                model_calls += max(0, int(result.get("model_calls", 0) or 0))
+            except (TypeError, ValueError):
+                pass
+            try:
+                tool_calls += max(0, int(result.get("tool_calls", 0) or 0))
+            except (TypeError, ValueError):
+                pass
             try:
                 latencies.append(float(result.get("latency_ms", 0.0)))
             except (TypeError, ValueError):
@@ -706,6 +1082,9 @@ def compute_metrics(
             "total": sum(costs),
             "mean": sum(costs) / len(costs) if costs else None,
         },
+        "tokens": tokens,
+        "model_calls": model_calls,
+        "tool_calls": tool_calls,
         "errors": errors,
     }
 
@@ -736,21 +1115,142 @@ def _fmt_metric(value: Any, digits: int = 3) -> str:
     return str(value)
 
 
+def _system_report_totals(
+    results: Sequence[Mapping[str, Any]],
+) -> dict[str, dict[str, Any]]:
+    totals: dict[str, dict[str, Any]] = {}
+    for system in SYSTEMS:
+        matching = [result for result in results if result.get("system") == system]
+        latencies: list[float] = []
+        costs = 0.0
+        tokens = _zero_tokens()
+        model_calls = 0
+        tool_calls = 0
+        completed = 0
+        for result in matching:
+            if result.get("status") == "completed":
+                completed += 1
+            try:
+                costs += float(result.get("cost_usd", 0.0) or 0.0)
+            except (TypeError, ValueError):
+                pass
+            _add_tokens(tokens, result.get("tokens"))
+            try:
+                result_model_calls = max(0, int(result.get("model_calls", 0) or 0))
+            except (TypeError, ValueError):
+                result_model_calls = 0
+            model_calls += result_model_calls
+            try:
+                tool_calls += max(0, int(result.get("tool_calls", 0) or 0))
+            except (TypeError, ValueError):
+                pass
+            try:
+                latency = float(result.get("latency_ms"))
+            except (TypeError, ValueError):
+                latency = None
+            if latency is not None and (result.get("status") == "completed" or result_model_calls > 0):
+                latencies.append(latency)
+        totals[system] = {
+            "pairs": len(matching),
+            "completed": completed,
+            "cost_usd": {
+                "total": costs,
+                "mean": costs / len(matching) if matching else None,
+            },
+            "tokens": tokens,
+            "model_calls": model_calls,
+            "tool_calls": tool_calls,
+            "latency_ms": {
+                "mean": sum(latencies) / len(latencies) if latencies else None,
+                "p50": _percentile(latencies, 50),
+                "p95": _percentile(latencies, 95),
+            },
+        }
+    return totals
+
+
+def _tokens_cell(tokens: Any) -> str:
+    if not isinstance(tokens, Mapping):
+        return "—"
+    return "/".join(str(int(tokens.get(key, 0) or 0)) for key in ("input", "cached", "output", "reasoning"))
+
+
 def _write_report(path: Path, summary: Mapping[str, Any], claims: Sequence[Mapping[str, Any]], results: Sequence[Mapping[str, Any]]) -> None:
+    manifest = summary.get("manifest", {})
+    if not isinstance(manifest, Mapping):
+        manifest = {}
     lines = [
         "# Market claim evaluation report",
         "",
         f"Generated: {summary.get('generated_at', '—')}",
+        f"Run window: {manifest.get('started_at', '—')} → {manifest.get('finished_at', '—')}",
+        f"Wall clock: {_fmt_metric(manifest.get('wall_clock_s'), 3)} s",
         "",
         "Accuracy uses all expected claims in the denominator; a missing, failed, or budget-stopped pair is not a correct prediction. Per-class recall uses all claims of that gold class, while precision uses completed predictions of that class. False-supported rate is the harmful error rate among gold contradicted or insufficient-evidence claims. Latency and cost summaries use completed pairs only.",
         "",
         "No significance claims are made: each split is small (20 dev and 10 test claims).",
         "",
+            "## Per-system totals",
+            "",
+            "Tokens are shown as input/cached/output/reasoning. Totals include every recorded pair; latency percentiles include pairs with a recorded model call.",
+            "",
+            "| System | Pairs | Completed | Total cost | Input tokens | Cached tokens | Output tokens | Reasoning tokens | Model calls | Tool calls | Mean latency ms | p50 ms | p95 ms |",
+            "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
+    ]
+    system_totals = summary.get("system_totals", {})
+    if isinstance(system_totals, Mapping):
+        for system in SYSTEMS:
+            total = system_totals.get(system, {})
+            if not isinstance(total, Mapping):
+                continue
+            tokens = total.get("tokens", {})
+            latency = total.get("latency_ms", {})
+            lines.append(
+                "| "
+                + " | ".join(
+                    [
+                        _md_cell(system),
+                        _md_cell(total.get("pairs", 0)),
+                        _md_cell(total.get("completed", 0)),
+                        _fmt_metric(_get(total.get("cost_usd", {}), "total"), 6),
+                        _md_cell(_get(tokens, "input", 0)),
+                        _md_cell(_get(tokens, "cached", 0)),
+                        _md_cell(_get(tokens, "output", 0)),
+                        _md_cell(_get(tokens, "reasoning", 0)),
+                        _md_cell(total.get("model_calls", 0)),
+                        _md_cell(total.get("tool_calls", 0)),
+                        _fmt_metric(_get(latency, "mean"), 1),
+                        _fmt_metric(_get(latency, "p50"), 1),
+                        _fmt_metric(_get(latency, "p95"), 1),
+                    ]
+                )
+                + " |"
+            )
+    lines.extend(
+        [
+            "",
+            "## Prompt versions",
+            "",
+            "| Prompt | SHA-256 prefix |",
+            "|---|---|",
+        ]
+    )
+    prompt_registry_value = manifest.get("prompt_registry", {})
+    if isinstance(prompt_registry_value, Mapping) and prompt_registry_value:
+        for name, entry in prompt_registry_value.items():
+            digest = entry.get("sha256") if isinstance(entry, Mapping) else None
+            lines.append(f"| {_md_cell(name)} | {_md_cell(str(digest)[:12] if digest else None)} |")
+    else:
+        lines.append("| — | — |")
+    lines.extend(
+        [
+            "",
         "## Metrics",
         "",
         "| System | Split | n | completed | errors | accuracy | false-supported rate | insufficient rate | mean latency ms | p50 ms | p95 ms | total cost | mean cost |",
         "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
     ]
+    )
     metrics = summary.get("metrics", {})
     for system in SYSTEMS:
         for split in SPLITS:
@@ -802,25 +1302,54 @@ def _write_report(path: Path, summary: Mapping[str, Any], claims: Sequence[Mappi
             "",
             "## Per-claim results",
             "",
-            "| ID | Split | Category | Claim | Gold | Single-shot | Agent |",
-            "|---|---|---|---|---|---|---|",
+            "Tokens are shown as input/cached/output/reasoning for each system.",
+            "",
         ]
     )
+    per_claim_header = ["ID", "Split", "Category", "Claim", "Gold"]
+    for system in SYSTEMS:
+        label = system.replace("_", " ").title()
+        per_claim_header.extend(
+            [
+                f"{label} verdict",
+                f"{label} correct?",
+                f"{label} cost",
+                f"{label} latency ms",
+                f"{label} tokens (i/c/o/r)",
+            ]
+        )
+    lines.append("| " + " | ".join(per_claim_header) + " |")
+    lines.append("|" + "---|" * len(per_claim_header))
     by_pair = {(str(result.get("id")), str(result.get("system"))): result for result in results}
     for claim in claims:
-        values: dict[str, str] = {}
+        values: list[str] = [
+            str(claim["id"]),
+            str(claim.get("split", "—")),
+            _md_cell(claim.get("category")),
+            _md_cell(claim.get("claim")),
+            str(claim.get("gold_verdict", "—")),
+        ]
         for system in SYSTEMS:
             result = by_pair.get((str(claim["id"]), system))
             if result is None:
-                values[system] = "missing"
-            elif result.get("status") == "completed":
-                values[system] = str(result.get("verdict") or "invalid")
+                values.extend(["missing", "no", "—", "—", "—"])
             else:
-                error = result.get("error") if isinstance(result.get("error"), Mapping) else {}
-                values[system] = f"{result.get('status', 'failed')}: {error.get('category', 'error')}"
-        lines.append(
-            f"| {claim['id']} | {claim['split']} | {_md_cell(claim.get('category'))} | {_md_cell(claim.get('claim'))} | {claim.get('gold_verdict')} | {values.get('single_shot', '—')} | {values.get('agent', '—')} |"
-        )
+                verdict = result.get("verdict") if result.get("status") == "completed" else f"{result.get('status', 'failed')}"
+                correct = (
+                    "yes"
+                    if result.get("status") == "completed" and result.get("verdict") == claim.get("gold_verdict")
+                    else "no"
+                )
+                values.extend(
+                    [
+                        str(verdict or "invalid"),
+                        correct,
+                        _fmt_metric(result.get("cost_usd", 0.0), 6),
+                        _fmt_metric(result.get("latency_ms"), 1),
+                        _tokens_cell(result.get("tokens")),
+                    ]
+                )
+        lines.append("| " + " | ".join(_md_cell(value) for value in values) + " |")
     lines.extend(["", "## Agent errors", ""])
     agent_errors = summary.get("agent_errors", [])
     if agent_errors:
@@ -843,8 +1372,8 @@ def _write_report(path: Path, summary: Mapping[str, Any], claims: Sequence[Mappi
             "",
             "## Accounting",
             "",
-            f"Budget stop: {summary.get('manifest', {}).get('budget_stop') or 'none recorded'}.",
-            f"Total ledger spend/reservations reported by the run: ${float(summary.get('manifest', {}).get('spent_total_usd', 0.0)):.6f}.",
+            f"Budget stop: {manifest.get('budget_stop') or 'none recorded'}.",
+            f"Ledger spend before/after: ${float(manifest.get('ledger_spend_before_usd', 0.0) or 0.0):.6f} / ${float(manifest.get('ledger_spend_after_usd', 0.0) or 0.0):.6f}.",
         ]
     )
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
@@ -885,6 +1414,7 @@ def report_evaluation(
         "out_dir": str(out),
         "manifest": manifest,
         "metrics": {system: dict(split_metrics) for system, split_metrics in metrics.items()},
+        "system_totals": _system_report_totals(results),
         "agent_errors": agent_errors,
         "result_count": len(results),
     }

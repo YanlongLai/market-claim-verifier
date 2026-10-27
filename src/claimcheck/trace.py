@@ -68,6 +68,45 @@ def redact(value: Any, secrets: Iterable[str] = ()) -> Any:
     return value
 
 
+def _number(value: Any) -> int:
+    """Return a non-negative integer token count from SDK or test-double data."""
+
+    try:
+        number = int(value)
+    except (TypeError, ValueError):
+        return 0
+    return max(0, number)
+
+
+def _get(value: Any, key: str, default: Any = None) -> Any:
+    if isinstance(value, Mapping):
+        return value.get(key, default)
+    return getattr(value, key, default)
+
+
+def usage_tokens(usage: Any) -> dict[str, int]:
+    """Normalize SDK usage into the four evaluation accounting buckets."""
+
+    input_tokens = _number(_get(usage, "input_tokens"))
+    input_details = _get(usage, "input_tokens_details")
+    cached_tokens = min(input_tokens, _number(_get(input_details, "cached_tokens", 0)))
+    output_tokens = _number(_get(usage, "output_tokens"))
+    output_details = _get(usage, "output_tokens_details")
+    reasoning_tokens = _number(
+        _get(
+            output_details,
+            "reasoning_tokens",
+            _get(usage, "reasoning_tokens", 0),
+        )
+    )
+    return {
+        "input": input_tokens,
+        "cached": cached_tokens,
+        "output": output_tokens,
+        "reasoning": reasoning_tokens,
+    }
+
+
 class TraceRecorder:
     """Collect one verification trace in memory before writing it once."""
 
@@ -155,10 +194,29 @@ class TraceRecorder:
     def total_latency_ms(self) -> float:
         return sum(float(item.get("latency_ms", 0.0)) for item in self.requests)
 
-    def summary(self) -> dict[str, float]:
+    @property
+    def total_tokens(self) -> dict[str, int]:
+        totals = {"input": 0, "cached": 0, "output": 0, "reasoning": 0}
+        for item in self.requests:
+            for key, value in usage_tokens(item.get("usage")).items():
+                totals[key] += value
+        return totals
+
+    @property
+    def model_calls(self) -> int:
+        return len(self.requests)
+
+    @property
+    def tool_call_count(self) -> int:
+        return len(self.tool_calls)
+
+    def summary(self) -> dict[str, Any]:
         return {
             "cost_usd": self.total_cost,
             "latency_ms": self.total_latency_ms,
+            "tokens": self.total_tokens,
+            "model_calls": self.model_calls,
+            "tool_calls": self.tool_call_count,
         }
 
     def as_dict(self) -> dict[str, Any]:
@@ -170,9 +228,12 @@ class TraceRecorder:
             "requests": self.requests,
             "tool_calls": self.tool_calls,
             "usage": [item.get("usage") for item in self.requests],
+            "tokens": self.total_tokens,
+            "model_calls": self.model_calls,
             "cost": total_cost,
             "cost_usd": total_cost,
             "latency_ms": total_latency_ms,
+            "tool_call_count": self.tool_call_count,
             "incomplete_turns": self.incomplete_turns,
             "final_verdict": self.final_verdict,
             "program_checks": self.program_checks,

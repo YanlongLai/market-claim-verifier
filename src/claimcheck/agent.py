@@ -112,6 +112,14 @@ Examples:
    relevant evidence, and set that sub-claim to insufficient_evidence. Say
    insufficient_evidence when data is missing or evidence is ambiguous."""
 
+AGENT_FINAL_VERDICT_PROMPT = (
+    "Return the final structured verdict now. Include every atomic factual "
+    "assertion as a sub-claim, including assertions that need claim_type other "
+    "when the tools cannot check them. Copy stated_text verbatim from the claim; "
+    "include claim_type, comparator, stated_value in base units, evidence_ids, "
+    "verdict, model_found_value, and a concise note."
+)
+
 
 def _validate_output_tokens(value: Any) -> int:
     if isinstance(value, bool):
@@ -207,10 +215,15 @@ def _usage_dict(response: Any) -> dict[str, Any] | None:
         return None
     details = _get(usage, "input_tokens_details")
     cached = _get(details, "cached_tokens", 0) if details is not None else 0
+    output_details = _get(usage, "output_tokens_details")
+    reasoning = _get(output_details, "reasoning_tokens", 0) if output_details is not None else 0
+    if reasoning is None:
+        reasoning = _get(usage, "reasoning_tokens", 0)
     return {
         "input_tokens": _get(usage, "input_tokens"),
         "output_tokens": _get(usage, "output_tokens"),
         "input_tokens_details": {"cached_tokens": cached or 0},
+        "output_tokens_details": {"reasoning_tokens": reasoning or 0},
     }
 
 
@@ -372,7 +385,23 @@ def _request_with_retry(
             previous_context=previous_context,
         )
         started = time.perf_counter()
-        response = client.responses.create(**request_payload)
+        try:
+            response = client.responses.create(**request_payload)
+        except Exception as exc:
+            latency_ms = (time.perf_counter() - started) * 1000
+            recorder.record_request(
+                payload=request_payload,
+                response={
+                    "error": type(exc).__name__,
+                    "message": str(exc),
+                },
+                reservation=reservation,
+                usage=None,
+                cost=reservation.amount,
+                latency_ms=latency_ms,
+                status="error",
+            )
+            raise
         latency_ms = (time.perf_counter() - started) * 1000
         usage = _usage_dict(response)
         cost = ledger.reconcile(reservation, usage)
@@ -527,14 +556,7 @@ def verify_claim(
             "input": [
                 {
                     "role": "user",
-                    "content": (
-                        "Return the final structured verdict now. Include every atomic "
-                        "factual assertion as a sub-claim, including assertions that "
-                        "need claim_type other when the tools cannot check them. Copy "
-                        "stated_text verbatim from the claim; include claim_type, "
-                        "comparator, stated_value in base units, evidence_ids, verdict, "
-                        "model_found_value, and a concise note."
-                    ),
+                    "content": AGENT_FINAL_VERDICT_PROMPT,
                 }
             ],
             "text": verdict_text_format(),
