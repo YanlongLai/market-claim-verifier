@@ -142,3 +142,17 @@ Five claims were run live before and after the Day 2 fixes. Program verdicts:
 Each run: 3–4 model calls, $0.015–0.029, 25–52 s. Two bugs were found only by live runs and fixed: the model passing
 `"null"` as a string argument, and real `lookup_fact` output lacking the `period` field that a hand-trimmed test fixture
 had. Offline suite: 98 tests. Model spend so far ≈ $0.29 (ledger in `runs/`, not committed).
+
+## Documentation & visuals — 2026-10-27
+
+- Added four Mermaid diagrams under `docs/diagrams/` and embedded them in `README.md`: the checking flow, a committed
+  Alphabet real-run sequence, the model-versus-program decision, and the two provider paths.
+- Added `docs/scripts/make_figures.py`, which rebuilds the before/after, verdict-card, and live cost/latency figures from
+  this build log and the committed live traces without model calls or network access.
+- Added SVG and PNG figures under `docs/figures/`; the optional evaluation figure is generated only when a complete
+  `docs/evidence/eval-*/summary.json` exists.
+- Added `docs/figures/hero.png`, an AI-generated illustration, and recorded its prompt in
+  `docs/prompts/hero-image.md` (with a pointer left at `docs/figures/hero-prompt.md`).
+- Restructured `README.md` for a short judge-facing read while retaining the run, EDGAR, provider, verdict, and
+  evaluation details below the overview.
+- Made every visual reproducible and reusable: added the evidence-hashed figure registry, offline `--all`/`--check` builder, `.mmd` diagram sources, README/VISUALS markers, and the prompt library with the exact hero prompt and variants.
