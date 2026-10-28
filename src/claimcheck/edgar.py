@@ -58,13 +58,15 @@ ADDITIVE_METRICS = frozenset(
 )
 NON_ADDITIVE_METRICS = frozenset({"eps_diluted", "shares_outstanding"})
 
-# Each tuple is (taxonomy namespace, concept).  Ordering is intentional:
-# modern concepts are preferred, but a period is allowed to fall back to an
-# older concept when a company changed its taxonomy usage.
+# Each tuple is (taxonomy namespace, concept).  Ordering is intentional and a
+# period falls back to the next concept when a company changed its taxonomy
+# usage.  For revenue the income-statement total ("Revenues") comes first: it is
+# what people mean by revenue, and where both concepts exist they differ only for
+# issuers with non-contract income (Walmart's membership and other income).
 METRIC_ALIASES: dict[str, tuple[tuple[str, str], ...]] = {
     "revenue": (
-        ("us-gaap", "RevenueFromContractWithCustomerExcludingAssessedTax"),
         ("us-gaap", "Revenues"),
+        ("us-gaap", "RevenueFromContractWithCustomerExcludingAssessedTax"),
     ),
     "net_income": (("us-gaap", "NetIncomeLoss"),),
     "operating_income": (("us-gaap", "OperatingIncomeLoss"),),

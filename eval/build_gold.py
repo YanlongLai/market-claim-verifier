@@ -37,8 +37,8 @@ VALID_SPLITS = {"dev", "test"}
 STATEMENT_FORMS = {"10-K", "10-K/A", "10-Q", "10-Q/A", "20-F", "20-F/A", "40-F", "40-F/A"}
 METRIC_ALIASES: dict[str, tuple[tuple[str, str], ...]] = {
     "revenue": (
-        ("us-gaap", "RevenueFromContractWithCustomerExcludingAssessedTax"),
         ("us-gaap", "Revenues"),
+        ("us-gaap", "RevenueFromContractWithCustomerExcludingAssessedTax"),
     ),
     "net_income": (("us-gaap", "NetIncomeLoss"),),
     "operating_income": (("us-gaap", "OperatingIncomeLoss"),),
