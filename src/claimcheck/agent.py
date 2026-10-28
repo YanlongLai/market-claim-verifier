@@ -34,7 +34,13 @@ SUB_CLAIM_SCHEMA = {
         "comparator": {"type": "string", "enum": list(COMPARATORS)},
         "stated_value": {"type": ["number", "null"]},
         "evidence_ids": {"type": "array", "items": {"type": "string"}},
-        "interpretations": {"type": "array", "items": {"type": "string"}},
+        "interpretations": {
+            "type": "array",
+            "items": {
+                "type": "string",
+                "description": "evidence id like E3 — never free text",
+            },
+        },
         "verdict": {"type": "string", "enum": list(VERDICTS)},
         "note": {"type": "string"},
         "model_found_value": {"type": ["number", "null"]},
@@ -85,7 +91,8 @@ text, stated_text, claim_type (value, change_pct, change_abs, record_high,
 record_low, first_time_above, or other), comparator (eq, approx, gt, gte, lt,
 or lte), stated_value in base units (USD, USD/share, percentage points, or 1
 for a record boolean), evidence_ids, interpretations, verdict, note, and
-model_found_value. interpretations is required and may be empty.
+model_found_value. interpretations is required and may be empty. Every non-empty
+item must be an evidence id like E3 — never free text.
 Copy stated_text verbatim from the claim, including words such as "about",
 "up", or "fell" (for example, "about $1.4 billion", "up 22%", or
 "fell 10%"). For a change_pct, stated_value is 22 for 22%, not 0.22; the
@@ -105,8 +112,9 @@ For a quarter claim at a non-calendar-fiscal issuer, use period_basis from
 the tool results. If the claim says neither fiscal nor calendar, look up both
 the calendar label (for example 2025Q4) and the fiscal label (for example
 FY2025Q4), cite both IDs in evidence_ids, and put those two IDs in
-interpretations. If the claim says fiscal, cite only the fiscal reading; if it
-says calendar, cite only the calendar reading.
+interpretations. Keep interpretations empty unless both fiscal and calendar
+readings were looked up. If the claim says fiscal, cite only the fiscal
+reading; if it says calendar, cite only the calendar reading.
 
 Examples:
 1. "Tesla net income was about $1.4 billion": lookup_fact; stated_text
@@ -138,7 +146,8 @@ AGENT_FINAL_VERDICT_PROMPT = (
     "assertion as a sub-claim, including assertions that need claim_type other "
     "when the tools cannot check them. Copy stated_text verbatim from the claim; "
     "include claim_type, comparator, stated_value in base units, evidence_ids, "
-    "interpretations (an array, possibly empty), verdict, model_found_value, "
+    "interpretations (an array, possibly empty; non-empty items are evidence "
+    "ids like E3, never free text), verdict, model_found_value, "
     "and a concise note."
 )
 

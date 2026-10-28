@@ -147,27 +147,70 @@ def _mentions_quarter(sub_claim: Mapping[str, Any]) -> bool:
     )
 
 
-def _interpretation_ids(
-    sub_claim: Mapping[str, Any], evidence_ids: Sequence[str], runner: Any
+def _numeric_result(evidence: Mapping[str, Any] | None) -> bool:
+    """Return whether an evidence object has a usable numeric result."""
+
+    return bool(
+        evidence is not None
+        and "error" not in evidence
+        and (
+            _is_number(evidence.get("value"))
+            or _is_number(evidence.get("pct_change"))
+            or _is_number(evidence.get("abs_change"))
+        )
+    )
+
+
+def _numeric_result_ids(value: Any, runner: Any) -> list[str]:
+    return [
+        evidence_id
+        for evidence_id in _normalise_evidence_ids(value)
+        if _numeric_result(_evidence(runner, evidence_id))
+    ]
+
+
+def _period_reading_key(evidence: Mapping[str, Any] | None) -> str | None:
+    if evidence is None:
+        return None
+    period = _context_value(evidence.get("period"), "period")
+    if period is None:
+        period = _period_from_fact_context(
+            _context_value(evidence.get("start"), "start"),
+            _context_value(evidence.get("end"), "end"),
+            _context_value(evidence.get("frame"), "frame"),
+        )
+    if period is None:
+        return None
+    return period
+
+
+def _distinct_period_readings(
+    evidence_ids: Sequence[str], runner: Any
+) -> set[str]:
+    return {
+        reading
+        for evidence_id in evidence_ids
+        if (reading := _period_reading_key(_evidence(runner, evidence_id))) is not None
+    }
+
+
+def _select_period_interpretations(
+    sub_claim: Mapping[str, Any],
+    candidates: Sequence[str],
+    runner: Any,
+    *,
+    explicit: bool,
 ) -> list[str]:
-    """Resolve explicit or legacy period-interpretation citations.
+    """Apply the fiscal/calendar compatibility filters to numeric candidates."""
 
-    Older traces predate the ``interpretations`` field and often cite a
-    calendar quarter plus an annual fiscal fact.  For a quarter claim, annual
-    evidence is not a quarter interpretation, so it is excluded during this
-    compatibility path.  New traces should cite explicit fiscal and calendar
-    quarter evidence IDs.
-    """
-
-    explicit = _unique_ids(_normalise_evidence_ids(sub_claim.get("interpretations")))
-    candidates = explicit or _unique_ids(evidence_ids)
-    if not candidates:
+    selected = _unique_ids(candidates)
+    if not selected:
         return []
 
     if not explicit:
         bases = {
             basis
-            for evidence_id in candidates
+            for evidence_id in selected
             if (basis := _period_basis(_evidence(runner, evidence_id))) is not None
         }
         if len(bases) < 2 or not _mentions_quarter(sub_claim):
@@ -176,28 +219,85 @@ def _interpretation_ids(
     if _mentions_quarter(sub_claim):
         quarter_candidates = [
             evidence_id
-            for evidence_id in candidates
+            for evidence_id in selected
             if _period_type(_evidence(runner, evidence_id)) == "quarter"
         ]
         if quarter_candidates:
-            candidates = quarter_candidates
+            selected = quarter_candidates
 
     scope = _period_scope(sub_claim)
     if scope is not None:
         scoped = [
             evidence_id
-            for evidence_id in candidates
+            for evidence_id in selected
             if _period_basis(_evidence(runner, evidence_id)) == scope
         ]
         # A legacy trace may not have period_basis on a derived fiscal
-        # quarter.  Keep its quarter evidence rather than treating an annual
+        # quarter. Keep its quarter evidence rather than treating an annual
         # FY fact as the fiscal-quarter interpretation.
         if scoped:
-            candidates = scoped
+            selected = scoped
         elif explicit:
-            candidates = []
+            selected = []
 
-    return _unique_ids(candidates)
+    selected = _unique_ids(selected)
+    if len(_distinct_period_readings(selected, runner)) < 2:
+        return []
+    return selected
+
+
+def _resolve_interpretation_ids(
+    sub_claim: Mapping[str, Any], evidence_ids: Sequence[str], runner: Any
+) -> tuple[list[str], bool]:
+    """Resolve safe period citations and report dropped model entries.
+
+    Older traces predate the ``interpretations`` field and often cite a
+    calendar quarter plus a fiscal fact in ``evidence_ids``. If explicit
+    interpretations are absent or unusable, retain that compatibility path,
+    but only with numeric evidence that exists in this run.
+    """
+
+    raw_value = sub_claim.get("interpretations")
+    raw_entries = _normalise_evidence_ids(raw_value)
+    valid_explicit = _unique_ids(_numeric_result_ids(raw_entries, runner))
+    invalid = (
+        (raw_value is not None and not isinstance(raw_value, list) and bool(raw_value))
+        or any(
+            not _numeric_result(_evidence(runner, evidence_id))
+            for evidence_id in raw_entries
+        )
+    )
+
+    if len(_distinct_period_readings(valid_explicit, runner)) >= 2:
+        selected = _select_period_interpretations(
+            sub_claim,
+            valid_explicit,
+            runner,
+            explicit=True,
+        )
+        if selected:
+            return selected, invalid
+
+    # If explicit interpretations were dropped or did not provide two
+    # distinct readings, evaluate the cited evidence using the pre-existing
+    # evidence_ids compatibility behavior. Invalid/non-numeric results cannot
+    # become interpretation children.
+    fallback_candidates = _numeric_result_ids(evidence_ids, runner)
+    selected = _select_period_interpretations(
+        sub_claim,
+        fallback_candidates,
+        runner,
+        explicit=False,
+    )
+    return selected, invalid
+
+
+def _interpretation_ids(
+    sub_claim: Mapping[str, Any], evidence_ids: Sequence[str], runner: Any
+) -> list[str]:
+    """Resolve safe explicit or legacy period-interpretation citations."""
+
+    return _resolve_interpretation_ids(sub_claim, evidence_ids, runner)[0]
 
 
 def _unique_ids(evidence_ids: Sequence[str]) -> list[str]:
@@ -710,6 +810,7 @@ def _evaluate_period_interpretations(
     related_sub_claims: Sequence[Mapping[str, Any]] | None,
     evidence_ids: list[str],
     interpretation_ids: list[str],
+    invalid_interpretations: bool,
 ) -> dict[str, Any]:
     child_claims = []
     for evidence_id in interpretation_ids:
@@ -740,6 +841,9 @@ def _evaluate_period_interpretations(
         )
         result["evidence_ids"] = evidence_ids
         result["interpretations"] = []
+        result["invalid_interpretations"] = invalid_interpretations
+        if invalid_interpretations:
+            result["reason"] = f"invalid_interpretations; {result.get('reason', '')}"
         return result
 
     child_verdicts = [str(child.get("program_verdict")) for child in child_checks]
@@ -763,6 +867,8 @@ def _evaluate_period_interpretations(
         reason = f"period_ambiguous; interpretations: {detail}"
     else:
         reason = f"period interpretations all {program_verdict}: {detail}"
+    if invalid_interpretations:
+        reason = f"invalid_interpretations; {reason}"
     if first.get("comparator_corrected"):
         reason = f"comparator_corrected; {reason}"
 
@@ -786,6 +892,7 @@ def _evaluate_period_interpretations(
             "tolerance": first.get("tolerance") if len(values) == 1 else None,
             "reason": reason,
             "period_ambiguous": period_ambiguous,
+            "invalid_interpretations": invalid_interpretations,
             "disagreement": (
                 program_verdict != "unchecked" and model_verdict != program_verdict
             ),
@@ -816,10 +923,10 @@ def evaluate_sub_claim(
     """Evaluate one normalized model sub-claim against cited evidence."""
 
     evidence_ids = _normalise_evidence_ids(sub_claim.get("evidence_ids"))
-    interpretation_ids = (
-        _interpretation_ids(sub_claim, evidence_ids, runner)
+    interpretation_ids, invalid_interpretations = (
+        _resolve_interpretation_ids(sub_claim, evidence_ids, runner)
         if _allow_interpretations
-        else []
+        else ([], False)
     )
     claim_type = str(sub_claim.get("claim_type") or "")
     model_comparator = sub_claim.get("comparator")
@@ -852,6 +959,7 @@ def evaluate_sub_claim(
             related_sub_claims,
             evidence_ids,
             interpretation_ids,
+            invalid_interpretations,
         )
 
     if claim_type in {"record_high", "record_low"}:
@@ -866,6 +974,8 @@ def evaluate_sub_claim(
     flags.extend(flags_for_comparator)
     if claim_type in {"change_pct", "change_abs"}:
         stated = _apply_change_direction(sub_claim, stated, flags)
+    if invalid_interpretations:
+        flags.append("invalid_interpretations")
 
     actual: float | None = None
     evidence_valid = False
@@ -963,6 +1073,7 @@ def evaluate_sub_claim(
                         "comparator_corrected": comparator_corrected,
                         "interpretations": [],
                         "period_ambiguous": False,
+                        "invalid_interpretations": invalid_interpretations,
                     }
     elif stated is None or precision is None:
         reason = "stated_text_unparsed"
@@ -1034,6 +1145,7 @@ def evaluate_sub_claim(
         "comparator": comparator,
         "interpretations": [],
         "period_ambiguous": False,
+        "invalid_interpretations": invalid_interpretations,
         **flag_fields,
     }
 

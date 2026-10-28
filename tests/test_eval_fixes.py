@@ -19,6 +19,13 @@ from claimcheck.tools import ToolRunner
 
 
 FIXTURES = Path(__file__).parent / "fixtures"
+DEV_EVIDENCE = (
+    Path(__file__).parents[1]
+    / "docs"
+    / "evidence"
+    / "eval-2026-10-27-r2-dev"
+)
+CLAIMS_JSONL = Path(__file__).parents[1] / "eval" / "claims.jsonl"
 
 
 @pytest.mark.parametrize(
@@ -185,6 +192,18 @@ def test_period_interpretations_mixed_fail_closed_as_ambiguous() -> None:
     assert "2.81724e+11" in check["reason"]
 
 
+def test_fewer_than_two_period_readings_falls_back_to_evidence_ids() -> None:
+    check = evaluate_sub_claim(
+        _period_claim(evidence_ids=["E1"], interpretations=["E1"]),
+        _interpretation_runner(),
+    )
+
+    assert check["program_verdict"] == "contradicted"
+    assert check["interpretations"] == []
+    assert check["invalid_interpretations"] is False
+    assert check["period_ambiguous"] is False
+
+
 def test_c22_replay_is_contradicted_with_both_quarter_readings() -> None:
     checks, verdict = evaluate_verdict(
         [_period_claim()],
@@ -193,6 +212,83 @@ def test_c22_replay_is_contradicted_with_both_quarter_readings() -> None:
 
     assert checks[0]["program_verdict"] == "contradicted"
     assert verdict == "contradicted"
+
+
+def _recorded_runner(claim_id: str) -> SimpleNamespace:
+    recorded = json.loads(
+        (DEV_EVIDENCE / f"{claim_id}--agent@meta.json").read_text(encoding="utf-8")
+    )
+    trace = json.loads(
+        (DEV_EVIDENCE / recorded["trace_path"]).read_text(encoding="utf-8")
+    )
+    evidence: dict[str, dict[str, Any]] = {}
+    evidence_kind: dict[str, str] = {}
+    for call in trace["tool_calls"]:
+        result = call["result"]
+        evidence_id = result.get("evidence_id")
+        if evidence_id:
+            evidence[evidence_id] = result
+            evidence_kind[evidence_id] = call["name"]
+        for field in ("current_fact", "base_fact"):
+            nested = result.get(field)
+            if isinstance(nested, dict) and nested.get("evidence_id"):
+                evidence[nested["evidence_id"]] = nested
+                evidence_kind[nested["evidence_id"]] = "lookup_fact"
+    return SimpleNamespace(evidence=evidence, evidence_kind=evidence_kind)
+
+
+def _recorded_model_sub_claims(claim_id: str) -> list[dict[str, Any]]:
+    recorded = json.loads(
+        (DEV_EVIDENCE / f"{claim_id}--agent@meta.json").read_text(encoding="utf-8")
+    )
+    fields = (
+        "text",
+        "stated_text",
+        "claim_type",
+        "comparator",
+        "stated_value",
+        "evidence_ids",
+        "interpretations",
+        "verdict",
+        "note",
+        "model_found_value",
+    )
+    return [
+        {field: sub_claim[field] for field in fields}
+        for sub_claim in recorded["sub_claims"]
+    ]
+
+
+def _gold_by_id() -> dict[str, dict[str, Any]]:
+    return {
+        row["id"]: row
+        for row in (
+            json.loads(line)
+            for line in CLAIMS_JSONL.read_text(encoding="utf-8").splitlines()
+            if line.strip()
+        )
+    }
+
+
+@pytest.mark.parametrize("claim_id", ["C09", "C10", "C12", "C15", "C22"])
+def test_recorded_invalid_interpretations_replay_to_gold(claim_id: str) -> None:
+    runner = _recorded_runner(claim_id)
+    checks, verdict = evaluate_verdict(
+        _recorded_model_sub_claims(claim_id),
+        runner,
+    )
+    expected = _gold_by_id()[claim_id]["gold_verdict"]
+
+    assert verdict == expected
+    assert all(check["program_verdict"] == expected for check in checks)
+    assert all(check["invalid_interpretations"] is True for check in checks)
+    assert all(check["period_ambiguous"] is False for check in checks)
+    assert all("period_ambiguous" not in check["reason"] for check in checks)
+    assert all(
+        evidence_id in runner.evidence
+        for check in checks
+        for evidence_id in check["interpretations"]
+    )
 
 
 def test_c06_recorded_model_output_is_corrected_to_eq() -> None:
@@ -222,6 +318,12 @@ def test_c06_recorded_model_output_is_corrected_to_eq() -> None:
 def test_verdict_schema_requires_interpretations() -> None:
     assert "interpretations" in SUB_CLAIM_SCHEMA["required"]
     assert "interpretations" in VERDICT_SCHEMA["properties"]["sub_claims"]["items"]["required"]
+
+
+def test_interpretations_schema_describes_evidence_ids_without_pattern() -> None:
+    item_schema = SUB_CLAIM_SCHEMA["properties"]["interpretations"]["items"]
+    assert item_schema["description"] == "evidence id like E3 — never free text"
+    assert "pattern" not in item_schema
 
 
 @dataclass

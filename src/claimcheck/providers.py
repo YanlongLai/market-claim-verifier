@@ -190,7 +190,8 @@ def baseten_final_verdict_prompt() -> str:
         "assertion as a sub-claim, including claim_type other when the tools "
         "cannot check it. Copy stated_text verbatim from the claim and include "
         "claim_type, comparator, stated_value in base units, evidence_ids, "
-        "verdict, model_found_value, and a concise note. The object must match "
+        "interpretations (evidence ids like E3 — never free text), verdict, "
+        "model_found_value, and a concise note. The object must match "
         "this existing verdict schema: "
         + _verdict_schema_text()
     )
