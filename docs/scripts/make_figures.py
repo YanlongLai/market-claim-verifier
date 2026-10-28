@@ -531,30 +531,52 @@ def make_live_cost_latency() -> list[Path]:
     return _save(fig, "live-cost-latency")
 
 
+SYSTEM_ORDER = (
+    "single_shot@meta", "agent@meta",
+    "single_shot@baseten", "agent@baseten",
+    "single_shot@fireworks", "agent@fireworks",
+)
+SYSTEM_LABELS = {
+    "single_shot@meta": "Single-shot · Meta API",
+    "agent@meta": "Agent · Meta API",
+    "single_shot@baseten": "Single-shot · Baseten",
+    "agent@baseten": "Agent · Baseten",
+    "single_shot@fireworks": "Single-shot · Fireworks",
+    "agent@fireworks": "Agent · Fireworks",
+}
+
+
+def _overall(summary: dict[str, Any], system: str) -> dict[str, Any] | None:
+    """Accuracy and false-supported rate (with Wilson CIs) across all splits for one system."""
+
+    intervals = summary.get("confidence_intervals")
+    if isinstance(intervals, dict) and isinstance(intervals.get(system), dict):
+        overall = intervals[system].get("overall")
+        if isinstance(overall, dict) and _number(overall.get("accuracy")) is not None:
+            return overall
+    totals = (summary.get("system_totals") or {}).get(system)
+    if isinstance(totals, dict) and _number(totals.get("accuracy")) is not None:
+        return totals
+    return None
+
+
 def _valid_eval_summary(path: Path, summary: dict[str, Any]) -> bool:
-    required_systems = {
-        "single_shot@meta",
-        "agent@meta",
-        "single_shot@baseten",
-        "agent@baseten",
-    }
     manifest = summary.get("manifest")
     totals = summary.get("system_totals")
     if not isinstance(manifest, dict) or manifest.get("status") not in {"completed", "complete"}:
         return False
-    if not isinstance(totals, dict) or not required_systems.issubset(totals):
+    if not isinstance(totals, dict):
         return False
-    for system in required_systems:
-        total = totals.get(system)
-        if not isinstance(total, dict):
+    systems = [system for system in SYSTEM_ORDER if system in totals]
+    if not {"single_shot@meta", "agent@meta"}.issubset(systems):
+        return False
+    for system in systems:
+        total = totals[system]
+        if _overall(summary, system) is None:
             return False
-        if _number(total.get("accuracy")) is None or _number(total.get("false_supported_rate")) is None:
+        if _number((total.get("cost_usd") or {}).get("mean")) is None:
             return False
-        cost = total.get("cost_usd")
-        latency = total.get("latency_ms")
-        if not isinstance(cost, dict) or _number(cost.get("total")) is None:
-            return False
-        if not isinstance(latency, dict) or _number(latency.get("mean")) is None:
+        if _number((total.get("latency_ms") or {}).get("mean")) is None:
             return False
     return path.is_file()
 
@@ -604,40 +626,51 @@ def _eval_context(path: Path, summary: dict[str, Any]) -> dict[str, Any]:
 
 def make_eval_summary(path: Path, summary: dict[str, Any]) -> list[Path]:
     context = _eval_context(path, summary)
-    systems = ("single_shot@meta", "agent@meta", "single_shot@baseten", "agent@baseten")
-    labels = ("Single-shot · Meta", "Agent · Meta", "Single-shot · Baseten", "Agent · Baseten")
     totals = summary["system_totals"]
-    metrics = {
-        "Accuracy": [float(totals[system]["accuracy"]) for system in systems],
-        "False-supported rate": [float(totals[system]["false_supported_rate"]) for system in systems],
-        "Total cost (USD)": [float(totals[system]["cost_usd"]["total"]) for system in systems],
-        "Mean latency (seconds)": [float(totals[system]["latency_ms"]["mean"]) / 1000 for system in systems],
-    }
-    fig, axes = plt.subplots(2, 2, figsize=(12.2, 7.6), facecolor=PAPER)
-    for axis, (title, values) in zip(axes.flat, metrics.items()):
+    systems = [system for system in SYSTEM_ORDER if system in totals]
+    labels = [SYSTEM_LABELS[system] for system in systems]
+    overall = {system: _overall(summary, system) for system in systems}
+
+    def rate(system: str, key: str) -> tuple[float, float, float]:
+        value = float(overall[system][key])
+        interval = (overall[system].get("confidence_intervals") or {}).get(key) or overall[system].get(f"{key}_ci") or {}
+        lower = _number(interval.get("lower"))
+        upper = _number(interval.get("upper"))
+        return value, value - (lower if lower is not None else value), (upper if upper is not None else value) - value
+
+    panels = [
+        ("Accuracy (95% Wilson CI)", [rate(system, "accuracy") for system in systems], "rate"),
+        ("False-supported rate (95% Wilson CI)", [rate(system, "false_supported_rate") for system in systems], "rate"),
+        ("Mean cost per claim (USD)", [(float(totals[s]["cost_usd"]["mean"]), 0.0, 0.0) for s in systems], "cost"),
+        ("Mean latency per claim (seconds)", [(float(totals[s]["latency_ms"]["mean"]) / 1000, 0.0, 0.0) for s in systems], "seconds"),
+    ]
+    colors = [MUTED if system.startswith("single_shot") else SUPPORTED for system in systems]
+    fig, axes = plt.subplots(2, 2, figsize=(12.8, 8.2), facecolor=PAPER)
+    for axis, (title, rows, kind) in zip(axes.flat, panels):
         _style_axis(axis)
-        color = SUPPORTED if title == "Accuracy" else CONTRADICTED if "False" in title else ACCENT
-        bars = axis.bar(range(len(labels)), values, color=color, alpha=0.88)
+        values = [row[0] for row in rows]
+        errors = [[row[1] for row in rows], [row[2] for row in rows]]
+        panel_colors = [CONTRADICTED if "False" in title and not system.startswith("single_shot") else color
+                        for system, color in zip(systems, colors)] if "False" in title else colors
+        bars = axis.bar(range(len(labels)), values, color=panel_colors, alpha=0.9,
+                        yerr=errors if kind == "rate" else None, capsize=4, ecolor=INK)
         axis.set_title(title, loc="left", color=INK, fontsize=11, fontweight="bold")
-        axis.set_xticks(range(len(labels)), labels, rotation=25, ha="right", fontsize=8)
-        if "rate" in title.lower() or title == "Accuracy":
-            axis.set_ylim(0, 1)
+        axis.set_xticks(range(len(labels)), labels, rotation=28, ha="right", fontsize=8)
+        if kind == "rate":
+            axis.set_ylim(0, 1.08)
             axis.yaxis.set_major_formatter(FuncFormatter(lambda value, _: f"{value:.0%}"))
-        elif "cost" in title.lower():
-            axis.yaxis.set_major_formatter(FuncFormatter(lambda value, _: f"${value:.2f}"))
-        else:
-            axis.yaxis.set_major_formatter(FuncFormatter(lambda value, _: f"{value:g}"))
+        elif kind == "cost":
+            axis.yaxis.set_major_formatter(FuncFormatter(lambda value, _: f"${value:.3f}"))
         for bar, value in zip(bars, values):
-            label = (
-                f"{value:.0%}"
-                if "rate" in title.lower() or title == "Accuracy"
-                else f"${value:.2f}"
-                if "cost" in title.lower()
-                else f"{value:.1f}s"
-            )
-            axis.text(bar.get_x() + bar.get_width() / 2, bar.get_height(), label, ha="center", va="bottom", fontsize=8, color=INK)
-    fig.suptitle("Evaluation summary", x=0.05, ha="left", color=INK, fontsize=16, fontweight="bold")
-    fig.text(0.05, 0.925, f"n = {context['claim_count']} {context['split']} claims · run {context['run_date']}", color=MUTED, fontsize=9.5)
+            label = f"{value:.0%}" if kind == "rate" else f"${value:.3f}" if kind == "cost" else f"{value:.0f}s"
+            axis.text(bar.get_x() + bar.get_width() / 2, bar.get_height(), label, ha="center", va="bottom",
+                      fontsize=8, color=INK)
+    fig.suptitle("Agent vs single-shot, three ways to run Meta's Muse models", x=0.05, ha="left", color=INK,
+                 fontsize=16, fontweight="bold")
+    fig.text(0.05, 0.925,
+             f"n = {context['claim_count']} labeled claims ({context['split']}) · run {context['run_date']} · "
+             "gray = single-shot (no tools), green = agent with SEC tools + program checks",
+             color=MUTED, fontsize=9.5)
     fig.tight_layout(rect=(0, 0.08, 1, 0.90))
     _source_line(fig, f"Source: {path.relative_to(ROOT)}")
     return _save(fig, "eval-summary")

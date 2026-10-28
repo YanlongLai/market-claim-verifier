@@ -57,7 +57,41 @@ See the [flow source](docs/diagrams/how-a-claim-is-checked.mmd).
 
 ## Real results
 
-The build log records five live claims before and after the Day 2 fixes. The chart below is generated from that table; the cards and linked JSON files are committed traces.
+30 hand-reviewed claims across 7 companies, with gold answers computed from SEC filings by an [independent script](eval/build_gold.py) and **committed before any model run** ([`f54f5d6`](https://github.com/YanlongLai/market-claim-verifier/commit/f54f5d6)). Six systems, one code version ([run 4](docs/evidence/eval-2026-10-27-r4-all/REPORT.md)):
+
+| System | Accuracy (95% CI) | Says "supported" when false | Mean cost / claim | Mean latency |
+| --- | --- | --- | --- | --- |
+| **Agent · Muse Spark Open on Baseten** | **30/30 = 100%** (89–100%) | 0 / 16 | $0.016 | 10 s |
+| **Agent · Muse Spark Open on Fireworks** | **30/30 = 100%** (89–100%) | 0 / 16 | $0.016 | 48 s |
+| **Agent · Muse Spark 1.3 on Meta Model API** | **26/30 = 87%** (70–95%) | 0 / 16 | $0.021 | 32 s |
+| Single-shot · Muse Spark 1.3 (no tools) | 18/30 = 60% (42–75%) | 0 / 16 | $0.019 | 15 s |
+| Single-shot · Muse Spark Open, Fireworks | 10/30 = 33% (19–51%) | 0 / 16 | $0.011 | 41 s |
+| Single-shot · Muse Spark Open, Baseten | 6/30 = 20% (10–37%) | 0 / 16 | $0.015 | 11 s |
+
+<!-- figure:eval-summary:start -->
+![Evaluation cost, latency, accuracy, and false-supported rate](docs/figures/eval-summary.svg)
+
+*Evaluation: n = 30 all claims, run 2026-10-28.*
+<!-- figure:eval-summary:end -->
+
+- **Tools + program checks are what make the model reliable.** Same model, paired on the same claims: agent minus single-shot accuracy is +27 points on Meta API (95% bootstrap CI +7 to +47, McNemar p = 0.039), +79 on Baseten (+61 to +93, p < 0.001) and +67 on Fireworks (+50 to +83, p < 0.001).
+- **The single-shot model never says "supported" falsely either — because it mostly refuses.** It answers "insufficient evidence" 47–80% of the time: Muse Spark does not know 2025–2026 filings from memory, and it says so.
+- **Open weights are production-viable here.** Muse Spark Open (the open-weights model) matched or beat the hosted Muse Spark 1.3 on this set; on Baseten it was also the fastest and cheapest system.
+- **Honest scope.** n = 30 is small; intervals are wide. The held-out split was first run once in [run 2](docs/evidence/eval-2026-10-27-test/REPORT.md) (agent: 7/10 Meta API, 10/10 Baseten); later runs come after fixes found on the dev split and are labeled post-hoc. Every run, including an [aborted one](docs/evidence/eval-2026-10-27-aborted-partial/), is committed with prompts, raw responses, tokens, cost and latency. A 260-claim set across 23 companies is being frozen next ([`eval/v2/`](eval/v2/)).
+
+### How the system got there
+
+Each failure found in a live run became a program rule, not a prompt tweak:
+
+| Found in | Failure | Fix (program decides) |
+| --- | --- | --- |
+| Day 1 live run | Response truncated by the output limit | Detect `incomplete`, retry once, otherwise fail closed |
+| Day 2 live runs | "about $1.4B" vs $1.373B; "exceeded $100B" treated as equality; "fell 10%" sign lost | Parse the stated number, precision and direction words from the claim text |
+| Eval run 1 | Model chose `approx` for "$1.3 billion" → false "supported" (3 claims) | Comparator inferred from wording; model's choice only recorded |
+| Eval run 1 | "Q4 2025" for Microsoft is false under both fiscal and calendar readings, model said "insufficient" | Check both readings; contradicted only if both contradict |
+| Eval run 2 | Model wrote free text into evidence fields | Only real evidence IDs count |
+| Fireworks run | Same fact cited twice under two labels | Collapse identical evidence |
+| Real-world sample | SEC `fy`/`fp` describe the filing, not the period (Oracle's quarter ended Aug 2026 is tagged fiscal 2026; it is fiscal 2027 Q1) | Fiscal year and quarter derived from period dates and the issuer's year-end |
 
 <!-- figure:before-after:start -->
 ![Before and after Day 2 fixes](docs/figures/before-after.svg)
@@ -65,24 +99,8 @@ The build log records five live claims before and after the Day 2 fixes. The cha
 *Before/after chart: n = 5 live claims from BUILD_LOG.md, run 2026-10-27.*
 <!-- figure:before-after:end -->
 
-<!-- figure:eval-summary:start -->
-
-<!-- figure:eval-summary:end -->
-
-| Live claim | Before → after | Evidence trace |
-| --- | --- | --- |
-| Meta Q2 2025 revenue was $47.5B, up 22% YoY | insufficient → supported | [trace](docs/evidence/2026-10-27/20261027T221321Z-79b60e38.json) |
-| Tesla Q3 2025 net income about $1.4B; Alphabet Q4 2024 revenue exceeded $100B | contradicted → contradicted | [trace](docs/evidence/2026-10-27/20261027T221357Z-41db8b67.json) |
-| Alphabet Q3 2025 revenue topped $100B for the first time | supported → supported; both parts checked | [trace](docs/evidence/2026-10-27/20261027T222758Z-8959a100.json) |
-| Tesla revenue fell 10% YoY in Q3 2025 | insufficient → contradicted | [trace](docs/evidence/2026-10-27/20261027T221452Z-739ae70b.json) |
-| Meta Q4 2026 revenue was $60B | insufficient → insufficient_evidence | [trace](docs/evidence/2026-10-27/20261027T221545Z-dbd136d9.json) |
-
-The before/after labels and SEC actuals are in [`BUILD_LOG.md`](BUILD_LOG.md). The live-run cost and latency view is also reproducible:
-
 <!-- figure:live-cost-latency:start -->
-![Development-run cost and latency](docs/figures/live-cost-latency.svg)
-
-*Development runs, Day 1–2: n = 15 traces; not an evaluation.*
+Development-run cost and latency is documented in [`docs/VISUALS.md`](docs/VISUALS.md); the evaluation figure above is the results view.
 <!-- figure:live-cost-latency:end -->
 
 ### One real run
@@ -144,10 +162,13 @@ Meta is the default provider. Baseten uses the OpenAI-compatible endpoint `https
 flowchart LR
     A["Same agent loop<br/>claim → tools → checks"] --> M["Meta provider"]
     A --> B["Baseten provider"]
+    A --> F["Fireworks provider"]
     M --> MR["Meta Model API<br/>Responses API<br/>muse-spark-1.3"]
-    B --> BR["Baseten<br/>Chat Completions<br/>meta-models/muse-spark-open-1026<br/>open weights"]
+    B --> BR["Baseten<br/>Chat Completions<br/>muse-spark-open-1026<br/>open weights"]
+    F --> FR["Fireworks<br/>Chat Completions<br/>muse-spark-open<br/>open weights"]
     MR --> T["Identical trace +<br/>budget/cost recording"]
     BR --> T
+    FR --> T
     T --> V["Same program verdict rules"]
 
     classDef loop fill:#e8edf2,stroke:#52606d,color:#1f2933;
@@ -155,8 +176,8 @@ flowchart LR
     classDef api fill:#e8eef3,stroke:#617487,color:#1f2933;
     classDef audit fill:#e6e9ed,stroke:#66727e,color:#1f2933;
     class A,V loop;
-    class M,B provider;
-    class MR,BR api;
+    class M,B,F provider;
+    class MR,BR,FR api;
     class T audit;
 ```
 <!-- diagram:providers:end -->
@@ -201,9 +222,29 @@ flowchart LR
 
 Full source: [`docs/diagrams/model-vs-program.mmd`](docs/diagrams/model-vs-program.mmd).
 
+## Evidence you can audit
+
+Every number in a verdict carries its provenance ([`docs/DATA_SOURCES.md`](docs/DATA_SOURCES.md), [`sources/registry.yaml`](sources/registry.yaml)):
+
+| Level | Source | Meaning |
+| --- | --- | --- |
+| L1 | 10-K (annual report) | Audited; the issuer is legally liable for it |
+| L2 | 10-Q (quarterly report) | Reviewed, not audited |
+| L3 | Derived by the program | e.g. Q4 = annual − nine-month YTD; formula and source filings listed |
+
+Each fact also reports how many filings confirm it, whether a later filing revised it, and an overall strength (high / medium / low). Guidance, non-GAAP figures, segment KPIs, deliveries, market share and share prices are outside SEC XBRL facts, so claims about them come back `insufficient_evidence` rather than a guess.
+
+**The data itself is checked.** [`docs/DATA_QUALITY.md`](docs/DATA_QUALITY.md) runs consistency checks over 24 issuers' SEC data (quarters summing to the year, year-to-date totals, revisions). It found that **Oracle's 10-Ks filed in 2020–2022 tag full-year revenue for fiscal 2018, 2019, 2021 and 2022 on the fourth-quarter period** (e.g. $39.4B for March–May 2018). The verifier excludes those rows, derives the real quarter ($11.0B) and shows the excluded row in the evidence.
+
+<!-- figure:data-quality:start -->
+![Cached SEC data quality by issuer](docs/figures/data-quality.svg)
+
+*Data-quality checks per issuer, SEC companyfacts snapshot 2026-10-27.*
+<!-- figure:data-quality:end -->
+
 ## Built during the hackathon
 
-[`BUILD_LOG.md`](BUILD_LOG.md) is the dated record of the work. No code in this repository predates 2026-10-27; the log covers the EDGAR client, agent loop, two providers, deterministic checks, evaluation harness, and the documentation and visuals in this submission.
+[`BUILD_LOG.md`](BUILD_LOG.md) is the dated record of the work. No code in this repository predates 2026-10-27; the log covers the EDGAR client, agent loop, three providers, deterministic checks, evaluation harness, provenance and data-quality checks, and the documentation and visuals in this submission.
 
 ## Run it
 
@@ -214,30 +255,28 @@ uv sync
 .venv/bin/python -m claimcheck verify --provider baseten --dry-run 'Meta Q2 2025 revenue was $47.5B'
 ```
 
-For a live run, keep the model key outside the repository (`MODEL_API_KEY` for Meta or `BASETEN_API_KEY` for Baseten). Keys are never written to traces or the append-only budget ledger. A live run writes its trace and ledger under `runs/`.
+For a live run, keep the model key outside the repository (`MODEL_API_KEY` for Meta, `BASETEN_API_KEY` for Baseten, `FIREWORKS_API_KEY` for Fireworks). Keys are never written to traces or the append-only budget ledger. A live run writes its trace and ledger under `runs/`.
 
 `verify` also accepts `--model`, `--budget`, `--max-output-tokens`, and `--reasoning-effort`. Tool turns default to 4,000 output tokens and the final verdict to 3,000; the CLI flag or environment setting can override both.
 
 ## Evaluation
 
-The checked-in set is [`eval/claims.yaml`](eval/claims.yaml), with its independent gold facts in [`eval/gold_facts.json`](eval/gold_facts.json). It contains 30 claims split into 20 `dev` and 10 `test` claims. Evaluation compares `single_shot` and `agent` systems on both providers and records prompts, raw responses, token buckets, model/tool calls, cost, latency, and scoring fields.
+[`eval/claims.yaml`](eval/claims.yaml) holds 30 claims (20 `dev`, 10 `test`) across 11 trap categories — rounded and approximate values, inequalities, year-over-year changes with direction words, YTD-vs-quarter and fiscal-vs-calendar traps, unit traps, multi-part claims, first-time records and uncheckable claims. Gold facts come from [`eval/build_gold.py`](eval/build_gold.py), which reads raw SEC JSON with its own code and does not import the verifier.
 
-**results pending** — the live evaluation is writing to `docs/evidence/eval-2026-10-27/`. After it completes:
+Each run records a manifest (code commit, model, prompts with SHA-256, data snapshot hashes, start/end time, ledger spend before and after), one trace per model call (request, raw response, reasoning tokens, cost, latency, rate-limit headers) and a report with Wilson confidence intervals, paired bootstrap intervals and McNemar tests. Prompts live in [`prompts/`](prompts/); a test fails if they drift from the code.
 
 ```bash
-.venv/bin/python -m claimcheck eval run \
-  --split all \
-  --systems single_shot@meta,agent@meta,single_shot@baseten,agent@baseten \
-  --budget 2 \
-  --out docs/evidence/eval-2026-10-27/
-.venv/bin/python -m claimcheck eval report --out docs/evidence/eval-2026-10-27/
+.venv/bin/python -m claimcheck eval run --split all \
+  --systems single_shot@meta,agent@meta,single_shot@baseten,agent@baseten,single_shot@fireworks,agent@fireworks \
+  --budget 5 --out docs/evidence/eval-<date>/
+.venv/bin/python -m claimcheck eval report --out docs/evidence/eval-<date>/
 ```
 
-To inspect a plan without a key, model call, or network: `.venv/bin/python -m claimcheck eval run --dry-run --split dev`. `single_shot@*` receives no tools; `agent@*` uses the SEC cache and deterministic checks. A failed or budget-stopped pair counts as missing and is not silently retried. Prompt exports are checked with `python -m claimcheck prompts export`.
+`--dry-run` prints the plan and worst-case budget without a key or network. A failed or budget-stopped pair counts as wrong and is never silently retried.
 
 ## Technical notes
 
-`lookup_fact` returns period type and duration. Additive flows can be derived from annual minus nine-month YTD or from YTD differences, with source components retained; EPS and share counts are not derived. Period labels use SEC frames when present and dates otherwise, not fiscal `fp` labels. The EDGAR client reads local cache files when available, sends the configured contact User-Agent for a cache miss, and records the source SHA-256 in evidence.
+`lookup_fact` returns period type and duration. Additive flows can be derived from annual minus nine-month YTD or from YTD differences, with source components retained; EPS and share counts are not derived. Calendar labels (`2025Q3`) use SEC frames when present and dates otherwise; fiscal labels (`FY2027Q1`) are derived from each period's dates and the issuer's fiscal year-end, because SEC `fy`/`fp` describe the filing rather than the period. A quarter whose value equals its covering annual value is treated as a tagging error and excluded. The EDGAR client reads local cache files when available, sends the configured contact User-Agent for a cache miss, and records the source SHA-256 in evidence.
 
 Tool turns reserve worst-case cost before every model call, then reconcile actual usage. Incomplete responses are retried once with a doubled limit; Baseten plain JSON is schema-validated and repaired once when needed. Prompt source files live in [`prompts/`](prompts/), and the figure builder is [`docs/scripts/make_figures.py`](docs/scripts/make_figures.py).
 

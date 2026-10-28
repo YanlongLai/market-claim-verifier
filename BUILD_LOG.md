@@ -156,3 +156,59 @@ had. Offline suite: 98 tests. Model spend so far ≈ $0.29 (ledger in `runs/`, n
 - Restructured `README.md` for a short judge-facing read while retaining the run, EDGAR, provider, verdict, and
   evaluation details below the overview.
 - Made every visual reproducible and reusable: added the evidence-hashed figure registry, offline `--all`/`--check` builder, `.mmd` diagram sources, README/VISUALS markers, and the prompt library with the exact hero prompt and variants.
+
+## Evaluation runs, third provider, provenance and data checks — 2026-10-27 (Tue) evening
+
+All runs below are committed under `docs/evidence/` with manifest, per-call traces (prompt, raw response, tokens incl.
+reasoning, cost, latency) and `REPORT.md`. Gold labels for the 30 claims were committed before the first run
+(`f54f5d6`).
+
+- **Recording first.** A first dev run was stopped after 6 claims because single-shot prompts and raw responses were not
+  being saved; it is kept as `eval-2026-10-27-aborted-partial/`. Added per-call traces for every system, a run manifest
+  (commit, versions, prompt SHA-256s, data snapshot hashes, time window, ledger spend) and a `prompts/` registry that a
+  test keeps in sync with the code.
+- **Run 1 (dev, Meta API + Baseten).** Agents beat single-shot on accuracy (0.75 vs 0.60 / 0.40) but said "supported"
+  for 3 false claims: the model chose `approx` for un-hedged numbers such as "$1.3 billion" (actual $1.373B). Also
+  found: "Microsoft Q4 2025 $281.7B" is false under both fiscal and calendar readings but agents answered
+  "insufficient"; one Meta API call failed with an expired `previous_response_id`.
+  Fixes: the program infers the comparator from the claim's wording; both period readings are checked; the Meta path
+  resends full history when a referenced response or reasoning item has expired.
+- **Run 2 (dev agents + the held-out test split, first and only pre-registered test run).** False-supported fell to 0.
+  Test accuracy: agent 7/10 (Meta API), 10/10 (Baseten); single-shot 5/10 and 3/10. Dev run exposed the Meta model
+  writing free text into the `interpretations` field → only real evidence IDs are accepted.
+- **Run 3 (post-hoc, agents on all 30).** Meta API agent 0.90 dev / 0.80 test, Baseten 0.95 / 1.00, still 0
+  false-supported.
+- **Third provider.** Added Muse Spark Open on Fireworks (`accounts/fireworks/models/muse-spark-open`) through a shared
+  OpenAI-compatible chat adapter with its own budget pool. Its first live run cited the same Tesla fact twice under
+  calendar and fiscal labels → identical evidence is now collapsed, and facts carry `fiscal_equals_calendar`.
+- **Run 4 (all 30 claims, six systems, one code version).** Agent accuracy 30/30 on Baseten and Fireworks, 26/30 on the
+  Meta API; single-shot 18/30 (Meta API), 10/30 (Fireworks), 6/30 (Baseten); 0 false-supported for every system.
+  Paired agent − single-shot accuracy: +27 pts on Meta API (bootstrap 95% CI +7 to +47, McNemar p = 0.039), +79 on
+  Baseten, +67 on Fireworks. Mean cost per claim $0.011–0.021; mean latency 10 s (Baseten agent) to 48 s (Fireworks
+  agent). Two Baseten single-shot calls ended `incomplete` (reasoning used the whole output limit) and count as wrong.
+- **Statistics in reports.** Wilson 95% intervals for accuracy, false-supported and insufficient rates (overall, per
+  split, per category); paired bootstrap (10,000 resamples, seeded) and exact McNemar tests between systems.
+- **Provenance.** Every fact now carries a tier (L1 audited 10-K, L2 reviewed 10-Q, L3 derived), confirming filings,
+  revision status and a strength level; sub-claims and verdicts report the weakest evidence used. Added
+  `sources/registry.yaml` and `docs/DATA_SOURCES.md` (what SEC XBRL covers and does not, claim-source tiers, and the rule
+  that per-site reliability is only published with n ≥ 20 and a confidence interval).
+- **Fiscal-label bug found while collecting real-world claims.** SEC companyfacts `fy`/`fp` describe the filing, not
+  the period: Oracle's quarter ended 2026-08-31 is tagged `fy=2026` but is fiscal 2027 Q1. Both the verifier and the
+  independent gold builder had relied on these fields, so they agreed with each other and were wrong together. Each now
+  derives fiscal year and quarter from period dates and the issuer's fiscal year-end, with two separate
+  implementations; they agree on all 159,368 quarterly, year-to-date and annual facts since 2019 for 23 issuers, and
+  match the issuers' own quarter names (Oracle, NVIDIA, Microsoft, Apple, Meta, Tesla). The 30 v1 gold verdicts were
+  unchanged.
+- **SEC tagging errors.** A data-quality checker over 24 issuers (`docs/DATA_QUALITY.md`) found that Oracle's 10-Ks filed
+  in 2020–2022 tag full-year revenue for fiscal 2018, 2019, 2021 and 2022 on the fourth-quarter period. The verifier
+  now drops a quarter whose value equals its covering annual value, derives the quarter instead (Oracle FY2018 Q4:
+  $11.0B rather than $39.4B) and lists the excluded row. A first version flagged any quarter above 60% of the year; it
+  produced 154 false alarms (e.g. Tesla's Q4 2012 revenue really was 74% of that year) and was replaced by the exact-match
+  rule, which flags only the 6 Oracle rows. The checker reports 21 consistency anomalies and 603 revised periods (289
+  above 0.5%); revisions are listed separately because later filings routinely reclassify earlier periods.
+- **Eval v2 in progress.** A seeded generator (`eval/v2/`) builds 260 claims across 23 companies and 10 families,
+  including 26 deliberately ambiguous fiscal/calendar claims whose gold is computed under both readings. Review of the
+  first draft found wrong month names, missing years and an "at least" claim worded as an equality; these were fixed
+  before freezing.
+- **Figures.** The evaluation chart now shows all six systems with Wilson intervals; added a data-quality chart and
+  Fireworks to the provider diagram.
