@@ -16,9 +16,16 @@ from .edgar import (
     METRIC_UNITS,
     STATEMENT_FORMS,
 )
+from .fiscal import normalize_fiscal_labels
 
 
 DEFAULT_SNAPSHOT_DATE = "2026-10-27"
+# Year-to-date totals can only fall for metrics that can be negative in a quarter (income lines), so monotonicity is
+# checked only where a decrease is a genuine inconsistency.
+CUMULATIVE_NON_DECREASING = {"revenue", "gross_profit", "capex", "rd_expense"}
+# Later filings routinely revise earlier periods (reclassifications, discontinued operations). Revisions above this
+# relative size are reported as material; smaller ones as minor.
+MATERIAL_REVISION = 0.005
 DEFAULT_CACHE_DIR = Path(".cache")
 DEFAULT_REPORT_PATH = Path("docs/evidence/data-quality-2026-10-27.json")
 DEFAULT_DOC_PATH = Path("docs/DATA_QUALITY.md")
@@ -379,14 +386,21 @@ def _value_groups(
 
 def _restatement_report(
     entries: Iterable[tuple[int, str, Mapping[str, Any]]],
-) -> tuple[int, list[dict[str, Any]]]:
+) -> tuple[int, int, list[dict[str, Any]]]:
+    """Return (revised periods, material revisions, examples) for periods reported with different values."""
+
     examples: list[dict[str, Any]] = []
     count = 0
+    material = 0
     for (_concept_index, unit, start, end), values in _group_exact_periods(entries).items():
         value_groups = _value_groups(item[2] for item in values)
         if len(value_groups) <= 1:
             continue
         count += 1
+        numbers = [abs(float(group["value"])) for group in value_groups if _number(group["value"]) is not None]
+        spread = (max(numbers) - min(numbers)) / max(max(numbers), 1.0) if numbers else 0.0
+        is_material = spread > MATERIAL_REVISION
+        material += int(is_material)
         if len(examples) >= MAX_EXAMPLES:
             continue
         facts = [item[2] for item in values]
@@ -396,12 +410,14 @@ def _restatement_report(
                 "unit": unit,
                 "start": start,
                 "end": end,
+                "relative_change": round(spread, 6),
+                "material": is_material,
                 "values_seen": value_groups,
                 "accessions": sorted({_accn(fact) for fact in facts if _accn(fact)}),
                 "forms": sorted({_form(fact) for fact in facts if _form(fact)}),
             }
         )
-    return count, examples
+    return count, material, examples
 
 
 def _fallback_report(
@@ -434,16 +450,15 @@ def _metric_quality(document: Mapping[str, Any], metric: str) -> dict[str, Any]:
     selected = _selected_periods(entries)
     quarters = _derived_quarters(selected)
     annual_checks, annual_anomalies = _annual_checks(selected, quarters)
-    ytd_checks, ytd_anomalies = _ytd_checks(selected)
-    restatement_count, restatement_examples = _restatement_report(entries)
+    if metric in CUMULATIVE_NON_DECREASING:
+        ytd_checks, ytd_anomalies = _ytd_checks(selected)
+    else:
+        ytd_checks, ytd_anomalies = [], []
+    restatement_count, material_count, restatement_examples = _restatement_report(entries)
     fallback_count, fallback_examples = _fallback_report(entries)
     anomalies = [
         *annual_anomalies,
         *ytd_anomalies,
-        *[
-            {"type": "restated_period", **example}
-            for example in restatement_examples
-        ],
         *[
             {"type": "form_fallback", **example}
             for example in fallback_examples
@@ -455,7 +470,7 @@ def _metric_quality(document: Mapping[str, Any], metric: str) -> dict[str, Any]:
     checks_total += len(ytd_checks)
     if entries:
         checks_total += 2
-        checks_passed += int(restatement_count == 0) + int(fallback_count == 0)
+        checks_passed += int(material_count == 0) + int(fallback_count == 0)
     return {
         "available": bool(entries),
         "checks_passed": checks_passed,
@@ -475,6 +490,7 @@ def _metric_quality(document: Mapping[str, Any], metric: str) -> dict[str, Any]:
         },
         "restatements": {
             "count": restatement_count,
+            "material": material_count,
             "examples": restatement_examples,
         },
         "form_fallback": {
@@ -524,6 +540,9 @@ def _issuer_report(
         "restated_periods": sum(
             int(value["restatements"]["count"]) for value in metrics.values()
         ),
+        "material_revisions": sum(
+            int(value["restatements"]["material"]) for value in metrics.values()
+        ),
         "form_fallback_periods": sum(
             int(value["form_fallback"]["count"]) for value in metrics.values()
         ),
@@ -548,8 +567,9 @@ def build_data_quality_report(
             document = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
             continue
-        if not isinstance(document, Mapping):
+        if not isinstance(document, dict):
             continue
+        normalize_fiscal_labels(document)
         try:
             cik = f"{int(document.get('cik') or path.stem.removeprefix('companyfacts-CIK')):010d}"
         except (TypeError, ValueError):
@@ -572,6 +592,7 @@ def build_data_quality_report(
             "issuers": len(issuers),
             "anomalies": total_anomalies,
             "restated_periods": sum(int(issuer["restated_periods"]) for issuer in issuers),
+            "material_revisions": sum(int(issuer["material_revisions"]) for issuer in issuers),
             "form_fallback_periods": sum(
                 int(issuer["form_fallback_periods"]) for issuer in issuers
             ),
@@ -591,16 +612,16 @@ def render_data_quality_markdown(report: Mapping[str, Any]) -> str:
         "",
         f"Snapshot date: **{report.get('snapshot_date', '—')}**. Issuers: **{report.get('issuer_count', 0)}**. Checks use only the cached SEC companyfacts JSON; no network or live calls are used.",
         "",
-        "A quarterly sum check runs when an annual fact and all four quarters are derivable. The tolerance is the larger of 0.5% of the annual value and $1 million. YTD monotonicity is checked only for non-negative cumulative rows. Restated periods and non-statement-form fallbacks are reported as anomalies, with accession numbers in the detail list; detail examples are capped at 12 per metric while counts remain complete.",
+        "A quarterly sum check runs when an annual fact and all four quarters are derivable. The tolerance is the larger of 0.5% of the annual value and $1 million. YTD monotonicity is checked only for metrics that cannot decrease within a year (revenue, gross profit, capex, R&D); income lines can legitimately fall after a loss quarter. Fiscal years and quarters are assigned from each period's own dates (SEC `fy`/`fp` describe the filing, not the period). Anomalies are consistency failures (quarterly sum ≠ annual, falling YTD totals) and non-statement-form fallbacks. Periods that later filings report with a different value are listed separately as revisions — routine reclassifications are common — and counted as material when the change exceeds 0.5%. Detail examples are capped at 12 per metric while counts remain complete.",
         "",
         "## Summary by issuer",
         "",
-        "| Issuer | Ticker | Checks passed | Checks total | Anomalies | Restated periods | Form fallbacks |",
-        "|---|---|---:|---:|---:|---:|---:|",
+        "| Issuer | Ticker | Checks passed | Checks total | Anomalies | Revised periods | Material revisions | Form fallbacks |",
+        "|---|---|---:|---:|---:|---:|---:|---:|",
     ]
     for issuer in issuers if isinstance(issuers, list) else []:
         lines.append(
-            f"| {_md(issuer.get('entity'))} | {_md(issuer.get('ticker'))} | {issuer.get('checks_passed', 0)} | {issuer.get('checks_total', 0)} | {issuer.get('anomalies', 0)} | {issuer.get('restated_periods', 0)} | {issuer.get('form_fallback_periods', 0)} |"
+            f"| {_md(issuer.get('entity'))} | {_md(issuer.get('ticker'))} | {issuer.get('checks_passed', 0)} | {issuer.get('checks_total', 0)} | {issuer.get('anomalies', 0)} | {issuer.get('restated_periods', 0)} | {issuer.get('material_revisions', 0)} | {issuer.get('form_fallback_periods', 0)} |"
         )
     lines.extend(["", "## Metric coverage", ""])
     lines.append("| Issuer | " + " | ".join(str(metric) for metric in metrics) + " |")

@@ -18,8 +18,9 @@ import json
 import math
 import re
 import sys
+from collections import Counter
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 from typing import Any, Iterable, Mapping
 
@@ -185,6 +186,83 @@ def _load_ticker_map(cache_dir: Path) -> dict[str, str]:
     return result
 
 
+def _relabel_fiscal_periods(document: dict[str, Any]) -> None:
+    """Replace filing-level ``fy``/``fp`` with labels for each fact's own period.
+
+    Independent of ``claimcheck.fiscal`` on purpose: here the fiscal year-end month is taken from annual filings and
+    each period is placed by month arithmetic (dates shifted back a week so 52/53-week year-ends land in their
+    nominal month). Fiscal years are named by the calendar year in which they end.
+    """
+
+    annual_months: Counter[int] = Counter()
+    for taxonomy in (document.get("facts") or {}).values():
+        for concept in taxonomy.values():
+            for facts in (concept.get("units") or {}).values():
+                for fact in facts:
+                    start, end = _as_date(fact.get("start")), _as_date(fact.get("end"))
+                    if (
+                        start is not None and end is not None
+                        and str(fact.get("form") or "").upper().startswith("10-K")
+                        and 350 <= (end - start).days <= 380
+                    ):
+                        annual_months[(end - timedelta(days=7)).month] += 1
+    if not annual_months:
+        return
+    year_end_month = annual_months.most_common(1)[0][0]
+    for taxonomy in (document.get("facts") or {}).values():
+        for concept in taxonomy.values():
+            for facts in (concept.get("units") or {}).values():
+                for fact in facts:
+                    end = _as_date(fact.get("end"))
+                    if end is None:
+                        continue
+                    shifted = end - timedelta(days=7)
+                    fiscal_year = shifted.year if shifted.month <= year_end_month else shifted.year + 1
+                    months_into_year = (shifted.month - year_end_month) % 12 or 12
+                    quarter = (months_into_year + 2) // 3
+                    start = _as_date(fact.get("start"))
+                    fact.setdefault("filing_fy", fact.get("fy"))
+                    fact.setdefault("filing_fp", fact.get("fp"))
+                    fact["fy"] = fiscal_year
+                    if start is not None and 350 <= (end - start).days <= 380:
+                        fact["fp"] = "FY"
+                    elif start is None and quarter == 4:
+                        fact["fp"] = "FY"
+                    else:
+                        fact["fp"] = f"Q{quarter}"
+
+
+def _drop_annual_amounts_tagged_as_quarters(document: dict[str, Any]) -> None:
+    """Remove quarter-length facts whose value equals a covering annual value of the same concept and unit.
+
+    Independent of the verifier's guard. Oracle's FY2020-FY2022 10-Ks tag full-year revenue on the fourth-quarter
+    period; keeping those rows would make the gold quarter equal to the whole year.
+    """
+
+    for taxonomy in (document.get("facts") or {}).values():
+        for concept in taxonomy.values():
+            for unit, facts in (concept.get("units") or {}).items():
+                annual = []
+                for fact in facts:
+                    start, end = _as_date(fact.get("start")), _as_date(fact.get("end"))
+                    value = fact.get("val")
+                    if start and end and 350 <= (end - start).days <= 380 and isinstance(value, (int, float)) and value > 0:
+                        annual.append((start, end, float(value)))
+                kept = []
+                for fact in facts:
+                    start, end = _as_date(fact.get("start")), _as_date(fact.get("end"))
+                    value = fact.get("val")
+                    if (
+                        start and end and 80 <= (end - start).days <= 100
+                        and isinstance(value, (int, float)) and value > 0
+                        and any(a_start <= start and end <= a_end and abs(value - a_value) <= 0.005 * a_value
+                                for a_start, a_end, a_value in annual)
+                    ):
+                        continue
+                    kept.append(fact)
+                facts[:] = kept
+
+
 def load_snapshot(cache_dir: str | Path, ticker: str, ticker_map: Mapping[str, str]) -> CompanySnapshot:
     normalized = str(ticker).strip().upper()
     try:
@@ -202,6 +280,8 @@ def load_snapshot(cache_dir: str | Path, ticker: str, ticker_map: Mapping[str, s
         raise GoldBuildError(f"{normalized}: invalid snapshot {path}: {exc}") from exc
     if not isinstance(document, dict):
         raise GoldBuildError(f"{normalized}: snapshot is not an object")
+    _relabel_fiscal_periods(document)
+    _drop_annual_amounts_tagged_as_quarters(document)
     return CompanySnapshot(normalized, cik, path, _sha256(raw), document)
 
 

@@ -12,6 +12,8 @@ from typing import Any, Callable, Iterable, Mapping
 
 import httpx
 
+from .fiscal import normalize_fiscal_labels
+
 
 SEC_DATA_BASE = "https://data.sec.gov"
 SEC_FILES_BASE = "https://www.sec.gov/files"
@@ -698,6 +700,8 @@ class EdgarClient:
         self.timeout = timeout
         self.fetcher = fetcher or self._http_fetch
         self._document_cache: dict[str, tuple[dict[str, Any], str]] = {}
+        # Facts dropped as XBRL tagging errors, keyed by metric; reported on results for the same period end.
+        self._excluded_facts: dict[str, dict[tuple[Any, ...], dict[str, Any]]] = {}
 
     def companyfacts_snapshot_hashes(self) -> dict[str, str]:
         """Return hashes for companyfacts files actually loaded by this client."""
@@ -787,7 +791,8 @@ class EdgarClient:
     def _facts_document(self, cik: str) -> tuple[dict[str, Any], str]:
         filename = f"companyfacts-CIK{cik}.json"
         url = f"{SEC_DATA_BASE}/api/xbrl/companyfacts/CIK{cik}.json"
-        return self._load_document(filename, url)
+        document, digest = self._load_document(filename, url)
+        return normalize_fiscal_labels(document), digest
 
     @staticmethod
     def _error(
@@ -1178,11 +1183,67 @@ class EdgarClient:
                     for fact in values
                     if isinstance(fact, Mapping) and _date(fact.get("end")) is not None
                 )
+                if metric in ADDITIVE_METRICS:
+                    valid_values = self._drop_mistagged_quarters(metric, concept, valid_values)
                 if not valid_values:
                     continue
                 groups.append(_FactGroup(concept, str(unit), valid_values, order))
                 order += 1
         return groups
+
+    def _drop_mistagged_quarters(
+        self, metric: str, concept: str, values: tuple[Mapping[str, Any], ...]
+    ) -> tuple[Mapping[str, Any], ...]:
+        """Drop quarter-length facts that carry a full-year amount.
+
+        Issuers occasionally tag an annual amount with a three-month period (Oracle's FY2020 10-K reports FY2018
+        revenue, $39.4B, for 2018-03-01..2018-05-31). A quarter equal (within 0.5%) to a positive annual value covering
+        it cannot be a real quarter, so it is excluded and the quarter is derived instead. Only equality is used: real
+        quarters can be most of a year (Tesla's Q4 2012 revenue was 74% of the year; income lines swing with losses).
+        """
+
+        annuals = [
+            (_date(fact.get("start")), _date(fact.get("end")), float(fact["val"]))
+            for fact in values
+            if _period_type(fact) == "annual" and isinstance(fact.get("val"), (int, float)) and fact["val"] > 0
+        ]
+        kept: list[Mapping[str, Any]] = []
+        for fact in values:
+            value = fact.get("val")
+            start, end = _date(fact.get("start")), _date(fact.get("end"))
+            if (
+                _period_type(fact) == "quarter"
+                and isinstance(value, (int, float))
+                and value > 0
+                and start is not None
+                and end is not None
+            ):
+                covering = [
+                    annual_value
+                    for annual_start, annual_end, annual_value in annuals
+                    if annual_start is not None and annual_end is not None
+                    and annual_start <= start and end <= annual_end
+                ]
+                if any(abs(value - annual_value) <= 0.005 * annual_value for annual_value in covering):
+                    key = (concept, fact.get("start"), fact.get("end"), fact.get("accn"))
+                    self._excluded_facts.setdefault(metric, {})[key] = (
+                        {
+                            "reason": "quarter_tagged_with_annual_amount",
+                            "concept": concept,
+                            "start": fact.get("start"),
+                            "end": fact.get("end"),
+                            "value": value,
+                            "annual_value": next(
+                                annual_value for annual_value in covering
+                                if abs(value - annual_value) <= 0.005 * annual_value
+                            ),
+                            "accn": fact.get("accn"),
+                            "form": fact.get("form"),
+                        }
+                    )
+                    continue
+            kept.append(fact)
+        return tuple(kept)
 
     @staticmethod
     def _selected_by_period(group: _FactGroup) -> dict[
@@ -1712,6 +1773,19 @@ class EdgarClient:
         }
 
     def lookup_fact(
+        self, ticker: str, metric: str, period: str
+    ) -> dict[str, Any]:
+        result = self._lookup_fact(ticker, metric, period)
+        excluded = [
+            item
+            for item in self._excluded_facts.get(str(metric or "").strip().lower(), {}).values()
+            if item.get("end") == result.get("end")
+        ]
+        if excluded and "error" not in result:
+            result["excluded_facts"] = excluded
+        return result
+
+    def _lookup_fact(
         self, ticker: str, metric: str, period: str
     ) -> dict[str, Any]:
         """Return one latest-filed fact for a requested period.

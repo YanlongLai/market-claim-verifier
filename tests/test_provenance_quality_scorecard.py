@@ -134,11 +134,24 @@ def test_data_quality_tiny_snapshot_detects_mismatch_drop_and_restatement(tmp_pa
         json.dumps({"cik": 1, "entityName": "Test", "facts": facts}),
         encoding="utf-8",
     )
+    capex = [
+        {"start": "2024-01-01", "end": "2024-03-31", "val": 5_000_000, "accn": "C1", "form": "10-Q", "filed": "2024-05-01", "fy": 2024, "fp": "Q1"},
+        {"start": "2024-01-01", "end": "2024-06-30", "val": 12_000_000, "accn": "C2", "form": "10-Q", "filed": "2024-08-01", "fy": 2024, "fp": "Q2"},
+        {"start": "2024-01-01", "end": "2024-09-30", "val": 9_000_000, "accn": "C3", "form": "10-Q", "filed": "2024-11-01", "fy": 2024, "fp": "Q3"},
+    ]
+    facts["us-gaap"]["PaymentsToAcquirePropertyPlantAndEquipment"] = {"units": {"USD": capex}}
+    (tmp_path / "companyfacts-CIK0000000001.json").write_text(
+        json.dumps({"cik": 1, "entityName": "Test", "facts": facts}),
+        encoding="utf-8",
+    )
     report = build_data_quality_report(tmp_path)
     metrics = report["issuers"][0]["metrics"]
     assert metrics["revenue"]["annual_sum_vs_annual"]["anomalies"]
-    assert metrics["net_income"]["ytd_monotonicity"]["anomalies"]
+    # Income can fall year-to-date after a loss quarter, so only non-decreasing metrics are checked.
+    assert not metrics["net_income"]["ytd_monotonicity"]["anomalies"]
+    assert metrics["capex"]["ytd_monotonicity"]["anomalies"]
     assert metrics["revenue"]["restatements"]["count"] == 1
+    assert metrics["revenue"]["restatements"]["material"] == 1
     assert "R1" in metrics["revenue"]["restatements"]["examples"][0]["accessions"]
 
 
@@ -229,3 +242,55 @@ def test_registry_and_data_quality_figure_are_registered() -> None:
     entry = next(item for item in figures["figures"] if item["id"] == "data-quality")
     assert entry["generator"] == "make_data_quality"
     assert Path("docs/figures/data-quality.svg").is_file()
+
+
+def test_fiscal_labels_come_from_period_dates_not_filing_metadata() -> None:
+    from claimcheck.fiscal import fiscal_label, normalize_fiscal_labels
+
+    # Oracle-like May year-end; the later filing tags its own quarter with the wrong fiscal year.
+    document = {
+        "facts": {
+            "us-gaap": {
+                "Revenues": {
+                    "units": {
+                        "USD": [
+                            {"start": "2024-06-01", "end": "2025-05-31", "val": 57, "form": "10-K", "fy": 2025, "fp": "FY"},
+                            {"start": "2025-06-01", "end": "2026-05-31", "val": 67, "form": "10-K", "fy": 2026, "fp": "FY"},
+                            {"start": "2026-06-01", "end": "2026-08-31", "val": 19, "form": "10-Q", "fy": 2026, "fp": "Q1"},
+                        ]
+                    }
+                }
+            }
+        }
+    }
+    normalize_fiscal_labels(document)
+    quarter = document["facts"]["us-gaap"]["Revenues"]["units"]["USD"][2]
+    assert (quarter["fy"], quarter["fp"]) == (2027, "Q1")
+    assert (quarter["filing_fy"], quarter["filing_fp"]) == (2026, "Q1")
+    # A 52/53-week year ending in the first days of January belongs to the prior calendar year (J&J).
+    from datetime import date
+
+    ends = [date(2010, 1, 3), date(2011, 1, 2)]
+    assert fiscal_label(date(2011, 1, 2), ends) == (2010, 4)
+    assert fiscal_label(date(2010, 4, 4), ends) == (2010, 1)
+
+
+def test_quarter_tagged_with_annual_amount_is_excluded(tmp_path: Path) -> None:
+    (tmp_path / "company_tickers.json").write_text(
+        json.dumps({"0": {"cik_str": 1341439, "ticker": "ORCL", "title": "Oracle"}}),
+        encoding="utf-8",
+    )
+    revenue = [
+        {"start": "2017-06-01", "end": "2018-05-31", "val": 39_383, "accn": "K", "form": "10-K", "filed": "2018-06-21", "fy": 2018, "fp": "FY"},
+        {"start": "2017-06-01", "end": "2018-02-28", "val": 28_369, "accn": "Q3", "form": "10-Q", "filed": "2018-03-12", "fy": 2018, "fp": "Q3"},
+        # Real Oracle FY2020 10-K tagging error: the FY2018 annual amount on a three-month period.
+        {"start": "2018-03-01", "end": "2018-05-31", "val": 39_383, "accn": "BAD", "form": "10-K", "filed": "2020-06-22", "fy": 2020, "fp": "FY"},
+    ]
+    (tmp_path / "companyfacts-CIK0001341439.json").write_text(
+        json.dumps({"cik": 1341439, "entityName": "Oracle", "facts": {"us-gaap": {"Revenues": {"units": {"USD": revenue}}}}}),
+        encoding="utf-8",
+    )
+    result = EdgarClient(tmp_path).lookup_fact("ORCL", "revenue", "FY2018Q4")
+    assert result["value"] == 39_383 - 28_369
+    assert result["derived"] is True
+    assert [item["accn"] for item in result["excluded_facts"]] == ["BAD"]
