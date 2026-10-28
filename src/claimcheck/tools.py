@@ -380,12 +380,14 @@ def _add_lookup_period(result: Any, requested_period: str) -> Any:
     basis = str(result.get("period_basis") or "").strip().lower()
     if basis not in {"calendar", "fiscal"}:
         basis = _period_basis_for_label(period)
-    return {
+    enriched = {
         **result,
         "period": period,
         "period_basis": basis,
-        "fiscal_equals_calendar": bool(result.get("fiscal_equals_calendar", False)),
     }
+    if "fiscal_equals_calendar" in result:
+        enriched["fiscal_equals_calendar"] = bool(result["fiscal_equals_calendar"])
+    return enriched
 
 
 def _validate_lookup(args: Any) -> dict[str, str]:
@@ -554,25 +556,42 @@ class ToolRunner:
     def __init__(self, edgar: EdgarClient) -> None:
         self.edgar = edgar
         self._next_evidence = 1
+        self._next_program_evidence = 1
         self.evidence: dict[str, dict[str, Any]] = {}
         self.evidence_kind: dict[str, str] = {}
         self.calls: list[dict[str, Any]] = []
 
-    def _number_result(self, result: Any, kind: str | None = None) -> dict[str, Any]:
+    def _number_result(
+        self,
+        result: Any,
+        kind: str | None = None,
+        *,
+        prefix: str = "E",
+    ) -> dict[str, Any]:
         if isinstance(result, dict):
             numbered = copy.deepcopy(result)
         else:
             numbered = {"value": result}
-        evidence_id = f"E{self._next_evidence}"
-        self._next_evidence += 1
+        if prefix == "P":
+            evidence_id = f"P{self._next_program_evidence}"
+            self._next_program_evidence += 1
+        else:
+            evidence_id = f"E{self._next_evidence}"
+            self._next_evidence += 1
         numbered["evidence_id"] = evidence_id
         self.evidence[evidence_id] = numbered
         if kind is not None:
             self.evidence_kind[evidence_id] = kind
         return numbered
 
-    def _compute_change(self, valid: dict[str, str | None]) -> dict[str, Any]:
-        current = self.dispatch(
+    def _compute_change(
+        self,
+        valid: dict[str, str | None],
+        *,
+        program: bool = False,
+    ) -> dict[str, Any]:
+        dispatch_lookup = self.dispatch_program if program else self.dispatch
+        current = dispatch_lookup(
             "lookup_fact",
             {
                 "ticker": valid["ticker"],
@@ -580,7 +599,7 @@ class ToolRunner:
                 "period": valid["period"],
             },
         )
-        base = self.dispatch(
+        base = dispatch_lookup(
             "lookup_fact",
             {
                 "ticker": valid["ticker"],
@@ -594,13 +613,6 @@ class ToolRunner:
             "period": valid["period"],
             "base_period": valid["base_period"],
             "period_basis": _period_basis_for_label(valid["period"]),
-            "fiscal_equals_calendar": any(
-                value is True
-                for value in (
-                    current.get("fiscal_equals_calendar"),
-                    base.get("fiscal_equals_calendar"),
-                )
-            ),
             "current_fact": current,
             "base_fact": base,
             # Short aliases make the relationship obvious to callers inspecting
@@ -610,6 +622,16 @@ class ToolRunner:
             "abs_change": None,
             "pct_change": None,
         }
+        fiscal_flags = [
+            value
+            for value in (
+                current.get("fiscal_equals_calendar"),
+                base.get("fiscal_equals_calendar"),
+            )
+            if isinstance(value, bool)
+        ]
+        if fiscal_flags:
+            result["fiscal_equals_calendar"] = any(fiscal_flags)
         failed = current if "error" in current else base if "error" in base else None
         if failed is not None:
             result.update(
@@ -648,9 +670,9 @@ class ToolRunner:
         result["pct_change"] = pct_change
         return result
 
-    def dispatch(self, name: str, args: Any) -> dict[str, Any]:
-        """Validate and dispatch one tool call, returning an evidence object."""
-
+    def _dispatch_result(
+        self, name: str, args: Any, *, program: bool = False
+    ) -> dict[str, Any]:
         try:
             if name == "lookup_fact":
                 valid = _validate_lookup(args)
@@ -662,7 +684,7 @@ class ToolRunner:
                 result = self.edgar.list_periods(**valid)
             elif name == "compute_change":
                 valid = _validate_compute(args)
-                result = self._compute_change(valid)
+                result = self._compute_change(valid, program=program)
             elif name == "history_rank":
                 valid = _validate_history(args)
                 result = self.edgar.history_rank(**valid)
@@ -673,9 +695,33 @@ class ToolRunner:
         except Exception as exc:  # tool errors are evidence, not a model crash
             result = {"error": "tool_error", "message": str(exc)}
 
-        numbered = self._number_result(result, name)
-        self.calls.append({"name": name, "arguments": args, "result": numbered})
+        return result
+
+    def _dispatch_and_record(
+        self,
+        name: str,
+        args: Any,
+        *,
+        role: str | None = None,
+    ) -> dict[str, Any]:
+        result = self._dispatch_result(name, args, program=role == "program")
+        prefix = "P" if role == "program" else "E"
+        numbered = self._number_result(result, name, prefix=prefix)
+        call = {"name": name, "arguments": args, "result": numbered}
+        if role is not None:
+            call["role"] = role
+        self.calls.append(call)
         return numbered
+
+    def dispatch(self, name: str, args: Any) -> dict[str, Any]:
+        """Validate and dispatch one model tool call, returning evidence."""
+
+        return self._dispatch_and_record(name, args)
+
+    def dispatch_program(self, name: str, args: Any) -> dict[str, Any]:
+        """Dispatch a deterministic program-side lookup with a ``P`` evidence ID."""
+
+        return self._dispatch_and_record(name, args, role="program")
 
 
 def dispatch(

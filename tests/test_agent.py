@@ -175,6 +175,90 @@ def test_agent_handles_parallel_calls_and_final_schema(tmp_path: Path) -> None:
     assert "tools" not in client.responses.calls[2]
 
 
+def test_program_period_lookup_is_recorded_in_trace_with_program_role(
+    tmp_path: Path,
+) -> None:
+    claim = "NVIDIA's Q2 2024 revenue was $13.5 billion."
+    final = {
+        "verdict": "supported",
+        "summary": "The fiscal reading supports the claim.",
+        "sub_claims": [
+            {
+                "text": claim,
+                "stated_text": claim,
+                "claim_type": "value",
+                "comparator": "eq",
+                "stated_value": 13.5e9,
+                "evidence_ids": ["E1"],
+                "interpretations": [],
+                "verdict": "supported",
+                "note": "fiscal reading",
+                "model_found_value": 13.507e9,
+            }
+        ],
+    }
+    client = ScriptedClient(
+        [
+            FakeResponse(
+                "r1",
+                output=[
+                    FakeCall(
+                        "lookup_fact",
+                        json.dumps(
+                            {
+                                "ticker": "NVDA",
+                                "metric": "revenue",
+                                "period": "FY2024Q2",
+                            }
+                        ),
+                        "call-1",
+                    )
+                ],
+            ),
+            FakeResponse("r2"),
+            FakeResponse("r3", output_text=json.dumps(final)),
+        ]
+    )
+
+    class ReplayEdgar:
+        def lookup_fact(self, ticker: str, metric: str, period: str) -> dict[str, Any]:
+            values = {
+                "FY2024Q2": 13.507e9,
+                "2024Q2": 30.04e9,
+            }
+            return {
+                "ticker": ticker,
+                "metric": metric,
+                "period": period,
+                "value": values[period],
+                "period_type": "quarter",
+                "fiscal_equals_calendar": False,
+            }
+
+        def list_periods(self, ticker: str, metric: str) -> list[str]:
+            return []
+
+    trace = TraceRecorder(claim, "muse-spark-1.3")
+    result = verify_claim(
+        claim,
+        client,
+        ReplayEdgar(),
+        Ledger(tmp_path / "runs" / "ledger.jsonl", budget_usd=0.50),
+        "muse-spark-1.3",
+        trace=trace,
+    )
+
+    assert result["verdict"] == "insufficient_evidence"
+    assert result["program_checks"][0]["program_evidence_ids"] == ["P1"]
+    program_calls = [
+        call for call in trace.as_dict()["tool_calls"] if call.get("role") == "program"
+    ]
+    assert len(program_calls) == 1
+    assert program_calls[0]["name"] == "lookup_fact"
+    assert program_calls[0]["arguments"]["period"] == "2024Q2"
+    assert program_calls[0]["result"]["evidence_id"] == "P1"
+
+
 def test_incomplete_max_tokens_retries_and_reserves_both_attempts(tmp_path: Path) -> None:
     client = ScriptedClient(
         [

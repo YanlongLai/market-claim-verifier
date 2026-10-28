@@ -198,16 +198,23 @@ class TraceRecorder:
         )
 
     def record_tool_call(
-        self, *, name: str, arguments: Any, call_id: str | None, result: Any
+        self,
+        *,
+        name: str,
+        arguments: Any,
+        call_id: str | None,
+        result: Any,
+        role: str | None = None,
     ) -> None:
-        self.tool_calls.append(
-            {
-                "name": name,
-                "arguments": redact(model_dump(arguments), self.secrets),
-                "call_id": call_id,
-                "result": redact(model_dump(result), self.secrets),
-            }
-        )
+        entry = {
+            "name": name,
+            "arguments": redact(model_dump(arguments), self.secrets),
+            "call_id": call_id,
+            "result": redact(model_dump(result), self.secrets),
+        }
+        if role is not None:
+            entry["role"] = role
+        self.tool_calls.append(entry)
 
     def finish(self, verdict: dict[str, Any]) -> None:
         self.final_verdict = redact(model_dump(verdict), self.secrets)

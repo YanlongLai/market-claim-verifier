@@ -896,7 +896,21 @@ def verify_claim(
     else:
         verdict = _normalize_verdict(_response_text(final_response))
     model_verdict = verdict["verdict"]
-    checks, program_verdict = evaluate_verdict(verdict["sub_claims"], runner)
+    check_sub_claims = [
+        {**sub_claim, "original_claim": claim}
+        for sub_claim in verdict["sub_claims"]
+    ]
+    checks, program_verdict = evaluate_verdict(check_sub_claims, runner)
+    for call in runner.calls:
+        if call.get("role") != "program":
+            continue
+        recorder.record_tool_call(
+            name=str(call.get("name") or ""),
+            arguments=call.get("arguments"),
+            call_id=None,
+            result=call.get("result"),
+            role="program",
+        )
     for sub_claim, check in zip(verdict["sub_claims"], checks):
         sub_claim.update(check)
     verdict["model_verdict"] = model_verdict

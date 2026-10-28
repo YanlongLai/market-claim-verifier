@@ -103,7 +103,7 @@ def _period_type(evidence: Mapping[str, Any] | None) -> str | None:
     if value in {"quarter", "annual", "ytd", "instant"}:
         return value
     period = str(evidence.get("period") or "").strip().upper()
-    if re.fullmatch(r"(?:FY\d{4})?Q[1-4]", period):
+    if re.fullmatch(r"(?:FY)?\d{4}Q[1-4]", period):
         return "quarter"
     if re.fullmatch(r"FY\d{4}", period):
         return "annual"
@@ -122,29 +122,103 @@ def _period_type(evidence: Mapping[str, Any] | None) -> str | None:
     return None
 
 
-def _period_scope(sub_claim: Mapping[str, Any]) -> str | None:
-    text = " ".join(
+def _claim_text(sub_claim: Mapping[str, Any]) -> str:
+    return " ".join(
         str(sub_claim.get(field) or "")
-        for field in ("stated_text", "text", "original_claim", "claim", "claim_text")
-    ).lower()
-    if re.search(r"\bfiscal\b|\bfy\s*\d{4}", text):
+        for field in (
+            "stated_text",
+            "text",
+            "original_claim",
+            "claim",
+            "claim_text",
+            "_original_claim",
+        )
+    )
+
+
+def _original_claim_text(sub_claim: Mapping[str, Any]) -> str:
+    return next(
+        (
+            str(sub_claim.get(field))
+            for field in ("original_claim", "claim", "claim_text", "_original_claim")
+            if sub_claim.get(field)
+        ),
+        "",
+    )
+
+
+def _period_scope(sub_claim: Mapping[str, Any]) -> str | None:
+    text = (_original_claim_text(sub_claim) or _claim_text(sub_claim)).lower()
+    if re.search(
+        r"\bfiscal\b|\bfy\b|\bfy\s*(?:20\d{2}|\d{2})(?:\s*q[1-4])?\b",
+        text,
+    ):
         return "fiscal"
-    if re.search(r"\bcalendar\b", text):
+    if re.search(
+        r"\bcalendar\b|\bcy\b|\bcy\s*(?:20\d{2}|\d{2})(?:\s*q[1-4])?\b",
+        text,
+    ):
         return "calendar"
     return None
 
 
 def _mentions_quarter(sub_claim: Mapping[str, Any]) -> bool:
-    text = " ".join(
-        str(sub_claim.get(field) or "")
-        for field in ("stated_text", "text", "original_claim", "claim", "claim_text")
-    ).lower()
+    text = _claim_text(sub_claim).lower()
     return bool(
         re.search(
             r"\bq[1-4]\b|\b(?:first|second|third|fourth)[ -]quarter\b",
             text,
         )
     )
+
+
+_MONTH_NAME_RE = re.compile(
+    r"\b(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|"
+    r"jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t(?:ember)?)?|"
+    r"oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\b",
+    re.IGNORECASE,
+)
+_UNLABELED_QUARTER_PATTERNS = (
+    re.compile(r"\bq(?P<quarter>[1-4])\s*(?:of\s*)?(?P<year>20\d{2})\b", re.IGNORECASE),
+    re.compile(r"\b(?P<year>20\d{2})\s*q(?P<quarter>[1-4])\b", re.IGNORECASE),
+    re.compile(
+        r"\b(?P<ordinal>first|second|third|fourth)[ -]+quarter"
+        r"(?:\s+of)?\s+(?P<year>20\d{2})\b",
+        re.IGNORECASE,
+    ),
+)
+
+
+def _unlabeled_quarter(sub_claim: Mapping[str, Any]) -> str | None:
+    """Return the calendar-style label for an unlabeled quarter mention."""
+
+    text = _claim_text(sub_claim)
+    qualifier_text = _original_claim_text(sub_claim) or text
+    qualifier_claim = {"text": qualifier_text}
+    if (
+        not text
+        or _period_scope(qualifier_claim) is not None
+        or _MONTH_NAME_RE.search(qualifier_text)
+    ):
+        return None
+    ordinal_to_quarter = {
+        "first": "1",
+        "second": "2",
+        "third": "3",
+        "fourth": "4",
+    }
+    for pattern in _UNLABELED_QUARTER_PATTERNS:
+        match = pattern.search(text)
+        if match is None:
+            continue
+        quarter = match.groupdict().get("quarter")
+        if quarter is None:
+            ordinal = match.groupdict().get("ordinal")
+            quarter = ordinal_to_quarter.get(str(ordinal).lower())
+        year = match.groupdict().get("year")
+        if quarter is not None and year is not None:
+            return f"{year}Q{quarter}"
+    return None
 
 
 def _numeric_result(evidence: Mapping[str, Any] | None) -> bool:
@@ -224,6 +298,18 @@ def _select_period_interpretations(
         ]
         if quarter_candidates:
             selected = quarter_candidates
+            claim_type = str(sub_claim.get("claim_type") or "")
+            if claim_type in {"change_pct", "change_abs"}:
+                compute_candidates = [
+                    evidence_id
+                    for evidence_id in selected
+                    if _runner_evidence_kind(
+                        runner, evidence_id, _evidence(runner, evidence_id) or {}
+                    )
+                    == "compute_change"
+                ]
+                if compute_candidates:
+                    selected = compute_candidates
 
     scope = _period_scope(sub_claim)
     if scope is not None:
@@ -372,6 +458,269 @@ def _apply_change_direction(
 def _evidence(runner: Any, evidence_id: str) -> Mapping[str, Any] | None:
     value = getattr(runner, "evidence", {}).get(evidence_id)
     return value if isinstance(value, Mapping) else None
+
+
+def _period_evidence_nodes(value: Any) -> list[Mapping[str, Any]]:
+    """Return a fact result and any nested facts that carry period context."""
+
+    found: list[Mapping[str, Any]] = []
+    visited: set[int] = set()
+
+    def visit(node: Any) -> None:
+        if not isinstance(node, Mapping) or id(node) in visited:
+            return
+        visited.add(id(node))
+        found.append(node)
+        for key in ("current_fact", "base_fact", "current", "base", "components"):
+            child = node.get(key)
+            if isinstance(child, list):
+                for item in child:
+                    visit(item)
+            else:
+                visit(child)
+
+    visit(value)
+    return found
+
+
+def _period_context(node: Mapping[str, Any]) -> dict[str, Any]:
+    period = _period_reading_key(node)
+    if period is None:
+        fiscal_year = node.get("fiscal_year", node.get("fy"))
+        fiscal_period = str(node.get("fiscal_period", node.get("fp")) or "").upper()
+        try:
+            fiscal_year_int = int(fiscal_year)
+        except (TypeError, ValueError):
+            fiscal_year_int = None
+        if fiscal_year_int is not None and fiscal_period in {"Q1", "Q2", "Q3", "Q4"}:
+            period = f"FY{fiscal_year_int:04d}{fiscal_period}"
+    period_basis = _period_basis(node)
+    if period_basis is None and period is not None:
+        period_basis = "fiscal" if period.startswith("FY") else "calendar"
+    return {
+        "ticker": _context_value(node.get("ticker"), "ticker"),
+        "metric": _context_value(node.get("metric"), "metric"),
+        "period": period,
+        "period_basis": period_basis,
+        "fiscal_equals_calendar": node.get("fiscal_equals_calendar"),
+        "base_period": _context_value(node.get("base_period"), "period"),
+    }
+
+
+def _period_contexts(
+    evidence_ids: Sequence[str], runner: Any
+) -> list[dict[str, Any]]:
+    contexts: list[dict[str, Any]] = []
+    for evidence_id in _unique_ids(evidence_ids):
+        for node in _period_evidence_nodes(_evidence(runner, evidence_id)):
+            context = _period_context(node)
+            if context["ticker"] is None or context["metric"] is None:
+                continue
+            if context["period"] is None and context["period_basis"] is None:
+                continue
+            contexts.append(context)
+    return contexts
+
+
+def _bool_flag(value: Any) -> bool | None:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized == "true":
+            return True
+        if normalized == "false":
+            return False
+    return None
+
+
+def _period_target_label(target: str, basis: str) -> str:
+    return f"FY{target}" if basis == "fiscal" else target
+
+
+def _prior_period_label(period: str) -> str | None:
+    match = re.fullmatch(r"(?:FY)?(\d{4})Q([1-4])", period.upper())
+    if match is None:
+        return None
+    year, quarter = int(match.group(1)), match.group(2)
+    prefix = "FY" if period.upper().startswith("FY") else ""
+    return f"{prefix}{year - 1:04d}Q{quarter}"
+
+
+def _program_dispatch(
+    runner: Any, name: str, arguments: Mapping[str, Any]
+) -> Mapping[str, Any] | None:
+    """Run or reuse a program-side tool call and return its numbered result."""
+
+    calls = getattr(runner, "calls", None)
+    if isinstance(calls, list):
+        for call in calls:
+            if (
+                isinstance(call, Mapping)
+                and call.get("role") == "program"
+                and call.get("name") == name
+                and call.get("arguments") == dict(arguments)
+                and isinstance(call.get("result"), Mapping)
+            ):
+                return call["result"]
+
+    dispatch_program = getattr(runner, "dispatch_program", None)
+    if callable(dispatch_program):
+        result = dispatch_program(name, dict(arguments))
+        return result if isinstance(result, Mapping) else None
+
+    # Keep the checker usable with a lightweight runner supplied by an offline
+    # replay test.  A real ToolRunner takes the branch above; this fallback
+    # registers the same P-numbered evidence shape when only an EdgarClient is
+    # attached to the runner.
+    if name != "lookup_fact":
+        return None
+    edgar = getattr(runner, "edgar", None)
+    lookup_fact = getattr(edgar, "lookup_fact", None)
+    evidence = getattr(runner, "evidence", None)
+    evidence_kind = getattr(runner, "evidence_kind", None)
+    if not callable(lookup_fact) or not isinstance(evidence, dict):
+        return None
+    try:
+        raw_result = lookup_fact(**dict(arguments))
+    except Exception as exc:  # pragma: no cover - defensive adapter path
+        raw_result = {"error": "tool_error", "message": str(exc)}
+    result = dict(raw_result) if isinstance(raw_result, Mapping) else {"value": raw_result}
+    existing_ids = [
+        int(match.group(1))
+        for evidence_id in evidence
+        if (match := re.fullmatch(r"P(\d+)", str(evidence_id))) is not None
+    ]
+    evidence_id = f"P{max(existing_ids, default=0) + 1}"
+    result["evidence_id"] = evidence_id
+    evidence[evidence_id] = result
+    if isinstance(evidence_kind, dict):
+        evidence_kind[evidence_id] = name
+    if isinstance(calls, list):
+        calls.append(
+            {
+                "name": name,
+                "arguments": dict(arguments),
+                "result": result,
+                "role": "program",
+            }
+        )
+    return result
+
+
+def _maybe_program_period_interpretation(
+    sub_claim: Mapping[str, Any],
+    evidence_ids: Sequence[str],
+    interpretation_ids: Sequence[str],
+    runner: Any,
+) -> tuple[list[str], bool]:
+    """Fetch a missing fiscal/calendar reading for an unlabeled quarter."""
+
+    claim_type = str(sub_claim.get("claim_type") or "")
+    if claim_type not in {"value", "change_pct", "change_abs"}:
+        return [], False
+    target = _unlabeled_quarter(sub_claim)
+    if target is None:
+        return [], False
+    if len(_distinct_period_readings(interpretation_ids, runner)) >= 2:
+        return [], False
+
+    source_ids = _unique_ids([*evidence_ids, *interpretation_ids])
+    contexts = _period_contexts(source_ids, runner)
+    if not contexts:
+        return [], False
+    target_labels = {target, f"FY{target}"}
+    matching_contexts = [
+        context for context in contexts if context.get("period") in target_labels
+    ]
+    source_contexts = matching_contexts or contexts
+    issuer_flags = [
+        flag
+        for context in source_contexts
+        if (flag := _bool_flag(context.get("fiscal_equals_calendar"))) is not None
+    ]
+    if not issuer_flags:
+        fiscal_equals_calendar = getattr(
+            getattr(runner, "edgar", None), "fiscal_equals_calendar", None
+        )
+        if callable(fiscal_equals_calendar):
+            try:
+                flag = _bool_flag(fiscal_equals_calendar(source_contexts[0]["ticker"]))
+            except Exception:  # pragma: no cover - provider adapter fallback
+                flag = None
+            if flag is not None:
+                issuer_flags.append(flag)
+    if not issuer_flags or any(flag is True for flag in issuer_flags):
+        return [], False
+    if not any(flag is False for flag in issuer_flags):
+        return [], False
+
+    bases = {
+        str(context["period_basis"])
+        for context in source_contexts
+        if context.get("period_basis") in {"calendar", "fiscal"}
+    }
+    if len(bases) >= 2:
+        return [], False
+    if bases == {"fiscal"}:
+        missing_basis = "calendar"
+    elif bases == {"calendar"}:
+        missing_basis = "fiscal"
+    else:
+        return [], False
+
+    source_compute_id = next(
+        (
+            evidence_id
+            for evidence_id in source_ids
+            if _runner_evidence_kind(runner, evidence_id, _evidence(runner, evidence_id) or {})
+            == "compute_change"
+        ),
+        None,
+    )
+    source_context = next(
+        context
+        for context in source_contexts
+        if context.get("ticker") and context.get("metric")
+    )
+    ticker = str(source_context["ticker"])
+    metric = str(source_context["metric"])
+    period = _period_target_label(target, missing_basis)
+    if source_compute_id is not None and claim_type in {"change_pct", "change_abs"}:
+        source = _evidence(runner, source_compute_id) or {}
+        prior_target = _prior_period_label(target)
+        base_period = (
+            _period_target_label(prior_target, missing_basis)
+            if prior_target is not None
+            else _context_value(source.get("base_period"), "period")
+        )
+        if base_period is None:
+            return [], False
+        result = _program_dispatch(
+            runner,
+            "compute_change",
+            {
+                "ticker": ticker,
+                "metric": metric,
+                "period": period,
+                "base_period": base_period,
+            },
+        )
+    else:
+        result = _program_dispatch(
+            runner,
+            "lookup_fact",
+            {"ticker": ticker, "metric": metric, "period": period},
+        )
+    if result is None or not _numeric_result(result):
+        return [], False
+    result_basis = _period_basis(result)
+    if result_basis != missing_basis:
+        return [], False
+    evidence_id = result.get("evidence_id")
+    if evidence_id is None:
+        return [], False
+    return [str(evidence_id)], True
 
 
 _EVIDENCE_STRENGTH_ORDER = {"low": 0, "medium": 1, "high": 2}
@@ -1058,6 +1407,8 @@ def _evaluate_period_interpretations(
     interpretation_ids: list[str],
     invalid_interpretations: bool,
     deduplicated_evidence: list[str],
+    program_added_interpretation: bool = False,
+    program_evidence_ids: Sequence[str] = (),
 ) -> dict[str, Any]:
     child_claims = []
     for evidence_id in interpretation_ids:
@@ -1090,6 +1441,8 @@ def _evaluate_period_interpretations(
         result["interpretations"] = []
         result["invalid_interpretations"] = invalid_interpretations
         result["deduplicated_evidence"] = deduplicated_evidence
+        result["program_added_interpretation"] = program_added_interpretation
+        result["program_evidence_ids"] = list(program_evidence_ids)
         if invalid_interpretations:
             result["reason"] = f"invalid_interpretations; {result.get('reason', '')}"
         return _with_evidence_quality(result, evidence_ids, runner)
@@ -1142,6 +1495,8 @@ def _evaluate_period_interpretations(
             "period_ambiguous": period_ambiguous,
             "invalid_interpretations": invalid_interpretations,
             "deduplicated_evidence": deduplicated_evidence,
+            "program_added_interpretation": program_added_interpretation,
+            "program_evidence_ids": list(program_evidence_ids),
             "disagreement": (
                 program_verdict != "unchecked" and model_verdict != program_verdict
             ),
@@ -1214,6 +1569,42 @@ def evaluate_sub_claim(
     else:
         flags_for_comparator = []
 
+    program_evidence_ids: list[str] = []
+    program_added_interpretation = False
+    if _allow_interpretations:
+        program_evidence_ids, program_added_interpretation = (
+            _maybe_program_period_interpretation(
+                sub_claim,
+                evidence_ids,
+                interpretation_ids,
+                runner,
+            )
+        )
+        if program_added_interpretation:
+            raw_evidence_ids = _unique_ids([*raw_evidence_ids, *program_evidence_ids])
+            raw_interpretation_ids = _unique_ids(
+                [*raw_interpretation_ids, *program_evidence_ids]
+            )
+            evidence_ids, evidence_groups = _deduplicate_evidence_ids(
+                raw_evidence_ids, runner
+            )
+            interpretation_source_ids, interpretation_groups = _deduplicate_evidence_ids(
+                raw_interpretation_ids, runner
+            )
+            deduplicated_evidence = _unique_ids(
+                [
+                    evidence_id
+                    for group in [*evidence_groups, *interpretation_groups]
+                    for evidence_id in group
+                ]
+            )
+            interpretation_ids, invalid_interpretations = _resolve_interpretation_ids(
+                {**sub_claim, "interpretations": interpretation_source_ids},
+                evidence_ids,
+                runner,
+                single_deduplicated=bool(interpretation_groups),
+            )
+
     if interpretation_ids:
         return _evaluate_period_interpretations(
             sub_claim,
@@ -1223,6 +1614,8 @@ def evaluate_sub_claim(
             interpretation_ids,
             invalid_interpretations,
             deduplicated_evidence,
+            program_added_interpretation,
+            program_evidence_ids,
         )
 
     if claim_type in {"record_high", "record_low"}:
@@ -1336,6 +1729,8 @@ def evaluate_sub_claim(
                         "comparator_corrected": comparator_corrected,
                         "interpretations": [],
                         "period_ambiguous": False,
+                        "program_added_interpretation": program_added_interpretation,
+                        "program_evidence_ids": list(program_evidence_ids),
                         "invalid_interpretations": invalid_interpretations,
                         "deduplicated_evidence": deduplicated_evidence,
                     }, evidence_ids, runner)
@@ -1409,6 +1804,8 @@ def evaluate_sub_claim(
         "comparator": comparator,
         "interpretations": [],
         "period_ambiguous": False,
+        "program_added_interpretation": program_added_interpretation,
+        "program_evidence_ids": list(program_evidence_ids),
         "invalid_interpretations": invalid_interpretations,
         "deduplicated_evidence": deduplicated_evidence,
         **flag_fields,

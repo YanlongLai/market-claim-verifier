@@ -792,6 +792,18 @@ class EdgarClient:
             }
         return {"error": "unknown_ticker", "ticker": target, "available_periods": []}
 
+    def fiscal_equals_calendar(self, ticker: str) -> bool | None:
+        """Return the issuer's fiscal/calendar-year relationship when knowable."""
+
+        resolved = self.resolve_ticker(ticker)
+        if "error" in resolved:
+            return None
+        try:
+            document, _ = self._facts_document(str(resolved["cik"]))
+        except EdgarError:
+            return None
+        return _fiscal_year_equals_calendar(document.get("facts", {}))
+
     def _facts_document(self, cik: str) -> tuple[dict[str, Any], str]:
         filename = f"companyfacts-CIK{cik}.json"
         url = f"{SEC_DATA_BASE}/api/xbrl/companyfacts/CIK{cik}.json"

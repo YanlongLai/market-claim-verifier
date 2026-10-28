@@ -369,6 +369,252 @@ def _recorded_model_sub_claims(claim_id: str) -> list[dict[str, Any]]:
     ]
 
 
+V2_EVIDENCE = Path(__file__).parents[1] / "docs" / "evidence" / "eval-v2-2026-10-27"
+
+
+def _v2_program_replay(
+    tmp_path: Path, claim_id: str, ticker: str, cik: str
+) -> tuple[ToolRunner, list[dict[str, Any]], dict[str, Any]]:
+    recorded = json.loads(
+        (V2_EVIDENCE / f"{claim_id}--agent@meta.json").read_text(encoding="utf-8")
+    )
+    trace = json.loads(
+        (V2_EVIDENCE / recorded["trace_path"]).read_text(encoding="utf-8")
+    )
+    runner = ToolRunner(_fixture_client(tmp_path))
+    for call in trace["tool_calls"]:
+        runner.dispatch(call["name"], call["arguments"])
+    fields = (
+        "text",
+        "stated_text",
+        "claim_type",
+        "comparator",
+        "stated_value",
+        "evidence_ids",
+        "interpretations",
+        "verdict",
+        "note",
+        "model_found_value",
+    )
+    sub_claims = [
+        {
+            **{field: sub_claim[field] for field in fields},
+            "original_claim": recorded["claim"],
+        }
+        for sub_claim in trace["final_verdict"]["sub_claims"]
+    ]
+    return runner, sub_claims, recorded
+
+
+@pytest.mark.parametrize(
+    ("claim_id", "ticker", "cik", "period"),
+    [
+        ("G0235", "NVDA", "0001045810", "2024Q2"),
+        ("G0240", "AAPL", "0000320193", "2023Q4"),
+        ("G0249", "AAPL", "0000320193", "2023Q3"),
+    ],
+)
+def test_v2_unlabeled_quarter_program_fetches_missing_reading(
+    tmp_path: Path, claim_id: str, ticker: str, cik: str, period: str
+) -> None:
+    runner, sub_claims, _ = _v2_program_replay(tmp_path, claim_id, ticker, cik)
+
+    checks, verdict = evaluate_verdict(sub_claims, runner)
+    check = checks[0]
+
+    assert verdict == "insufficient_evidence"
+    assert check["program_verdict"] == "unchecked"
+    assert check["period_ambiguous"] is True
+    assert check["program_added_interpretation"] is True
+    assert check["program_evidence_ids"] == ["P1"]
+    assert check["interpretations"] == ["E2", "P1"]
+    assert any(
+        call.get("role") == "program"
+        and call["name"] == "lookup_fact"
+        and call["arguments"] == {
+            "ticker": ticker,
+            "metric": "net_income" if claim_id == "G0249" else "revenue",
+            "period": period,
+        }
+        for call in runner.calls
+    )
+
+
+def test_labeled_fiscal_quarter_does_not_add_program_interpretation(
+    tmp_path: Path,
+) -> None:
+    runner, sub_claims, _ = _v2_program_replay(
+        tmp_path, "G0235", "NVDA", "0001045810"
+    )
+    sub_claims[0]["original_claim"] = (
+        "NVIDIA's fiscal Q2 2024 revenue was $13.5 billion."
+    )
+
+    checks, verdict = evaluate_verdict(sub_claims, runner)
+
+    assert verdict == "supported"
+    assert checks[0]["program_verdict"] == "supported"
+    assert checks[0]["program_added_interpretation"] is False
+    assert not any(call.get("role") == "program" for call in runner.calls)
+
+
+def test_amazon_calendar_issuer_keeps_unlabeled_quarter_supported(
+    tmp_path: Path,
+) -> None:
+    cache = tmp_path / "cache"
+    cache.mkdir()
+    cached_snapshot = Path(".cache")
+    shutil.copyfile(cached_snapshot / "company_tickers.json", cache / "company_tickers.json")
+    shutil.copyfile(
+        cached_snapshot / "companyfacts-CIK0001018724.json",
+        cache / "companyfacts-CIK0001018724.json",
+    )
+    runner = ToolRunner(EdgarClient(cache))
+    fact = runner.dispatch(
+        "lookup_fact", {"ticker": "AMZN", "metric": "revenue", "period": "2023Q3"}
+    )
+    check = evaluate_sub_claim(
+        {
+            "text": "Amazon's Q3 2023 revenue was $143.1 billion.",
+            "stated_text": "$143.1 billion",
+            "claim_type": "value",
+            "comparator": "eq",
+            "stated_value": 143.1e9,
+            "evidence_ids": [fact["evidence_id"]],
+            "interpretations": [],
+            "verdict": "supported",
+            "model_found_value": fact["value"],
+            "note": "calendar issuer",
+            "original_claim": "Amazon's Q3 2023 revenue was $143.1 billion.",
+        },
+        runner,
+    )
+
+    assert fact["fiscal_equals_calendar"] is True
+    assert check["program_verdict"] == "supported"
+    assert check["program_added_interpretation"] is False
+    assert not any(call.get("role") == "program" for call in runner.calls)
+
+
+class _AgreeingProgramRunner:
+    def __init__(self) -> None:
+        self.evidence = {
+            "E1": {
+                "ticker": "MSFT",
+                "metric": "revenue",
+                "period": "FY2025Q4",
+                "period_basis": "fiscal",
+                "period_type": "quarter",
+                "value": 100.0,
+                "fiscal_equals_calendar": False,
+            }
+        }
+        self.evidence_kind = {"E1": "lookup_fact"}
+        self.calls: list[dict[str, Any]] = []
+
+    def dispatch_program(self, name: str, arguments: dict[str, Any]) -> dict[str, Any]:
+        result = {
+            "ticker": "MSFT",
+            "metric": "revenue",
+            "period": "2025Q4",
+            "period_basis": "calendar",
+            "period_type": "quarter",
+            "value": 100.0,
+            "fiscal_equals_calendar": False,
+            "evidence_id": "P1",
+        }
+        self.evidence["P1"] = result
+        self.evidence_kind["P1"] = "lookup_fact"
+        self.calls.append(
+            {"name": name, "arguments": arguments, "result": result, "role": "program"}
+        )
+        return result
+
+
+def test_program_fetched_reading_that_agrees_stays_supported() -> None:
+    runner = _AgreeingProgramRunner()
+    check = evaluate_sub_claim(
+        {
+            "text": "Microsoft's Q4 2025 revenue was $100.",
+            "stated_text": "$100",
+            "claim_type": "value",
+            "comparator": "eq",
+            "stated_value": 100.0,
+            "evidence_ids": ["E1"],
+            "interpretations": [],
+            "verdict": "supported",
+            "model_found_value": 100.0,
+            "note": "both readings agree",
+            "original_claim": "Microsoft's Q4 2025 revenue was $100.",
+        },
+        runner,
+    )
+
+    assert check["program_verdict"] == "supported"
+    assert check["period_ambiguous"] is False
+    assert check["program_added_interpretation"] is True
+    assert check["interpretations"] == ["E1", "P1"]
+
+
+def test_program_fetches_both_facts_for_missing_change_reading() -> None:
+    class ReplayEdgar:
+        def lookup_fact(self, ticker: str, metric: str, period: str) -> dict[str, Any]:
+            values = {
+                "FY2024Q2": 100.0,
+                "FY2023Q2": 50.0,
+                "2024Q2": 150.0,
+                "2023Q2": 50.0,
+            }
+            return {
+                "ticker": ticker,
+                "metric": metric,
+                "period": period,
+                "value": values[period],
+                "period_type": "quarter",
+                "fiscal_equals_calendar": False,
+            }
+
+        def list_periods(self, ticker: str, metric: str) -> list[str]:
+            return []
+
+    runner = ToolRunner(ReplayEdgar())
+    change = runner.dispatch(
+        "compute_change",
+        {
+            "ticker": "NVDA",
+            "metric": "revenue",
+            "period": "FY2024Q2",
+            "base_period": "FY2023Q2",
+        },
+    )
+    check = evaluate_sub_claim(
+        {
+            "text": "NVIDIA's Q2 2024 revenue grew 100%.",
+            "stated_text": "grew 100%",
+            "claim_type": "change_pct",
+            "comparator": "eq",
+            "stated_value": 100.0,
+            "evidence_ids": [change["evidence_id"]],
+            "interpretations": [],
+            "verdict": "supported",
+            "model_found_value": 100.0,
+            "note": "fiscal reading",
+            "original_claim": "NVIDIA's Q2 2024 revenue grew 100%.",
+        },
+        runner,
+    )
+
+    assert check["program_verdict"] == "unchecked"
+    assert check["period_ambiguous"] is True
+    assert check["program_added_interpretation"] is True
+    assert check["interpretations"] == [change["evidence_id"], "P3"]
+    assert {
+        call["arguments"]["period"]
+        for call in runner.calls
+        if call.get("role") == "program" and call["name"] == "lookup_fact"
+    } == {"2024Q2", "2023Q2"}
+
+
 def _gold_by_id() -> dict[str, dict[str, Any]]:
     return {
         row["id"]: row
