@@ -225,7 +225,8 @@ def _relabel_fiscal_periods(document: dict[str, Any]) -> None:
                     fact.setdefault("filing_fp", fact.get("fp"))
                     fact["fy"] = fiscal_year
                     if start is not None and 350 <= (end - start).days <= 380:
-                        fact["fp"] = "FY"
+                        # Trailing-twelve-month amounts in 10-Qs (Amazon) are not fiscal years.
+                        fact["fp"] = "FY" if quarter == 4 else "TTM"
                     elif start is None and quarter == 4:
                         fact["fp"] = "FY"
                     else:
@@ -1205,7 +1206,8 @@ def _period_trap_part(spec: Mapping[str, Any], snapshots: Mapping[str, CompanySn
         stated = _stated_base(spec)
         precision = float(spec.get("precision") or 0.0) * _scale_factor(spec)
         value_truth = abs(float(fiscal_record["value"]) - stated) <= precision / 2.0 + 1e-6
-        truth = value_truth if trap_type == "fiscal_label_correct" else False
+        # Relabeling a fiscal quarter as calendar is only a trap when the two differ.
+        truth = value_truth if trap_type == "fiscal_label_correct" or not is_non_calendar_issuer(snapshot) else False
         return {
             "truth": bool(truth),
             "facts": [fiscal_record],

@@ -1,0 +1,956 @@
+{
+  "claim": "Apple disclosed $1.96 in diluted EPS for fiscal Q3 2026.",
+  "model": "accounts/fireworks/models/muse-spark-open",
+  "provider": "fireworks",
+  "requests": [
+    {
+      "request": {
+        "model": "accounts/fireworks/models/muse-spark-open",
+        "messages": [
+          {
+            "role": "system",
+            "content": "You verify financial claims against SEC EDGAR facts.\nDecompose the claim into every atomic factual assertion. Every factual assertion\nin the user's claim must become a sub-claim, including a value, a change, a\nrecord, and a first-time assertion in the same sentence. Assertions that the\ntools cannot check must still become a sub-claim with claim_type other; the\nprogram will leave those unchecked. Use lookup_fact for a value,\ncompute_change for YoY or other period-to-period growth, history_rank for\nrecord/first-time assertions, and list_periods only to understand missing data.\nNever use memory for numbers. A quarter must have period_type=quarter and\nduration_days around 80-100, not period_type=ytd. If a result has derived=true,\nuse its derivation and components as evidence and do not calculate that fact\nagain. For compute_change, cite its own evidence ID; its two nested component\nfact IDs may also be cited and are ignored by the verifier.\n\nEach final sub_claim must contain exactly these model fields:\ntext, stated_text, claim_type (value, change_pct, change_abs, record_high,\nrecord_low, first_time_above, or other), comparator (eq, approx, gt, gte, lt,\nor lte), stated_value in base units (USD, USD/share, percentage points, or 1\nfor a record boolean), evidence_ids, interpretations, verdict, note, and\nmodel_found_value. interpretations is required and may be empty. Every non-empty\nitem must be an evidence id like E3 — never free text.\nCopy stated_text verbatim from the claim, including words such as \"about\",\n\"up\", or \"fell\" (for example, \"about $1.4 billion\", \"up 22%\", or\n\"fell 10%\"). For a change_pct, stated_value is 22 for 22%, not 0.22; the\nverifier applies the sign implied by direction words such as fell/down or\nrose/up. model_found_value is the number read from the cited evidence in the\nsame units, or null when it is missing.\n\nComparator wording is deterministic: a plain numeric statement with no hedge\nor inequality phrase is eq; about/around/roughly/approximately/nearly/almost,\nclose to, some, or ~ means approx; topped/exceeded/above/more than/over/\nsurpassed/beat means gt; at least/no less than means gte; below/under/less\nthan/short of means lt; at most/no more than/up to means lte. The program\nrecords and may correct the model comparator from these words. \"up\" and\n\"fell\" describe change direction, not approximation.\n\nFor a quarter claim at a non-calendar-fiscal issuer, use period_basis from\nthe tool results. If the claim says neither fiscal nor calendar, look up both\nthe calendar label (for example 2025Q4) and the fiscal label (for example\nFY2025Q4), cite both IDs in evidence_ids, and put those two IDs in\ninterpretations. Keep interpretations empty unless both fiscal and calendar\nreadings were looked up. If the claim says fiscal, cite only the fiscal\nreading; if it says calendar, cite only the calendar reading. When a lookup or\ncompute result has fiscal_equals_calendar=true, the issuer's fiscal year is the\ncalendar year: fiscal and calendar labels refer to the same underlying facts,\nso look up and cite only one reading even when the claim has no\nfiscal/calendar qualifier.\n\nExamples:\n1. \"Tesla net income was about $1.4 billion\": lookup_fact; stated_text\n   \"about $1.4 billion\", claim_type value, comparator approx, stated_value\n   1400000000.\n2. \"Alphabet revenue exceeded $100 billion\": lookup_fact; stated_text\n   \"exceeded $100 billion\", claim_type value, comparator gt, stated_value\n   100000000000.\n3. \"Meta revenue was up 22% YoY\": compute_change(META, revenue, 2025Q2,\n   null); stated_text \"up 22%\", claim_type change_pct, comparator eq,\n   stated_value 22, and cite the compute_change evidence ID.\n4. \"Tesla revenue fell 10% YoY\": compute_change(TSLA, revenue, 2025Q3,\n   null); stated_text \"fell 10%\", claim_type change_pct, comparator eq,\n   stated_value -10, and cite the compute_change evidence ID.\n5. \"Alphabet Q3 2025 revenue was a record high\": history_rank(GOOGL,\n   revenue, 2025Q3); claim_type record_high, comparator eq, stated_value 1,\n   and cite the history_rank evidence ID.\n6. \"Alphabet Q3 2025 revenue topped $100 billion for the first time\": create\n   two sub-claims: value gt 100000000000 and first_time_above with stated_value\n   100000000000, both citing the relevant evidence; the latter is supported\n   only when this period is above the threshold and no earlier comparable\n   period is above it.\n7. If a requested fact is unavailable, leave model_found_value null, cite any\n   relevant evidence, and set that sub-claim to insufficient_evidence. Say\n   insufficient_evidence when data is missing or evidence is ambiguous."
+          },
+          {
+            "role": "user",
+            "content": "Apple disclosed $1.96 in diluted EPS for fiscal Q3 2026."
+          }
+        ],
+        "tools": [
+          {
+            "type": "function",
+            "function": {
+              "name": "lookup_fact",
+              "description": "Look up one SEC EDGAR XBRL fact for a ticker, metric, and calendar quarter, fiscal quarter (FY2025Q4), or fiscal year. Successful results include period (the normalized requested label, or the resolved label for latest), period_basis (calendar or fiscal), fiscal_equals_calendar, duration_days, and period_type (quarter, ytd, annual, or instant). Additive flows may return derived=true with derivation and components; never treat a ytd result as a quarter or recompute a derived result. When fiscal_equals_calendar is true, fiscal and calendar labels identify the same fact; do not look up both readings. Every fact includes compact provenance: L1 audited 10-K, L2 reviewed 10-Q, or L3 program-derived, with confirmations, restatement, amendment, and evidence strength.",
+              "parameters": {
+                "type": "object",
+                "properties": {
+                  "ticker": {
+                    "type": "string"
+                  },
+                  "metric": {
+                    "type": "string",
+                    "enum": [
+                      "revenue",
+                      "net_income",
+                      "operating_income",
+                      "eps_diluted",
+                      "gross_profit",
+                      "total_assets",
+                      "cash",
+                      "capex",
+                      "rd_expense",
+                      "shares_outstanding"
+                    ]
+                  },
+                  "period": {
+                    "type": "string",
+                    "pattern": "^(latest|FY\\d{4}(?:Q[1-4])?|\\d{4}Q[1-4])$"
+                  }
+                },
+                "required": [
+                  "ticker",
+                  "metric",
+                  "period"
+                ],
+                "additionalProperties": false
+              }
+            }
+          },
+          {
+            "type": "function",
+            "function": {
+              "name": "list_periods",
+              "description": "List the recent directly available SEC EDGAR quarter and fiscal-year periods for a ticker and metric.",
+              "parameters": {
+                "type": "object",
+                "properties": {
+                  "ticker": {
+                    "type": "string"
+                  },
+                  "metric": {
+                    "type": "string",
+                    "enum": [
+                      "revenue",
+                      "net_income",
+                      "operating_income",
+                      "eps_diluted",
+                      "gross_profit",
+                      "total_assets",
+                      "cash",
+                      "capex",
+                      "rd_expense",
+                      "shares_outstanding"
+                    ]
+                  }
+                },
+                "required": [
+                  "ticker",
+                  "metric"
+                ],
+                "additionalProperties": false
+              }
+            }
+          },
+          {
+            "type": "function",
+            "function": {
+              "name": "compute_change",
+              "description": "Compute the absolute and year-over-year change for one SEC EDGAR XBRL metric. The period and base_period must be the same kind of period; when base_period is omitted, null, empty, \"null\", or \"none\", use the same quarter or fiscal year one year earlier. The result includes both cited lookup facts, fiscal_equals_calendar, their fact-level provenance, and a percentage change in percent points.",
+              "parameters": {
+                "type": "object",
+                "properties": {
+                  "ticker": {
+                    "type": "string"
+                  },
+                  "metric": {
+                    "type": "string",
+                    "enum": [
+                      "revenue",
+                      "net_income",
+                      "operating_income",
+                      "eps_diluted",
+                      "gross_profit",
+                      "total_assets",
+                      "cash",
+                      "capex",
+                      "rd_expense",
+                      "shares_outstanding"
+                    ]
+                  },
+                  "period": {
+                    "type": "string",
+                    "pattern": "^(latest|FY\\d{4}(?:Q[1-4])?|\\d{4}Q[1-4])$"
+                  },
+                  "base_period": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "pattern": "^(FY\\d{4}(?:Q[1-4])?|\\d{4}Q[1-4])$"
+                  }
+                },
+                "required": [
+                  "ticker",
+                  "metric",
+                  "period",
+                  "base_period"
+                ],
+                "additionalProperties": false
+              }
+            }
+          },
+          {
+            "type": "function",
+            "function": {
+              "name": "history_rank",
+              "description": "Compare one quarter or fiscal-year fact with every available comparable period of the same period_type. Quarters include derived Q4 values when available; annual periods are compared only with annual periods. Return the rank, record flags through the requested period, prior high/low, and the comparison window with period end dates. The requested period also includes compact fact provenance and evidence strength.",
+              "parameters": {
+                "type": "object",
+                "properties": {
+                  "ticker": {
+                    "type": "string"
+                  },
+                  "metric": {
+                    "type": "string",
+                    "enum": [
+                      "revenue",
+                      "net_income",
+                      "operating_income",
+                      "eps_diluted",
+                      "gross_profit",
+                      "total_assets",
+                      "cash",
+                      "capex",
+                      "rd_expense",
+                      "shares_outstanding"
+                    ]
+                  },
+                  "period": {
+                    "type": "string",
+                    "pattern": "^(latest|FY\\d{4}(?:Q[1-4])?|\\d{4}Q[1-4])$"
+                  }
+                },
+                "required": [
+                  "ticker",
+                  "metric",
+                  "period"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        ],
+        "parallel_tool_calls": true,
+        "max_tokens": 4000
+      },
+      "reservation": {
+        "reservation_id": "576ac5724d4d4432a42298493f52fff5",
+        "provider": "fireworks",
+        "model": "accounts/fireworks/models/muse-spark-open",
+        "estimated_input_tokens": 2842,
+        "max_output_tokens": 4000,
+        "amount": 0.0205525,
+        "payload_chars": 8524,
+        "context_chars": 0
+      },
+      "raw_response": {
+        "id": "chatcmpl-ee68b7bb85a64bdf9b97121c3a99d7e2",
+        "choices": [
+          {
+            "finish_reason": "tool_calls",
+            "index": 0,
+            "logprobs": null,
+            "message": {
+              "content": "Checking Apple's reported EPS — will pull its fiscal Q3 2026 filing.",
+              "refusal": null,
+              "role": "assistant",
+              "annotations": null,
+              "audio": null,
+              "function_call": null,
+              "tool_calls": [
+                {
+                  "id": "chatcmpl-tool-95ba887b7d3e7936",
+                  "function": {
+                    "arguments": "{\"ticker\": \"AAPL\", \"metric\": \"eps_diluted\", \"period\": \"FY2026Q3\"}",
+                    "name": "lookup_fact"
+                  },
+                  "type": "function",
+                  "index": 0,
+                  "name": null
+                }
+              ],
+              "reasoning_content": "Need to verify claim: Apple disclosed $1.96 in diluted EPS for fiscal Q3 2026.\n\nWe need to decompose into atomic factual assertions. It's a single value claim.\n\nNeed to lookup_fact for Apple ticker AAPL, metric eps_diluted, period FY2026Q3.\n\nNote fiscal Q3 2026. Apple's fiscal year ends September. So fiscal Q3 is calendar Q2? But tool expects FY2026Q3.\n\nWe should lookup FY2026Q3. Also ensure period_type quarter, duration 80-100.\n\nPotentially fiscal_equals_calendar? Apple fiscal != calendar. So fiscal Q3 2026 distinct.\n\nWe must do lookup_fact.\n\nWe need to follow rules: Each final sub_claim must contain exactly these model fields: text, stated_text, claim_type, comparator, stated_value, evidence_ids, interpretations, verdict, note, model_found_value.\n\nWe need to produce sub-claims decomposition.\n\nClaim: \"Apple disclosed $1.96 in diluted EPS for fiscal Q3 2026.\"\n\nThis is value claim: eps_diluted = 1.96 USD/share.\n\nComparator eq (plain numeric statement), stated_value 1.96, claim_type value.\n\nNeed to lookup.\n\nWe should also maybe list periods to understand? But we can just lookup.\n\nWe need to call lookup_fact.\n\n\nWe must make tool calls.\n\nWe need to call lookup_fact for AAPL eps_diluted FY2026Q3.\n\nAlso need to check if fiscal_equals_calendar? For Apple probably false.\n\nWe should call lookup_fact.\n\nAlso we might need history? No.\n\nWe should perform lookup.\n\n",
+              "tools": null
+            }
+          }
+        ],
+        "created": 1793157085,
+        "model": "accounts/fireworks/models/muse-spark-open",
+        "object": "chat.completion",
+        "metadata": null,
+        "moderation": null,
+        "service_tier": null,
+        "system_fingerprint": null,
+        "usage": {
+          "completion_tokens": 443,
+          "prompt_tokens": 2693,
+          "total_tokens": 3136,
+          "completion_tokens_details": {
+            "accepted_prediction_tokens": null,
+            "audio_tokens": null,
+            "reasoning_tokens": 333,
+            "rejected_prediction_tokens": null,
+            "text_tokens": null
+          },
+          "prompt_tokens_details": {
+            "audio_tokens": null,
+            "cache_write_tokens": null,
+            "cached_tokens": 2624,
+            "image_tokens": null,
+            "text_tokens": null
+          },
+          "output_tokens_details": {
+            "reasoning_tokens": 333
+          }
+        }
+      },
+      "usage": {
+        "input": 2693,
+        "cached": 2624,
+        "output": 443,
+        "reasoning": 333
+      },
+      "cost": 0.0023626000000000003,
+      "latency_ms": 10585.402,
+      "status": "completed",
+      "raw_usage": {
+        "completion_tokens": 443,
+        "prompt_tokens": 2693,
+        "total_tokens": 3136,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 333,
+          "rejected_prediction_tokens": null,
+          "text_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cache_write_tokens": null,
+          "cached_tokens": 2624,
+          "image_tokens": null,
+          "text_tokens": null
+        },
+        "output_tokens_details": {
+          "reasoning_tokens": 333
+        }
+      },
+      "normalized_usage": {
+        "input": 2693,
+        "cached": 2624,
+        "output": 443,
+        "reasoning": 333
+      },
+      "finish_reason": "tool_calls",
+      "rate_limit_headers": {
+        "x-ratelimit-limit-tokens-cache-adjusted-prompt": "1800000",
+        "x-ratelimit-limit-tokens-generated": "72000",
+        "x-ratelimit-limit-tokens-prompt": "7200000",
+        "x-ratelimit-limit-tokens-uncached-prompt": "1800000",
+        "x-ratelimit-over-limit": "no",
+        "x-ratelimit-remaining-tokens-generated": "63896",
+        "x-ratelimit-remaining-tokens-prompt": "7180323",
+        "x-ratelimit-remaining-tokens-uncached-prompt": "1790590"
+      }
+    },
+    {
+      "request": {
+        "model": "accounts/fireworks/models/muse-spark-open",
+        "messages": [
+          {
+            "role": "system",
+            "content": "You verify financial claims against SEC EDGAR facts.\nDecompose the claim into every atomic factual assertion. Every factual assertion\nin the user's claim must become a sub-claim, including a value, a change, a\nrecord, and a first-time assertion in the same sentence. Assertions that the\ntools cannot check must still become a sub-claim with claim_type other; the\nprogram will leave those unchecked. Use lookup_fact for a value,\ncompute_change for YoY or other period-to-period growth, history_rank for\nrecord/first-time assertions, and list_periods only to understand missing data.\nNever use memory for numbers. A quarter must have period_type=quarter and\nduration_days around 80-100, not period_type=ytd. If a result has derived=true,\nuse its derivation and components as evidence and do not calculate that fact\nagain. For compute_change, cite its own evidence ID; its two nested component\nfact IDs may also be cited and are ignored by the verifier.\n\nEach final sub_claim must contain exactly these model fields:\ntext, stated_text, claim_type (value, change_pct, change_abs, record_high,\nrecord_low, first_time_above, or other), comparator (eq, approx, gt, gte, lt,\nor lte), stated_value in base units (USD, USD/share, percentage points, or 1\nfor a record boolean), evidence_ids, interpretations, verdict, note, and\nmodel_found_value. interpretations is required and may be empty. Every non-empty\nitem must be an evidence id like E3 — never free text.\nCopy stated_text verbatim from the claim, including words such as \"about\",\n\"up\", or \"fell\" (for example, \"about $1.4 billion\", \"up 22%\", or\n\"fell 10%\"). For a change_pct, stated_value is 22 for 22%, not 0.22; the\nverifier applies the sign implied by direction words such as fell/down or\nrose/up. model_found_value is the number read from the cited evidence in the\nsame units, or null when it is missing.\n\nComparator wording is deterministic: a plain numeric statement with no hedge\nor inequality phrase is eq; about/around/roughly/approximately/nearly/almost,\nclose to, some, or ~ means approx; topped/exceeded/above/more than/over/\nsurpassed/beat means gt; at least/no less than means gte; below/under/less\nthan/short of means lt; at most/no more than/up to means lte. The program\nrecords and may correct the model comparator from these words. \"up\" and\n\"fell\" describe change direction, not approximation.\n\nFor a quarter claim at a non-calendar-fiscal issuer, use period_basis from\nthe tool results. If the claim says neither fiscal nor calendar, look up both\nthe calendar label (for example 2025Q4) and the fiscal label (for example\nFY2025Q4), cite both IDs in evidence_ids, and put those two IDs in\ninterpretations. Keep interpretations empty unless both fiscal and calendar\nreadings were looked up. If the claim says fiscal, cite only the fiscal\nreading; if it says calendar, cite only the calendar reading. When a lookup or\ncompute result has fiscal_equals_calendar=true, the issuer's fiscal year is the\ncalendar year: fiscal and calendar labels refer to the same underlying facts,\nso look up and cite only one reading even when the claim has no\nfiscal/calendar qualifier.\n\nExamples:\n1. \"Tesla net income was about $1.4 billion\": lookup_fact; stated_text\n   \"about $1.4 billion\", claim_type value, comparator approx, stated_value\n   1400000000.\n2. \"Alphabet revenue exceeded $100 billion\": lookup_fact; stated_text\n   \"exceeded $100 billion\", claim_type value, comparator gt, stated_value\n   100000000000.\n3. \"Meta revenue was up 22% YoY\": compute_change(META, revenue, 2025Q2,\n   null); stated_text \"up 22%\", claim_type change_pct, comparator eq,\n   stated_value 22, and cite the compute_change evidence ID.\n4. \"Tesla revenue fell 10% YoY\": compute_change(TSLA, revenue, 2025Q3,\n   null); stated_text \"fell 10%\", claim_type change_pct, comparator eq,\n   stated_value -10, and cite the compute_change evidence ID.\n5. \"Alphabet Q3 2025 revenue was a record high\": history_rank(GOOGL,\n   revenue, 2025Q3); claim_type record_high, comparator eq, stated_value 1,\n   and cite the history_rank evidence ID.\n6. \"Alphabet Q3 2025 revenue topped $100 billion for the first time\": create\n   two sub-claims: value gt 100000000000 and first_time_above with stated_value\n   100000000000, both citing the relevant evidence; the latter is supported\n   only when this period is above the threshold and no earlier comparable\n   period is above it.\n7. If a requested fact is unavailable, leave model_found_value null, cite any\n   relevant evidence, and set that sub-claim to insufficient_evidence. Say\n   insufficient_evidence when data is missing or evidence is ambiguous."
+          },
+          {
+            "role": "user",
+            "content": "Apple disclosed $1.96 in diluted EPS for fiscal Q3 2026."
+          },
+          {
+            "role": "assistant",
+            "content": "Checking Apple's reported EPS — will pull its fiscal Q3 2026 filing.",
+            "tool_calls": [
+              {
+                "id": "chatcmpl-tool-95ba887b7d3e7936",
+                "type": "function",
+                "function": {
+                  "name": "lookup_fact",
+                  "arguments": "{\"ticker\": \"AAPL\", \"metric\": \"eps_diluted\", \"period\": \"FY2026Q3\"}"
+                }
+              }
+            ]
+          },
+          {
+            "role": "tool",
+            "tool_call_id": "chatcmpl-tool-95ba887b7d3e7936",
+            "content": "{\"ticker\":\"AAPL\",\"cik\":\"0000320193\",\"entity\":\"Apple Inc.\",\"metric\":\"eps_diluted\",\"concept\":\"EarningsPerShareDiluted\",\"unit\":\"USD/shares\",\"value\":2.02,\"start\":\"2026-03-29\",\"end\":\"2026-06-27\",\"form\":\"10-Q\",\"form_fallback\":false,\"accn\":\"0000320193-26-000020\",\"filed\":\"2026-07-31\",\"frame\":\"CY2026Q2\",\"fiscal_year\":2026,\"fiscal_period\":\"Q3\",\"duration_days\":91,\"period_type\":\"quarter\",\"fiscal_equals_calendar\":false,\"derived\":false,\"filing_url\":\"https://www.sec.gov/Archives/edgar/data/320193/000032019326000020/\",\"source_sha256\":\"73a86c6aedc31f77cac2ea4df5f80f0b3bd7e6eb58bb4e01444fbedf3afb9c43\",\"provenance\":{\"tier\":\"L2\",\"audited\":false,\"confirmations\":1,\"forms\":[\"10-Q\"],\"first_filed\":\"2026-07-31\",\"latest_filed\":\"2026-07-31\",\"restated\":false,\"amended\":false,\"strength\":\"medium\"},\"period\":\"FY2026Q3\",\"period_basis\":\"fiscal\",\"evidence_id\":\"E1\"}"
+          }
+        ],
+        "tools": [
+          {
+            "type": "function",
+            "function": {
+              "name": "lookup_fact",
+              "description": "Look up one SEC EDGAR XBRL fact for a ticker, metric, and calendar quarter, fiscal quarter (FY2025Q4), or fiscal year. Successful results include period (the normalized requested label, or the resolved label for latest), period_basis (calendar or fiscal), fiscal_equals_calendar, duration_days, and period_type (quarter, ytd, annual, or instant). Additive flows may return derived=true with derivation and components; never treat a ytd result as a quarter or recompute a derived result. When fiscal_equals_calendar is true, fiscal and calendar labels identify the same fact; do not look up both readings. Every fact includes compact provenance: L1 audited 10-K, L2 reviewed 10-Q, or L3 program-derived, with confirmations, restatement, amendment, and evidence strength.",
+              "parameters": {
+                "type": "object",
+                "properties": {
+                  "ticker": {
+                    "type": "string"
+                  },
+                  "metric": {
+                    "type": "string",
+                    "enum": [
+                      "revenue",
+                      "net_income",
+                      "operating_income",
+                      "eps_diluted",
+                      "gross_profit",
+                      "total_assets",
+                      "cash",
+                      "capex",
+                      "rd_expense",
+                      "shares_outstanding"
+                    ]
+                  },
+                  "period": {
+                    "type": "string",
+                    "pattern": "^(latest|FY\\d{4}(?:Q[1-4])?|\\d{4}Q[1-4])$"
+                  }
+                },
+                "required": [
+                  "ticker",
+                  "metric",
+                  "period"
+                ],
+                "additionalProperties": false
+              }
+            }
+          },
+          {
+            "type": "function",
+            "function": {
+              "name": "list_periods",
+              "description": "List the recent directly available SEC EDGAR quarter and fiscal-year periods for a ticker and metric.",
+              "parameters": {
+                "type": "object",
+                "properties": {
+                  "ticker": {
+                    "type": "string"
+                  },
+                  "metric": {
+                    "type": "string",
+                    "enum": [
+                      "revenue",
+                      "net_income",
+                      "operating_income",
+                      "eps_diluted",
+                      "gross_profit",
+                      "total_assets",
+                      "cash",
+                      "capex",
+                      "rd_expense",
+                      "shares_outstanding"
+                    ]
+                  }
+                },
+                "required": [
+                  "ticker",
+                  "metric"
+                ],
+                "additionalProperties": false
+              }
+            }
+          },
+          {
+            "type": "function",
+            "function": {
+              "name": "compute_change",
+              "description": "Compute the absolute and year-over-year change for one SEC EDGAR XBRL metric. The period and base_period must be the same kind of period; when base_period is omitted, null, empty, \"null\", or \"none\", use the same quarter or fiscal year one year earlier. The result includes both cited lookup facts, fiscal_equals_calendar, their fact-level provenance, and a percentage change in percent points.",
+              "parameters": {
+                "type": "object",
+                "properties": {
+                  "ticker": {
+                    "type": "string"
+                  },
+                  "metric": {
+                    "type": "string",
+                    "enum": [
+                      "revenue",
+                      "net_income",
+                      "operating_income",
+                      "eps_diluted",
+                      "gross_profit",
+                      "total_assets",
+                      "cash",
+                      "capex",
+                      "rd_expense",
+                      "shares_outstanding"
+                    ]
+                  },
+                  "period": {
+                    "type": "string",
+                    "pattern": "^(latest|FY\\d{4}(?:Q[1-4])?|\\d{4}Q[1-4])$"
+                  },
+                  "base_period": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "pattern": "^(FY\\d{4}(?:Q[1-4])?|\\d{4}Q[1-4])$"
+                  }
+                },
+                "required": [
+                  "ticker",
+                  "metric",
+                  "period",
+                  "base_period"
+                ],
+                "additionalProperties": false
+              }
+            }
+          },
+          {
+            "type": "function",
+            "function": {
+              "name": "history_rank",
+              "description": "Compare one quarter or fiscal-year fact with every available comparable period of the same period_type. Quarters include derived Q4 values when available; annual periods are compared only with annual periods. Return the rank, record flags through the requested period, prior high/low, and the comparison window with period end dates. The requested period also includes compact fact provenance and evidence strength.",
+              "parameters": {
+                "type": "object",
+                "properties": {
+                  "ticker": {
+                    "type": "string"
+                  },
+                  "metric": {
+                    "type": "string",
+                    "enum": [
+                      "revenue",
+                      "net_income",
+                      "operating_income",
+                      "eps_diluted",
+                      "gross_profit",
+                      "total_assets",
+                      "cash",
+                      "capex",
+                      "rd_expense",
+                      "shares_outstanding"
+                    ]
+                  },
+                  "period": {
+                    "type": "string",
+                    "pattern": "^(latest|FY\\d{4}(?:Q[1-4])?|\\d{4}Q[1-4])$"
+                  }
+                },
+                "required": [
+                  "ticker",
+                  "metric",
+                  "period"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        ],
+        "parallel_tool_calls": true,
+        "max_tokens": 4000
+      },
+      "reservation": {
+        "reservation_id": "6ede78134ed64f3481d76b088b88a50b",
+        "provider": "fireworks",
+        "model": "accounts/fireworks/models/muse-spark-open",
+        "estimated_input_tokens": 3287,
+        "max_output_tokens": 4000,
+        "amount": 0.021108750000000003,
+        "payload_chars": 9860,
+        "context_chars": 0
+      },
+      "raw_response": {
+        "id": "chatcmpl-684b45f941984baba857c3ff3ef79aa7",
+        "choices": [
+          {
+            "finish_reason": "stop",
+            "index": 0,
+            "logprobs": null,
+            "message": {
+              "content": "{\"sub_claims\": [{\"text\": \"Apple diluted EPS for fiscal Q3 2026 was $1.96\", \"stated_text\": \"$1.96\", \"claim_type\": \"value\", \"comparator\": \"eq\", \"stated_value\": 1.96, \"evidence_ids\": [\"E1\"], \"interpretations\": [], \"verdict\": \"not_verified\", \"note\": \"SEC EDGAR 10-Q for FY2026Q3 (period 2026-03-29 to 2026-06-27, filed 2026-07-31) reports diluted EPS of $2.02, not $1.96.\", \"model_found_value\": 2.02}]}",
+              "refusal": null,
+              "role": "assistant",
+              "annotations": null,
+              "audio": null,
+              "function_call": null,
+              "tool_calls": null,
+              "reasoning_content": "We need to verify claim: Apple disclosed $1.96 in diluted EPS for fiscal Q3 2026.\n\nNeed to decompose claim into atomic factual assertions. The claim is Apple disclosed $1.96 in diluted EPS for fiscal Q3 2026.\n\nWe should create sub-claim.\n\nWe have lookup_fact showing value 2.02, not 1.96. So we should report verdict not_verified or something? But need to produce final sub_claim with fields.\n\nRequired fields: text, stated_text, claim_type, comparator, stated_value, evidence_ids, interpretations, verdict, note, model_found_value.\n\nClaim type value, comparator eq (since no hedge), stated_value 1.96.\n\nWe have evidence E1 showing 2.02.\n\nNeed to follow format: JSON structure with sub_claims array.\n\nWe must also note fiscal vs calendar handling. Claim says fiscal Q3 2026, we looked up fiscal reading FY2026Q3. That's correct. No need to look up calendar.\n\nWe should state verdict not_verified.\n\nWe need to note interpretations empty.\n\nWe must produce model_found_value 2.02.\n\nShould we also check about period_basis? fiscal_equals_calendar false, so need to treat separately.\n\nPotential nuance: The tool returned value 2.02, start 2026-03-29 to 2026-06-27, filing_url etc. That's fiscal Q3 2026.\n\nSo claim that it's 1.96 is incorrect.\n\nWe need to ensure we provide required fields: text, stated_text, claim_type, comparator, stated_value, evidence_ids, interpretations, verdict, note, model_found_value.\n\nstated_text should be verbatim from claim: \"$1.96\" perhaps? The claim: \"Apple disclosed $1.96 in diluted EPS for fiscal Q3 2026.\" So stated_text is \"$1.96\". Could include \" $1.96\"? Need to copy verbatim including words. Probably \"$1.96\". Use that.\n\nComparator eq.\n\nEvidence_ids: [\"E1\"]\n\nInterpretations: []\n\nVerdict: \"not_verified\" ? Or \"insufficient_evidence\"? The available statuses? In prompt says say insufficient_evidence when data missing or evidence ambiguous. Here we have evidence showing different value, so not_verified.\n\nWe should also maybe compute note.\n\nWe need to output final JSON.\n\nWe should look at examples: They want sub_claims array.\n\nWe should ensure we follow spec that each final sub_claim must contain exactly these model fields: text, stated_text, claim_type, comparator, stated_value, evidence_ids, interpretations, verdict, note, model_found_value.\n\nWe need to provide text: maybe \"Apple diluted EPS for fiscal Q3 2026 was $1.96\" . Provide something descriptive.\n\nWe need to ensure units: stated_value in base units (USD/share). So 1.96.\n\nmodel_found_value 2.02\n\nWe also need to consider fiscal vs calendar interpretations handling: Since claim says fiscal, cite only fiscal reading, interpretations empty.\n\nWe have done lookup.\n\nShould we also need list_periods? Not needed because we have evidence.\n\nWe should produce final answer.\n\nPotential nuance: Could claim be about calendar Q3 vs fiscal Q3? But we have fiscal Q3. That's correct.\n\nWe should produce verdict not_verified.\n\nWe must include note explaining discrepancy.\n\nEnsure JSON valid.\n\nAlso need to handle comparator deterministic: plain numeric statement with no hedge is eq.\n\nWe should output as JSON.\n\nCheck need to include evidence_ids as array of strings like [\"E1\"]\n\nWe should also ensure model_found_value is number read from cited evidence in same units.\n\nWe have value 2.02 USD/shares.\n\nWe should provide interpretations empty array.\n\nWe must ensure we don't hallucinate other claims.\n\nSingle sub-claim.\n\nPotentially need to handle claim_type other for assertions tools cannot check? Not needed.\n\nWe should output final response.\n\nMake sure to cite provenance.\n\nWe might want to do additional check for calendar reading? But instruction: If claim says fiscal, cite only fiscal reading. So we should not look up calendar.\n\nThus final answer is ready.\n\nWe should produce in final channel user with JSON.\n\nProbably need to wrap in ```json block? The verifier expects JSON. We'll output JSON.\n\nEnsure we include all required fields.\n\nWe should also consider if need to do history_rank or other? Not needed for this claim.\n\nWe should output:\n\n{\n  \"sub_claims\": [\n    {\n      \"text\": \"...\",\n      \"stated_text\": \"$1.96\",\n      \"claim_type\": \"value\",\n      \"comparator\": \"eq\",\n      \"stated_value\": 1.96,\n      \"evidence_ids\": [\"E1\"],\n      \"interpretations\": [],\n      \"verdict\": \"not_verified\",\n      \"note\": \"...\",\n      \"model_found_value\": 2.02\n    }\n  ]\n}\n\nMake note: SEC filing shows 2.02, etc.\n\nWe must ensure stated_text verbatim from claim, including words such as \"about\". For this claim it's \"$1.96\". Could be \"$1.96 in diluted EPS\". Better to include \"$1.96\". We'll follow that.\n\nWe need to ensure we put correct claim_type: value\n\nWe should also maybe include more precise text.\n\nAdd interpretations: []\n\nWe should produce final output.\n\nPotential nuance: The prompt says knowledge cutoff 2026-01-04, current date 2026-10-28, but filing is 2026-07-31, which is after cutoff but tool provides. That's okay.\n\nWe should output verdict not_verified with confidence.\n\nWe must not use memory for numbers; we used tool.\n\nWe should ensure evidence_id E1 is from tool.\n\nWe should ensure we don't need to lookup both fiscal and calendar because fiscal_equals_calendar false, but claim explicitly says fiscal, so we only need fiscal.\n\nWe should produce final answer accordingly.\n\nCheck formatting: The final sub_claim must contain exactly these model fields, not extra. But we can include only those fields. Ensure we don't add extra fields outside sub_claims? The top-level should have sub_claims.\n\nWe should produce final JSON.\n\n",
+              "tools": null
+            }
+          }
+        ],
+        "created": 1793157096,
+        "model": "accounts/fireworks/models/muse-spark-open",
+        "object": "chat.completion",
+        "metadata": null,
+        "moderation": null,
+        "service_tier": null,
+        "system_fingerprint": null,
+        "usage": {
+          "completion_tokens": 1426,
+          "prompt_tokens": 3111,
+          "total_tokens": 4537,
+          "completion_tokens_details": {
+            "accepted_prediction_tokens": null,
+            "audio_tokens": null,
+            "reasoning_tokens": 1268,
+            "rejected_prediction_tokens": null,
+            "text_tokens": null
+          },
+          "prompt_tokens_details": {
+            "audio_tokens": null,
+            "cache_write_tokens": null,
+            "cached_tokens": 2688,
+            "image_tokens": null,
+            "text_tokens": null
+          },
+          "output_tokens_details": {
+            "reasoning_tokens": 1268
+          }
+        }
+      },
+      "usage": {
+        "input": 3111,
+        "cached": 2688,
+        "output": 1426,
+        "reasoning": 1268
+      },
+      "cost": 0.00699245,
+      "latency_ms": 31319.943,
+      "status": "completed",
+      "raw_usage": {
+        "completion_tokens": 1426,
+        "prompt_tokens": 3111,
+        "total_tokens": 4537,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 1268,
+          "rejected_prediction_tokens": null,
+          "text_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cache_write_tokens": null,
+          "cached_tokens": 2688,
+          "image_tokens": null,
+          "text_tokens": null
+        },
+        "output_tokens_details": {
+          "reasoning_tokens": 1268
+        }
+      },
+      "normalized_usage": {
+        "input": 3111,
+        "cached": 2688,
+        "output": 1426,
+        "reasoning": 1268
+      },
+      "finish_reason": "stop",
+      "rate_limit_headers": {
+        "x-ratelimit-limit-tokens-cache-adjusted-prompt": "1800000",
+        "x-ratelimit-limit-tokens-generated": "72000",
+        "x-ratelimit-limit-tokens-prompt": "7200000",
+        "x-ratelimit-limit-tokens-uncached-prompt": "1800000",
+        "x-ratelimit-over-limit": "no",
+        "x-ratelimit-remaining-tokens-generated": "64815",
+        "x-ratelimit-remaining-tokens-prompt": "7178989",
+        "x-ratelimit-remaining-tokens-uncached-prompt": "1791690"
+      }
+    },
+    {
+      "request": {
+        "model": "accounts/fireworks/models/muse-spark-open",
+        "messages": [
+          {
+            "role": "system",
+            "content": "You verify financial claims against SEC EDGAR facts.\nDecompose the claim into every atomic factual assertion. Every factual assertion\nin the user's claim must become a sub-claim, including a value, a change, a\nrecord, and a first-time assertion in the same sentence. Assertions that the\ntools cannot check must still become a sub-claim with claim_type other; the\nprogram will leave those unchecked. Use lookup_fact for a value,\ncompute_change for YoY or other period-to-period growth, history_rank for\nrecord/first-time assertions, and list_periods only to understand missing data.\nNever use memory for numbers. A quarter must have period_type=quarter and\nduration_days around 80-100, not period_type=ytd. If a result has derived=true,\nuse its derivation and components as evidence and do not calculate that fact\nagain. For compute_change, cite its own evidence ID; its two nested component\nfact IDs may also be cited and are ignored by the verifier.\n\nEach final sub_claim must contain exactly these model fields:\ntext, stated_text, claim_type (value, change_pct, change_abs, record_high,\nrecord_low, first_time_above, or other), comparator (eq, approx, gt, gte, lt,\nor lte), stated_value in base units (USD, USD/share, percentage points, or 1\nfor a record boolean), evidence_ids, interpretations, verdict, note, and\nmodel_found_value. interpretations is required and may be empty. Every non-empty\nitem must be an evidence id like E3 — never free text.\nCopy stated_text verbatim from the claim, including words such as \"about\",\n\"up\", or \"fell\" (for example, \"about $1.4 billion\", \"up 22%\", or\n\"fell 10%\"). For a change_pct, stated_value is 22 for 22%, not 0.22; the\nverifier applies the sign implied by direction words such as fell/down or\nrose/up. model_found_value is the number read from the cited evidence in the\nsame units, or null when it is missing.\n\nComparator wording is deterministic: a plain numeric statement with no hedge\nor inequality phrase is eq; about/around/roughly/approximately/nearly/almost,\nclose to, some, or ~ means approx; topped/exceeded/above/more than/over/\nsurpassed/beat means gt; at least/no less than means gte; below/under/less\nthan/short of means lt; at most/no more than/up to means lte. The program\nrecords and may correct the model comparator from these words. \"up\" and\n\"fell\" describe change direction, not approximation.\n\nFor a quarter claim at a non-calendar-fiscal issuer, use period_basis from\nthe tool results. If the claim says neither fiscal nor calendar, look up both\nthe calendar label (for example 2025Q4) and the fiscal label (for example\nFY2025Q4), cite both IDs in evidence_ids, and put those two IDs in\ninterpretations. Keep interpretations empty unless both fiscal and calendar\nreadings were looked up. If the claim says fiscal, cite only the fiscal\nreading; if it says calendar, cite only the calendar reading. When a lookup or\ncompute result has fiscal_equals_calendar=true, the issuer's fiscal year is the\ncalendar year: fiscal and calendar labels refer to the same underlying facts,\nso look up and cite only one reading even when the claim has no\nfiscal/calendar qualifier.\n\nExamples:\n1. \"Tesla net income was about $1.4 billion\": lookup_fact; stated_text\n   \"about $1.4 billion\", claim_type value, comparator approx, stated_value\n   1400000000.\n2. \"Alphabet revenue exceeded $100 billion\": lookup_fact; stated_text\n   \"exceeded $100 billion\", claim_type value, comparator gt, stated_value\n   100000000000.\n3. \"Meta revenue was up 22% YoY\": compute_change(META, revenue, 2025Q2,\n   null); stated_text \"up 22%\", claim_type change_pct, comparator eq,\n   stated_value 22, and cite the compute_change evidence ID.\n4. \"Tesla revenue fell 10% YoY\": compute_change(TSLA, revenue, 2025Q3,\n   null); stated_text \"fell 10%\", claim_type change_pct, comparator eq,\n   stated_value -10, and cite the compute_change evidence ID.\n5. \"Alphabet Q3 2025 revenue was a record high\": history_rank(GOOGL,\n   revenue, 2025Q3); claim_type record_high, comparator eq, stated_value 1,\n   and cite the history_rank evidence ID.\n6. \"Alphabet Q3 2025 revenue topped $100 billion for the first time\": create\n   two sub-claims: value gt 100000000000 and first_time_above with stated_value\n   100000000000, both citing the relevant evidence; the latter is supported\n   only when this period is above the threshold and no earlier comparable\n   period is above it.\n7. If a requested fact is unavailable, leave model_found_value null, cite any\n   relevant evidence, and set that sub-claim to insufficient_evidence. Say\n   insufficient_evidence when data is missing or evidence is ambiguous."
+          },
+          {
+            "role": "user",
+            "content": "Apple disclosed $1.96 in diluted EPS for fiscal Q3 2026."
+          },
+          {
+            "role": "assistant",
+            "content": "Checking Apple's reported EPS — will pull its fiscal Q3 2026 filing.",
+            "tool_calls": [
+              {
+                "id": "chatcmpl-tool-95ba887b7d3e7936",
+                "type": "function",
+                "function": {
+                  "name": "lookup_fact",
+                  "arguments": "{\"ticker\": \"AAPL\", \"metric\": \"eps_diluted\", \"period\": \"FY2026Q3\"}"
+                }
+              }
+            ]
+          },
+          {
+            "role": "tool",
+            "tool_call_id": "chatcmpl-tool-95ba887b7d3e7936",
+            "content": "{\"ticker\":\"AAPL\",\"cik\":\"0000320193\",\"entity\":\"Apple Inc.\",\"metric\":\"eps_diluted\",\"concept\":\"EarningsPerShareDiluted\",\"unit\":\"USD/shares\",\"value\":2.02,\"start\":\"2026-03-29\",\"end\":\"2026-06-27\",\"form\":\"10-Q\",\"form_fallback\":false,\"accn\":\"0000320193-26-000020\",\"filed\":\"2026-07-31\",\"frame\":\"CY2026Q2\",\"fiscal_year\":2026,\"fiscal_period\":\"Q3\",\"duration_days\":91,\"period_type\":\"quarter\",\"fiscal_equals_calendar\":false,\"derived\":false,\"filing_url\":\"https://www.sec.gov/Archives/edgar/data/320193/000032019326000020/\",\"source_sha256\":\"73a86c6aedc31f77cac2ea4df5f80f0b3bd7e6eb58bb4e01444fbedf3afb9c43\",\"provenance\":{\"tier\":\"L2\",\"audited\":false,\"confirmations\":1,\"forms\":[\"10-Q\"],\"first_filed\":\"2026-07-31\",\"latest_filed\":\"2026-07-31\",\"restated\":false,\"amended\":false,\"strength\":\"medium\"},\"period\":\"FY2026Q3\",\"period_basis\":\"fiscal\",\"evidence_id\":\"E1\"}"
+          },
+          {
+            "role": "assistant",
+            "content": "{\"sub_claims\": [{\"text\": \"Apple diluted EPS for fiscal Q3 2026 was $1.96\", \"stated_text\": \"$1.96\", \"claim_type\": \"value\", \"comparator\": \"eq\", \"stated_value\": 1.96, \"evidence_ids\": [\"E1\"], \"interpretations\": [], \"verdict\": \"not_verified\", \"note\": \"SEC EDGAR 10-Q for FY2026Q3 (period 2026-03-29 to 2026-06-27, filed 2026-07-31) reports diluted EPS of $2.02, not $1.96.\", \"model_found_value\": 2.02}]}"
+          },
+          {
+            "role": "user",
+            "content": "Return only one plain JSON object for the final verdict. Do not use Markdown fences or explanatory text. Include every atomic factual assertion as a sub-claim, including claim_type other when the tools cannot check it. Copy stated_text verbatim from the claim and include claim_type, comparator, stated_value in base units, evidence_ids, interpretations (evidence ids like E3 — never free text), verdict, model_found_value, and a concise note. The object must match this existing verdict schema: {\"type\":\"object\",\"properties\":{\"verdict\":{\"type\":\"string\",\"enum\":[\"supported\",\"contradicted\",\"insufficient_evidence\"]},\"summary\":{\"type\":\"string\"},\"sub_claims\":{\"type\":\"array\",\"items\":{\"type\":\"object\",\"properties\":{\"text\":{\"type\":\"string\"},\"stated_text\":{\"type\":\"string\"},\"claim_type\":{\"type\":\"string\",\"enum\":[\"value\",\"change_pct\",\"change_abs\",\"record_high\",\"record_low\",\"first_time_above\",\"other\"]},\"comparator\":{\"type\":\"string\",\"enum\":[\"eq\",\"approx\",\"gt\",\"gte\",\"lt\",\"lte\"]},\"stated_value\":{\"type\":[\"number\",\"null\"]},\"evidence_ids\":{\"type\":\"array\",\"items\":{\"type\":\"string\"}},\"interpretations\":{\"type\":\"array\",\"items\":{\"type\":\"string\",\"description\":\"evidence id like E3 — never free text\"}},\"verdict\":{\"type\":\"string\",\"enum\":[\"supported\",\"contradicted\",\"insufficient_evidence\"]},\"note\":{\"type\":\"string\"},\"model_found_value\":{\"type\":[\"number\",\"null\"]}},\"required\":[\"text\",\"stated_text\",\"claim_type\",\"comparator\",\"stated_value\",\"evidence_ids\",\"interpretations\",\"verdict\",\"note\",\"model_found_value\"],\"additionalProperties\":false}}},\"required\":[\"verdict\",\"summary\",\"sub_claims\"],\"additionalProperties\":false}"
+          }
+        ],
+        "max_tokens": 3000
+      },
+      "reservation": {
+        "reservation_id": "6385c688fd5442d7a243b835875490d0",
+        "provider": "fireworks",
+        "model": "accounts/fireworks/models/muse-spark-open",
+        "estimated_input_tokens": 2849,
+        "max_output_tokens": 3000,
+        "amount": 0.01631125,
+        "payload_chars": 8545,
+        "context_chars": 0
+      },
+      "raw_response": {
+        "id": "chatcmpl-cf16c6122d2149d7bb87c42e61612c77",
+        "choices": [
+          {
+            "finish_reason": "stop",
+            "index": 0,
+            "logprobs": null,
+            "message": {
+              "content": "{\"verdict\":\"contradicted\",\"summary\":\"Fiscal Q3 2026 diluted EPS claimed as $1.96 is contradicted by the SEC EDGAR 10-Q which reports $2.02.\",\"sub_claims\":[{\"text\":\"Apple disclosed $1.96 in diluted EPS for fiscal Q3 2026.\",\"stated_text\":\"$1.96\",\"claim_type\":\"value\",\"comparator\":\"eq\",\"stated_value\":1.96,\"evidence_ids\":[\"E1\"],\"interpretations\":[],\"verdict\":\"contradicted\",\"note\":\"SEC EDGAR 10-Q for FY2026Q3 (2026-03-29 to 2026-06-27) reports diluted EPS of $2.02, not $1.96.\",\"model_found_value\":2.02}]}",
+              "refusal": null,
+              "role": "assistant",
+              "annotations": null,
+              "audio": null,
+              "function_call": null,
+              "tool_calls": null,
+              "reasoning_content": "We need to return only one plain JSON object for final verdict. Must include every atomic factual assertion as sub-claim. Claim: \"Apple disclosed $1.96 in diluted EPS for fiscal Q3 2026.\"\n\nWe have already looked up fact: FY2026Q3 eps_diluted = 2.02. So claim states 1.96, actual 2.02 => contradicted.\n\nWe need to produce JSON with verdict, summary, sub_claims.\n\nVerdict for overall should be contradicted? Or not_verified earlier but now must be contradicted, supported, insufficient_evidence. The schema enum: supported, contradicted, insufficient_evidence. So overall verdict = contradicted.\n\nWe have one sub_claim: text: \"Apple disclosed $1.96 in diluted EPS for fiscal Q3 2026.\" stated_text \"$1.96\", claim_type value, comparator eq, stated_value 1.96, evidence_ids [\"E1\"], interpretations [], verdict contradicted, note says SEC filing reports 2.02, model_found_value 2.02\n\nWe must ensure correct units: base units USD/share? But stated_value 1.96.\n\nAlso need to include summary.\n\nReturn JSON object.\n\nWe need to ensure compliance with instructions: include every atomic factual assertion as sub-claim, including claim_type other when tools cannot check. No other assertions.\n\nWe have evidence E1.\n\nWe must output plain JSON, no markdown fences.\n\nProvide exact schema.\n\nPotentially need to provide verdict, summary, sub_claims.\n\nMake summary concise.\n\nEnsure comparator eq.\n\nAdd text field equals claim text? Provide.\n\nMake sure interpretations array empty.\n\nReturn.",
+              "tools": null
+            }
+          }
+        ],
+        "created": 1793157127,
+        "model": "accounts/fireworks/models/muse-spark-open",
+        "object": "chat.completion",
+        "metadata": null,
+        "moderation": null,
+        "service_tier": null,
+        "system_fingerprint": null,
+        "usage": {
+          "completion_tokens": 509,
+          "prompt_tokens": 2218,
+          "total_tokens": 2727,
+          "completion_tokens_details": {
+            "accepted_prediction_tokens": null,
+            "audio_tokens": null,
+            "reasoning_tokens": 338,
+            "rejected_prediction_tokens": null,
+            "text_tokens": null
+          },
+          "prompt_tokens_details": {
+            "audio_tokens": null,
+            "cache_write_tokens": null,
+            "cached_tokens": 0,
+            "image_tokens": null,
+            "text_tokens": null
+          },
+          "output_tokens_details": {
+            "reasoning_tokens": 338
+          }
+        }
+      },
+      "usage": {
+        "input": 2218,
+        "cached": 0,
+        "output": 509,
+        "reasoning": 338
+      },
+      "cost": 0.00493575,
+      "latency_ms": 11637.23,
+      "status": "completed",
+      "raw_usage": {
+        "completion_tokens": 509,
+        "prompt_tokens": 2218,
+        "total_tokens": 2727,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 338,
+          "rejected_prediction_tokens": null,
+          "text_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cache_write_tokens": null,
+          "cached_tokens": 0,
+          "image_tokens": null,
+          "text_tokens": null
+        },
+        "output_tokens_details": {
+          "reasoning_tokens": 338
+        }
+      },
+      "normalized_usage": {
+        "input": 2218,
+        "cached": 0,
+        "output": 509,
+        "reasoning": 338
+      },
+      "finish_reason": "stop",
+      "rate_limit_headers": {
+        "x-ratelimit-limit-tokens-cache-adjusted-prompt": "1800000",
+        "x-ratelimit-limit-tokens-generated": "72000",
+        "x-ratelimit-limit-tokens-prompt": "7200000",
+        "x-ratelimit-limit-tokens-uncached-prompt": "1800000",
+        "x-ratelimit-over-limit": "no",
+        "x-ratelimit-remaining-tokens-prompt": "7197782"
+      }
+    }
+  ],
+  "tool_calls": [
+    {
+      "name": "lookup_fact",
+      "arguments": {
+        "ticker": "AAPL",
+        "metric": "eps_diluted",
+        "period": "FY2026Q3"
+      },
+      "call_id": "chatcmpl-tool-95ba887b7d3e7936",
+      "result": {
+        "ticker": "AAPL",
+        "cik": "0000320193",
+        "entity": "Apple Inc.",
+        "metric": "eps_diluted",
+        "concept": "EarningsPerShareDiluted",
+        "unit": "USD/shares",
+        "value": 2.02,
+        "start": "2026-03-29",
+        "end": "2026-06-27",
+        "form": "10-Q",
+        "form_fallback": false,
+        "accn": "0000320193-26-000020",
+        "filed": "2026-07-31",
+        "frame": "CY2026Q2",
+        "fiscal_year": 2026,
+        "fiscal_period": "Q3",
+        "duration_days": 91,
+        "period_type": "quarter",
+        "fiscal_equals_calendar": false,
+        "derived": false,
+        "filing_url": "https://www.sec.gov/Archives/edgar/data/320193/000032019326000020/",
+        "source_sha256": "73a86c6aedc31f77cac2ea4df5f80f0b3bd7e6eb58bb4e01444fbedf3afb9c43",
+        "provenance": {
+          "tier": "L2",
+          "audited": false,
+          "confirmations": 1,
+          "forms": [
+            "10-Q"
+          ],
+          "first_filed": "2026-07-31",
+          "latest_filed": "2026-07-31",
+          "restated": false,
+          "amended": false,
+          "strength": "medium"
+        },
+        "period": "FY2026Q3",
+        "period_basis": "fiscal",
+        "evidence_id": "E1"
+      }
+    }
+  ],
+  "usage": [
+    {
+      "input": 2693,
+      "cached": 2624,
+      "output": 443,
+      "reasoning": 333
+    },
+    {
+      "input": 3111,
+      "cached": 2688,
+      "output": 1426,
+      "reasoning": 1268
+    },
+    {
+      "input": 2218,
+      "cached": 0,
+      "output": 509,
+      "reasoning": 338
+    }
+  ],
+  "tokens": {
+    "input": 8022,
+    "cached": 5312,
+    "output": 2378,
+    "reasoning": 1939
+  },
+  "model_calls": 3,
+  "cost": 0.0142908,
+  "cost_usd": 0.0142908,
+  "latency_ms": 53542.575,
+  "tool_call_count": 1,
+  "incomplete_turns": [],
+  "previous_response_fallback": false,
+  "final_verdict": {
+    "verdict": "contradicted",
+    "summary": "Fiscal Q3 2026 diluted EPS claimed as $1.96 is contradicted by the SEC EDGAR 10-Q which reports $2.02.",
+    "sub_claims": [
+      {
+        "text": "Apple disclosed $1.96 in diluted EPS for fiscal Q3 2026.",
+        "stated_text": "$1.96",
+        "claim_type": "value",
+        "comparator": "eq",
+        "stated_value": 1.96,
+        "verdict": "contradicted",
+        "evidence_ids": [
+          "E1"
+        ],
+        "interpretations": [],
+        "model_found_value": 2.02,
+        "note": "SEC EDGAR 10-Q for FY2026Q3 (2026-03-29 to 2026-06-27) reports diluted EPS of $2.02, not $1.96.",
+        "evidence_valid": true,
+        "program_verdict": "contradicted",
+        "actual_value": 2.02,
+        "tolerance": 0.005,
+        "reason": "actual 2.02 is not consistent with stated 1.96 using eq tolerance 0.005",
+        "disagreement": false,
+        "precision": 0.005,
+        "stated_value_used": 1.96,
+        "period_ambiguous": false,
+        "invalid_interpretations": false,
+        "deduplicated_evidence": [],
+        "stated_value_corrected": false,
+        "stated_text_unparsed": false,
+        "stated_sign_corrected": false,
+        "threshold_from_model": false,
+        "model_comparator": "eq",
+        "comparator_corrected": false,
+        "evidence_strength": "medium",
+        "evidence_summary": "Evidence: reviewed 10-Q, confirmed in 1 filing, not restated",
+        "restated_evidence": false
+      }
+    ],
+    "model_verdict": "contradicted",
+    "program_checks": [
+      {
+        "text": "Apple disclosed $1.96 in diluted EPS for fiscal Q3 2026.",
+        "stated_value": 1.96,
+        "evidence_ids": [
+          "E1"
+        ],
+        "evidence_valid": true,
+        "program_verdict": "contradicted",
+        "actual_value": 2.02,
+        "tolerance": 0.005,
+        "reason": "actual 2.02 is not consistent with stated 1.96 using eq tolerance 0.005",
+        "disagreement": false,
+        "precision": 0.005,
+        "stated_value_used": 1.96,
+        "comparator": "eq",
+        "interpretations": [],
+        "period_ambiguous": false,
+        "invalid_interpretations": false,
+        "deduplicated_evidence": [],
+        "stated_value_corrected": false,
+        "stated_text_unparsed": false,
+        "stated_sign_corrected": false,
+        "threshold_from_model": false,
+        "model_comparator": "eq",
+        "comparator_corrected": false,
+        "evidence_strength": "medium",
+        "evidence_summary": "Evidence: reviewed 10-Q, confirmed in 1 filing, not restated",
+        "restated_evidence": false
+      }
+    ],
+    "evidence_strength": "medium",
+    "evidence_summary": "Evidence: reviewed 10-Q, confirmed in 1 filing, not restated",
+    "model_program_disagreement": false
+  },
+  "program_checks": [
+    {
+      "text": "Apple disclosed $1.96 in diluted EPS for fiscal Q3 2026.",
+      "stated_value": 1.96,
+      "evidence_ids": [
+        "E1"
+      ],
+      "evidence_valid": true,
+      "program_verdict": "contradicted",
+      "actual_value": 2.02,
+      "tolerance": 0.005,
+      "reason": "actual 2.02 is not consistent with stated 1.96 using eq tolerance 0.005",
+      "disagreement": false,
+      "precision": 0.005,
+      "stated_value_used": 1.96,
+      "comparator": "eq",
+      "interpretations": [],
+      "period_ambiguous": false,
+      "invalid_interpretations": false,
+      "deduplicated_evidence": [],
+      "stated_value_corrected": false,
+      "stated_text_unparsed": false,
+      "stated_sign_corrected": false,
+      "threshold_from_model": false,
+      "model_comparator": "eq",
+      "comparator_corrected": false,
+      "evidence_strength": "medium",
+      "evidence_summary": "Evidence: reviewed 10-Q, confirmed in 1 filing, not restated",
+      "restated_evidence": false
+    }
+  ]
+}

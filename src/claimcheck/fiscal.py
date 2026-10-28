@@ -118,7 +118,8 @@ def normalize_fiscal_labels(document: dict[str, Any]) -> dict[str, Any]:
         fiscal_year, quarter = label
         fact["fy"] = fiscal_year
         if start is not None and 350 <= (end - start).days <= 380:
-            fact["fp"] = "FY"
+            # Trailing-twelve-month amounts in 10-Qs (Amazon) are not fiscal years.
+            fact["fp"] = "FY" if quarter == 4 else "TTM"
         elif start is None and quarter == 4:
             fact["fp"] = "FY"  # year-end balance sheet, as annual filings tag it
         else:

@@ -6,7 +6,7 @@ import hashlib
 import json
 import re
 from dataclasses import dataclass
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Callable, Iterable, Mapping
 
@@ -425,6 +425,8 @@ class _DerivedCandidate:
 
 
 def _quarter_for_end(end: date) -> str:
+    # 52/53-week quarters end a few days past the calendar quarter (Apple's 2023-07-01 is CY2023Q2, as SEC frames it).
+    end -= timedelta(days=7)
     return f"{end.year}Q{((end.month - 1) // 3) + 1}"
 
 

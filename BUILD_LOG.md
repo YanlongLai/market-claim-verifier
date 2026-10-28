@@ -212,3 +212,43 @@ reasoning, cost, latency) and `REPORT.md`. Gold labels for the 30 claims were co
   before freezing.
 - **Figures.** The evaluation chart now shows all six systems with Wilson intervals; added a data-quality chart and
   Fireworks to the provider diagram.
+
+## Eval v2 run: 357 claims × 6 systems — 2026-10-27 (Tue) night (UTC 2026-10-28 03:09–06:27)
+
+- **Run size.** Ran the frozen v2 set (commit `5d90b3b`) on all six systems: 2,142 verdicts. Concurrency 6, per-provider budget cap. Report: [`docs/evidence/eval-v2-2026-10-27/REPORT.md`](docs/evidence/eval-v2-2026-10-27/REPORT.md).
+- **Budget stop and resume.**
+  - Meta API spend reached the $15 per-provider cap with 95 Meta pairs left (48 agent, 47 single-shot); the other providers finished.
+  - The owner raised the cap to $30.
+  - The 95 `budget_stopped` pair files and the first report were moved to `budget-stopped-attempt1/`, kept as evidence, and only those pairs were rerun. The ledger continued, so spend is cumulative.
+- **Results (corrected gold).** 95% CIs in brackets.
+
+  | System | Accuracy |
+  | --- | --- |
+  | Agent, Baseten | 90.5% [87.0, 93.1] |
+  | Agent, Fireworks | 90.5% [87.0, 93.1] |
+  | Agent, Meta API | 83.2% [79.0, 86.7] |
+  | Single-shot, Meta API | 44.3% [39.2, 49.4] |
+  | Single-shot, Baseten | 20.7% |
+  | Single-shot, Fireworks | 19.9% |
+
+  - **Paired agent − single-shot:** +38 (Meta API), +70 (Baseten), +70 (Fireworks) points; McNemar p < 0.0001 for each.
+  - **Open-weights agent vs hosted agent:** +7 points, p = 0.0001.
+- **Real-world layer (43 claims).** Agent 43/43 on Baseten and Fireworks, 39/43 on the Meta API; single-shot 6/43.
+- **Weak families:**
+  - "First time / record" claims: 16–18 of 31 right.
+  - Year-over-year on the Meta API agent: 29/48 (Baseten and Fireworks: 45/48).
+  - Fiscal/calendar period traps: 23–24 of 30.
+- **Cost of this run.** Meta API $15.67, Baseten $11.42, Fireworks $11.35, from ledger reconcile events. Mean per claim: agent $0.020–0.026, single-shot $0.012–0.019.
+- **Review of every false "supported" verdict.** Found two bugs:
+  1. **Gold builder: Amazon treated as a June year-end issuer.** It read the latest "annual" end from facts labeled `FY`. After period relabeling, that included a 10-Q trailing-twelve-month net income (2025-04-01..2026-03-31).
+     - Two true claims had been labeled "contradicted": G0119 (Amazon calendar Q3 2023 revenue $143.1B) and G0125 (EPS $0.94).
+     - **Fix:** in both the gold builder and `claimcheck.fiscal`, 12-month periods that do not end at a fiscal year-end are labeled `TTM`. A relabeled "fiscal label as calendar" trap is only false for a non-calendar issuer.
+     - **Impact:** v1 gold is unchanged (30/30), and only those 2 v2 claims change.
+     - **Record:** the frozen file is left as committed. The corrections, with reasons, are in `eval/v2/claims-v2-corrected.jsonl`. Both reports are kept: `REPORT.md` (corrected) and `REPORT-registered-gold.md`. Every system's correct count moves by ≤ 2.
+  2. **Lookup tool: Apple's 52/53-week quarter put in the wrong calendar quarter.** The quarter ending 2023-07-01 was mapped to calendar Q3, because a derived (YTD-difference) quarter has no SEC frame and fell back to the end-date month.
+     - G0249 ("2023 Q3 net income $19.9B") was then judged supported by all three agents.
+     - **Fix:** the calendar quarter is taken from the end date minus 7 days, matching SEC frames (CY2023Q2).
+     - **Status:** post-hoc. This run was not re-scored with the fix.
+- **Remaining agent false "supported".** Meta API agent on two "Q2/Q4 2024"-style claims for non-calendar issuers (NVIDIA, Apple). It checked only the fiscal reading, and gold is "insufficient evidence" because the readings disagree.
+  - **Next:** have the program detect an unlabeled quarter for a non-calendar issuer and require both readings.
+- **Tests and figures.** Added regression tests for the TTM label and the 52/53-week calendar quarter (192 tests pass). Regenerated `docs/figures/eval-summary.*` from the v2 summary.

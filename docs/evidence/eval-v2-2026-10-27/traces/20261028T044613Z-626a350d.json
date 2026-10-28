@@ -1,0 +1,983 @@
+{
+  "claim": "The net income total reached $49.6B at JPMorgan Chase in fiscal 2023.",
+  "model": "accounts/fireworks/models/muse-spark-open",
+  "provider": "fireworks",
+  "requests": [
+    {
+      "request": {
+        "model": "accounts/fireworks/models/muse-spark-open",
+        "messages": [
+          {
+            "role": "system",
+            "content": "You verify financial claims against SEC EDGAR facts.\nDecompose the claim into every atomic factual assertion. Every factual assertion\nin the user's claim must become a sub-claim, including a value, a change, a\nrecord, and a first-time assertion in the same sentence. Assertions that the\ntools cannot check must still become a sub-claim with claim_type other; the\nprogram will leave those unchecked. Use lookup_fact for a value,\ncompute_change for YoY or other period-to-period growth, history_rank for\nrecord/first-time assertions, and list_periods only to understand missing data.\nNever use memory for numbers. A quarter must have period_type=quarter and\nduration_days around 80-100, not period_type=ytd. If a result has derived=true,\nuse its derivation and components as evidence and do not calculate that fact\nagain. For compute_change, cite its own evidence ID; its two nested component\nfact IDs may also be cited and are ignored by the verifier.\n\nEach final sub_claim must contain exactly these model fields:\ntext, stated_text, claim_type (value, change_pct, change_abs, record_high,\nrecord_low, first_time_above, or other), comparator (eq, approx, gt, gte, lt,\nor lte), stated_value in base units (USD, USD/share, percentage points, or 1\nfor a record boolean), evidence_ids, interpretations, verdict, note, and\nmodel_found_value. interpretations is required and may be empty. Every non-empty\nitem must be an evidence id like E3 — never free text.\nCopy stated_text verbatim from the claim, including words such as \"about\",\n\"up\", or \"fell\" (for example, \"about $1.4 billion\", \"up 22%\", or\n\"fell 10%\"). For a change_pct, stated_value is 22 for 22%, not 0.22; the\nverifier applies the sign implied by direction words such as fell/down or\nrose/up. model_found_value is the number read from the cited evidence in the\nsame units, or null when it is missing.\n\nComparator wording is deterministic: a plain numeric statement with no hedge\nor inequality phrase is eq; about/around/roughly/approximately/nearly/almost,\nclose to, some, or ~ means approx; topped/exceeded/above/more than/over/\nsurpassed/beat means gt; at least/no less than means gte; below/under/less\nthan/short of means lt; at most/no more than/up to means lte. The program\nrecords and may correct the model comparator from these words. \"up\" and\n\"fell\" describe change direction, not approximation.\n\nFor a quarter claim at a non-calendar-fiscal issuer, use period_basis from\nthe tool results. If the claim says neither fiscal nor calendar, look up both\nthe calendar label (for example 2025Q4) and the fiscal label (for example\nFY2025Q4), cite both IDs in evidence_ids, and put those two IDs in\ninterpretations. Keep interpretations empty unless both fiscal and calendar\nreadings were looked up. If the claim says fiscal, cite only the fiscal\nreading; if it says calendar, cite only the calendar reading. When a lookup or\ncompute result has fiscal_equals_calendar=true, the issuer's fiscal year is the\ncalendar year: fiscal and calendar labels refer to the same underlying facts,\nso look up and cite only one reading even when the claim has no\nfiscal/calendar qualifier.\n\nExamples:\n1. \"Tesla net income was about $1.4 billion\": lookup_fact; stated_text\n   \"about $1.4 billion\", claim_type value, comparator approx, stated_value\n   1400000000.\n2. \"Alphabet revenue exceeded $100 billion\": lookup_fact; stated_text\n   \"exceeded $100 billion\", claim_type value, comparator gt, stated_value\n   100000000000.\n3. \"Meta revenue was up 22% YoY\": compute_change(META, revenue, 2025Q2,\n   null); stated_text \"up 22%\", claim_type change_pct, comparator eq,\n   stated_value 22, and cite the compute_change evidence ID.\n4. \"Tesla revenue fell 10% YoY\": compute_change(TSLA, revenue, 2025Q3,\n   null); stated_text \"fell 10%\", claim_type change_pct, comparator eq,\n   stated_value -10, and cite the compute_change evidence ID.\n5. \"Alphabet Q3 2025 revenue was a record high\": history_rank(GOOGL,\n   revenue, 2025Q3); claim_type record_high, comparator eq, stated_value 1,\n   and cite the history_rank evidence ID.\n6. \"Alphabet Q3 2025 revenue topped $100 billion for the first time\": create\n   two sub-claims: value gt 100000000000 and first_time_above with stated_value\n   100000000000, both citing the relevant evidence; the latter is supported\n   only when this period is above the threshold and no earlier comparable\n   period is above it.\n7. If a requested fact is unavailable, leave model_found_value null, cite any\n   relevant evidence, and set that sub-claim to insufficient_evidence. Say\n   insufficient_evidence when data is missing or evidence is ambiguous."
+          },
+          {
+            "role": "user",
+            "content": "The net income total reached $49.6B at JPMorgan Chase in fiscal 2023."
+          }
+        ],
+        "tools": [
+          {
+            "type": "function",
+            "function": {
+              "name": "lookup_fact",
+              "description": "Look up one SEC EDGAR XBRL fact for a ticker, metric, and calendar quarter, fiscal quarter (FY2025Q4), or fiscal year. Successful results include period (the normalized requested label, or the resolved label for latest), period_basis (calendar or fiscal), fiscal_equals_calendar, duration_days, and period_type (quarter, ytd, annual, or instant). Additive flows may return derived=true with derivation and components; never treat a ytd result as a quarter or recompute a derived result. When fiscal_equals_calendar is true, fiscal and calendar labels identify the same fact; do not look up both readings. Every fact includes compact provenance: L1 audited 10-K, L2 reviewed 10-Q, or L3 program-derived, with confirmations, restatement, amendment, and evidence strength.",
+              "parameters": {
+                "type": "object",
+                "properties": {
+                  "ticker": {
+                    "type": "string"
+                  },
+                  "metric": {
+                    "type": "string",
+                    "enum": [
+                      "revenue",
+                      "net_income",
+                      "operating_income",
+                      "eps_diluted",
+                      "gross_profit",
+                      "total_assets",
+                      "cash",
+                      "capex",
+                      "rd_expense",
+                      "shares_outstanding"
+                    ]
+                  },
+                  "period": {
+                    "type": "string",
+                    "pattern": "^(latest|FY\\d{4}(?:Q[1-4])?|\\d{4}Q[1-4])$"
+                  }
+                },
+                "required": [
+                  "ticker",
+                  "metric",
+                  "period"
+                ],
+                "additionalProperties": false
+              }
+            }
+          },
+          {
+            "type": "function",
+            "function": {
+              "name": "list_periods",
+              "description": "List the recent directly available SEC EDGAR quarter and fiscal-year periods for a ticker and metric.",
+              "parameters": {
+                "type": "object",
+                "properties": {
+                  "ticker": {
+                    "type": "string"
+                  },
+                  "metric": {
+                    "type": "string",
+                    "enum": [
+                      "revenue",
+                      "net_income",
+                      "operating_income",
+                      "eps_diluted",
+                      "gross_profit",
+                      "total_assets",
+                      "cash",
+                      "capex",
+                      "rd_expense",
+                      "shares_outstanding"
+                    ]
+                  }
+                },
+                "required": [
+                  "ticker",
+                  "metric"
+                ],
+                "additionalProperties": false
+              }
+            }
+          },
+          {
+            "type": "function",
+            "function": {
+              "name": "compute_change",
+              "description": "Compute the absolute and year-over-year change for one SEC EDGAR XBRL metric. The period and base_period must be the same kind of period; when base_period is omitted, null, empty, \"null\", or \"none\", use the same quarter or fiscal year one year earlier. The result includes both cited lookup facts, fiscal_equals_calendar, their fact-level provenance, and a percentage change in percent points.",
+              "parameters": {
+                "type": "object",
+                "properties": {
+                  "ticker": {
+                    "type": "string"
+                  },
+                  "metric": {
+                    "type": "string",
+                    "enum": [
+                      "revenue",
+                      "net_income",
+                      "operating_income",
+                      "eps_diluted",
+                      "gross_profit",
+                      "total_assets",
+                      "cash",
+                      "capex",
+                      "rd_expense",
+                      "shares_outstanding"
+                    ]
+                  },
+                  "period": {
+                    "type": "string",
+                    "pattern": "^(latest|FY\\d{4}(?:Q[1-4])?|\\d{4}Q[1-4])$"
+                  },
+                  "base_period": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "pattern": "^(FY\\d{4}(?:Q[1-4])?|\\d{4}Q[1-4])$"
+                  }
+                },
+                "required": [
+                  "ticker",
+                  "metric",
+                  "period",
+                  "base_period"
+                ],
+                "additionalProperties": false
+              }
+            }
+          },
+          {
+            "type": "function",
+            "function": {
+              "name": "history_rank",
+              "description": "Compare one quarter or fiscal-year fact with every available comparable period of the same period_type. Quarters include derived Q4 values when available; annual periods are compared only with annual periods. Return the rank, record flags through the requested period, prior high/low, and the comparison window with period end dates. The requested period also includes compact fact provenance and evidence strength.",
+              "parameters": {
+                "type": "object",
+                "properties": {
+                  "ticker": {
+                    "type": "string"
+                  },
+                  "metric": {
+                    "type": "string",
+                    "enum": [
+                      "revenue",
+                      "net_income",
+                      "operating_income",
+                      "eps_diluted",
+                      "gross_profit",
+                      "total_assets",
+                      "cash",
+                      "capex",
+                      "rd_expense",
+                      "shares_outstanding"
+                    ]
+                  },
+                  "period": {
+                    "type": "string",
+                    "pattern": "^(latest|FY\\d{4}(?:Q[1-4])?|\\d{4}Q[1-4])$"
+                  }
+                },
+                "required": [
+                  "ticker",
+                  "metric",
+                  "period"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        ],
+        "parallel_tool_calls": true,
+        "max_tokens": 4000
+      },
+      "reservation": {
+        "reservation_id": "4f487c56bf4d41719631e2155ef6a154",
+        "provider": "fireworks",
+        "model": "accounts/fireworks/models/muse-spark-open",
+        "estimated_input_tokens": 2846,
+        "max_output_tokens": 4000,
+        "amount": 0.020557500000000003,
+        "payload_chars": 8537,
+        "context_chars": 0
+      },
+      "raw_response": {
+        "id": "chatcmpl-8ef06e647b384782bc9103bbf74db476",
+        "choices": [
+          {
+            "finish_reason": "tool_calls",
+            "index": 0,
+            "logprobs": null,
+            "message": {
+              "content": "I'll verify JPMorgan Chase's 2023 net income figure against its SEC filing.",
+              "refusal": null,
+              "role": "assistant",
+              "annotations": null,
+              "audio": null,
+              "function_call": null,
+              "tool_calls": [
+                {
+                  "id": "chatcmpl-tool-af0eabd5642413f7",
+                  "function": {
+                    "arguments": "{\"ticker\": \"JPM\", \"metric\": \"net_income\", \"period\": \"FY2023\"}",
+                    "name": "lookup_fact"
+                  },
+                  "type": "function",
+                  "index": 0,
+                  "name": null
+                }
+              ],
+              "reasoning_content": "Need to verify claim: net income total reached $49.6B at JPMorgan Chase in fiscal 2023.\n\nDecompose into sub-claims. Claim is: \"The net income total reached $49.6B at JPMorgan Chase in fiscal 2023.\"\n\nWe need to lookup. Ticker for JPMorgan Chase is JPM.\n\nMetric net_income, period FY2023 (fiscal 2023). Need to interpret. JPM fiscal equals calendar? Let's check. For big banks, fiscal year ends Dec 31, so fiscal_equals_calendar true. But need to follow instructions: If claim says fiscal, cite only fiscal reading. So we need lookup_fact ticker JPM metric net_income period FY2023.\n\nAlso need to consider value assertion: $49.6B. So we need to lookup.\n\nPotentially also need to convert to base units: 49.6B = 49600000000.\n\nWe should call lookup_fact.\n\nWe also need to consider that we must not use memory. So call tool.\n\nWe should also handle comparator: \"reached $49.6B\" - that's eq? Wording deterministic: plain numeric statement with no hedge is eq. \"reached\" implies eq. Could be approx? But instruction says plain numeric is eq. So comparator eq.\n\nWe need to provide sub_claim with evidence_ids.\n\nWe must call lookup_fact first.\n\nAlso potentially need to check if any other assertions? \"total\" maybe redundant. But only one value.\n\nWe need to do lookup.\n\nWe should also be prepared for rounding. JPM net income 2023 was actually $49.552B? Let's recall: JPMorgan Chase reported net income $49.6 billion in 2023. Actually FY2023 net income was $49.552 billion, often rounded to $49.6B. Need to see what EDGAR says.\n\nWe need to call lookup_fact.\n\n",
+              "tools": null
+            }
+          }
+        ],
+        "created": 1793162747,
+        "model": "accounts/fireworks/models/muse-spark-open",
+        "object": "chat.completion",
+        "metadata": null,
+        "moderation": null,
+        "service_tier": null,
+        "system_fingerprint": null,
+        "usage": {
+          "completion_tokens": 493,
+          "prompt_tokens": 2696,
+          "total_tokens": 3189,
+          "completion_tokens_details": {
+            "accepted_prediction_tokens": null,
+            "audio_tokens": null,
+            "reasoning_tokens": 386,
+            "rejected_prediction_tokens": null,
+            "text_tokens": null
+          },
+          "prompt_tokens_details": {
+            "audio_tokens": null,
+            "cache_write_tokens": null,
+            "cached_tokens": 2624,
+            "image_tokens": null,
+            "text_tokens": null
+          },
+          "output_tokens_details": {
+            "reasoning_tokens": 386
+          }
+        }
+      },
+      "usage": {
+        "input": 2696,
+        "cached": 2624,
+        "output": 493,
+        "reasoning": 386
+      },
+      "cost": 0.0025788499999999997,
+      "latency_ms": 5523.637,
+      "status": "completed",
+      "raw_usage": {
+        "completion_tokens": 493,
+        "prompt_tokens": 2696,
+        "total_tokens": 3189,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 386,
+          "rejected_prediction_tokens": null,
+          "text_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cache_write_tokens": null,
+          "cached_tokens": 2624,
+          "image_tokens": null,
+          "text_tokens": null
+        },
+        "output_tokens_details": {
+          "reasoning_tokens": 386
+        }
+      },
+      "normalized_usage": {
+        "input": 2696,
+        "cached": 2624,
+        "output": 493,
+        "reasoning": 386
+      },
+      "finish_reason": "tool_calls",
+      "rate_limit_headers": {
+        "x-ratelimit-limit-tokens-cache-adjusted-prompt": "1800000",
+        "x-ratelimit-limit-tokens-generated": "72000",
+        "x-ratelimit-limit-tokens-prompt": "7200000",
+        "x-ratelimit-limit-tokens-uncached-prompt": "1800000",
+        "x-ratelimit-over-limit": "no",
+        "x-ratelimit-remaining-tokens-generated": "64433",
+        "x-ratelimit-remaining-tokens-prompt": "7181602",
+        "x-ratelimit-remaining-tokens-uncached-prompt": "1796649"
+      }
+    },
+    {
+      "request": {
+        "model": "accounts/fireworks/models/muse-spark-open",
+        "messages": [
+          {
+            "role": "system",
+            "content": "You verify financial claims against SEC EDGAR facts.\nDecompose the claim into every atomic factual assertion. Every factual assertion\nin the user's claim must become a sub-claim, including a value, a change, a\nrecord, and a first-time assertion in the same sentence. Assertions that the\ntools cannot check must still become a sub-claim with claim_type other; the\nprogram will leave those unchecked. Use lookup_fact for a value,\ncompute_change for YoY or other period-to-period growth, history_rank for\nrecord/first-time assertions, and list_periods only to understand missing data.\nNever use memory for numbers. A quarter must have period_type=quarter and\nduration_days around 80-100, not period_type=ytd. If a result has derived=true,\nuse its derivation and components as evidence and do not calculate that fact\nagain. For compute_change, cite its own evidence ID; its two nested component\nfact IDs may also be cited and are ignored by the verifier.\n\nEach final sub_claim must contain exactly these model fields:\ntext, stated_text, claim_type (value, change_pct, change_abs, record_high,\nrecord_low, first_time_above, or other), comparator (eq, approx, gt, gte, lt,\nor lte), stated_value in base units (USD, USD/share, percentage points, or 1\nfor a record boolean), evidence_ids, interpretations, verdict, note, and\nmodel_found_value. interpretations is required and may be empty. Every non-empty\nitem must be an evidence id like E3 — never free text.\nCopy stated_text verbatim from the claim, including words such as \"about\",\n\"up\", or \"fell\" (for example, \"about $1.4 billion\", \"up 22%\", or\n\"fell 10%\"). For a change_pct, stated_value is 22 for 22%, not 0.22; the\nverifier applies the sign implied by direction words such as fell/down or\nrose/up. model_found_value is the number read from the cited evidence in the\nsame units, or null when it is missing.\n\nComparator wording is deterministic: a plain numeric statement with no hedge\nor inequality phrase is eq; about/around/roughly/approximately/nearly/almost,\nclose to, some, or ~ means approx; topped/exceeded/above/more than/over/\nsurpassed/beat means gt; at least/no less than means gte; below/under/less\nthan/short of means lt; at most/no more than/up to means lte. The program\nrecords and may correct the model comparator from these words. \"up\" and\n\"fell\" describe change direction, not approximation.\n\nFor a quarter claim at a non-calendar-fiscal issuer, use period_basis from\nthe tool results. If the claim says neither fiscal nor calendar, look up both\nthe calendar label (for example 2025Q4) and the fiscal label (for example\nFY2025Q4), cite both IDs in evidence_ids, and put those two IDs in\ninterpretations. Keep interpretations empty unless both fiscal and calendar\nreadings were looked up. If the claim says fiscal, cite only the fiscal\nreading; if it says calendar, cite only the calendar reading. When a lookup or\ncompute result has fiscal_equals_calendar=true, the issuer's fiscal year is the\ncalendar year: fiscal and calendar labels refer to the same underlying facts,\nso look up and cite only one reading even when the claim has no\nfiscal/calendar qualifier.\n\nExamples:\n1. \"Tesla net income was about $1.4 billion\": lookup_fact; stated_text\n   \"about $1.4 billion\", claim_type value, comparator approx, stated_value\n   1400000000.\n2. \"Alphabet revenue exceeded $100 billion\": lookup_fact; stated_text\n   \"exceeded $100 billion\", claim_type value, comparator gt, stated_value\n   100000000000.\n3. \"Meta revenue was up 22% YoY\": compute_change(META, revenue, 2025Q2,\n   null); stated_text \"up 22%\", claim_type change_pct, comparator eq,\n   stated_value 22, and cite the compute_change evidence ID.\n4. \"Tesla revenue fell 10% YoY\": compute_change(TSLA, revenue, 2025Q3,\n   null); stated_text \"fell 10%\", claim_type change_pct, comparator eq,\n   stated_value -10, and cite the compute_change evidence ID.\n5. \"Alphabet Q3 2025 revenue was a record high\": history_rank(GOOGL,\n   revenue, 2025Q3); claim_type record_high, comparator eq, stated_value 1,\n   and cite the history_rank evidence ID.\n6. \"Alphabet Q3 2025 revenue topped $100 billion for the first time\": create\n   two sub-claims: value gt 100000000000 and first_time_above with stated_value\n   100000000000, both citing the relevant evidence; the latter is supported\n   only when this period is above the threshold and no earlier comparable\n   period is above it.\n7. If a requested fact is unavailable, leave model_found_value null, cite any\n   relevant evidence, and set that sub-claim to insufficient_evidence. Say\n   insufficient_evidence when data is missing or evidence is ambiguous."
+          },
+          {
+            "role": "user",
+            "content": "The net income total reached $49.6B at JPMorgan Chase in fiscal 2023."
+          },
+          {
+            "role": "assistant",
+            "content": "I'll verify JPMorgan Chase's 2023 net income figure against its SEC filing.",
+            "tool_calls": [
+              {
+                "id": "chatcmpl-tool-af0eabd5642413f7",
+                "type": "function",
+                "function": {
+                  "name": "lookup_fact",
+                  "arguments": "{\"ticker\": \"JPM\", \"metric\": \"net_income\", \"period\": \"FY2023\"}"
+                }
+              }
+            ]
+          },
+          {
+            "role": "tool",
+            "tool_call_id": "chatcmpl-tool-af0eabd5642413f7",
+            "content": "{\"ticker\":\"JPM\",\"cik\":\"0000019617\",\"entity\":\"JPMORGAN CHASE & CO\",\"metric\":\"net_income\",\"concept\":\"NetIncomeLoss\",\"unit\":\"USD\",\"value\":49552000000,\"start\":\"2023-01-01\",\"end\":\"2023-12-31\",\"form\":\"10-K\",\"form_fallback\":false,\"accn\":\"0001628280-26-008131\",\"filed\":\"2026-02-13\",\"frame\":null,\"fiscal_year\":2023,\"fiscal_period\":\"FY\",\"duration_days\":365,\"period_type\":\"annual\",\"fiscal_equals_calendar\":true,\"derived\":false,\"filing_url\":\"https://www.sec.gov/Archives/edgar/data/19617/000162828026008131/\",\"source_sha256\":\"06586bbcf4e00debf18da6456a7a5e184224f2d9d206146829b11863cdd62a89\",\"provenance\":{\"tier\":\"L1\",\"audited\":true,\"confirmations\":4,\"forms\":[\"10-K\",\"DEF 14A\"],\"first_filed\":\"2024-02-16\",\"latest_filed\":\"2026-04-06\",\"restated\":true,\"amended\":false,\"strength\":\"low\",\"values_seen\":[{\"value\":49552000000,\"accn\":[\"0000019617-24-000225\",\"0000019617-25-000270\",\"0001628280-26-008131\"]},{\"value\":49600000000,\"accn\":[\"0000019617-26-000096\"]}]},\"period\":\"FY2023\",\"period_basis\":\"fiscal\",\"evidence_id\":\"E1\"}"
+          }
+        ],
+        "tools": [
+          {
+            "type": "function",
+            "function": {
+              "name": "lookup_fact",
+              "description": "Look up one SEC EDGAR XBRL fact for a ticker, metric, and calendar quarter, fiscal quarter (FY2025Q4), or fiscal year. Successful results include period (the normalized requested label, or the resolved label for latest), period_basis (calendar or fiscal), fiscal_equals_calendar, duration_days, and period_type (quarter, ytd, annual, or instant). Additive flows may return derived=true with derivation and components; never treat a ytd result as a quarter or recompute a derived result. When fiscal_equals_calendar is true, fiscal and calendar labels identify the same fact; do not look up both readings. Every fact includes compact provenance: L1 audited 10-K, L2 reviewed 10-Q, or L3 program-derived, with confirmations, restatement, amendment, and evidence strength.",
+              "parameters": {
+                "type": "object",
+                "properties": {
+                  "ticker": {
+                    "type": "string"
+                  },
+                  "metric": {
+                    "type": "string",
+                    "enum": [
+                      "revenue",
+                      "net_income",
+                      "operating_income",
+                      "eps_diluted",
+                      "gross_profit",
+                      "total_assets",
+                      "cash",
+                      "capex",
+                      "rd_expense",
+                      "shares_outstanding"
+                    ]
+                  },
+                  "period": {
+                    "type": "string",
+                    "pattern": "^(latest|FY\\d{4}(?:Q[1-4])?|\\d{4}Q[1-4])$"
+                  }
+                },
+                "required": [
+                  "ticker",
+                  "metric",
+                  "period"
+                ],
+                "additionalProperties": false
+              }
+            }
+          },
+          {
+            "type": "function",
+            "function": {
+              "name": "list_periods",
+              "description": "List the recent directly available SEC EDGAR quarter and fiscal-year periods for a ticker and metric.",
+              "parameters": {
+                "type": "object",
+                "properties": {
+                  "ticker": {
+                    "type": "string"
+                  },
+                  "metric": {
+                    "type": "string",
+                    "enum": [
+                      "revenue",
+                      "net_income",
+                      "operating_income",
+                      "eps_diluted",
+                      "gross_profit",
+                      "total_assets",
+                      "cash",
+                      "capex",
+                      "rd_expense",
+                      "shares_outstanding"
+                    ]
+                  }
+                },
+                "required": [
+                  "ticker",
+                  "metric"
+                ],
+                "additionalProperties": false
+              }
+            }
+          },
+          {
+            "type": "function",
+            "function": {
+              "name": "compute_change",
+              "description": "Compute the absolute and year-over-year change for one SEC EDGAR XBRL metric. The period and base_period must be the same kind of period; when base_period is omitted, null, empty, \"null\", or \"none\", use the same quarter or fiscal year one year earlier. The result includes both cited lookup facts, fiscal_equals_calendar, their fact-level provenance, and a percentage change in percent points.",
+              "parameters": {
+                "type": "object",
+                "properties": {
+                  "ticker": {
+                    "type": "string"
+                  },
+                  "metric": {
+                    "type": "string",
+                    "enum": [
+                      "revenue",
+                      "net_income",
+                      "operating_income",
+                      "eps_diluted",
+                      "gross_profit",
+                      "total_assets",
+                      "cash",
+                      "capex",
+                      "rd_expense",
+                      "shares_outstanding"
+                    ]
+                  },
+                  "period": {
+                    "type": "string",
+                    "pattern": "^(latest|FY\\d{4}(?:Q[1-4])?|\\d{4}Q[1-4])$"
+                  },
+                  "base_period": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "pattern": "^(FY\\d{4}(?:Q[1-4])?|\\d{4}Q[1-4])$"
+                  }
+                },
+                "required": [
+                  "ticker",
+                  "metric",
+                  "period",
+                  "base_period"
+                ],
+                "additionalProperties": false
+              }
+            }
+          },
+          {
+            "type": "function",
+            "function": {
+              "name": "history_rank",
+              "description": "Compare one quarter or fiscal-year fact with every available comparable period of the same period_type. Quarters include derived Q4 values when available; annual periods are compared only with annual periods. Return the rank, record flags through the requested period, prior high/low, and the comparison window with period end dates. The requested period also includes compact fact provenance and evidence strength.",
+              "parameters": {
+                "type": "object",
+                "properties": {
+                  "ticker": {
+                    "type": "string"
+                  },
+                  "metric": {
+                    "type": "string",
+                    "enum": [
+                      "revenue",
+                      "net_income",
+                      "operating_income",
+                      "eps_diluted",
+                      "gross_profit",
+                      "total_assets",
+                      "cash",
+                      "capex",
+                      "rd_expense",
+                      "shares_outstanding"
+                    ]
+                  },
+                  "period": {
+                    "type": "string",
+                    "pattern": "^(latest|FY\\d{4}(?:Q[1-4])?|\\d{4}Q[1-4])$"
+                  }
+                },
+                "required": [
+                  "ticker",
+                  "metric",
+                  "period"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        ],
+        "parallel_tool_calls": true,
+        "max_tokens": 4000
+      },
+      "reservation": {
+        "reservation_id": "4bee03c0aa154cd28386d772ad7eca00",
+        "provider": "fireworks",
+        "model": "accounts/fireworks/models/muse-spark-open",
+        "estimated_input_tokens": 3352,
+        "max_output_tokens": 4000,
+        "amount": 0.02119,
+        "payload_chars": 10056,
+        "context_chars": 0
+      },
+      "raw_response": {
+        "id": "chatcmpl-60c2f920dc17406fae8b0de4c5ed60fb",
+        "choices": [
+          {
+            "finish_reason": "stop",
+            "index": 0,
+            "logprobs": null,
+            "message": {
+              "content": "{\"sub_claims\": [{\"text\": \"JPMorgan Chase net income total was $49.6B in fiscal 2023\", \"stated_text\": \"$49.6B\", \"claim_type\": \"value\", \"comparator\": \"eq\", \"stated_value\": 49600000000, \"evidence_ids\": [\"E1\"], \"interpretations\": [], \"verdict\": \"not_supported\", \"note\": \"EDGAR L1 audited 10-K for FY2023 reports net income as $49,552,000,000, not $49,600,000,000; difference is $48,000,000 (~0.10% low). E1 lists 49552000000 as primary value (accns 0000019617-24-000225, 0000019617-25-000270, 0001628280-26-008131) with fiscal_equals_calendar=true, so FY2023 equals calendar 2023.\", \"model_found_value\": 49552000000}]}",
+              "refusal": null,
+              "role": "assistant",
+              "annotations": null,
+              "audio": null,
+              "function_call": null,
+              "tool_calls": null,
+              "reasoning_content": "Need to decompose claim.\n\nClaim: \"The net income total reached $49.6B at JPMorgan Chase in fiscal 2023.\"\n\nWe need to parse.\n\nAtomic assertions:\n\n- net income total reached $49.6B at JPMorgan Chase in fiscal 2023.\n\nWe have lookup_fact: value 49,552,000,000 = $49.552B. Stated $49.6B. Need comparator. \"reached $49.6B\" - plain numeric? Could be eq. But check wording: \"reached $49.6B\" is eq? Deterministic comparator: plain numeric statement with no hedge is eq. So stated_value 49600000000, comparator eq.\n\nBut need to see provenance: values_seen includes 49,552,000,000 and 49,600,000,000. Latest filed 490... But primary value is 49552000000. So model_found_value is 49552000000.\n\nWe should evaluate verdict: stated 49.6B vs found 49.552B difference 48M = 0.0968% difference. If comparator is eq, should be not_supported? But need to consider approx? The claim says \"reached $49.6B\" without about. However could argue approx tolerance? Usually verifier applies tolerance: For eq with large numbers, maybe tolerance? But we must follow instructions: comparator eq requires exact match. So 49.552B != 49.6B => not_supported. However maybe we should interpret as approx? The deterministic comparator says plain numeric statement with no hedge is eq. \"reached\" is not hedge. So eq.\n\nBut alternatively could say the claim is approximate? The guidance: about/around/roughly/approximately/nearly/almost means approx. \"reached\" not.\n\nSo verdict would be not_supported? However provenance shows 49.6B appears in one filing: accn 0000019617-26-000096 value 49600000000. That suggests maybe rounding? Could argue that official value is 49.552B, not 49.6B. So claim not supported.\n\nBut need to consider fiscal_equals_calendar=true, so we should only cite one reading. We looked up FY2023, which is correct.\n\nWe need to produce subclaims list: one subclaim.\n\nProvide fields: text, stated_text, claim_type, comparator, stated_value, evidence_ids, interpretations, verdict, note, model_found_value.\n\nWe have comparator eq, stated_value 49600000000, model_found_value 49552000000, evidence_ids [\"E1\"], interpretations [] (since we only looked up fiscal, but fiscal_equals_calendar true, we don't need dual). verdict maybe \"not_supported\" with note explaining difference.\n\nBut need to check tolerance policy: Might be close enough to be considered approx? However comparator eq would still require exact. The verifier program may correct comparator from words. But \"reached\" stays eq.\n\nCould also argue that due to rounding to one decimal (49.552 rounds to 49.6), the claim could be considered supported under approx but not eq. Yet we must follow instructions: plain numeric is eq. So we must mark not_supported.\n\nAlternatively we could set comparator approx? No.\n\nWe should provide detailed note: EDGAR shows $49.552B.\n\nWe should also maybe note that history? No.\n\nWe need to ensure model_found_value same units: USD.\n\nProvide final JSON with sub_claims array.\n\nCheck claim_type: value.\n\nCopy stated_text verbatim from claim: \"$49.6B\" - but full phrase includes \"$49.6B\". Use that.\n\nProvide sub_claim text: maybe \"JPMorgan Chase net income total was $49.6B in fiscal 2023\" - need text field descriptive.\n\nProvide all fields required: note, model_found_value.\n\nSet verdict: \"not_supported\" or \"insufficient_evidence\"? Definitely not_supported due to mismatch.\n\nWe have evidence E1.\n\nProvide interpretations empty.\n\nLet's output.",
+              "tools": null
+            }
+          }
+        ],
+        "created": 1793162753,
+        "model": "accounts/fireworks/models/muse-spark-open",
+        "object": "chat.completion",
+        "metadata": null,
+        "moderation": null,
+        "service_tier": null,
+        "system_fingerprint": null,
+        "usage": {
+          "completion_tokens": 1057,
+          "prompt_tokens": 3167,
+          "total_tokens": 4224,
+          "completion_tokens_details": {
+            "accepted_prediction_tokens": null,
+            "audio_tokens": null,
+            "reasoning_tokens": 832,
+            "rejected_prediction_tokens": null,
+            "text_tokens": null
+          },
+          "prompt_tokens_details": {
+            "audio_tokens": null,
+            "cache_write_tokens": null,
+            "cached_tokens": 2688,
+            "image_tokens": null,
+            "text_tokens": null
+          },
+          "output_tokens_details": {
+            "reasoning_tokens": 832
+          }
+        }
+      },
+      "usage": {
+        "input": 3167,
+        "cached": 2688,
+        "output": 1057,
+        "reasoning": 832
+      },
+      "cost": 0.005494199999999999,
+      "latency_ms": 11129.706,
+      "status": "completed",
+      "raw_usage": {
+        "completion_tokens": 1057,
+        "prompt_tokens": 3167,
+        "total_tokens": 4224,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 832,
+          "rejected_prediction_tokens": null,
+          "text_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cache_write_tokens": null,
+          "cached_tokens": 2688,
+          "image_tokens": null,
+          "text_tokens": null
+        },
+        "output_tokens_details": {
+          "reasoning_tokens": 832
+        }
+      },
+      "normalized_usage": {
+        "input": 3167,
+        "cached": 2688,
+        "output": 1057,
+        "reasoning": 832
+      },
+      "finish_reason": "stop",
+      "rate_limit_headers": {
+        "x-ratelimit-limit-tokens-cache-adjusted-prompt": "1800000",
+        "x-ratelimit-limit-tokens-generated": "72000",
+        "x-ratelimit-limit-tokens-prompt": "7200000",
+        "x-ratelimit-limit-tokens-uncached-prompt": "1800000",
+        "x-ratelimit-over-limit": "no",
+        "x-ratelimit-remaining-tokens-prompt": "7196833"
+      }
+    },
+    {
+      "request": {
+        "model": "accounts/fireworks/models/muse-spark-open",
+        "messages": [
+          {
+            "role": "system",
+            "content": "You verify financial claims against SEC EDGAR facts.\nDecompose the claim into every atomic factual assertion. Every factual assertion\nin the user's claim must become a sub-claim, including a value, a change, a\nrecord, and a first-time assertion in the same sentence. Assertions that the\ntools cannot check must still become a sub-claim with claim_type other; the\nprogram will leave those unchecked. Use lookup_fact for a value,\ncompute_change for YoY or other period-to-period growth, history_rank for\nrecord/first-time assertions, and list_periods only to understand missing data.\nNever use memory for numbers. A quarter must have period_type=quarter and\nduration_days around 80-100, not period_type=ytd. If a result has derived=true,\nuse its derivation and components as evidence and do not calculate that fact\nagain. For compute_change, cite its own evidence ID; its two nested component\nfact IDs may also be cited and are ignored by the verifier.\n\nEach final sub_claim must contain exactly these model fields:\ntext, stated_text, claim_type (value, change_pct, change_abs, record_high,\nrecord_low, first_time_above, or other), comparator (eq, approx, gt, gte, lt,\nor lte), stated_value in base units (USD, USD/share, percentage points, or 1\nfor a record boolean), evidence_ids, interpretations, verdict, note, and\nmodel_found_value. interpretations is required and may be empty. Every non-empty\nitem must be an evidence id like E3 — never free text.\nCopy stated_text verbatim from the claim, including words such as \"about\",\n\"up\", or \"fell\" (for example, \"about $1.4 billion\", \"up 22%\", or\n\"fell 10%\"). For a change_pct, stated_value is 22 for 22%, not 0.22; the\nverifier applies the sign implied by direction words such as fell/down or\nrose/up. model_found_value is the number read from the cited evidence in the\nsame units, or null when it is missing.\n\nComparator wording is deterministic: a plain numeric statement with no hedge\nor inequality phrase is eq; about/around/roughly/approximately/nearly/almost,\nclose to, some, or ~ means approx; topped/exceeded/above/more than/over/\nsurpassed/beat means gt; at least/no less than means gte; below/under/less\nthan/short of means lt; at most/no more than/up to means lte. The program\nrecords and may correct the model comparator from these words. \"up\" and\n\"fell\" describe change direction, not approximation.\n\nFor a quarter claim at a non-calendar-fiscal issuer, use period_basis from\nthe tool results. If the claim says neither fiscal nor calendar, look up both\nthe calendar label (for example 2025Q4) and the fiscal label (for example\nFY2025Q4), cite both IDs in evidence_ids, and put those two IDs in\ninterpretations. Keep interpretations empty unless both fiscal and calendar\nreadings were looked up. If the claim says fiscal, cite only the fiscal\nreading; if it says calendar, cite only the calendar reading. When a lookup or\ncompute result has fiscal_equals_calendar=true, the issuer's fiscal year is the\ncalendar year: fiscal and calendar labels refer to the same underlying facts,\nso look up and cite only one reading even when the claim has no\nfiscal/calendar qualifier.\n\nExamples:\n1. \"Tesla net income was about $1.4 billion\": lookup_fact; stated_text\n   \"about $1.4 billion\", claim_type value, comparator approx, stated_value\n   1400000000.\n2. \"Alphabet revenue exceeded $100 billion\": lookup_fact; stated_text\n   \"exceeded $100 billion\", claim_type value, comparator gt, stated_value\n   100000000000.\n3. \"Meta revenue was up 22% YoY\": compute_change(META, revenue, 2025Q2,\n   null); stated_text \"up 22%\", claim_type change_pct, comparator eq,\n   stated_value 22, and cite the compute_change evidence ID.\n4. \"Tesla revenue fell 10% YoY\": compute_change(TSLA, revenue, 2025Q3,\n   null); stated_text \"fell 10%\", claim_type change_pct, comparator eq,\n   stated_value -10, and cite the compute_change evidence ID.\n5. \"Alphabet Q3 2025 revenue was a record high\": history_rank(GOOGL,\n   revenue, 2025Q3); claim_type record_high, comparator eq, stated_value 1,\n   and cite the history_rank evidence ID.\n6. \"Alphabet Q3 2025 revenue topped $100 billion for the first time\": create\n   two sub-claims: value gt 100000000000 and first_time_above with stated_value\n   100000000000, both citing the relevant evidence; the latter is supported\n   only when this period is above the threshold and no earlier comparable\n   period is above it.\n7. If a requested fact is unavailable, leave model_found_value null, cite any\n   relevant evidence, and set that sub-claim to insufficient_evidence. Say\n   insufficient_evidence when data is missing or evidence is ambiguous."
+          },
+          {
+            "role": "user",
+            "content": "The net income total reached $49.6B at JPMorgan Chase in fiscal 2023."
+          },
+          {
+            "role": "assistant",
+            "content": "I'll verify JPMorgan Chase's 2023 net income figure against its SEC filing.",
+            "tool_calls": [
+              {
+                "id": "chatcmpl-tool-af0eabd5642413f7",
+                "type": "function",
+                "function": {
+                  "name": "lookup_fact",
+                  "arguments": "{\"ticker\": \"JPM\", \"metric\": \"net_income\", \"period\": \"FY2023\"}"
+                }
+              }
+            ]
+          },
+          {
+            "role": "tool",
+            "tool_call_id": "chatcmpl-tool-af0eabd5642413f7",
+            "content": "{\"ticker\":\"JPM\",\"cik\":\"0000019617\",\"entity\":\"JPMORGAN CHASE & CO\",\"metric\":\"net_income\",\"concept\":\"NetIncomeLoss\",\"unit\":\"USD\",\"value\":49552000000,\"start\":\"2023-01-01\",\"end\":\"2023-12-31\",\"form\":\"10-K\",\"form_fallback\":false,\"accn\":\"0001628280-26-008131\",\"filed\":\"2026-02-13\",\"frame\":null,\"fiscal_year\":2023,\"fiscal_period\":\"FY\",\"duration_days\":365,\"period_type\":\"annual\",\"fiscal_equals_calendar\":true,\"derived\":false,\"filing_url\":\"https://www.sec.gov/Archives/edgar/data/19617/000162828026008131/\",\"source_sha256\":\"06586bbcf4e00debf18da6456a7a5e184224f2d9d206146829b11863cdd62a89\",\"provenance\":{\"tier\":\"L1\",\"audited\":true,\"confirmations\":4,\"forms\":[\"10-K\",\"DEF 14A\"],\"first_filed\":\"2024-02-16\",\"latest_filed\":\"2026-04-06\",\"restated\":true,\"amended\":false,\"strength\":\"low\",\"values_seen\":[{\"value\":49552000000,\"accn\":[\"0000019617-24-000225\",\"0000019617-25-000270\",\"0001628280-26-008131\"]},{\"value\":49600000000,\"accn\":[\"0000019617-26-000096\"]}]},\"period\":\"FY2023\",\"period_basis\":\"fiscal\",\"evidence_id\":\"E1\"}"
+          },
+          {
+            "role": "assistant",
+            "content": "{\"sub_claims\": [{\"text\": \"JPMorgan Chase net income total was $49.6B in fiscal 2023\", \"stated_text\": \"$49.6B\", \"claim_type\": \"value\", \"comparator\": \"eq\", \"stated_value\": 49600000000, \"evidence_ids\": [\"E1\"], \"interpretations\": [], \"verdict\": \"not_supported\", \"note\": \"EDGAR L1 audited 10-K for FY2023 reports net income as $49,552,000,000, not $49,600,000,000; difference is $48,000,000 (~0.10% low). E1 lists 49552000000 as primary value (accns 0000019617-24-000225, 0000019617-25-000270, 0001628280-26-008131) with fiscal_equals_calendar=true, so FY2023 equals calendar 2023.\", \"model_found_value\": 49552000000}]}"
+          },
+          {
+            "role": "user",
+            "content": "Return only one plain JSON object for the final verdict. Do not use Markdown fences or explanatory text. Include every atomic factual assertion as a sub-claim, including claim_type other when the tools cannot check it. Copy stated_text verbatim from the claim and include claim_type, comparator, stated_value in base units, evidence_ids, interpretations (evidence ids like E3 — never free text), verdict, model_found_value, and a concise note. The object must match this existing verdict schema: {\"type\":\"object\",\"properties\":{\"verdict\":{\"type\":\"string\",\"enum\":[\"supported\",\"contradicted\",\"insufficient_evidence\"]},\"summary\":{\"type\":\"string\"},\"sub_claims\":{\"type\":\"array\",\"items\":{\"type\":\"object\",\"properties\":{\"text\":{\"type\":\"string\"},\"stated_text\":{\"type\":\"string\"},\"claim_type\":{\"type\":\"string\",\"enum\":[\"value\",\"change_pct\",\"change_abs\",\"record_high\",\"record_low\",\"first_time_above\",\"other\"]},\"comparator\":{\"type\":\"string\",\"enum\":[\"eq\",\"approx\",\"gt\",\"gte\",\"lt\",\"lte\"]},\"stated_value\":{\"type\":[\"number\",\"null\"]},\"evidence_ids\":{\"type\":\"array\",\"items\":{\"type\":\"string\"}},\"interpretations\":{\"type\":\"array\",\"items\":{\"type\":\"string\",\"description\":\"evidence id like E3 — never free text\"}},\"verdict\":{\"type\":\"string\",\"enum\":[\"supported\",\"contradicted\",\"insufficient_evidence\"]},\"note\":{\"type\":\"string\"},\"model_found_value\":{\"type\":[\"number\",\"null\"]}},\"required\":[\"text\",\"stated_text\",\"claim_type\",\"comparator\",\"stated_value\",\"evidence_ids\",\"interpretations\",\"verdict\",\"note\",\"model_found_value\"],\"additionalProperties\":false}}},\"required\":[\"verdict\",\"summary\",\"sub_claims\"],\"additionalProperties\":false}"
+          }
+        ],
+        "max_tokens": 3000
+      },
+      "reservation": {
+        "reservation_id": "60f5b17ae712466891961d813dc1a934",
+        "provider": "fireworks",
+        "model": "accounts/fireworks/models/muse-spark-open",
+        "estimated_input_tokens": 2986,
+        "max_output_tokens": 3000,
+        "amount": 0.0164825,
+        "payload_chars": 8957,
+        "context_chars": 0
+      },
+      "raw_response": {
+        "id": "chatcmpl-55a4a3a6ced444d8a7843536ecdd8f2c",
+        "choices": [
+          {
+            "finish_reason": "stop",
+            "index": 0,
+            "logprobs": null,
+            "message": {
+              "content": "{\"verdict\":\"contradicted\",\"summary\":\"JPMorgan Chase FY2023 audited net income in EDGAR is $49.552B, not $49.6B as claimed - a $48M shortfall.\",\"sub_claims\":[{\"text\":\"JPMorgan Chase net income total was $49.6B in fiscal 2023\",\"stated_text\":\"$49.6B\",\"claim_type\":\"value\",\"comparator\":\"eq\",\"stated_value\":49600000000,\"evidence_ids\":[\"E1\"],\"interpretations\":[],\"verdict\":\"contradicted\",\"note\":\"E1 reports FY2023 net income as $49,552,000,000 vs claimed $49,600,000,000, $48M lower, so exact $49.6B is not supported; fiscal_equals_calendar=true confirms FY2023 is calendar 2023.\",\"model_found_value\":49552000000}]}",
+              "refusal": null,
+              "role": "assistant",
+              "annotations": null,
+              "audio": null,
+              "function_call": null,
+              "tool_calls": null,
+              "reasoning_content": "We need to produce one plain JSON object matching schema. Need to verify claim: \"The net income total reached $49.6B at JPMorgan Chase in fiscal 2023.\"\n\nWe have tool output E1 showing net_income value 49,552,000,000 vs stated 49.6B. The prior assistant gave not_supported but now user wants final verdict object with verdict in [supported, contradicted, insufficient_evidence] per overall.\n\nWe need to produce sub_claims. The instruction: include every atomic factual assertion as a sub-claim, including claim_type other when tools cannot check.\n\nWe have one sub-claim: JPM net income $49.6B fiscal 2023. That's value.\n\nNeed to define comparator: stated_text \"$49.6B\" – plain numeric statement with no hedge -> eq. But we could argue approx? It says reached $49.6B – no about. So eq. However value is 49.552B vs 49.6B difference 48M. That is not equal, but could be considered approximated due to rounding? But claim says $49.6B – if strict eq, it's contradicted. If approx, could be supported with tolerance. Need to decide.\n\nWe must follow comparator wording deterministic: plain numeric statement with no hedge or inequality phrase is eq; about/around/roughly/approximately/nearly/almost etc means approx. So here \"reached $49.6B\" – no hedge, so eq.\n\nThen verdict for sub_claim: contradicted? But schema for sub_claim verdict enum includes supported, contradicted, insufficient_evidence. The earlier assistant gave not_supported but now schema says contradicted etc. So we should give contradicted.\n\nOverall verdict: if sub_claim contradicted, overall verdict contradicted.\n\nWe need to provide evidence_ids [\"E1\"], interpretations empty, note concise.\n\nWe should also ensure stated_value 49600000000.\n\nProvide model_found_value 49552000000.\n\nWe need to produce final JSON object with verdict, summary, sub_claims array.\n\nNeed to ensure exact schema fields: text, stated_text, claim_type, comparator, stated_value, evidence_ids, interpretations, verdict, note, model_found_value.\n\nProvide summary string.\n\nWe must not use markdown fences or explanatory text, only one plain JSON object.\n\nWe need to produce valid JSON.\n\nPotential nuance: fiscal_equals_calendar true, so fiscal vs calendar same. That's fine.\n\nWe should ensure comparator eq. Provide note explaining difference.\n\nOverall verdict contradicted.\n\nMake sure to include all required fields.\n\nWe should produce:\n\n{\n  \"verdict\": \"contradicted\",\n  \"summary\": \"...\",\n  \"sub_claims\": [...]\n}\n\nMake sure to escape properly.\n\nCheck schema: verdict enum supported/contradicted/insufficient_evidence – choose contradicted.\n\nSummary: briefly explain.\n\nNeed to include interpretations as array of strings (evidence ids). Empty.\n\nMake note concise.\n\nProceed.",
+              "tools": null
+            }
+          }
+        ],
+        "created": 1793162764,
+        "model": "accounts/fireworks/models/muse-spark-open",
+        "object": "chat.completion",
+        "metadata": null,
+        "moderation": null,
+        "service_tier": null,
+        "system_fingerprint": null,
+        "usage": {
+          "completion_tokens": 802,
+          "prompt_tokens": 2341,
+          "total_tokens": 3143,
+          "completion_tokens_details": {
+            "accepted_prediction_tokens": null,
+            "audio_tokens": null,
+            "reasoning_tokens": 605,
+            "rejected_prediction_tokens": null,
+            "text_tokens": null
+          },
+          "prompt_tokens_details": {
+            "audio_tokens": null,
+            "cache_write_tokens": null,
+            "cached_tokens": 1216,
+            "image_tokens": null,
+            "text_tokens": null
+          },
+          "output_tokens_details": {
+            "reasoning_tokens": 605
+          }
+        }
+      },
+      "usage": {
+        "input": 2341,
+        "cached": 1216,
+        "output": 802,
+        "reasoning": 605
+      },
+      "cost": 0.0049971500000000005,
+      "latency_ms": 9950.141,
+      "status": "completed",
+      "raw_usage": {
+        "completion_tokens": 802,
+        "prompt_tokens": 2341,
+        "total_tokens": 3143,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 605,
+          "rejected_prediction_tokens": null,
+          "text_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cache_write_tokens": null,
+          "cached_tokens": 1216,
+          "image_tokens": null,
+          "text_tokens": null
+        },
+        "output_tokens_details": {
+          "reasoning_tokens": 605
+        }
+      },
+      "normalized_usage": {
+        "input": 2341,
+        "cached": 1216,
+        "output": 802,
+        "reasoning": 605
+      },
+      "finish_reason": "stop",
+      "rate_limit_headers": {
+        "x-ratelimit-limit-tokens-cache-adjusted-prompt": "1800000",
+        "x-ratelimit-limit-tokens-generated": "72000",
+        "x-ratelimit-limit-tokens-prompt": "7200000",
+        "x-ratelimit-limit-tokens-uncached-prompt": "1800000",
+        "x-ratelimit-over-limit": "no",
+        "x-ratelimit-remaining-tokens-prompt": "7197659"
+      }
+    }
+  ],
+  "tool_calls": [
+    {
+      "name": "lookup_fact",
+      "arguments": {
+        "ticker": "JPM",
+        "metric": "net_income",
+        "period": "FY2023"
+      },
+      "call_id": "chatcmpl-tool-af0eabd5642413f7",
+      "result": {
+        "ticker": "JPM",
+        "cik": "0000019617",
+        "entity": "JPMORGAN CHASE & CO",
+        "metric": "net_income",
+        "concept": "NetIncomeLoss",
+        "unit": "USD",
+        "value": 49552000000,
+        "start": "2023-01-01",
+        "end": "2023-12-31",
+        "form": "10-K",
+        "form_fallback": false,
+        "accn": "0001628280-26-008131",
+        "filed": "2026-02-13",
+        "frame": null,
+        "fiscal_year": 2023,
+        "fiscal_period": "FY",
+        "duration_days": 365,
+        "period_type": "annual",
+        "fiscal_equals_calendar": true,
+        "derived": false,
+        "filing_url": "https://www.sec.gov/Archives/edgar/data/19617/000162828026008131/",
+        "source_sha256": "06586bbcf4e00debf18da6456a7a5e184224f2d9d206146829b11863cdd62a89",
+        "provenance": {
+          "tier": "L1",
+          "audited": true,
+          "confirmations": 4,
+          "forms": [
+            "10-K",
+            "DEF 14A"
+          ],
+          "first_filed": "2024-02-16",
+          "latest_filed": "2026-04-06",
+          "restated": true,
+          "amended": false,
+          "strength": "low",
+          "values_seen": [
+            {
+              "value": 49552000000,
+              "accn": [
+                "0000019617-24-000225",
+                "0000019617-25-000270",
+                "0001628280-26-008131"
+              ]
+            },
+            {
+              "value": 49600000000,
+              "accn": [
+                "0000019617-26-000096"
+              ]
+            }
+          ]
+        },
+        "period": "FY2023",
+        "period_basis": "fiscal",
+        "evidence_id": "E1"
+      }
+    }
+  ],
+  "usage": [
+    {
+      "input": 2696,
+      "cached": 2624,
+      "output": 493,
+      "reasoning": 386
+    },
+    {
+      "input": 3167,
+      "cached": 2688,
+      "output": 1057,
+      "reasoning": 832
+    },
+    {
+      "input": 2341,
+      "cached": 1216,
+      "output": 802,
+      "reasoning": 605
+    }
+  ],
+  "tokens": {
+    "input": 8204,
+    "cached": 6528,
+    "output": 2352,
+    "reasoning": 1823
+  },
+  "model_calls": 3,
+  "cost": 0.0130702,
+  "cost_usd": 0.0130702,
+  "latency_ms": 26603.484,
+  "tool_call_count": 1,
+  "incomplete_turns": [],
+  "previous_response_fallback": false,
+  "final_verdict": {
+    "verdict": "supported",
+    "summary": "JPMorgan Chase FY2023 audited net income in EDGAR is $49.552B, not $49.6B as claimed - a $48M shortfall.",
+    "sub_claims": [
+      {
+        "text": "JPMorgan Chase net income total was $49.6B in fiscal 2023",
+        "stated_text": "$49.6B",
+        "claim_type": "value",
+        "comparator": "eq",
+        "stated_value": 49600000000.0,
+        "verdict": "contradicted",
+        "evidence_ids": [
+          "E1"
+        ],
+        "interpretations": [],
+        "model_found_value": 49552000000,
+        "note": "E1 reports FY2023 net income as $49,552,000,000 vs claimed $49,600,000,000, $48M lower, so exact $49.6B is not supported; fiscal_equals_calendar=true confirms FY2023 is calendar 2023.",
+        "evidence_valid": true,
+        "program_verdict": "supported",
+        "actual_value": 49552000000.0,
+        "tolerance": 50000000.0,
+        "reason": "actual 4.9552e+10 is consistent with stated 4.96e+10 using eq tolerance 5e+07",
+        "disagreement": true,
+        "precision": 50000000.0,
+        "stated_value_used": 49600000000.0,
+        "period_ambiguous": false,
+        "invalid_interpretations": false,
+        "deduplicated_evidence": [],
+        "stated_value_corrected": false,
+        "stated_text_unparsed": false,
+        "stated_sign_corrected": false,
+        "threshold_from_model": false,
+        "model_comparator": "eq",
+        "comparator_corrected": false,
+        "evidence_strength": "low",
+        "evidence_summary": "Evidence: audited 10-K, confirmed in 4 filings, restated",
+        "restated_evidence": true,
+        "flags": [
+          "restated_evidence"
+        ]
+      }
+    ],
+    "model_verdict": "contradicted",
+    "program_checks": [
+      {
+        "text": "JPMorgan Chase net income total was $49.6B in fiscal 2023",
+        "stated_value": 49600000000.0,
+        "evidence_ids": [
+          "E1"
+        ],
+        "evidence_valid": true,
+        "program_verdict": "supported",
+        "actual_value": 49552000000.0,
+        "tolerance": 50000000.0,
+        "reason": "actual 4.9552e+10 is consistent with stated 4.96e+10 using eq tolerance 5e+07",
+        "disagreement": true,
+        "precision": 50000000.0,
+        "stated_value_used": 49600000000.0,
+        "comparator": "eq",
+        "interpretations": [],
+        "period_ambiguous": false,
+        "invalid_interpretations": false,
+        "deduplicated_evidence": [],
+        "stated_value_corrected": false,
+        "stated_text_unparsed": false,
+        "stated_sign_corrected": false,
+        "threshold_from_model": false,
+        "model_comparator": "eq",
+        "comparator_corrected": false,
+        "evidence_strength": "low",
+        "evidence_summary": "Evidence: audited 10-K, confirmed in 4 filings, restated",
+        "restated_evidence": true,
+        "flags": [
+          "restated_evidence"
+        ]
+      }
+    ],
+    "evidence_strength": "low",
+    "evidence_summary": "Evidence: audited 10-K, confirmed in 4 filings, restated",
+    "flags": [
+      "restated_evidence"
+    ],
+    "model_program_disagreement": true
+  },
+  "program_checks": [
+    {
+      "text": "JPMorgan Chase net income total was $49.6B in fiscal 2023",
+      "stated_value": 49600000000.0,
+      "evidence_ids": [
+        "E1"
+      ],
+      "evidence_valid": true,
+      "program_verdict": "supported",
+      "actual_value": 49552000000.0,
+      "tolerance": 50000000.0,
+      "reason": "actual 4.9552e+10 is consistent with stated 4.96e+10 using eq tolerance 5e+07",
+      "disagreement": true,
+      "precision": 50000000.0,
+      "stated_value_used": 49600000000.0,
+      "comparator": "eq",
+      "interpretations": [],
+      "period_ambiguous": false,
+      "invalid_interpretations": false,
+      "deduplicated_evidence": [],
+      "stated_value_corrected": false,
+      "stated_text_unparsed": false,
+      "stated_sign_corrected": false,
+      "threshold_from_model": false,
+      "model_comparator": "eq",
+      "comparator_corrected": false,
+      "evidence_strength": "low",
+      "evidence_summary": "Evidence: audited 10-K, confirmed in 4 filings, restated",
+      "restated_evidence": true,
+      "flags": [
+        "restated_evidence"
+      ]
+    }
+  ]
+}

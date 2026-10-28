@@ -294,3 +294,28 @@ def test_quarter_tagged_with_annual_amount_is_excluded(tmp_path: Path) -> None:
     assert result["value"] == 39_383 - 28_369
     assert result["derived"] is True
     assert [item["accn"] for item in result["excluded_facts"]] == ["BAD"]
+
+
+def test_calendar_quarter_of_52_53_week_period_end() -> None:
+    from datetime import date
+
+    from claimcheck.edgar import _quarter_for_end
+
+    assert _quarter_for_end(date(2023, 7, 1)) == "2023Q2"  # Apple, as SEC frames it (CY2023Q2)
+    assert _quarter_for_end(date(2023, 9, 30)) == "2023Q3"
+    assert _quarter_for_end(date(2024, 1, 3)) == "2023Q4"
+
+
+def test_trailing_twelve_months_in_10q_is_not_a_fiscal_year() -> None:
+    from claimcheck.fiscal import fiscal_year_ends, normalize_fiscal_labels
+
+    annual = [
+        {"start": f"{y}-01-01", "end": f"{y}-12-31", "val": 1, "form": "10-K", "fy": y, "fp": "FY"}
+        for y in (2023, 2024, 2025)
+    ]
+    ttm = {"start": "2025-04-01", "end": "2026-03-31", "val": 1, "form": "10-Q", "fy": 2026, "fp": "Q1"}
+    document = {"facts": {"us-gaap": {"NetIncomeLoss": {"units": {"USD": [*annual, ttm]}}}}}
+    normalize_fiscal_labels(document)
+    assert ttm["fp"] == "TTM"
+    assert all(fact["fp"] == "FY" for fact in annual)
+    assert [end.month for end in fiscal_year_ends(document)] == [12, 12, 12]

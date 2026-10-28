@@ -57,27 +57,51 @@ See the [flow source](docs/diagrams/how-a-claim-is-checked.mmd).
 
 ## Real results
 
-30 hand-reviewed claims across 7 companies, with gold answers computed from SEC filings by an [independent script](eval/build_gold.py) and **committed before any model run** ([`f54f5d6`](https://github.com/YanlongLai/market-claim-verifier/commit/f54f5d6)). Six systems, one code version ([run 4](docs/evidence/eval-2026-10-27-r4-all/REPORT.md)):
+**357 claims about 23 companies.** 260 are generated from SEC data across 10 trap families. 54 are model paraphrases of those. 43 are real sentences from news, aggregator and investor-relations pages, paraphrased.
+
+- **Gold answers** come from an [independent script](eval/build_gold.py) and were **committed before any v2 run** ([`5d90b3b`](https://github.com/YanlongLai/market-claim-verifier/commit/5d90b3b)).
+- **The run:** six systems, one code version, 2,142 verdicts ([report](docs/evidence/eval-v2-2026-10-27/REPORT.md)).
 
 | System | Accuracy (95% CI) | Says "supported" when false | Mean cost / claim | Mean latency |
 | --- | --- | --- | --- | --- |
-| **Agent · Muse Spark Open on Baseten** | **30/30 = 100%** (89–100%) | 0 / 16 | $0.016 | 10 s |
-| **Agent · Muse Spark Open on Fireworks** | **30/30 = 100%** (89–100%) | 0 / 16 | $0.016 | 48 s |
-| **Agent · Muse Spark 1.3 on Meta Model API** | **26/30 = 87%** (70–95%) | 0 / 16 | $0.021 | 32 s |
-| Single-shot · Muse Spark 1.3 (no tools) | 18/30 = 60% (42–75%) | 0 / 16 | $0.019 | 15 s |
-| Single-shot · Muse Spark Open, Fireworks | 10/30 = 33% (19–51%) | 0 / 16 | $0.011 | 41 s |
-| Single-shot · Muse Spark Open, Baseten | 6/30 = 20% (10–37%) | 0 / 16 | $0.015 | 11 s |
+| **Agent · Muse Spark Open on Baseten** | **323/357 = 90.5%** (87.0–93.1) | 1 / 186 | $0.020 | 12 s |
+| **Agent · Muse Spark Open on Fireworks** | **323/357 = 90.5%** (87.0–93.1) | 1 / 186 | $0.020 | 67 s |
+| **Agent · Muse Spark 1.3 on Meta Model API** | **297/357 = 83.2%** (79.0–86.7) | 4 / 186 | $0.026 | 39 s |
+| Single-shot · Muse Spark 1.3 (no tools) | 158/357 = 44.3% (39.2–49.4) | 9 / 186 | $0.019 | 20 s |
+| Single-shot · Muse Spark Open, Baseten | 74/357 = 20.7% (16.8–25.2) | 1 / 186 | $0.012 | 9 s |
+| Single-shot · Muse Spark Open, Fireworks | 71/357 = 19.9% (16.1–24.3) | 0 / 186 | $0.012 | 51 s |
 
 <!-- figure:eval-summary:start -->
 ![Evaluation cost, latency, accuracy, and false-supported rate](docs/figures/eval-summary.svg)
 
-*Evaluation: n = 30 all claims, run 2026-10-28.*
+*Evaluation: n = 357 all claims, run 2026-10-28.*
 <!-- figure:eval-summary:end -->
 
-- **Tools + program checks are what make the model reliable.** Same model, paired on the same claims: agent minus single-shot accuracy is +27 points on Meta API (95% bootstrap CI +7 to +47, McNemar p = 0.039), +79 on Baseten (+61 to +93, p < 0.001) and +67 on Fireworks (+50 to +83, p < 0.001).
-- **The single-shot model never says "supported" falsely either — because it mostly refuses.** It answers "insufficient evidence" 47–80% of the time: Muse Spark does not know 2025–2026 filings from memory, and it says so.
-- **Open weights are production-viable here.** Muse Spark Open (the open-weights model) matched or beat the hosted Muse Spark 1.3 on this set; on Baseten it was also the fastest and cheapest system.
-- **Honest scope.** n = 30 is small; intervals are wide. The held-out split was first run once in [run 2](docs/evidence/eval-2026-10-27-test/REPORT.md) (agent: 7/10 Meta API, 10/10 Baseten); later runs come after fixes found on the dev split and are labeled post-hoc. Every run, including an [aborted one](docs/evidence/eval-2026-10-27-aborted-partial/), is committed with prompts, raw responses, tokens, cost and latency. A 260-claim set across 23 companies is being frozen next ([`eval/v2/`](eval/v2/)).
+- **Tools plus program checks are what make the model reliable.** On the same claims, agent accuracy beats single-shot by:
+  - Meta API: **+38 points** (95% paired bootstrap CI +33 to +44).
+  - Baseten: **+70** (+65 to +74).
+  - Fireworks: **+70** (+65 to +76).
+
+  McNemar p < 0.0001 for all three.
+- **Real-world sentences:** the agent was right on 43/43 (Baseten, Fireworks) and 39/43 (Meta API). Single-shot was right on 6/43, because it mostly answers "insufficient evidence" for 2025–2026 numbers it cannot know.
+- **Without tools, the hosted model guesses more.** Single-shot Muse Spark 1.3 said "supported" for 9 false claims. The open-weights model refused instead (0–1 false "supported").
+- **Open weights are production-viable.** Muse Spark Open with the agent beat the hosted Muse Spark 1.3 agent by 7 points (paired CI +4 to +10, p = 0.0001). On Baseten it was also the fastest and cheapest.
+- **Where the agent still fails:**
+  - "First time / record" claims: 16–18 of 31 right.
+  - Year-over-year claims on the Meta API: 29/48, against 45/48 on Baseten and Fireworks.
+  - Fiscal-vs-calendar traps: 23–24 of 30.
+
+  Per-family tables are in the [report](docs/evidence/eval-v2-2026-10-27/REPORT.md).
+- **The remaining false "supported" verdicts trace to two causes.**
+  - **A lookup-tool bug, now fixed.** Apple's quarter ending 2023-07-01 was treated as calendar Q3 instead of Q2.
+  - **"Q2 2024" for a non-calendar issuer.** The Meta API agent checked only the fiscal reading. Both readings disagree here, so the gold answer is "insufficient evidence".
+- **Two gold answers were wrong, and the run exposed them.** The gold script had mistaken Amazon for a June year-end issuer: it read a trailing-twelve-month figure in a 10-Q as an annual period. That made two true Amazon claims "contradicted".
+  - The frozen set is unchanged. Corrections are listed with reasons in [`eval/v2/claims-v2-corrected.jsonl`](eval/v2/claims-v2-corrected.jsonl), and the table above uses them.
+  - Scores against the registered gold are in [`REPORT-registered-gold.md`](docs/evidence/eval-v2-2026-10-27/REPORT-registered-gold.md). Every system moves by at most 2 claims.
+- **Honest scope:**
+  - The held-out split is 266 claims: agent 90.2% on Baseten, 89.1% on Fireworks and 82.0% on the Meta API.
+  - Meta API spend hit the run's $15 cap after 262 claims. The 95 stopped pairs were kept as evidence and resumed under a $30 cap ([`budget-stopped-attempt1/`](docs/evidence/eval-v2-2026-10-27/budget-stopped-attempt1/)).
+  - The v1 set of 30 hand-reviewed claims and its six runs remain in [`docs/evidence/`](docs/evidence/). Run 4 there: agent 30/30 (Baseten, Fireworks), 26/30 (Meta API).
 
 ### How the system got there
 
@@ -92,6 +116,7 @@ Each failure found in a live run became a program rule, not a prompt tweak:
 | Eval run 2 | Model wrote free text into evidence fields | Only real evidence IDs count |
 | Fireworks run | Same fact cited twice under two labels | Collapse identical evidence |
 | Real-world sample | SEC `fy`/`fp` describe the filing, not the period (Oracle's quarter ended Aug 2026 is tagged fiscal 2026; it is fiscal 2027 Q1) | Fiscal year and quarter derived from period dates and the issuer's year-end |
+| v2 run review | Gold builder read Amazon's 10-Q trailing-twelve-month figures as fiscal years; lookup tool put Apple's 2023-07-01 quarter in calendar Q3 | 12-month periods not ending at fiscal year-end are labeled TTM; calendar quarter taken from the end date minus 7 days, as SEC frames do |
 
 <!-- figure:before-after:start -->
 ![Before and after Day 2 fixes](docs/figures/before-after.svg)
@@ -262,6 +287,14 @@ For a live run, keep the model key outside the repository (`MODEL_API_KEY` for M
 ## Evaluation
 
 [`eval/claims.yaml`](eval/claims.yaml) holds 30 claims (20 `dev`, 10 `test`) across 11 trap categories — rounded and approximate values, inequalities, year-over-year changes with direction words, YTD-vs-quarter and fiscal-vs-calendar traps, unit traps, multi-part claims, first-time records and uncheckable claims. Gold facts come from [`eval/build_gold.py`](eval/build_gold.py), which reads raw SEC JSON with its own code and does not import the verifier.
+
+[`eval/v2/`](eval/v2/) scales this to 357 claims (91 `dev`, 266 `test`) across 23 companies.
+
+- **Programmatic claims:** [`generate.py`](eval/v2/generate.py) makes them deterministically from a fixed seed.
+- **Paraphrases:** [`paraphrase.py`](eval/v2/paraphrase.py) has Muse Spark reword claims. Rewrites that drop a number, change a period, or comment on truth instead of rewording are rejected.
+- **Real-world claims:** [`real.yaml`](eval/v2/real.yaml) records each one with source URL, tier and publication date. Claims are stored as paraphrases, never verbatim.
+
+[`build.py`](eval/v2/build.py) recomputes every gold answer and refuses to build if any disagrees.
 
 Each run records a manifest (code commit, model, prompts with SHA-256, data snapshot hashes, start/end time, ledger spend before and after), one trace per model call (request, raw response, reasoning tokens, cost, latency, rate-limit headers) and a report with Wilson confidence intervals, paired bootstrap intervals and McNemar tests. Prompts live in [`prompts/`](prompts/); a test fails if they drift from the code.
 
