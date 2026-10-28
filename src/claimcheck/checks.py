@@ -374,6 +374,106 @@ def _evidence(runner: Any, evidence_id: str) -> Mapping[str, Any] | None:
     return value if isinstance(value, Mapping) else None
 
 
+_EVIDENCE_STRENGTH_ORDER = {"low": 0, "medium": 1, "high": 2}
+
+
+def _provenance_nodes(value: Any) -> list[Mapping[str, Any]]:
+    """Collect compact provenance nodes from a tool result and its components."""
+
+    found: list[Mapping[str, Any]] = []
+
+    def visit(node: Any) -> None:
+        if isinstance(node, Mapping):
+            provenance = node.get("provenance")
+            if isinstance(provenance, Mapping):
+                found.append(provenance)
+                # A history result contains provenance for every comparison
+                # row.  The evidence for the claim is its requested period,
+                # represented by the result-level node; do not downgrade it
+                # because an unrelated historical row was restated.
+                return
+            for key in ("current_fact", "base_fact", "current", "base", "components"):
+                child = node.get(key)
+                if child is not None:
+                    visit(child)
+        elif isinstance(node, list):
+            for child in node:
+                visit(child)
+
+    visit(value)
+    return found
+
+
+def _evidence_quality(
+    evidence_ids: Sequence[str], runner: Any
+) -> tuple[str, list[Mapping[str, Any]]]:
+    nodes: list[Mapping[str, Any]] = []
+    for evidence_id in _unique_ids(evidence_ids):
+        nodes.extend(_provenance_nodes(_evidence(runner, evidence_id)))
+    if not nodes:
+        return "low", []
+    strength = min(
+        (str(node.get("strength") or "low") for node in nodes),
+        key=lambda value: _EVIDENCE_STRENGTH_ORDER.get(value, 0),
+    )
+    return strength if strength in _EVIDENCE_STRENGTH_ORDER else "low", nodes
+
+
+def _evidence_summary(nodes: Sequence[Mapping[str, Any]]) -> str:
+    if not nodes:
+        return "Evidence: unavailable"
+    parts: list[str] = []
+    for node in nodes:
+        tier = str(node.get("tier") or "L2")
+        forms = [str(form) for form in node.get("forms", []) if form]
+        if tier == "L1":
+            label = "audited 10-K"
+        elif tier == "L3":
+            component_tiers = "/".join(
+                str(value) for value in node.get("component_tiers", []) if value
+            )
+            label = f"derived L3{f' ({component_tiers} components)' if component_tiers else ''}"
+        elif node.get("form_fallback"):
+            label = "form fallback"
+            if forms:
+                label += f" ({', '.join(forms)})"
+        elif forms and forms != ["10-Q"]:
+            label = f"reviewed 10-Q ({', '.join(forms)})"
+        else:
+            label = "reviewed 10-Q"
+        confirmations = node.get("confirmations")
+        if isinstance(confirmations, int) and confirmations > 0:
+            label += f", confirmed in {confirmations} filing{'s' if confirmations != 1 else ''}"
+        label += ", restated" if node.get("restated") else ", not restated"
+        if label not in parts:
+            parts.append(label)
+    return "Evidence: " + "; ".join(parts)
+
+
+def _with_evidence_quality(
+    result: Mapping[str, Any], evidence_ids: Sequence[str], runner: Any
+) -> dict[str, Any]:
+    """Attach program-owned evidence strength and restatement flags."""
+
+    value = dict(result)
+    strength, nodes = _evidence_quality(evidence_ids, runner)
+    value["evidence_strength"] = strength
+    value["evidence_summary"] = _evidence_summary(nodes)
+    only_restatement = bool(nodes) and all(bool(node.get("restated")) for node in nodes)
+    restated_evidence = bool(
+        only_restatement
+        and value.get("program_verdict") in {"supported", "contradicted"}
+    )
+    value["restated_evidence"] = restated_evidence
+    if restated_evidence:
+        flags = value.get("flags")
+        flags = list(flags) if isinstance(flags, list) else []
+        if "restated_evidence" not in flags:
+            flags.append("restated_evidence")
+        value["flags"] = flags
+    return value
+
+
 def _has_numeric_value(evidence: Mapping[str, Any] | None) -> bool:
     return bool(
         evidence is not None
@@ -992,7 +1092,7 @@ def _evaluate_period_interpretations(
         result["deduplicated_evidence"] = deduplicated_evidence
         if invalid_interpretations:
             result["reason"] = f"invalid_interpretations; {result.get('reason', '')}"
-        return result
+        return _with_evidence_quality(result, evidence_ids, runner)
 
     child_verdicts = [str(child.get("program_verdict")) for child in child_checks]
     if all(value == "supported" for value in child_verdicts):
@@ -1047,7 +1147,7 @@ def _evaluate_period_interpretations(
             ),
         }
     )
-    return first
+    return _with_evidence_quality(first, evidence_ids, runner)
 
 
 def _record_number_and_precision(sub_claim: Mapping[str, Any]) -> tuple[float, float, list[str]]:
@@ -1215,7 +1315,7 @@ def evaluate_sub_claim(
                         reason = f"{', '.join(flags)}; {reason}"
                     model_verdict = sub_claim.get("verdict")
                     program_verdict = "supported" if is_first else "contradicted"
-                    return {
+                    return _with_evidence_quality({
                         "text": str(sub_claim.get("text") or ""),
                         "stated_value": stated,
                         "evidence_ids": evidence_ids,
@@ -1238,7 +1338,7 @@ def evaluate_sub_claim(
                         "period_ambiguous": False,
                         "invalid_interpretations": invalid_interpretations,
                         "deduplicated_evidence": deduplicated_evidence,
-                    }
+                    }, evidence_ids, runner)
     elif stated is None or precision is None:
         reason = "stated_text_unparsed"
     elif claim_type == "value":
@@ -1294,7 +1394,7 @@ def evaluate_sub_claim(
         if reason != flag_reason and not reason.startswith(f"{flag_reason};"):
             reason = f"{flag_reason}; {reason}"
 
-    return {
+    return _with_evidence_quality({
         "text": str(sub_claim.get("text") or ""),
         "stated_value": stated,
         "evidence_ids": evidence_ids,
@@ -1312,7 +1412,7 @@ def evaluate_sub_claim(
         "invalid_interpretations": invalid_interpretations,
         "deduplicated_evidence": deduplicated_evidence,
         **flag_fields,
-    }
+    }, evidence_ids, runner)
 
 
 def overall_program_verdict(checks: Sequence[Mapping[str, Any]]) -> str:

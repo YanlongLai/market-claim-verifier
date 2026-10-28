@@ -7,10 +7,14 @@ import hashlib
 import importlib.metadata
 import math
 import platform
+import random
+import statistics
 import subprocess
+import threading
 import time
 import uuid
 from collections import Counter, defaultdict
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable, Mapping, Sequence
@@ -459,7 +463,7 @@ def _base_pair(
     *,
     prompt_versions: Mapping[str, str],
 ) -> dict[str, Any]:
-    return {
+    value = {
         "id": claim["id"],
         "split": claim["split"],
         "category": claim.get("category"),
@@ -486,6 +490,10 @@ def _base_pair(
         "finished_at": None,
         "error": None,
     }
+    for field in ("source_tier", "source_domain"):
+        if claim.get(field) is not None:
+            value[field] = claim.get(field)
+    return value
 
 
 def _model_for(model: str | None, provider: str) -> str:
@@ -526,6 +534,133 @@ def _failure_pair(
         }
     )
     return value
+
+
+def _execute_pair(
+    claim: Mapping[str, Any],
+    system: str,
+    *,
+    system_info: Mapping[str, tuple[str, str]],
+    model: str | None,
+    client: Any,
+    edgar: EdgarClient | None,
+    ledger: Ledger,
+    out: Path,
+    traces: Path,
+    prompt_versions: Mapping[str, Mapping[str, str]],
+    started_at: str,
+    max_output_tokens: int | None,
+    reasoning_effort: str | None,
+    secrets: Iterable[str] | Mapping[str, Iterable[str]],
+    provider_semaphore: threading.Semaphore,
+) -> dict[str, Any]:
+    """Execute one pair; all mutable writes are pair-scoped and thread-safe."""
+
+    method, provider_name = system_info[system]
+    pair_model = _model_for(model, provider_name)
+    pair_client = _client_for(client, provider_name)
+    pair_secrets = _secrets_for(secrets, provider_name)
+    base = _base_pair(claim, system, pair_model, prompt_versions=prompt_versions[system])
+    pair_started = time.perf_counter()
+    trace_path: Path | None = None
+    recorder = TraceRecorder(str(claim["claim"]), pair_model, provider=provider_name, secrets=pair_secrets)
+    budget_stop: dict[str, Any] | None = None
+    completed = 0
+    failed = 0
+    try:
+        with provider_semaphore:
+            if method == "single_shot":
+                result = _call_single_shot(
+                    str(claim["claim"]),
+                    client=pair_client,
+                    ledger=ledger,
+                    model=pair_model,
+                    recorder=recorder,
+                    today=started_at[:10],
+                    max_output_tokens=max_output_tokens,
+                    reasoning_effort=reasoning_effort,
+                    provider=provider_name,
+                )
+                base.update(
+                    {
+                        "status": "completed",
+                        "verdict": result["verdict"],
+                        "summary": result["summary"],
+                        "sub_claims": result["sub_claims"],
+                    }
+                )
+                if result.get("model_output_invalid"):
+                    base["error"] = {
+                        "category": "invalid_response",
+                        "message": "model output was not valid structured verdict JSON",
+                    }
+                if result.get("invalid_model_json"):
+                    base["error"] = {
+                        "category": "invalid_model_json",
+                        "message": "model output was invalid twice, including the repair request",
+                    }
+            else:
+                if edgar is None:
+                    raise EvaluationError("agent system needs an EdgarClient")
+                result = verify_claim(
+                    str(claim["claim"]),
+                    pair_client,
+                    edgar,
+                    ledger,
+                    pair_model,
+                    trace=recorder,
+                    max_output_tokens=max_output_tokens,
+                    reasoning_effort=reasoning_effort,
+                    provider=provider_name,
+                )
+                base.update(
+                    {
+                        "status": "completed",
+                        "verdict": result.get("verdict"),
+                        "summary": result.get("summary", ""),
+                        "sub_claims": result.get("sub_claims", []),
+                        "program_checks": result.get("program_checks", []),
+                        "model_verdict": result.get("model_verdict"),
+                    }
+                )
+                for field in (
+                    "evidence_strength",
+                    "evidence_summary",
+                    "flags",
+                    "restated_evidence",
+                ):
+                    if field in result:
+                        base[field] = result[field]
+            completed = 1
+    except BudgetExceeded as exc:
+        base = _failure_pair(base, exc, status="budget_stopped")
+        budget_stop = {
+            "id": claim["id"],
+            "system": canonical_system(system),
+            "message": str(exc),
+        }
+    except Exception as exc:  # one failed pair is recorded, never retried
+        base = _failure_pair(base, exc)
+        failed = 1
+    finally:
+        trace_path = write_trace(traces, recorder)
+        base["trace_path"] = str(trace_path.relative_to(out))
+        base["finished_at"] = _now()
+        base["latency_ms"] = base.get("latency_ms") or (time.perf_counter() - pair_started) * 1000
+        base["latency"] = base["latency_ms"]
+        summary = recorder.summary()
+        base["cost_usd"] = summary["cost_usd"]
+        base["cost"] = summary["cost_usd"]
+        base["tokens"] = summary["tokens"]
+        base["model_calls"] = summary["model_calls"]
+        base["tool_calls"] = summary["tool_calls"]
+    _write_pair(_pair_path(out, str(claim["id"]), system), base)
+    return {
+        "record": base,
+        "completed": completed,
+        "failed": failed,
+        "budget_stop": budget_stop,
+    }
 
 
 def _aggregate_result_observations(results: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
@@ -599,8 +734,10 @@ def run_evaluation(
     split: str | None = None,
     cli_args: Sequence[str] | None = None,
     claims_path: str | Path | None = None,
+    concurrency: int = 1,
+    provider_concurrency: int | None = None,
 ) -> dict[str, Any]:
-    """Run selected systems sequentially, with resumable pair files and evidence manifests."""
+    """Run selected systems with resumable pair files and bounded concurrency."""
 
     systems = tuple(str(system).strip() for system in systems)
     if not systems:
@@ -623,6 +760,10 @@ def run_evaluation(
         system_info[system] = parts
     if budget_usd < 0:
         raise EvaluationError("budget_usd must be non-negative")
+    if isinstance(concurrency, bool) or concurrency <= 0:
+        raise EvaluationError("concurrency must be a positive integer")
+    if provider_concurrency is not None and (isinstance(provider_concurrency, bool) or provider_concurrency <= 0):
+        raise EvaluationError("provider_concurrency must be a positive integer")
     validate_dataset(claims, strict=False)
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
@@ -696,6 +837,8 @@ def run_evaluation(
                 provider: budget_usd for _, provider in system_info.values()
             },
         },
+        "concurrency": int(concurrency),
+        "provider_concurrency": int(provider_concurrency or concurrency),
         "ledger_path": str(ledger_file),
         "ledger_spend_before_usd": ledger_before,
         "ledger_spend_after_usd": ledger_before,
@@ -730,194 +873,86 @@ def run_evaluation(
     failed = 0
     not_attempted = 0
     budget_stop: dict[str, Any] | None = None
-    stop = False
+    pending: list[tuple[Mapping[str, Any], str]] = []
     for claim in claims:
         for system in systems:
-            path = _pair_path(out, str(claim["id"]), system)
-            existing = _existing_pair(path)
-            if existing is not None:
+            if _existing_pair(_pair_path(out, str(claim["id"]), system)) is not None:
                 skipped += 1
-                continue
-            if stop:
-                break
-            executed += 1
-            method, provider_name = system_info[system]
-            pair_model = _model_for(model, provider_name)
-            pair_client = _client_for(client, provider_name)
-            pair_secrets = _secrets_for(secrets, provider_name)
-            base = _base_pair(
-                claim,
-                system,
-                pair_model,
-                prompt_versions=prompt_versions[system],
-            )
-            pair_started = time.perf_counter()
-            trace_path: Path | None = None
-            if method == "single_shot":
-                recorder = TraceRecorder(
-                    str(claim["claim"]), pair_model, provider=provider_name, secrets=pair_secrets
-                )
-                try:
-                    result = _call_single_shot(
-                        str(claim["claim"]),
-                        client=pair_client,
-                        ledger=ledger,
-                        model=pair_model,
-                        recorder=recorder,
-                        today=started_at[:10],
-                        max_output_tokens=max_output_tokens,
-                        reasoning_effort=reasoning_effort,
-                        provider=provider_name,
-                    )
-                    pair_latency_ms = (time.perf_counter() - pair_started) * 1000
-                    summary = recorder.summary()
-                    trace_path = write_trace(traces, recorder)
-                    base.update(
-                        {
-                            "status": "completed",
-                            "verdict": result["verdict"],
-                            "summary": result["summary"],
-                            "sub_claims": result["sub_claims"],
-                            "cost_usd": result["cost_usd"],
-                            "cost": result["cost_usd"],
-                            "latency_ms": pair_latency_ms,
-                            "latency": pair_latency_ms,
-                            "tokens": summary["tokens"],
-                            "model_calls": summary["model_calls"],
-                            "tool_calls": summary["tool_calls"],
-                            "trace_path": str(trace_path.relative_to(out)),
-                        }
-                    )
-                    if result.get("model_output_invalid"):
-                        base["error"] = {
-                            "category": "invalid_response",
-                            "message": "model output was not valid structured verdict JSON",
-                        }
-                    if result.get("invalid_model_json"):
-                        base["error"] = {
-                            "category": "invalid_model_json",
-                            "message": "model output was invalid twice, including the repair request",
-                        }
-                    completed += 1
-                except BudgetExceeded as exc:
-                    base = _failure_pair(base, exc, status="budget_stopped")
-                    budget_stop = {
-                        "id": claim["id"],
-                        "system": canonical_system(system),
-                        "message": str(exc),
-                    }
-                    stop = True
-                except Exception as exc:  # one failed pair is recorded, never retried
-                    base = _failure_pair(base, exc)
-                    failed += 1
-                finally:
-                    if trace_path is None:
-                        trace_path = write_trace(traces, recorder)
-                    base["trace_path"] = str(trace_path.relative_to(out))
-                    base["finished_at"] = _now()
-                    base["latency_ms"] = base.get("latency_ms") or (time.perf_counter() - pair_started) * 1000
-                    base["latency"] = base["latency_ms"]
-                    summary = recorder.summary()
-                    base["cost_usd"] = summary["cost_usd"]
-                    base["cost"] = summary["cost_usd"]
-                    base["tokens"] = summary["tokens"]
-                    base["model_calls"] = summary["model_calls"]
-                    base["tool_calls"] = summary["tool_calls"]
             else:
-                if edgar is None:
-                    raise EvaluationError("agent system needs an EdgarClient")
-                recorder = TraceRecorder(
-                    str(claim["claim"]), pair_model, provider=provider_name, secrets=pair_secrets
-                )
-                try:
-                    result = verify_claim(
-                        str(claim["claim"]),
-                        pair_client,
-                        edgar,
-                        ledger,
-                        pair_model,
-                        trace=recorder,
-                        max_output_tokens=max_output_tokens,
-                        reasoning_effort=reasoning_effort,
-                        provider=provider_name,
+                pending.append((claim, system))
+
+    provider_cap = int(provider_concurrency or concurrency)
+    provider_semaphores = {
+        provider: threading.Semaphore(max(1, min(int(concurrency), provider_cap)))
+        for provider in {provider for _, provider in system_info.values()}
+    }
+
+    def execute(task: tuple[Mapping[str, Any], str]) -> dict[str, Any]:
+        claim, system = task
+        provider = system_info[system][1]
+        return _execute_pair(
+            claim,
+            system,
+            system_info=system_info,
+            model=model,
+            client=client,
+            edgar=edgar,
+            ledger=ledger,
+            out=out,
+            traces=traces,
+            prompt_versions=prompt_versions,
+            started_at=started_at,
+            max_output_tokens=max_output_tokens,
+            reasoning_effort=reasoning_effort,
+            secrets=secrets,
+            provider_semaphore=provider_semaphores[provider],
+        )
+
+    if concurrency == 1:
+        for task in pending:
+            executed += 1
+            outcome = execute(task)
+            completed += int(outcome["completed"])
+            failed += int(outcome["failed"])
+            if outcome.get("budget_stop") is not None:
+                budget_stop = outcome["budget_stop"]
+                break
+        if budget_stop is not None:
+            # Keep the pair-file contract total for a sequential hard-budget
+            # stop. These placeholders contain no model result.
+            for remaining_claim in claims:
+                for remaining_system in systems:
+                    remaining_path = _pair_path(out, str(remaining_claim["id"]), remaining_system)
+                    if remaining_path.exists():
+                        continue
+                    placeholder = _base_pair(
+                        remaining_claim,
+                        remaining_system,
+                        _model_for(model, system_info[remaining_system][1]),
+                        prompt_versions=prompt_versions[remaining_system],
                     )
-                    pair_latency_ms = (time.perf_counter() - pair_started) * 1000
-                    summary = recorder.summary()
-                    trace_path = write_trace(traces, recorder)
-                    base.update(
+                    placeholder.update(
                         {
-                            "status": "completed",
-                            "verdict": result.get("verdict"),
-                            "summary": result.get("summary", ""),
-                            "sub_claims": result.get("sub_claims", []),
-                            "program_checks": result.get("program_checks", []),
-                            "model_verdict": result.get("model_verdict"),
-                            "cost_usd": summary["cost_usd"],
-                            "cost": summary["cost_usd"],
-                            "latency_ms": pair_latency_ms,
-                            "latency": pair_latency_ms,
-                            "tokens": summary["tokens"],
-                            "model_calls": summary["model_calls"],
-                            "tool_calls": summary["tool_calls"],
-                            "trace_path": str(trace_path.relative_to(out)),
+                            "status": "budget_stopped",
+                            "error": {
+                                "category": "budget_not_attempted",
+                                "message": "run stopped after the shared budget was refused",
+                            },
+                            "finished_at": _now(),
                         }
                     )
-                    completed += 1
-                except BudgetExceeded as exc:
-                    base = _failure_pair(base, exc, status="budget_stopped")
-                    budget_stop = {
-                        "id": claim["id"],
-                        "system": canonical_system(system),
-                        "message": str(exc),
-                    }
-                    stop = True
-                except Exception as exc:  # one failed pair is recorded, never retried
-                    base = _failure_pair(base, exc)
-                    failed += 1
-                finally:
-                    if trace_path is None:
-                        trace_path = write_trace(traces, recorder)
-                    base["trace_path"] = str(trace_path.relative_to(out))
-                    base["finished_at"] = _now()
-                    base["latency_ms"] = base.get("latency_ms") or (time.perf_counter() - pair_started) * 1000
-                    base["latency"] = base["latency_ms"]
-                    summary = recorder.summary()
-                    base["cost_usd"] = summary["cost_usd"]
-                    base["cost"] = summary["cost_usd"]
-                    base["tokens"] = summary["tokens"]
-                    base["model_calls"] = summary["model_calls"]
-                    base["tool_calls"] = summary["tool_calls"]
-            _write_pair(path, base)
-        if stop:
-            break
-
-    if stop:
-        # Keep the pair-file contract total even when the hard budget stops a
-        # sequential run before later claims are attempted.  These placeholders
-        # contain no model result and are never retried automatically.
-        for remaining_claim in claims:
-            for remaining_system in systems:
-                remaining_path = _pair_path(out, str(remaining_claim["id"]), remaining_system)
-                if remaining_path.exists():
-                    continue
-                placeholder = _base_pair(
-                    remaining_claim,
-                    remaining_system,
-                    model,
-                    prompt_versions=prompt_versions[remaining_system],
-                )
-                placeholder.update(
-                    {
-                        "status": "budget_stopped",
-                        "error": {
-                            "category": "budget_not_attempted",
-                            "message": "run stopped after the shared budget was refused",
-                        },
-                        "finished_at": _now(),
-                    }
-                )
-                _write_pair(remaining_path, placeholder)
-                not_attempted += 1
+                    _write_pair(remaining_path, placeholder)
+                    not_attempted += 1
+    else:
+        executed = len(pending)
+        with ThreadPoolExecutor(max_workers=int(concurrency), thread_name_prefix="claimcheck-eval") as executor:
+            futures = [executor.submit(execute, task) for task in pending]
+            for future in as_completed(futures):
+                outcome = future.result()
+                completed += int(outcome["completed"])
+                failed += int(outcome["failed"])
+                if budget_stop is None and outcome.get("budget_stop") is not None:
+                    budget_stop = outcome["budget_stop"]
 
     result_records = _load_result_files(out)
     observations = _aggregate_result_observations(result_records)
@@ -1001,6 +1036,7 @@ def dry_run_plan(
     max_output_tokens: int | None = None,
     reasoning_effort: str | None = None,
     out_dir: str | Path | None = None,
+    concurrency: int = 1,
 ) -> dict[str, Any]:
     """Printable plan and conservative worst-case reservation, without calls."""
 
@@ -1020,6 +1056,8 @@ def dry_run_plan(
     validate_dataset(claims, strict=False)
     if budget_usd < 0:
         raise EvaluationError("budget_usd must be non-negative")
+    if isinstance(concurrency, bool) or concurrency <= 0:
+        raise EvaluationError("concurrency must be a positive integer")
     ledger = Ledger(budget_usd=budget_usd, persist=False)
     per_system_amount: dict[str, float] = {system: 0.0 for system in systems}
     per_provider_amount: dict[str, float] = {provider: 0.0 for _, provider in system_info.values()}
@@ -1112,6 +1150,8 @@ def dry_run_plan(
         "models": {system: _model_for(model, provider) for system, (_, provider) in system_info.items()},
         "budget_usd": budget_usd,
         "out_dir": str(out_dir) if out_dir is not None else None,
+        "concurrency": int(concurrency),
+        "provider_concurrency": int(concurrency),
         "max_model_calls": max_calls,
         "worst_case_reservation_usd": reservation,
         "provider_worst_case_reservation_usd": per_provider_amount,
@@ -1134,6 +1174,336 @@ def _percentile(values: Sequence[float], percentile: float) -> float | None:
     if low == high:
         return ordered[low]
     return ordered[low] + (ordered[high] - ordered[low]) * (position - low)
+
+
+def wilson_interval(successes: int, total: int, *, confidence: float = 0.95) -> tuple[float, float]:
+    """Return a Wilson score interval for a binomial proportion."""
+
+    if total <= 0:
+        return (0.0, 0.0)
+    if successes < 0 or successes > total:
+        raise ValueError("successes must be between zero and total")
+    if not 0.0 < confidence < 1.0:
+        raise ValueError("confidence must be between zero and one")
+    z = statistics.NormalDist().inv_cdf(0.5 + confidence / 2.0)
+    p = successes / total
+    denominator = 1.0 + z * z / total
+    center = (p + z * z / (2.0 * total)) / denominator
+    half = z * math.sqrt((p * (1.0 - p) + z * z / (4.0 * total)) / total) / denominator
+    return (max(0.0, center - half), min(1.0, center + half))
+
+
+wilson_ci = wilson_interval
+
+
+def _bool_values(values: Sequence[Any]) -> list[bool]:
+    result: list[bool] = []
+    for value in values:
+        if isinstance(value, bool):
+            result.append(value)
+        elif isinstance(value, (int, float)) and value in (0, 1):
+            result.append(bool(value))
+        else:
+            result.append(bool(value))
+    return result
+
+
+def paired_bootstrap_ci(
+    left_correct: Sequence[Any],
+    right_correct: Sequence[Any],
+    *,
+    n_resamples: int = 10_000,
+    seed: int = 20261027,
+    confidence: float = 0.95,
+) -> tuple[float, float]:
+    """Bootstrap the paired accuracy difference ``left - right``."""
+
+    left = _bool_values(left_correct)
+    right = _bool_values(right_correct)
+    if len(left) != len(right):
+        raise ValueError("paired bootstrap inputs must have equal length")
+    if not left:
+        return (0.0, 0.0)
+    if n_resamples <= 0:
+        raise ValueError("n_resamples must be positive")
+    if not 0.0 < confidence < 1.0:
+        raise ValueError("confidence must be between zero and one")
+    deltas = [int(a) - int(b) for a, b in zip(left, right)]
+    rng = random.Random(seed)
+    estimates: list[float] = []
+    n = len(deltas)
+    for _ in range(n_resamples):
+        total = 0
+        for _ in range(n):
+            total += deltas[rng.randrange(n)]
+        estimates.append(total / n)
+    estimates.sort()
+    alpha = (1.0 - confidence) / 2.0
+    return (_percentile(estimates, alpha * 100.0) or 0.0, _percentile(estimates, (1.0 - alpha) * 100.0) or 0.0)
+
+
+paired_bootstrap_accuracy_ci = paired_bootstrap_ci
+
+
+def mcnemar_exact_pvalue(left: Any, right: Any = None) -> float:
+    """Return the two-sided exact McNemar p-value.
+
+    ``left``/``right`` may be paired correctness vectors, a ``{"b": ..., "c":
+    ...}`` mapping, a 2x2 table, or the two scalar discordant-cell counts.
+    """
+
+    if isinstance(left, Mapping):
+        b = int(left.get("b", left.get("left_only", 0)) or 0)
+        c = int(left.get("c", left.get("right_only", 0)) or 0)
+    elif right is None and isinstance(left, Sequence) and len(left) == 2 and all(isinstance(row, Sequence) for row in left):
+        b = int(left[0][1])
+        c = int(left[1][0])
+    elif isinstance(left, (int, float)) and isinstance(right, (int, float)):
+        b, c = int(left), int(right)
+    else:
+        if right is None:
+            raise ValueError("McNemar requires two vectors or a discordant table")
+        lvals = _bool_values(left)
+        rvals = _bool_values(right)
+        if len(lvals) != len(rvals):
+            raise ValueError("McNemar inputs must have equal length")
+        b = sum(a and not z for a, z in zip(lvals, rvals))
+        c = sum((not a) and z for a, z in zip(lvals, rvals))
+    b = max(0, b)
+    c = max(0, c)
+    discordant = b + c
+    if discordant == 0:
+        return 1.0
+    # Use the smaller symmetric side of the exact binomial CDF; this avoids a
+    # floating-point tail subtraction at the extremes.
+    smaller = min(b, c)
+    cdf = sum(math.comb(discordant, k) for k in range(smaller + 1)) / (2.0 ** discordant)
+    return min(1.0, 2.0 * cdf)
+
+
+mcnemar_exact = mcnemar_exact_pvalue
+
+
+def _ci_record(successes: int, total: int) -> dict[str, Any]:
+    interval = wilson_interval(successes, total)
+    return {"successes": successes, "n": total, "lower": interval[0], "upper": interval[1]}
+
+
+def _source_tier(claim: Mapping[str, Any]) -> str | None:
+    value = str(claim.get("source_tier") or "").strip().lower()
+    return value or None
+
+
+def _source_domain(claim: Mapping[str, Any]) -> str | None:
+    value = str(claim.get("source_domain") or "").strip().lower()
+    return value or None
+
+
+def _source_group_block(
+    claims: Sequence[Mapping[str, Any]],
+    *,
+    field: str,
+    minimum_n: int = 1,
+) -> tuple[dict[str, dict[str, Any]], dict[str, int]]:
+    groups: dict[str, list[Mapping[str, Any]]] = defaultdict(list)
+    for claim in claims:
+        value = _source_tier(claim) if field == "source_tier" else _source_domain(claim)
+        if value:
+            groups[value].append(claim)
+    included: dict[str, dict[str, Any]] = {}
+    suppressed: dict[str, int] = {}
+    for value, selected in sorted(groups.items()):
+        n = len(selected)
+        if n < minimum_n:
+            suppressed[value] = n
+            continue
+        counts = {
+            verdict: sum(claim.get("gold_verdict") == verdict for claim in selected)
+            for verdict in EVAL_VERDICTS
+        }
+        included[value] = {
+            "n": n,
+            "counts": counts,
+            "shares": {
+                verdict: counts[verdict] / n if n else 0.0
+                for verdict in EVAL_VERDICTS
+            },
+            "wilson_95_ci": {
+                verdict: _ci_record(counts[verdict], n)
+                for verdict in EVAL_VERDICTS
+            },
+        }
+    return included, suppressed
+
+
+def _result_index(
+    results: Sequence[Mapping[str, Any]],
+) -> dict[tuple[str, str], Mapping[str, Any]]:
+    indexed: dict[tuple[str, str], Mapping[str, Any]] = {}
+    for result in results:
+        try:
+            system = canonical_system(str(result.get("system") or ""))
+        except ValueError:
+            continue
+        indexed[(system, str(result.get("id")))] = result
+    return indexed
+
+
+def _accuracy_by_source_tier(
+    claims: Sequence[Mapping[str, Any]],
+    results: Sequence[Mapping[str, Any]],
+    *,
+    systems: Sequence[str],
+) -> dict[str, dict[str, dict[str, Any]]]:
+    indexed = _result_index(results)
+    grouped: dict[str, list[Mapping[str, Any]]] = defaultdict(list)
+    for claim in claims:
+        tier = _source_tier(claim)
+        if tier:
+            grouped[tier].append(claim)
+    output: dict[str, dict[str, dict[str, Any]]] = {}
+    for requested_system in systems:
+        try:
+            system = canonical_system(requested_system)
+        except ValueError:
+            continue
+        output[system] = {}
+        for tier, selected in sorted(grouped.items()):
+            correct = 0
+            completed = 0
+            for claim in selected:
+                result = indexed.get((system, str(claim.get("id"))))
+                if result is None:
+                    continue
+                if result.get("status") in {None, "completed"} and result.get("verdict") in EVAL_VERDICTS:
+                    completed += 1
+                    correct += int(result.get("verdict") == claim.get("gold_verdict"))
+            output[system][tier] = {
+                "n": len(selected),
+                "completed": completed,
+                "correct": correct,
+                "accuracy": correct / len(selected) if selected else 0.0,
+                "accuracy_ci": _ci_record(correct, len(selected)),
+            }
+    return output
+
+
+def _result_strength(result: Mapping[str, Any]) -> str:
+    valid = {"high", "medium", "low"}
+    direct = str(result.get("evidence_strength") or "").strip().lower()
+    if direct in valid:
+        return direct
+    checks = result.get("program_checks")
+    strengths: list[str] = []
+    if isinstance(checks, list):
+        strengths.extend(
+            str(check.get("evidence_strength") or "").strip().lower()
+            for check in checks
+            if isinstance(check, Mapping)
+        )
+    if not strengths:
+        sub_claims = result.get("sub_claims")
+        if isinstance(sub_claims, list):
+            strengths.extend(
+                str(sub_claim.get("evidence_strength") or "").strip().lower()
+                for sub_claim in sub_claims
+                if isinstance(sub_claim, Mapping)
+            )
+    strengths = [value for value in strengths if value in valid]
+    if not strengths:
+        return "unknown"
+    return min(strengths, key=lambda value: {"low": 0, "medium": 1, "high": 2}[value])
+
+
+def _strength_block(
+    claims: Sequence[Mapping[str, Any]], results: Sequence[Mapping[str, Any]]
+) -> dict[str, Any]:
+    gold = {str(claim.get("id")): claim.get("gold_verdict") for claim in claims}
+    counts: dict[str, dict[str, int]] = {
+        strength: {"n": 0, "correct": 0} for strength in ("high", "medium", "low", "unknown")
+    }
+    for result in results:
+        if not str(result.get("system") or "").startswith("agent"):
+            continue
+        if result.get("status") not in {None, "completed"} or result.get("verdict") not in EVAL_VERDICTS:
+            continue
+        strength = _result_strength(result)
+        bucket = counts.setdefault(strength, {"n": 0, "correct": 0})
+        bucket["n"] += 1
+        bucket["correct"] += int(result.get("verdict") == gold.get(str(result.get("id"))))
+    distribution = {
+        strength: {
+            **value,
+            "share": value["n"] / sum(item["n"] for item in counts.values())
+            if sum(item["n"] for item in counts.values())
+            else 0.0,
+            "accuracy": value["correct"] / value["n"] if value["n"] else 0.0,
+            "accuracy_ci": _ci_record(value["correct"], value["n"]),
+        }
+        for strength, value in counts.items()
+    }
+    return {"distribution": distribution, "n": sum(value["n"] for value in counts.values())}
+
+
+def _strength_by_agent_system(
+    claims: Sequence[Mapping[str, Any]], results: Sequence[Mapping[str, Any]]
+) -> dict[str, Any]:
+    systems = sorted(
+        {
+            canonical_system(str(result.get("system") or ""))
+            for result in results
+            if str(result.get("system") or "").startswith("agent")
+        }
+    )
+    return {
+        system: _strength_block(
+            claims,
+            [
+                result
+                for result in results
+                if canonical_system(str(result.get("system") or "")) == system
+            ],
+        )
+        for system in systems
+    }
+
+
+def compute_source_scorecard(
+    claims: Sequence[Mapping[str, Any]],
+    results: Sequence[Mapping[str, Any]],
+    *,
+    systems: Sequence[str] = SYSTEMS,
+    domain_minimum_n: int = 20,
+) -> dict[str, Any]:
+    """Compute source reliability, tier accuracy, and evidence-strength blocks."""
+
+    tiers, _suppressed_tiers = _source_group_block(
+        claims, field="source_tier", minimum_n=1
+    )
+    domains, suppressed_domains = _source_group_block(
+        claims, field="source_domain", minimum_n=domain_minimum_n
+    )
+    available = bool(tiers or domains)
+    return {
+        "available": available,
+        "policy": {
+            "domain_minimum_n": domain_minimum_n,
+            "confidence": "Wilson 95%",
+            "small_domains": "suppressed; aggregate by source tier",
+        },
+        "source_reliability": {
+            "by_tier": tiers,
+            "by_domain": domains,
+            "suppressed_domains": suppressed_domains,
+        },
+        "system_accuracy_by_source_tier": _accuracy_by_source_tier(
+            claims, results, systems=systems
+        ),
+        "evidence_strength": {
+            "overall": _strength_block(claims, results),
+            "by_agent_system": _strength_by_agent_system(claims, results),
+        },
+    }
 
 
 def compute_metrics(
@@ -1230,6 +1600,15 @@ def compute_metrics(
         and claim.get("gold_verdict") in {"contradicted", "insufficient_evidence"}
         for claim in expected
     )
+    insufficient_predictions = sum(
+        predicted.get(str(claim["id"])) == "insufficient_evidence"
+        for claim in expected
+    )
+    confidence_intervals = {
+        "accuracy": _ci_record(correct, len(expected)),
+        "false_supported_rate": _ci_record(false_supported, harmful_gold),
+        "insufficient_rate": _ci_record(insufficient_predictions, len(expected)),
+    }
     return {
         "system": requested_system,
         "split": split,
@@ -1242,7 +1621,11 @@ def compute_metrics(
         "false_supported_rate": false_supported / harmful_gold if harmful_gold else 0.0,
         "false_supported": false_supported,
         "harmful_gold": harmful_gold,
-        "insufficient_rate": sum(value == "insufficient_evidence" for value in predicted.values()) / len(expected) if expected else 0.0,
+        "insufficient_rate": insufficient_predictions / len(expected) if expected else 0.0,
+        "confidence_intervals": confidence_intervals,
+        "accuracy_ci": confidence_intervals["accuracy"],
+        "false_supported_rate_ci": confidence_intervals["false_supported_rate"],
+        "insufficient_rate_ci": confidence_intervals["insufficient_rate"],
         "latency_ms": {
             "mean": sum(latencies) / len(latencies) if latencies else None,
             "p50": _percentile(latencies, 50),
@@ -1257,6 +1640,156 @@ def compute_metrics(
         "tool_calls": tool_calls,
         "errors": errors,
     }
+
+
+def _quality_for_group(
+    claims: Sequence[Mapping[str, Any]],
+    results: Sequence[Mapping[str, Any]],
+    *,
+    system: str,
+) -> dict[str, Any]:
+    requested_system = canonical_system(system)
+    result_by_id: dict[str, Mapping[str, Any]] = {}
+    for result in results:
+        try:
+            if canonical_system(str(result.get("system") or "")) != requested_system:
+                continue
+        except ValueError:
+            continue
+        result_by_id[str(result.get("id"))] = result
+    expected = list(claims)
+    correct = 0
+    false_supported = 0
+    harmful = 0
+    insufficient = 0
+    completed = 0
+    for claim in expected:
+        result = result_by_id.get(str(claim.get("id")))
+        gold = claim.get("gold_verdict")
+        if gold in {"contradicted", "insufficient_evidence"}:
+            harmful += 1
+        if result is not None and result.get("status") == "completed" and result.get("verdict") in EVAL_VERDICTS:
+            completed += 1
+            verdict = result.get("verdict")
+            correct += verdict == gold
+            false_supported += verdict == "supported" and gold in {"contradicted", "insufficient_evidence"}
+            insufficient += verdict == "insufficient_evidence"
+    confidence_intervals = {
+        "accuracy": _ci_record(correct, len(expected)),
+        "false_supported_rate": _ci_record(false_supported, harmful),
+        "insufficient_rate": _ci_record(insufficient, len(expected)),
+    }
+    return {
+        "n": len(expected),
+        "completed": completed,
+        "correct": correct,
+        "false_supported": false_supported,
+        "harmful_gold": harmful,
+        "insufficient_predictions": insufficient,
+        "accuracy": correct / len(expected) if expected else 0.0,
+        "false_supported_rate": false_supported / harmful if harmful else 0.0,
+        "insufficient_rate": insufficient / len(expected) if expected else 0.0,
+        "confidence_intervals": confidence_intervals,
+        "accuracy_ci": confidence_intervals["accuracy"],
+        "false_supported_rate_ci": confidence_intervals["false_supported_rate"],
+        "insufficient_rate_ci": confidence_intervals["insufficient_rate"],
+    }
+
+
+def confidence_interval_summary(
+    claims: Sequence[Mapping[str, Any]],
+    results: Sequence[Mapping[str, Any]],
+    *,
+    systems: Sequence[str] = SYSTEMS,
+) -> dict[str, Any]:
+    """Return Wilson intervals overall, by split, family, and layer."""
+
+    summary: dict[str, Any] = {}
+    for system in systems:
+        try:
+            canonical = canonical_system(system)
+        except ValueError:
+            continue
+        groups: dict[str, Any] = {"overall": _quality_for_group(claims, results, system=canonical)}
+        for dimension, values in (
+            ("split", sorted({str(claim.get("split")) for claim in claims})),
+            ("family", sorted({str(claim.get("family", claim.get("category", "unknown"))) for claim in claims})),
+            ("layer", sorted({str(claim.get("layer", "unknown")) for claim in claims})),
+        ):
+            groups[dimension] = {}
+            for value in values:
+                selected = [
+                    claim for claim in claims
+                    if str(claim.get(dimension, claim.get("family", claim.get("category", "unknown")) if dimension == "family" else "unknown")) == value
+                ]
+                groups[dimension][value] = _quality_for_group(selected, results, system=canonical)
+        summary[canonical] = groups
+    return summary
+
+
+def _paired_system_stats(
+    claims: Sequence[Mapping[str, Any]],
+    results: Sequence[Mapping[str, Any]],
+    *,
+    left_system: str,
+    right_system: str,
+    seed: int,
+    n_resamples: int,
+) -> dict[str, Any]:
+    gold = {str(claim.get("id")): claim.get("gold_verdict") for claim in claims}
+    by_system: dict[str, dict[str, Mapping[str, Any]]] = {left_system: {}, right_system: {}}
+    for result in results:
+        try:
+            system = canonical_system(str(result.get("system") or ""))
+        except ValueError:
+            continue
+        if system in by_system and result.get("status") == "completed" and result.get("verdict") in EVAL_VERDICTS:
+            by_system[system][str(result.get("id"))] = result
+    ids = sorted(set(by_system[left_system]) & set(by_system[right_system]) & set(gold))
+    left_correct = [by_system[left_system][item].get("verdict") == gold[item] for item in ids]
+    right_correct = [by_system[right_system][item].get("verdict") == gold[item] for item in ids]
+    b = sum(a and not z for a, z in zip(left_correct, right_correct))
+    c = sum((not a) and z for a, z in zip(left_correct, right_correct))
+    interval = paired_bootstrap_ci(left_correct, right_correct, n_resamples=n_resamples, seed=seed)
+    return {
+        "left": left_system,
+        "right": right_system,
+        "n": len(ids),
+        "claim_ids": ids,
+        "accuracy_difference": (sum(left_correct) - sum(right_correct)) / len(ids) if ids else 0.0,
+        "bootstrap_95_ci": {"lower": interval[0], "upper": interval[1]},
+        "bootstrap_resamples": n_resamples,
+        "bootstrap_seed": seed,
+        "mcnemar_exact_p": mcnemar_exact_pvalue(b, c),
+        "discordant": {"left_only": b, "right_only": c},
+    }
+
+
+def paired_comparison_summary(
+    claims: Sequence[Mapping[str, Any]],
+    results: Sequence[Mapping[str, Any]],
+    *,
+    seed: int = 20261027,
+    n_resamples: int = 10_000,
+) -> dict[str, Any]:
+    """Compute all requested paired system/provider comparisons."""
+
+    comparisons: dict[str, Any] = {}
+    for provider in PROVIDERS:
+        left = f"agent@{provider}"
+        right = f"single_shot@{provider}"
+        comparisons[f"{left}_vs_{right}"] = _paired_system_stats(
+            claims, results, left_system=left, right_system=right, seed=seed, n_resamples=n_resamples
+        )
+    for method in ("agent", "single_shot"):
+        for left_provider_index, left_provider in enumerate(PROVIDERS):
+            for right_provider in PROVIDERS[left_provider_index + 1:]:
+                left = f"{method}@{left_provider}"
+                right = f"{method}@{right_provider}"
+                comparisons[f"{left}_vs_{right}"] = _paired_system_stats(
+                    claims, results, left_system=left, right_system=right, seed=seed, n_resamples=n_resamples
+                )
+    return comparisons
 
 
 def _load_result_files(out_dir: Path) -> list[dict[str, Any]]:
@@ -1283,6 +1816,16 @@ def _fmt_metric(value: Any, digits: int = 3) -> str:
     if isinstance(value, (int, float)):
         return f"{value:.{digits}f}"
     return str(value)
+
+
+def _fmt_ci(value: Any) -> str:
+    if not isinstance(value, Mapping):
+        return "—"
+    lower = value.get("lower")
+    upper = value.get("upper")
+    if lower is None or upper is None:
+        return "—"
+    return f"[{float(lower):.3f}, {float(upper):.3f}]"
 
 
 def _system_report_totals(
@@ -1439,8 +1982,6 @@ def _write_report(path: Path, summary: Mapping[str, Any], claims: Sequence[Mappi
         "",
         "Accuracy uses all expected claims in the denominator; a missing, failed, or budget-stopped pair is not a correct prediction. Per-class recall uses all claims of that gold class, while precision uses completed predictions of that class. False-supported rate is the harmful error rate among gold contradicted or insufficient-evidence claims. Latency and cost summaries use completed pairs only.",
         "",
-        "No significance claims are made: each split is small (20 dev and 10 test claims).",
-        "",
             "## Per-system totals",
             "",
             "Tokens are shown as input/cached/output/reasoning. Totals include every recorded pair; latency percentiles include pairs with a recorded model call.",
@@ -1448,6 +1989,15 @@ def _write_report(path: Path, summary: Mapping[str, Any], claims: Sequence[Mappi
             "| System | Pairs | Completed | Total cost | Input tokens | Cached tokens | Output tokens | Reasoning tokens | Model calls | Tool calls | Mean latency ms | p50 ms | p95 ms |",
             "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
     ]
+    small_n_caveats = summary.get("small_n_caveats", [])
+    if small_n_caveats:
+        lines.extend(
+            [
+                "",
+                "No significance claims are made for groups with n < 50; Wilson intervals and paired tests there are descriptive and unstable.",
+                "",
+            ]
+        )
     system_totals = summary.get("system_totals", {})
     if isinstance(system_totals, Mapping):
         for system in SYSTEMS:
@@ -1538,8 +2088,8 @@ def _write_report(path: Path, summary: Mapping[str, Any], claims: Sequence[Mappi
             "",
         "## Metrics",
         "",
-        "| System | Split | n | completed | errors | accuracy | false-supported rate | insufficient rate | mean latency ms | p50 ms | p95 ms | total cost | mean cost |",
-        "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
+        "| System | Split | n | completed | errors | accuracy | accuracy 95% CI | false-supported rate | false-supported 95% CI | insufficient rate | insufficient 95% CI | mean latency ms | p50 ms | p95 ms | total cost | mean cost |",
+        "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
     ]
     )
     metrics = summary.get("metrics", {})
@@ -1560,8 +2110,11 @@ def _write_report(path: Path, summary: Mapping[str, Any], claims: Sequence[Mappi
                         _md_cell(metric.get("n_completed")),
                         _md_cell(metric.get("n_errors")),
                         _fmt_metric(metric.get("accuracy")),
+                        _fmt_ci(metric.get("confidence_intervals", {}).get("accuracy")),
                         _fmt_metric(metric.get("false_supported_rate")),
+                        _fmt_ci(metric.get("confidence_intervals", {}).get("false_supported_rate")),
                         _fmt_metric(metric.get("insufficient_rate")),
+                        _fmt_ci(metric.get("confidence_intervals", {}).get("insufficient_rate")),
                         _fmt_metric(latency.get("mean"), 1),
                         _fmt_metric(latency.get("p50"), 1),
                         _fmt_metric(latency.get("p95"), 1),
@@ -1588,6 +2141,107 @@ def _write_report(path: Path, summary: Mapping[str, Any], claims: Sequence[Mappi
                 lines.append(
                     f"| {system} | {split} | {gold_class} | {item.get('support', 0)} | {item.get('predicted', 0)} | {_fmt_metric(item.get('precision', 0.0))} | {_fmt_metric(item.get('recall', 0.0))} |"
                 )
+    lines.extend(
+        [
+            "",
+            "### Paired comparisons",
+            "",
+            "Accuracy difference is left minus right; bootstrap intervals use 10,000 seeded paired resamples and McNemar is exact two-sided.",
+            "",
+            "| Pair | n | Accuracy difference | Bootstrap 95% CI | McNemar exact p | Discordant left/right |",
+            "|---|---:|---:|---|---:|---:|",
+        ]
+    )
+    paired = summary.get("paired_comparisons", {})
+    if isinstance(paired, Mapping):
+        for name, item in paired.items():
+            if not isinstance(item, Mapping):
+                continue
+            interval = item.get("bootstrap_95_ci", {})
+            discordant = item.get("discordant", {})
+            lines.append(
+                f"| {_md_cell(name)} | {item.get('n', 0)} | {_fmt_metric(item.get('accuracy_difference'), 3)} | {_fmt_ci({'lower': _get(interval, 'lower'), 'upper': _get(interval, 'upper')})} | {_fmt_metric(item.get('mcnemar_exact_p'), 4)} | {discordant.get('left_only', 0)}/{discordant.get('right_only', 0)} |"
+            )
+    lines.extend(
+        [
+            "",
+            "## Source scorecard",
+            "",
+            "Source reliability uses gold labels and is independent of the verifier systems. Per-domain values are shown only at n ≥ 20; Wilson intervals are 95% intervals.",
+            "",
+        ]
+    )
+    source_scorecard = summary.get("source_scorecard", {})
+    if isinstance(source_scorecard, Mapping) and source_scorecard.get("available"):
+        source_reliability = source_scorecard.get("source_reliability", {})
+        by_tier = source_reliability.get("by_tier", {}) if isinstance(source_reliability, Mapping) else {}
+        lines.extend(
+            [
+                "### Source reliability by claim-source tier",
+                "",
+                "| Tier | n | Supported share (95% CI) | Contradicted share (95% CI) | Insufficient share (95% CI) |",
+                "|---|---:|---|---|---|",
+            ]
+        )
+        for tier, value in by_tier.items() if isinstance(by_tier, Mapping) else []:
+            shares = value.get("shares", {}) if isinstance(value, Mapping) else {}
+            intervals = value.get("wilson_95_ci", {}) if isinstance(value, Mapping) else {}
+            lines.append(
+                f"| {_md_cell(tier)} | {value.get('n', 0)} | {_fmt_metric(shares.get('supported'))} ({_fmt_ci(intervals.get('supported'))}) | {_fmt_metric(shares.get('contradicted'))} ({_fmt_ci(intervals.get('contradicted'))}) | {_fmt_metric(shares.get('insufficient_evidence'))} ({_fmt_ci(intervals.get('insufficient_evidence'))}) |"
+            )
+        by_domain = source_reliability.get("by_domain", {}) if isinstance(source_reliability, Mapping) else {}
+        lines.extend(
+            [
+                "",
+                "### Source reliability by domain (n ≥ 20 only)",
+                "",
+                "| Domain | n | Supported share (95% CI) | Contradicted share (95% CI) | Insufficient share (95% CI) |",
+                "|---|---:|---|---|---|",
+            ]
+        )
+        for domain, value in by_domain.items() if isinstance(by_domain, Mapping) else []:
+            shares = value.get("shares", {}) if isinstance(value, Mapping) else {}
+            intervals = value.get("wilson_95_ci", {}) if isinstance(value, Mapping) else {}
+            lines.append(
+                f"| {_md_cell(domain)} | {value.get('n', 0)} | {_fmt_metric(shares.get('supported'))} ({_fmt_ci(intervals.get('supported'))}) | {_fmt_metric(shares.get('contradicted'))} ({_fmt_ci(intervals.get('contradicted'))}) | {_fmt_metric(shares.get('insufficient_evidence'))} ({_fmt_ci(intervals.get('insufficient_evidence'))}) |"
+            )
+        suppressed = source_reliability.get("suppressed_domains", {}) if isinstance(source_reliability, Mapping) else {}
+        if suppressed:
+            lines.append(f"\nSuppressed domains below n ≥ 20: {_md_cell(', '.join(f'{key} (n={value})' for key, value in suppressed.items()))}.")
+        lines.extend(
+            [
+                "",
+                "### System accuracy by source tier",
+                "",
+                "| System | Source tier | n | Completed | Accuracy | Wilson 95% CI |",
+                "|---|---|---:|---:|---:|---|",
+            ]
+        )
+        accuracy = source_scorecard.get("system_accuracy_by_source_tier", {})
+        for system, tiers in accuracy.items() if isinstance(accuracy, Mapping) else []:
+            for tier, value in tiers.items() if isinstance(tiers, Mapping) else []:
+                lines.append(
+                    f"| {_md_cell(system)} | {_md_cell(tier)} | {value.get('n', 0)} | {value.get('completed', 0)} | {_fmt_metric(value.get('accuracy'))} | {_fmt_ci(value.get('accuracy_ci'))} |"
+                )
+        lines.extend(
+            [
+                "",
+                "### Agent evidence strength",
+                "",
+                "| Agent system | Strength | n | Share | Correct | Accuracy | Wilson 95% CI |",
+                "|---|---|---:|---:|---:|---:|---|",
+            ]
+        )
+        by_agent = source_scorecard.get("evidence_strength", {}).get("by_agent_system", {})
+        for system, block in by_agent.items() if isinstance(by_agent, Mapping) else []:
+            distribution = block.get("distribution", {}) if isinstance(block, Mapping) else {}
+            for strength in ("high", "medium", "low", "unknown"):
+                value = distribution.get(strength, {}) if isinstance(distribution, Mapping) else {}
+                lines.append(
+                    f"| {_md_cell(system)} | {strength} | {value.get('n', 0)} | {_fmt_metric(value.get('share'))} | {value.get('correct', 0)} | {_fmt_metric(value.get('accuracy'))} | {_fmt_ci(value.get('accuracy_ci'))} |"
+                )
+    else:
+        lines.append("No claims carried source_tier/source_domain metadata; source scorecards were not computed.")
     lines.extend(
         [
             "",
@@ -1711,6 +2365,19 @@ def report_evaluation(
         for split_metrics in metrics.get(system, {}).values()
         for error in split_metrics.get("errors", [])
     ]
+    confidence_intervals = confidence_interval_summary(claims, results)
+    paired_comparisons = paired_comparison_summary(claims, results)
+    source_scorecard = compute_source_scorecard(claims, results)
+    small_n_caveats: list[dict[str, Any]] = []
+    for system, dimensions in confidence_intervals.items():
+        if not isinstance(dimensions, Mapping):
+            continue
+        for dimension, groups in dimensions.items():
+            if not isinstance(groups, Mapping):
+                continue
+            for group, value in groups.items():
+                if isinstance(value, Mapping) and int(value.get("n", 0) or 0) < 50:
+                    small_n_caveats.append({"system": system, "dimension": dimension, "group": group, "n": value.get("n", 0)})
     summary: dict[str, Any] = {
         "generated_at": _now(),
         "out_dir": str(out),
@@ -1718,6 +2385,10 @@ def report_evaluation(
         "metrics": {system: dict(split_metrics) for system, split_metrics in metrics.items()},
         "system_totals": _system_report_totals(results),
         "provider_comparison": _provider_comparison(claims, results),
+        "confidence_intervals": confidence_intervals,
+        "paired_comparisons": paired_comparisons,
+        "source_scorecard": source_scorecard,
+        "small_n_caveats": small_n_caveats,
         "agent_errors": agent_errors,
         "result_count": len(results),
     }
@@ -1733,10 +2404,19 @@ __all__ = [
     "EvaluationError",
     "SYSTEMS",
     "compute_metrics",
+    "compute_source_scorecard",
+    "confidence_interval_summary",
     "dry_run_plan",
     "load_claims",
     "report_evaluation",
     "run_evaluation",
+    "paired_bootstrap_accuracy_ci",
+    "paired_bootstrap_ci",
+    "paired_comparison_summary",
+    "mcnemar_exact",
+    "mcnemar_exact_pvalue",
     "single_shot_request",
     "validate_dataset",
+    "wilson_ci",
+    "wilson_interval",
 ]

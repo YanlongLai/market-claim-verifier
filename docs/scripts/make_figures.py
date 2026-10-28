@@ -643,6 +643,77 @@ def make_eval_summary(path: Path, summary: dict[str, Any]) -> list[Path]:
     return _save(fig, "eval-summary")
 
 
+def make_data_quality(path: Path | None = None) -> list[Path]:
+    """Render cached-companyfacts checks passed versus anomalies per issuer."""
+
+    source = path or (ROOT / "docs" / "evidence" / "data-quality-2026-10-27.json")
+    report = _json(source)
+    issuers = report.get("issuers", [])
+    if not isinstance(issuers, list):
+        raise ValueError(f"data-quality report has no issuer list: {source}")
+    rows = [item for item in issuers if isinstance(item, dict)]
+    labels = [str(item.get("ticker") or item.get("cik") or "—") for item in rows]
+    passed = [float(item.get("checks_passed", 0) or 0) for item in rows]
+    anomalies = [float(item.get("anomalies", 0) or 0) for item in rows]
+    width = max(13.5, min(19.0, 8.0 + len(rows) * 0.34))
+    fig, axis = plt.subplots(figsize=(width, 7.3), facecolor=PAPER)
+    _style_axis(axis)
+    positions = list(range(len(rows)))
+    bar_width = 0.38
+    first = axis.bar(
+        [position - bar_width / 2 for position in positions],
+        passed,
+        width=bar_width,
+        color=SUPPORTED,
+        alpha=0.9,
+        label="Checks passed",
+    )
+    second = axis.bar(
+        [position + bar_width / 2 for position in positions],
+        anomalies,
+        width=bar_width,
+        color=CONTRADICTED,
+        alpha=0.9,
+        label="Anomalies",
+    )
+    axis.set_title(
+        "Cached SEC data quality by issuer",
+        loc="left",
+        color=INK,
+        fontsize=15,
+        fontweight="bold",
+        pad=24,
+    )
+    axis.text(
+        0,
+        1.01,
+        f"Snapshot {report.get('snapshot_date', '—')} · {len(rows)} issuers · flow metrics only",
+        transform=axis.transAxes,
+        color=MUTED,
+        fontsize=9.5,
+        va="bottom",
+    )
+    axis.set_xticks(positions, labels, rotation=60, ha="right", fontsize=8)
+    axis.set_ylabel("Count", color=MUTED, fontsize=9)
+    axis.legend(frameon=False, loc="upper right")
+    for bars in (first, second):
+        for bar in bars:
+            height = bar.get_height()
+            if height:
+                axis.text(
+                    bar.get_x() + bar.get_width() / 2,
+                    height,
+                    f"{height:g}",
+                    ha="center",
+                    va="bottom",
+                    fontsize=7.5,
+                    color=INK,
+                )
+    fig.tight_layout(rect=(0, 0.08, 1, 0.87))
+    _source_line(fig, f"Source: {_relative(source)}")
+    return _save(fig, "data-quality")
+
+
 def _relative(path: Path) -> str:
     try:
         return path.relative_to(ROOT).as_posix()
@@ -782,6 +853,19 @@ def _registry_entries(evaluation: dict[str, Any] | None, prior: dict[str, Any]) 
                 "make_eval_summary",
                 eval_source,
                 "Real results",
+                generated_at=generated_at,
+            )
+        )
+    data_quality_source = ROOT / "docs" / "evidence" / "data-quality-2026-10-27.json"
+    if data_quality_source.is_file():
+        entries.append(
+            _entry(
+                "data-quality",
+                ["docs/figures/data-quality.svg", "docs/figures/data-quality.png"],
+                "chart",
+                "make_data_quality",
+                ["docs/evidence/data-quality-2026-10-27.json"],
+                "Data quality",
                 generated_at=generated_at,
             )
         )
@@ -1012,6 +1096,9 @@ def _run_all(eval_arg: str | None) -> None:
     generated.extend(make_before_after())
     generated.extend(make_verdict_cards())
     generated.extend(make_live_cost_latency())
+    data_quality_source = ROOT / "docs" / "evidence" / "data-quality-2026-10-27.json"
+    if data_quality_source.is_file():
+        generated.extend(make_data_quality(data_quality_source))
     if evaluation_raw is not None:
         generated.extend(make_eval_summary(*evaluation_raw))
     _sync_readme(evaluation)

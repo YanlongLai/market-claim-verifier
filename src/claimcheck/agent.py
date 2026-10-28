@@ -480,6 +480,8 @@ def _invalid_model_json_result(recorder: TraceRecorder) -> dict[str, Any]:
         "model_output_invalid": True,
         "invalid_model_json": True,
         "flags": ["invalid_model_json"],
+        "evidence_strength": "low",
+        "evidence_summary": "Evidence: unavailable",
     }
     recorder.finish(result)
     return result
@@ -900,6 +902,34 @@ def verify_claim(
     verdict["model_verdict"] = model_verdict
     verdict["verdict"] = program_verdict
     verdict["program_checks"] = checks
+    strength_order = {"low": 0, "medium": 1, "high": 2}
+    strengths = [
+        str(check.get("evidence_strength"))
+        for check in checks
+        if str(check.get("evidence_strength")) in strength_order
+    ]
+    verdict["evidence_strength"] = (
+        min(strengths, key=lambda value: strength_order[value]) if strengths else "low"
+    )
+    summaries = list(
+        dict.fromkeys(
+            str(check.get("evidence_summary"))
+            for check in checks
+            if check.get("evidence_summary")
+            and str(check.get("evidence_summary")) != "Evidence: unavailable"
+        )
+    )
+    verdict["evidence_summary"] = (
+        "Evidence: " + "; ".join(summary.removeprefix("Evidence: ") for summary in summaries)
+        if summaries
+        else "Evidence: unavailable"
+    )
+    if any(check.get("restated_evidence") for check in checks):
+        flags = verdict.get("flags")
+        flags = list(flags) if isinstance(flags, list) else []
+        if "restated_evidence" not in flags:
+            flags.append("restated_evidence")
+        verdict["flags"] = flags
     verdict["model_program_disagreement"] = (
         model_verdict != program_verdict
         or any(check.get("disagreement") for check in checks)

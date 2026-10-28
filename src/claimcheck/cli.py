@@ -14,6 +14,12 @@ from typing import Sequence
 from .agent import initial_request, verify_claim
 from .budget import BudgetExceeded, Ledger, UnknownModel
 from .config import SettingsError, load_settings
+from .data_quality import (
+    DEFAULT_DOC_PATH,
+    DEFAULT_REPORT_PATH,
+    DEFAULT_SNAPSHOT_DATE,
+    write_data_quality_artifacts,
+)
 from .edgar import EdgarClient
 from .evaluate import (
     DEFAULT_BUDGET_USD as DEFAULT_EVAL_BUDGET_USD,
@@ -44,6 +50,14 @@ def _parser() -> argparse.ArgumentParser:
     edgar.add_argument("metric")
     edgar.add_argument("period")
 
+    quality = subparsers.add_parser(
+        "data-quality", help="check the cached SEC companyfacts snapshot"
+    )
+    quality.add_argument("--cache-dir", type=Path)
+    quality.add_argument("--snapshot-date", default=DEFAULT_SNAPSHOT_DATE)
+    quality.add_argument("--report", type=Path, default=DEFAULT_REPORT_PATH)
+    quality.add_argument("--doc", type=Path, default=DEFAULT_DOC_PATH)
+
     verify = subparsers.add_parser("verify", help="verify a financial claim with Muse")
     verify.add_argument("claim")
     verify.add_argument("--provider", choices=PROVIDERS)
@@ -56,7 +70,7 @@ def _parser() -> argparse.ArgumentParser:
     evaluation = subparsers.add_parser("eval", help="run or report the labeled evaluation")
     evaluation_subparsers = evaluation.add_subparsers(dest="eval_action", required=True)
 
-    run = evaluation_subparsers.add_parser("run", help="run evaluation pairs sequentially")
+    run = evaluation_subparsers.add_parser("run", help="run evaluation pairs with bounded concurrency")
     run.add_argument("--split", choices=("dev", "test", "all"), default="all")
     run.add_argument("--systems", default=",".join(SYSTEMS))
     run.add_argument("--provider", choices=PROVIDERS)
@@ -67,6 +81,7 @@ def _parser() -> argparse.ArgumentParser:
     run.add_argument("--max-output-tokens", type=_positive_int)
     run.add_argument("--reasoning-effort")
     run.add_argument("--dry-run", action="store_true")
+    run.add_argument("--concurrency", type=_positive_int, default=1)
 
     report = evaluation_subparsers.add_parser("report", help="write summary.json and REPORT.md")
     report.add_argument("--out", type=Path, required=True)
@@ -143,6 +158,27 @@ def main(argv: Sequence[str] | None = None) -> int:
         _print_json(result)
         return 0 if "error" not in result else 1
 
+    if args.command == "data-quality":
+        try:
+            report = write_data_quality_artifacts(
+                args.cache_dir or settings.cache_dir,
+                snapshot_date=args.snapshot_date,
+                report_path=args.report,
+                doc_path=args.doc,
+            )
+        except (OSError, ValueError, KeyError) as exc:
+            print(f"Data-quality report failed: {exc}", file=sys.stderr)
+            return 1
+        _print_json(
+            {
+                "snapshot_date": report.get("snapshot_date"),
+                "issuer_count": report.get("issuer_count", 0),
+                "report": str(args.report),
+                "doc": str(args.doc),
+            }
+        )
+        return 0
+
     if args.command == "prompts":
         if args.prompts_action == "export":
             paths = export_prompt_files()
@@ -168,7 +204,9 @@ def main(argv: Sequence[str] | None = None) -> int:
 
         try:
             systems = _parse_systems(args.systems, provider=args.provider)
-            claims = load_claims(args.claims)
+            # v1 keeps its strict 30-claim contract; v2 and future frozen
+            # manifests are validated structurally by the runner instead.
+            claims = load_claims(args.claims, strict=False)
             if args.split != "all":
                 claims = [claim for claim in claims if claim.get("split") == args.split]
             model = args.model or (settings.model if os.environ.get("CLAIMCHECK_MODEL") else None)
@@ -195,6 +233,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                             max_output_tokens=max_output_tokens,
                             reasoning_effort=reasoning_effort,
                             out_dir=out_dir,
+                            concurrency=args.concurrency,
                         )
                     }
                 )
@@ -245,6 +284,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 split=args.split,
                 cli_args=cli_args,
                 claims_path=args.claims,
+                concurrency=args.concurrency,
             )
         except (EvaluationError, BudgetExceeded, UnknownModel, ValueError) as exc:
             print(f"Evaluation run failed: {exc}", file=sys.stderr)

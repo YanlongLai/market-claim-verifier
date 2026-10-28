@@ -5,10 +5,16 @@ from __future__ import annotations
 import json
 import math
 import uuid
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Mapping
+
+try:  # pragma: no cover - the fallback is for non-POSIX development hosts.
+    import fcntl
+except ImportError:  # pragma: no cover
+    fcntl = None  # type: ignore[assignment]
 
 from .providers import (
     BASETEN_DEFAULT_MODEL,
@@ -146,11 +152,23 @@ class Ledger:
                     events.append(value)
         return events
 
-    @property
-    def spent_total(self) -> float:
-        return self.spent_for_provider(None)
+    @contextmanager
+    def _file_lock(self):
+        """Serialize ledger read/check/append transactions across processes."""
 
-    def spent_for_provider(self, provider: str | None) -> float:
+        if not self.persist or fcntl is None:
+            yield
+            return
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        lock_path = self.path.with_name(self.path.name + ".lock")
+        with lock_path.open("a+", encoding="utf-8") as lock_handle:
+            fcntl.flock(lock_handle.fileno(), fcntl.LOCK_EX)
+            try:
+                yield
+            finally:
+                fcntl.flock(lock_handle.fileno(), fcntl.LOCK_UN)
+
+    def _spent_for_provider_unlocked(self, provider: str | None) -> float:
         events = self._events()
         reconciled: dict[str, float] = {}
         reservations: dict[str, float] = {}
@@ -168,6 +186,14 @@ class Ledger:
         return sum(reconciled.values()) + sum(
             amount for rid, amount in reservations.items() if rid not in reconciled
         )
+
+    @property
+    def spent_total(self) -> float:
+        return self.spent_for_provider(None)
+
+    def spent_for_provider(self, provider: str | None) -> float:
+        with self._file_lock():
+            return self._spent_for_provider_unlocked(provider)
 
     def budget_for_provider(self, provider: str | None = None) -> float:
         selected_provider = str(provider or self.provider)
@@ -219,13 +245,14 @@ class Ledger:
             provider=provider,
         )
         selected_provider = reservation.provider
-        spent = self.spent_for_provider(selected_provider)
-        budget = self.budget_for_provider(selected_provider)
-        if spent + reservation.amount > budget:
-            raise BudgetExceeded(
-                f"{selected_provider} budget ${budget:.4f} would be exceeded by reservation "
-                f"${reservation.amount:.4f} (spent ${spent:.4f})"
-            )
+        with self._file_lock():
+            spent = self._spent_for_provider_unlocked(selected_provider)
+            budget = self.budget_for_provider(selected_provider)
+            if spent + reservation.amount > budget:
+                raise BudgetExceeded(
+                    f"{selected_provider} budget ${budget:.4f} would be exceeded by reservation "
+                    f"${reservation.amount:.4f} (spent ${spent:.4f})"
+                )
         return reservation
 
     def reserve(
@@ -239,23 +266,39 @@ class Ledger:
     ) -> Reservation:
         """Reserve worst-case cost, refusing before the caller invokes a model."""
 
-        reservation = self.preview(
+        reservation = self.estimate(
             payload,
             model=model,
             max_output_tokens=max_output_tokens,
             previous_context=previous_context,
             provider=provider,
         )
-        self._append(
-            {
-                "event": "reserve",
-                "timestamp": _now(),
-                **reservation.as_dict(),
-            }
-        )
+        selected_provider = reservation.provider
+        with self._file_lock():
+            spent = self._spent_for_provider_unlocked(selected_provider)
+            budget = self.budget_for_provider(selected_provider)
+            if spent + reservation.amount > budget:
+                raise BudgetExceeded(
+                    f"{selected_provider} budget ${budget:.4f} would be exceeded by reservation "
+                    f"${reservation.amount:.4f} (spent ${spent:.4f})"
+                )
+            self._append_unlocked(
+                {
+                    "event": "reserve",
+                    "timestamp": _now(),
+                    **reservation.as_dict(),
+                }
+            )
         return reservation
 
     def _append(self, event: dict[str, Any]) -> None:
+        if not self.persist:
+            return
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        with self._file_lock():
+            self._append_unlocked(event)
+
+    def _append_unlocked(self, event: dict[str, Any]) -> None:
         if not self.persist:
             return
         self.path.parent.mkdir(parents=True, exist_ok=True)

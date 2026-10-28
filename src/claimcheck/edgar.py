@@ -36,6 +36,12 @@ STATEMENT_FORMS = frozenset(
     }
 )
 
+# Provenance deliberately distinguishes the two US filing families that the
+# verifier treats as primary evidence.  The broader ``STATEMENT_FORMS`` set is
+# still used for fact selection, while these sets drive the evidence tier.
+AUDITED_FORMS = frozenset({"10-K", "10-K/A"})
+REVIEWED_FORMS = frozenset({"10-Q", "10-Q/A"})
+
 # These metrics represent additive flows.  A quarter can therefore be
 # recovered from cumulative YTD facts, while EPS and share counts cannot.
 ADDITIVE_METRICS = frozenset(
@@ -224,6 +230,169 @@ def _value(fact: Mapping[str, Any]) -> int | float | None:
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         return None
     return value
+
+
+def _provenance_value_groups(
+    facts: Iterable[Mapping[str, Any]],
+) -> list[dict[str, Any]]:
+    """Group same-period fact values while retaining the filing accessions."""
+
+    groups: list[dict[str, Any]] = []
+    for fact in facts:
+        value = fact.get("val")
+        group = next(
+            (
+                candidate
+                for candidate in groups
+                if candidate["value"] == value
+            ),
+            None,
+        )
+        if group is None:
+            group = {"value": value, "accn": set()}
+            groups.append(group)
+        accn = str(fact.get("accn") or "").strip()
+        if accn:
+            group["accn"].add(accn)
+    return [
+        {"value": group["value"], "accn": sorted(group["accn"])}
+        for group in groups
+    ]
+
+
+def _fact_provenance(
+    facts: Mapping[str, Any],
+    concept: str,
+    unit: str,
+    start: str | None,
+    end: str | None,
+    *,
+    form_fallback: bool = False,
+) -> dict[str, Any]:
+    """Summarize all filings reporting one exact XBRL period.
+
+    This intentionally reads the complete companyfacts concept/unit series,
+    rather than only the row selected for display.  Comparative rows in later
+    filings therefore count as confirmations and differing values are visible
+    as restatements.
+    """
+
+    matching: list[Mapping[str, Any]] = []
+    for namespace_data in facts.values() if isinstance(facts, Mapping) else ():
+        if not isinstance(namespace_data, Mapping):
+            continue
+        concept_data = namespace_data.get(concept)
+        if not isinstance(concept_data, Mapping):
+            continue
+        units = concept_data.get("units")
+        values = units.get(unit) if isinstance(units, Mapping) else None
+        if not isinstance(values, list):
+            continue
+        for fact in values:
+            if not isinstance(fact, Mapping):
+                continue
+            fact_start, fact_end = _fact_identity(fact)
+            if fact_start == start and fact_end == end:
+                matching.append(fact)
+
+    forms = sorted(
+        {
+            str(fact.get("form") or "").strip().upper()
+            for fact in matching
+            if str(fact.get("form") or "").strip()
+        }
+    )
+    audited = any(form in AUDITED_FORMS for form in forms)
+    reviewed = any(form in REVIEWED_FORMS for form in forms)
+    # A non-standard form is not upgraded to audited evidence.  It remains in
+    # the L2-shaped direct bucket, with ``form_fallback`` and low strength
+    # making that limitation explicit to callers.
+    tier = "L1" if audited else "L2" if reviewed else "L2"
+    accns = sorted(
+        {
+            str(fact.get("accn") or "").strip()
+            for fact in matching
+            if str(fact.get("accn") or "").strip()
+        }
+    )
+    filed = sorted(
+        {
+            str(fact.get("filed") or "").strip()
+            for fact in matching
+            if str(fact.get("filed") or "").strip()
+        }
+    )
+    values_seen = _provenance_value_groups(matching)
+    restated = len(values_seen) > 1
+    amended = any(form.endswith("/A") for form in forms)
+    effective_fallback = bool(
+        form_fallback
+        or (matching and not any(_is_statement_form(fact) for fact in matching))
+    )
+    if restated or (effective_fallback and len(accns) <= 1):
+        strength = "low"
+    elif tier == "L1" and len(accns) >= 2:
+        strength = "high"
+    else:
+        strength = "medium"
+    result: dict[str, Any] = {
+        "tier": tier,
+        "audited": audited,
+        "confirmations": len(accns),
+        "forms": forms,
+        "first_filed": filed[0] if filed else None,
+        "latest_filed": filed[-1] if filed else None,
+        "restated": restated,
+        "amended": amended,
+        "strength": strength,
+    }
+    if restated:
+        result["values_seen"] = values_seen
+    if effective_fallback:
+        result["form_fallback"] = True
+    return result
+
+
+def _derived_provenance(
+    component_provenance: Iterable[Mapping[str, Any]],
+) -> dict[str, Any]:
+    """Build compact L3 provenance for a program-derived fact."""
+
+    components = [dict(value) for value in component_provenance]
+    restated = any(bool(value.get("restated")) for value in components)
+    fallback = any(bool(value.get("form_fallback")) for value in components)
+    filed = sorted(
+        str(value.get("first_filed"))
+        for value in components
+        if value.get("first_filed")
+    )
+    latest = sorted(
+        str(value.get("latest_filed"))
+        for value in components
+        if value.get("latest_filed")
+    )
+    result: dict[str, Any] = {
+        "tier": "L3",
+        "component_tiers": [str(value.get("tier") or "L2") for value in components],
+        "component_strengths": [
+            str(value.get("strength") or "low") for value in components
+        ],
+        "audited": False,
+        "confirmations": 0,
+        "forms": ["derived"],
+        "first_filed": filed[0] if filed else None,
+        "latest_filed": latest[-1] if latest else None,
+        "restated": restated,
+        "amended": any(bool(value.get("amended")) for value in components),
+        "strength": "low" if restated or fallback else "medium",
+    }
+    if restated:
+        result["values_seen"] = [
+            {"component": index, "values_seen": value.get("values_seen", [])}
+            for index, value in enumerate(components)
+            if value.get("restated")
+        ]
+    return result
 
 
 @dataclass(frozen=True)
@@ -488,8 +657,10 @@ def _fact_sort_key(fact: Mapping[str, Any], *, prefer_direct: bool = False) -> t
     return (end, filed, direct_rank if prefer_direct else 0, frame_rank, str(fact.get("accn") or ""))
 
 
-def _component_from_fact(fact: Mapping[str, Any]) -> dict[str, Any]:
-    return {
+def _component_from_fact(
+    fact: Mapping[str, Any], provenance: Mapping[str, Any] | None = None
+) -> dict[str, Any]:
+    result = {
         "value": fact.get("val"),
         "start": fact.get("start"),
         "end": fact.get("end"),
@@ -499,6 +670,9 @@ def _component_from_fact(fact: Mapping[str, Any]) -> dict[str, Any]:
         "duration_days": _days(_date(fact.get("start")), _date(fact.get("end"))),
         "period_type": _period_type(fact),
     }
+    if provenance is not None:
+        result["provenance"] = dict(provenance)
+    return result
 
 
 def _filing_url(cik: str, fact: Mapping[str, Any]) -> str | None:
@@ -882,6 +1056,7 @@ class EdgarClient:
                 "comparable_periods": [],
                 "error": "history_not_supported",
                 "message": "History ranking is defined for quarter and annual facts.",
+                "provenance": target.get("provenance"),
             }
 
         period_values: list[dict[str, Any]] = []
@@ -906,6 +1081,7 @@ class EdgarClient:
                     "value": value,
                     "period_type": candidate.get("period_type"),
                     "end": candidate.get("end"),
+                    "provenance": candidate.get("provenance"),
                 }
             )
 
@@ -936,6 +1112,7 @@ class EdgarClient:
                 "comparable_periods": period_values,
                 "error": "fact_not_in_history",
                 "message": "The requested fact was not in the comparable history window.",
+                "provenance": target.get("provenance"),
             }
 
         target_value = float(target_entry["value"])
@@ -976,6 +1153,7 @@ class EdgarClient:
             "periods_considered": window,
             "periods": period_values,
             "comparable_periods": period_values,
+            "provenance": target_entry.get("provenance") or target.get("provenance"),
         }
 
     def _fact_groups(
@@ -1423,6 +1601,14 @@ class EdgarClient:
     ) -> dict[str, Any]:
         fact = selected.fact
         accn = str(fact.get("accn") or "")
+        provenance = _fact_provenance(
+            document.get("facts", {}),
+            selected.group.concept,
+            selected.group.unit,
+            _fact_identity(fact)[0],
+            _fact_identity(fact)[1],
+            form_fallback=selected.form_fallback,
+        )
         return {
             "ticker": resolved["ticker"],
             "cik": resolved["cik"],
@@ -1448,6 +1634,7 @@ class EdgarClient:
             "derived": False,
             "filing_url": _filing_url(str(resolved["cik"]), fact),
             "source_sha256": source_sha256,
+            "provenance": provenance,
         }
 
     def _derived_result(
@@ -1471,6 +1658,23 @@ class EdgarClient:
             raise ValueError("derived components must have numeric values and dates")
         derived_start = previous_end.fromordinal(previous_end.toordinal() + 1)
         derived_value = current_value - previous_value
+        current_provenance = _fact_provenance(
+            document.get("facts", {}),
+            candidate.group.concept,
+            candidate.group.unit,
+            _fact_identity(candidate.current)[0],
+            _fact_identity(candidate.current)[1],
+        )
+        previous_provenance = _fact_provenance(
+            document.get("facts", {}),
+            candidate.group.concept,
+            candidate.group.unit,
+            _fact_identity(candidate.previous)[0],
+            _fact_identity(candidate.previous)[1],
+        )
+        provenance = _derived_provenance(
+            (current_provenance, previous_provenance)
+        )
         return {
             "ticker": resolved["ticker"],
             "cik": resolved["cik"],
@@ -1499,11 +1703,12 @@ class EdgarClient:
             "derived": True,
             "derivation": candidate.derivation,
             "components": [
-                _component_from_fact(candidate.current),
-                _component_from_fact(candidate.previous),
+                _component_from_fact(candidate.current, current_provenance),
+                _component_from_fact(candidate.previous, previous_provenance),
             ],
             "filing_url": None,
             "source_sha256": source_sha256,
+            "provenance": provenance,
         }
 
     def lookup_fact(

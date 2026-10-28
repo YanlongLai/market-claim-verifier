@@ -23,6 +23,7 @@ PROMPT_FILE_NAMES = {
     "verdict_json_schema": "verdict-json-schema.md",
     "tool_schemas": "tool-schemas.md",
     "single_shot_instructions": "single-shot-instructions.md",
+    "v2_paraphrase": "v2-paraphrase.md",
 }
 
 PROMPT_LABELS = {
@@ -39,6 +40,7 @@ PROMPT_LABELS = {
     "verdict_json_schema": "Verdict JSON schema",
     "tool_schemas": "Tool schemas",
     "single_shot_instructions": "Single-shot instructions",
+    "v2_paraphrase": "v2 claim paraphrase prompt",
 }
 
 
@@ -72,6 +74,11 @@ def prompt_registry() -> dict[str, dict[str, str]]:
     )
     from .tools import TOOL_DEFINITIONS
 
+    v2_paraphrase = """Rewrite the supplied financial claim as one concise news headline or social post. Return only the rewritten claim, with no quotation marks, explanation, or bullet. Keep the company identity, every exact number phrase, the period, and the direction or comparison meaning unchanged. Preserve approximate words such as about or roughly when they appear. Do not add facts, sources, or a new time period.
+
+Claim:
+"""
+
     texts = {
         "agent_tool_loop_instructions": SYSTEM_INSTRUCTIONS,
         "agent_final_verdict_prompt": AGENT_FINAL_VERDICT_PROMPT,
@@ -86,6 +93,7 @@ def prompt_registry() -> dict[str, dict[str, str]]:
         "verdict_json_schema": _json_text(VERDICT_SCHEMA),
         "tool_schemas": _json_text(TOOL_DEFINITIONS),
         "single_shot_instructions": SINGLE_SHOT_INSTRUCTIONS,
+        "v2_paraphrase": v2_paraphrase,
     }
     return {
         name: {

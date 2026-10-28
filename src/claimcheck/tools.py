@@ -14,6 +14,38 @@ PERIOD_PATTERN = r"^(latest|FY\d{4}(?:Q[1-4])?|\d{4}Q[1-4])$"
 BASE_PERIOD_PATTERN = r"^(FY\d{4}(?:Q[1-4])?|\d{4}Q[1-4])$"
 
 
+PROVENANCE_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "tier": {"type": "string", "enum": ["L1", "L2", "L3"]},
+        "component_tiers": {"type": "array", "items": {"type": "string"}},
+        "component_strengths": {"type": "array", "items": {"type": "string"}},
+        "audited": {"type": "boolean"},
+        "confirmations": {"type": "integer", "minimum": 0},
+        "forms": {"type": "array", "items": {"type": "string"}},
+        "first_filed": {"type": ["string", "null"]},
+        "latest_filed": {"type": ["string", "null"]},
+        "restated": {"type": "boolean"},
+        "values_seen": {"type": "array"},
+        "amended": {"type": "boolean"},
+        "form_fallback": {"type": "boolean"},
+        "strength": {"type": "string", "enum": ["high", "medium", "low"]},
+    },
+    "required": [
+        "tier",
+        "audited",
+        "confirmations",
+        "forms",
+        "first_filed",
+        "latest_filed",
+        "restated",
+        "amended",
+        "strength",
+    ],
+    "additionalProperties": True,
+}
+
+
 LOOKUP_FACT_TOOL = {
     "type": "function",
     "name": "lookup_fact",
@@ -27,7 +59,9 @@ LOOKUP_FACT_TOOL = {
         "return derived=true with derivation and components; never treat a "
         "ytd result as a quarter or recompute a derived result. When "
         "fiscal_equals_calendar is true, fiscal and calendar labels identify "
-        "the same fact; do not look up both readings."
+        "the same fact; do not look up both readings. Every fact includes compact "
+        "provenance: L1 audited 10-K, L2 reviewed 10-Q, or L3 program-derived, "
+        "with confirmations, restatement, amendment, and evidence strength."
     ),
     "parameters": {
         "type": "object",
@@ -60,6 +94,7 @@ LOOKUP_FACT_OUTPUT_SCHEMA = {
             "type": "string",
             "enum": ["quarter", "ytd", "annual", "instant"],
         },
+        "provenance": PROVENANCE_SCHEMA,
         "form_fallback": {"type": "boolean"},
         "derived": {"type": "boolean"},
         "derivation": {"type": "string"},
@@ -79,6 +114,7 @@ LOOKUP_FACT_OUTPUT_SCHEMA = {
                         "type": "string",
                         "enum": ["quarter", "ytd", "annual", "instant"],
                     },
+                    "provenance": PROVENANCE_SCHEMA,
                 },
                 "required": [
                     "value",
@@ -103,8 +139,8 @@ COMPUTE_CHANGE_TOOL = {
         "metric. The period and base_period must be the same kind of period; "
         "when base_period is omitted, null, empty, \"null\", or \"none\", use "
         "the same quarter or fiscal year one year earlier. The result includes "
-        "both cited lookup facts, fiscal_equals_calendar, and a percentage "
-        "change in percent points."
+        "both cited lookup facts, fiscal_equals_calendar, their fact-level "
+        "provenance, and a percentage change in percent points."
     ),
     "parameters": {
         "type": "object",
@@ -131,7 +167,8 @@ HISTORY_RANK_TOOL = {
         "period of the same period_type. Quarters include derived Q4 values when "
         "available; annual periods are compared only with annual periods. Return "
         "the rank, record flags through the requested period, prior high/low, "
-        "and the comparison window with period end dates."
+        "and the comparison window with period end dates. The requested period "
+        "also includes compact fact provenance and evidence strength."
     ),
     "parameters": {
         "type": "object",
@@ -164,6 +201,7 @@ HISTORY_RANK_OUTPUT_SCHEMA = {
         "is_lowest": {"type": "boolean"},
         "previous_high": {"type": ["object", "null"]},
         "previous_low": {"type": ["object", "null"]},
+        "provenance": PROVENANCE_SCHEMA,
         "periods_considered": {"type": "object"},
         "periods": {"type": "array"},
         "comparable_periods": {"type": "array"},

@@ -47,10 +47,15 @@ METRIC_ALIASES: dict[str, tuple[tuple[str, str], ...]] = {
         ("us-gaap", "CashAndCashEquivalentsAtCarryingValue"),
         ("us-gaap", "CashCashEquivalentsRestrictedCashAndRestrictedCashEquivalents"),
     ),
+    "capex": (("us-gaap", "PaymentsToAcquirePropertyPlantAndEquipment"),),
+    "rd_expense": (("us-gaap", "ResearchAndDevelopmentExpense"),),
+    "eps_diluted": (("us-gaap", "EarningsPerShareDiluted"),),
 }
 SCALE_FACTORS = {"usd": 1.0, "million": 1_000_000.0, "billion": 1_000_000_000.0}
+PERIOD_BASES = {"calendar", "fiscal", "month_named"}
 PERIOD_RE = re.compile(r"^(?:(?P<fy>FY)(?P<fy_year>\d{4})|(?P<year>\d{4})(?P<quarter>Q[1-4]))$", re.I)
 FISCAL_PERIOD_RE = re.compile(r"^FY(?P<year>\d{4})Q(?P<quarter>[1-4])$", re.I)
+CALENDAR_YEAR_RE = re.compile(r"^(?:CY)?(?P<year>20\d{2})$", re.I)
 FRAME_RE = re.compile(r"^CY(?P<year>\d{4})(?P<quarter>Q[1-4])(?:I)?$", re.I)
 
 
@@ -257,6 +262,14 @@ def _fiscal_period_parts(period: str) -> tuple[int, int] | None:
     return int(match.group("year")), int(match.group("quarter"))
 
 
+def _calendar_period_parts(period: str) -> tuple[int, int] | None:
+    normalized = str(period).upper().removeprefix("CY")
+    match = re.fullmatch(r"(20\d{2})Q([1-4])", normalized)
+    if not match:
+        return None
+    return int(match.group(1)), int(match.group(2))
+
+
 def _period_from_spec(spec: Mapping[str, Any]) -> str:
     """Return the canonical period label, including explicit fiscal quarters.
 
@@ -292,6 +305,64 @@ def _period_from_spec(spec: Mapping[str, Any]) -> str:
         period_value = derived_period
 
     return str(period_value or "").upper()
+
+
+def _period_basis(spec: Mapping[str, Any]) -> str:
+    """Return the explicit period basis, with a backwards-compatible default.
+
+    v1 specs predate ``period_basis``.  Their canonical ``FY...`` labels are
+    fiscal and their bare ``YYYYQn`` labels are calendar, so that inference is
+    safe for the old dataset while v2 can require an explicit basis in every
+    generated spec.
+    """
+
+    value = spec.get("period_basis")
+    if value is None or str(value).strip() == "":
+        period = _period_from_spec(spec)
+        return "fiscal" if period.startswith("FY") else "calendar"
+    basis = str(value).strip().lower()
+    if basis not in PERIOD_BASES:
+        raise GoldBuildError(
+            f"period_basis must be one of {', '.join(sorted(PERIOD_BASES))}, got {value!r}"
+        )
+    return basis
+
+
+def _fiscal_year_end(snapshot: CompanySnapshot) -> date | None:
+    """Infer an issuer's fiscal year-end from its annual SEC facts."""
+
+    ends: list[date] = []
+    for metric in METRIC_ALIASES:
+        try:
+            candidates = _facts_for_metric(snapshot, metric)
+        except GoldBuildError:
+            continue
+        for _concept, _unit, fact in candidates:
+            if str(fact.get("fp") or "").upper() != "FY":
+                continue
+            if _period_type(fact) != "annual":
+                continue
+            end = _as_date(fact.get("end"))
+            if end is not None:
+                ends.append(end)
+    if not ends:
+        return None
+    # The latest period end is the most useful signal; duplicate comparative
+    # facts are harmless because they have the same date.
+    return max(ends)
+
+
+def is_non_calendar_issuer(snapshot: CompanySnapshot) -> bool:
+    """Whether the issuer's fiscal year-end is outside Dec 31 +/- 7 days."""
+
+    end = _fiscal_year_end(snapshot)
+    if end is None:
+        return False
+    nearest_december_end = min(
+        (date(end.year - 1, 12, 31), date(end.year, 12, 31), date(end.year + 1, 12, 31)),
+        key=lambda candidate: abs((end - candidate).days),
+    )
+    return abs((end - nearest_december_end).days) > 7
 
 
 def _period_display(period: str) -> str:
@@ -343,11 +414,10 @@ def _facts_for_metric(snapshot: CompanySnapshot, metric: str) -> list[tuple[str,
 
 
 def _quarter_end(period: str) -> date | None:
-    match = PERIOD_RE.match(period)
-    if not match or not match.group("year"):
+    parts = _calendar_period_parts(period)
+    if parts is None:
         return None
-    year = int(match.group("year"))
-    quarter = int(match.group("quarter")[1:])
+    year, quarter = parts
     month = quarter * 3
     if month == 12:
         return date(year, 12, 31)
@@ -358,6 +428,13 @@ def _quarter_end(period: str) -> date | None:
 def _same_calendar_quarter(fact: Mapping[str, Any], period: str) -> bool:
     end = _as_date(fact.get("end"))
     target_end = _quarter_end(period)
+    normalized = str(period).upper().removeprefix("CY")
+    frame = _frame_period(fact)
+    # SEC's CY frame is the authoritative calendar interpretation for
+    # 52/53-week issuers.  Its quarter can end in the following month (for
+    # example, NVIDIA's calendar Q2 2024 frame ends July 28).
+    if _period_type(fact) == "quarter" and frame == normalized:
+        return True
     return _period_type(fact) == "quarter" and end == target_end
 
 
@@ -368,10 +445,79 @@ def _select_fact(
     *,
     basis: str = "sec",
 ) -> tuple[str, str, dict[str, Any]] | None:
+    basis = str(basis or "sec").lower()
+    if basis not in {"sec", *PERIOD_BASES}:
+        raise GoldBuildError(f"unknown period basis {basis!r}")
     normalized_period = str(period).upper()
+    if basis in {"fiscal", "month_named"}:
+        calendar_parts = _calendar_period_parts(normalized_period)
+        if calendar_parts is not None:
+            normalized_period = f"FY{calendar_parts[0]}Q{calendar_parts[1]}"
+        elif re.fullmatch(r"20\d{2}", normalized_period):
+            normalized_period = f"FY{normalized_period}"
+    elif basis == "calendar":
+        fiscal_parts_from_label = _fiscal_period_parts(normalized_period)
+        if fiscal_parts_from_label is not None:
+            normalized_period = f"{fiscal_parts_from_label[0]}Q{fiscal_parts_from_label[1]}"
+        elif re.fullmatch(r"FY20\d{2}", normalized_period):
+            normalized_period = normalized_period[2:]
     candidates = _facts_for_metric(snapshot, metric)
     aliases = METRIC_ALIASES[metric]
     fiscal_parts = _fiscal_period_parts(normalized_period)
+    calendar_year_match = CALENDAR_YEAR_RE.fullmatch(normalized_period)
+
+    if basis == "calendar" and calendar_year_match is not None:
+        calendar_year = int(calendar_year_match.group("year"))
+        direct: list[tuple[str, str, dict[str, Any]]] = []
+        for concept, unit, fact in candidates:
+            end = _as_date(fact.get("end"))
+            if (
+                end is not None
+                and end.year == calendar_year
+                and end.month == 12
+                and end.day >= 24
+                and _period_type(fact) in {"annual", "instant"}
+                and str(fact.get("fp") or "").upper() == "FY"
+            ):
+                direct.append((concept, unit, fact))
+        if direct:
+            return max(direct, key=lambda item: (_as_date(item[2].get("end")) or date.min, _filed_key(item[2])))
+
+        # SEC often exposes calendar-year frames only as four calendar
+        # quarters for non-calendar issuers.  Derive a calendar flow year so
+        # an ambiguous annual claim has two real readings as well.
+        if metric in {"revenue", "net_income", "operating_income", "gross_profit", "capex", "rd_expense"}:
+            quarter_parts = [(calendar_year, quarter) for quarter in range(1, 5)]
+            selected_quarters = [
+                _select_fact(snapshot, metric, f"{year}Q{quarter}", basis="calendar")
+                for year, quarter in quarter_parts
+            ]
+            if all(item is not None for item in selected_quarters):
+                first = selected_quarters[0]
+                assert first is not None
+                concept, unit, _first_fact = first
+                facts = [item[2] for item in selected_quarters if item is not None]
+                derived = {
+                    "val": sum(float(fact["val"]) for fact in facts),
+                    "start": date(calendar_year, 1, 1).isoformat(),
+                    "end": date(calendar_year, 12, 31).isoformat(),
+                    "accn": facts[-1].get("accn"),
+                    "form": "derived",
+                    "filed": max(str(fact.get("filed") or "") for fact in facts),
+                    "frame": f"CY{calendar_year}",
+                    "fy": calendar_year,
+                    "fp": "FY",
+                    "derived": True,
+                    "derivation": "calendar Q1 + Q2 + Q3 + Q4",
+                    "_component_specs": [
+                        ("calendar_component", f"{calendar_year}Q{quarter}", selected)
+                        for quarter, selected in enumerate(selected_quarters, 1)
+                        if selected is not None
+                    ],
+                }
+                return concept, unit, derived
+        return None
+
     for _namespace, preferred_concept in aliases:
         matches: list[tuple[str, str, dict[str, Any]]] = []
         for concept, unit, fact in candidates:
@@ -385,7 +531,7 @@ def _select_fact(
                 except (TypeError, ValueError):
                     fact_year = None
                 if (
-                    _period_type(fact) == "quarter"
+                    _period_type(fact) in {"quarter", "instant"}
                     and fact_year == fiscal_year
                     and str(fact.get("fp") or "").upper() == f"Q{fiscal_quarter}"
                 ):
@@ -395,13 +541,25 @@ def _select_fact(
                 if _same_calendar_quarter(fact, normalized_period):
                     matches.append((concept, unit, fact))
                 continue
+            if (
+                normalized_period.startswith("FY")
+                and re.fullmatch(r"FY\d{4}", normalized_period)
+                and str(fact.get("fp") or "").upper() == "FY"
+            ):
+                try:
+                    fact_year = int(fact.get("fy"))
+                except (TypeError, ValueError):
+                    fact_year = None
+                if fact_year == int(normalized_period[2:]) and _period_type(fact) in {"annual", "instant"}:
+                    matches.append((concept, unit, fact))
+                continue
             if _period_label(fact) == normalized_period:
                 matches.append((concept, unit, fact))
         if matches:
-            if fiscal_parts is not None:
+            if fiscal_parts is not None or re.fullmatch(r"FY\d{4}", normalized_period):
                 # A filing can carry the prior-year comparative with the same
-                # fy/fp values.  The latest period end is the issuer's actual
-                # fiscal quarter; later filings win ties for restatements.
+                # fy/fp values. The latest period end is the issuer's actual
+                # fiscal period; later filings win ties for restatements.
                 return max(
                     matches,
                     key=lambda item: (
@@ -410,6 +568,14 @@ def _select_fact(
                     ),
                 )
             return max(matches, key=lambda item: _filed_key(item[2]))
+        calendar_parts = _calendar_period_parts(normalized_period)
+        if basis == "calendar" and calendar_parts is not None:
+            calendar_year, _calendar_quarter = calendar_parts
+            target_end = _quarter_end(normalized_period)
+            for fiscal_year in (calendar_year - 1, calendar_year, calendar_year + 1):
+                derived = _select_fiscal_q4_candidate(snapshot, metric, fiscal_year, preferred_concept)
+                if derived is not None and _as_date(derived[2].get("end")) == target_end:
+                    return derived
         if fiscal_parts is not None and fiscal_parts[1] == 4 and basis != "calendar":
             derived = _select_fiscal_q4_candidate(snapshot, metric, fiscal_parts[0], preferred_concept)
             if derived is not None:
@@ -552,6 +718,11 @@ def _stated_base(spec: Mapping[str, Any]) -> float:
     return float(stated) * _scale_factor(spec)
 
 
+def _selection_basis(spec: Mapping[str, Any]) -> str:
+    basis = _period_basis(spec)
+    return "fiscal" if basis in {"fiscal", "month_named"} else "calendar"
+
+
 def _fmt_number(value: Any) -> str:
     if value is None:
         return "—"
@@ -584,7 +755,7 @@ def _value_part(spec: Mapping[str, Any], snapshots: Mapping[str, CompanySnapshot
     metric = str(spec.get("metric") or "").lower()
     period = _period_from_spec(spec)
     snapshot = snapshots[ticker]
-    selected = _select_fact(snapshot, metric, period)
+    selected = _select_fact(snapshot, metric, period, basis=_selection_basis(spec))
     record = _fact_record(snapshot, metric, period, selected)
     if not _fact_is_present(record):
         return {
@@ -627,7 +798,7 @@ def _value_part(spec: Mapping[str, Any], snapshots: Mapping[str, CompanySnapshot
     comparison_period_value = spec.get("comparison_period")
     if comparison_period_value is not None:
         comparison_period = _period_from_spec({"period": comparison_period_value})
-        comparison_selected = _select_fact(snapshot, metric, comparison_period)
+        comparison_selected = _select_fact(snapshot, metric, comparison_period, basis=_selection_basis(spec))
         comparison_record = _fact_record(snapshot, metric, comparison_period, comparison_selected, role="comparison")
         facts.append(comparison_record)
         if _fact_is_present(comparison_record):
@@ -649,8 +820,9 @@ def _growth_part(spec: Mapping[str, Any], snapshots: Mapping[str, CompanySnapsho
     period = _period_from_spec(spec)
     base_period = _period_from_spec({"period": spec.get("base_period")})
     snapshot = snapshots[ticker]
-    current = _select_fact(snapshot, metric, period)
-    prior = _select_fact(snapshot, metric, base_period)
+    selection_basis = _selection_basis(spec)
+    current = _select_fact(snapshot, metric, period, basis=selection_basis)
+    prior = _select_fact(snapshot, metric, base_period, basis=str(spec.get("base_period_basis") or selection_basis))
     current_record = _fact_record(snapshot, metric, period, current, role="current")
     prior_record = _fact_record(snapshot, metric, base_period, prior, role="base")
     if not _fact_is_present(current_record) or not _fact_is_present(prior_record):
@@ -760,7 +932,7 @@ def _first_time_part(spec: Mapping[str, Any], snapshots: Mapping[str, CompanySna
     metric = str(spec.get("metric") or "").lower()
     period = _period_from_spec(spec)
     snapshot = snapshots[ticker]
-    target_selected = _select_fact(snapshot, metric, period)
+    target_selected = _select_fact(snapshot, metric, period, basis=_selection_basis(spec))
     target = _fact_record(snapshot, metric, period, target_selected, role="target")
     if not _fact_is_present(target):
         return {
@@ -794,11 +966,175 @@ def _first_time_part(spec: Mapping[str, Any], snapshots: Mapping[str, CompanySna
     return {"truth": bool(truth), "facts": facts_used, "note": note}
 
 
+def _select_fiscal_duration_fact(
+    snapshot: CompanySnapshot,
+    metric: str,
+    period: str,
+    duration_kind: str,
+) -> tuple[str, str, dict[str, Any]] | None:
+    """Select a fiscal quarter, YTD, or annual fact for period-trap claims."""
+
+    normalized = str(period).upper()
+    parts = _fiscal_period_parts(normalized)
+    candidates = _facts_for_metric(snapshot, metric)
+    matches: list[tuple[str, str, dict[str, Any]]] = []
+    for concept, unit, fact in candidates:
+        fp = str(fact.get("fp") or "").upper()
+        fact_year = fact.get("fy")
+        try:
+            fact_year = int(fact_year)
+        except (TypeError, ValueError):
+            fact_year = None
+        if parts is not None:
+            year, quarter = parts
+            if fact_year != year or fp != f"Q{quarter}":
+                continue
+            period_type = _period_type(fact)
+            days = _duration_days(fact) or 0
+            if duration_kind == "quarter" and period_type in {"quarter", "instant"}:
+                matches.append((concept, unit, fact))
+            elif duration_kind == "ytd" and 100 < days < 380:
+                matches.append((concept, unit, fact))
+            continue
+        if duration_kind == "annual" and fp == "FY" and _period_type(fact) == "annual":
+            if _period_label(fact) == normalized:
+                matches.append((concept, unit, fact))
+    if not matches:
+        return None
+    return max(matches, key=lambda item: (_as_date(item[2].get("end")) or date.min, _filed_key(item[2])))
+
+
+def _ambiguous_period_part(spec: Mapping[str, Any], snapshots: Mapping[str, CompanySnapshot]) -> dict[str, Any]:
+    """Evaluate an intentionally unqualified period under both readings."""
+
+    ticker = str(spec.get("ticker") or "").upper()
+    metric = str(spec.get("metric") or "").lower()
+    raw_period = _period_from_spec(spec)
+    fiscal_period = _period_from_spec({"period": spec.get("fiscal_period") or raw_period})
+    fiscal_parts = _fiscal_period_parts(fiscal_period)
+    calendar_parts = _calendar_period_parts(fiscal_period)
+    if fiscal_parts is None and calendar_parts is not None:
+        fiscal_period = f"FY{calendar_parts[0]}Q{calendar_parts[1]}"
+    if fiscal_parts is None:
+        year_match = re.fullmatch(r"(?:FY)?(20\d{2})", fiscal_period)
+        if year_match:
+            fiscal_period = f"FY{year_match.group(1)}"
+    fiscal_parts = _fiscal_period_parts(fiscal_period)
+    if fiscal_parts is not None:
+        calendar_period = f"{fiscal_parts[0]}Q{fiscal_parts[1]}"
+    else:
+        annual_match = re.fullmatch(r"FY(20\d{2})", fiscal_period)
+        if annual_match:
+            calendar_period = annual_match.group(1)
+        else:
+            calendar_period = str(spec.get("calendar_period") or raw_period).upper()
+
+    fiscal_spec = dict(spec)
+    fiscal_spec.update({"kind": "value", "period": fiscal_period, "period_basis": "fiscal"})
+    calendar_spec = dict(spec)
+    calendar_spec.update({"kind": "value", "period": calendar_period, "period_basis": "calendar"})
+    fiscal_eval = _value_part(fiscal_spec, snapshots)
+    calendar_eval = _value_part(calendar_spec, snapshots)
+    fiscal_truth = fiscal_eval.get("truth")
+    calendar_truth = calendar_eval.get("truth")
+    truth = fiscal_truth if fiscal_truth == calendar_truth else None
+
+    def verdict(value: Any) -> str:
+        if value is True:
+            return "supported"
+        if value is False:
+            return "contradicted"
+        return "insufficient_evidence"
+
+    def reading_value(evaluated: Mapping[str, Any]) -> str:
+        for fact in evaluated.get("facts", []):
+            if isinstance(fact, Mapping) and _fact_is_present(fact):
+                return _fmt_usd(fact.get("value"))
+        return "no matching SEC fact"
+
+    fiscal_label = _period_display(fiscal_period)
+    calendar_label = f"calendar {calendar_period}"
+    note = (
+        f"Ambiguous period readings: fiscal reading {fiscal_label} reports {reading_value(fiscal_eval)} "
+        f"({verdict(fiscal_truth)}); {calendar_label} reports {reading_value(calendar_eval)} "
+        f"({verdict(calendar_truth)})."
+    )
+    if fiscal_truth != calendar_truth:
+        note += " The readings differ, so this claim is insufficient_evidence."
+    else:
+        note += f" Both readings yield {verdict(truth)}."
+    return {
+        "truth": truth,
+        "facts": [*fiscal_eval.get("facts", []), *calendar_eval.get("facts", [])],
+        "note": note,
+        "readings": {"fiscal": fiscal_eval, "calendar": calendar_eval},
+    }
+
+
 def _period_trap_part(spec: Mapping[str, Any], snapshots: Mapping[str, CompanySnapshot]) -> dict[str, Any]:
     ticker = str(spec.get("ticker") or "").upper()
     metric = str(spec.get("metric") or "").lower()
     period = _period_from_spec(spec)
     snapshot = snapshots[ticker]
+
+    trap_type = str(spec.get("trap_type") or "").lower()
+    if trap_type in {
+        "ytd_as_quarter",
+        "ytd_correct",
+        "annual_as_quarter",
+        "annual_correct",
+    }:
+        quarter_period = _period_from_spec({"period": spec.get("quarter_period") or period})
+        claimed_selected = _select_fiscal_duration_fact(snapshot, metric, quarter_period, "quarter")
+        source_kind = "ytd" if trap_type.startswith("ytd") else "annual"
+        source_period = (
+            quarter_period
+            if source_kind == "ytd"
+            else _period_from_spec({"period": spec.get("annual_period") or f"FY{quarter_period[-6:-2]}"})
+        )
+        source_selected = _select_fiscal_duration_fact(snapshot, metric, source_period, source_kind)
+        claimed_record = _fact_record(snapshot, metric, quarter_period, claimed_selected, role="claimed_period")
+        source_record = _fact_record(snapshot, metric, source_period, source_selected, role=source_kind)
+        if not _fact_is_present(source_record):
+            return {
+                "truth": None,
+                "facts": [claimed_record, source_record],
+                "note": f"SEC snapshot is missing the {source_kind} fact for {ticker} {quarter_period}.",
+            }
+        stated = _stated_base(spec)
+        precision = float(spec.get("precision") or 0.0) * _scale_factor(spec)
+        value_truth = abs(float(source_record["value"]) - stated) <= precision / 2.0 + 1e-6
+        basis_truth = trap_type.endswith("_correct")
+        truth = value_truth if basis_truth else False
+        note = (
+            f"SEC {source_kind} {source_period} reports {_fmt_usd(source_record['value'])}; "
+            f"the claim labels it as {quarter_period} and states {_fmt_usd(stated)}."
+        )
+        return {"truth": bool(truth), "facts": [claimed_record, source_record], "note": note}
+
+    if trap_type in {"fiscal_label_correct", "fiscal_label_as_calendar"}:
+        fiscal_period = _period_from_spec({"period": spec.get("fiscal_period") or period})
+        fiscal_selected = _select_fact(snapshot, metric, fiscal_period)
+        fiscal_record = _fact_record(snapshot, metric, fiscal_period, fiscal_selected, role="fiscal_reference")
+        if not _fact_is_present(fiscal_record):
+            return {
+                "truth": None,
+                "facts": [fiscal_record],
+                "note": f"SEC snapshot has no {fiscal_period} {ticker} {metric} fact.",
+            }
+        stated = _stated_base(spec)
+        precision = float(spec.get("precision") or 0.0) * _scale_factor(spec)
+        value_truth = abs(float(fiscal_record["value"]) - stated) <= precision / 2.0 + 1e-6
+        truth = value_truth if trap_type == "fiscal_label_correct" else False
+        return {
+            "truth": bool(truth),
+            "facts": [fiscal_record],
+            "note": (
+                f"SEC {fiscal_period} reports {_fmt_usd(fiscal_record['value'])}; "
+                f"stated {_fmt_usd(stated)} with {trap_type.replace('_', ' ')}."
+            ),
+        }
+
     calendar_fact = _select_fact(snapshot, metric, period, basis="calendar")
     fiscal_period_value = spec.get("fiscal_period")
     fiscal_period = (
@@ -895,6 +1231,8 @@ def evaluate_spec(spec: Mapping[str, Any], snapshots: Mapping[str, CompanySnapsh
         return _growth_part(spec, snapshots)
     if kind == "first_time_above":
         return _first_time_part(spec, snapshots)
+    if kind == "ambiguous_period":
+        return _ambiguous_period_part(spec, snapshots)
     if kind == "period_trap":
         return _period_trap_part(spec, snapshots)
     if kind == "multi":
