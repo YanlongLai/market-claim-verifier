@@ -42,6 +42,37 @@
         notChecked: "Forecasts and opinions are not checked.",
         noSource: "No filing value returned."
       },
+      filing: {
+        title: "Filing passage",
+        close: "Close filing passage",
+        passage: "The number in the filing",
+        sourceFacts: "Source facts",
+        claimSaid: "Claim said",
+        filingSays: "Filing says",
+        filingShort: "Filing",
+        summaryPost: "Post says",
+        thisPeriod: "this period",
+        comparisonPeriod: "comparison",
+        company: "Company",
+        formDate: "Form + filed",
+        period: "Period",
+        concept: "XBRL concept",
+        inMillions: "in millions",
+        inThousands: "in thousands",
+        inBillions: "in billions",
+        reportedUnits: (power) => `10^${power} scale`,
+        notAvailable: "Not available",
+        notEnoughForChange: "not enough matched periods",
+        noPassage: "No matching passage was found in the selected filing.",
+        reason: "Why",
+        original: "Open this number in the original filing",
+        primary: "Open the primary filing",
+        inline: "Open in SEC inline viewer",
+        noLink: "No SEC link was supplied for this fact.",
+        component: (id) => id ? `Evidence ${id}` : "Evidence",
+        table: "Filing table",
+        text: "Filing text"
+      },
       how: {
         title: "How it works",
         lede: "A short path from a social post to a source you can open.",
@@ -135,6 +166,37 @@
         notChecked: "預測和看法不在查核範圍內。",
         noSource: "報告沒有回傳申報數字。"
       },
+      filing: {
+        title: "申報文件段落",
+        close: "關閉申報文件段落",
+        passage: "申報文件中的數字",
+        sourceFacts: "來源事實",
+        claimSaid: "說法內容",
+        filingSays: "財報寫",
+        filingShort: "財報",
+        summaryPost: "貼文說",
+        thisPeriod: "本期",
+        comparisonPeriod: "比較期",
+        company: "公司",
+        formDate: "表格＋申報日期",
+        period: "期間",
+        concept: "XBRL 概念",
+        inMillions: "百萬美元",
+        inThousands: "千美元",
+        inBillions: "十億美元",
+        reportedUnits: (power) => `10^${power} 單位`,
+        notAvailable: "無法取得",
+        notEnoughForChange: "沒有足夠的相符期間",
+        noPassage: "在選定的申報文件中找不到相符段落。",
+        reason: "原因",
+        original: "在原始申報文件中打開這個數字",
+        primary: "打開主要申報文件",
+        inline: "在 SEC inline viewer 中打開",
+        noLink: "這項事實沒有提供 SEC 連結。",
+        component: (id) => id ? `證據 ${id}` : "證據",
+        table: "申報文件表格",
+        text: "申報文件文字"
+      },
       how: {
         title: "怎麼運作",
         lede: "從社群貼文走到可打開的來源，只有三步。",
@@ -197,6 +259,8 @@
   let pageLanguage = readLanguage();
   let exampleLanguage = pageLanguage;
   let siteData = null;
+  let activeFilingClaim = null;
+  let filingReturnFocus = null;
 
   function readLanguage() {
     try {
@@ -251,10 +315,15 @@
       button.setAttribute("aria-selected", String(active));
     });
 
+    const closeButton = $("#filing-dialog-close");
+    if (closeButton) closeButton.setAttribute("aria-label", getCopy("filing.close"));
+
     if (siteData) {
       renderExample(siteData.examples[exampleLanguage]);
       renderChart(siteData);
       renderResearch(siteData);
+      const dialog = $("#filing-dialog");
+      if (activeFilingClaim && dialog && dialog.open) renderFilingDialog(activeFilingClaim);
     }
   }
 
@@ -305,13 +374,546 @@
     post.replaceChildren(fragment);
   }
 
+  function numberText(value, maximumFractionDigits = 1) {
+    if (typeof value !== "number" || !Number.isFinite(value)) return getCopy("filing.notAvailable");
+    return value.toLocaleString(pageLanguage === "zh" ? "zh-Hant" : "en-US", { maximumFractionDigits });
+  }
+
+  function formatMoneyShort(value) {
+    if (typeof value !== "number" || !Number.isFinite(value)) return getCopy("filing.notAvailable");
+    const sign = value < 0 ? "-" : "";
+    const absolute = Math.abs(value);
+    if (pageLanguage === "zh") {
+      if (absolute >= 100000000) return `${sign}${numberText(absolute / 100000000, 0)} 億美元`;
+      if (absolute >= 10000) return `${sign}${numberText(absolute / 10000, 0)} 萬美元`;
+      return `${sign}${numberText(absolute, 0)} 美元`;
+    }
+    if (absolute >= 1000000000) return `${sign}$${numberText(absolute / 1000000000)}B`;
+    if (absolute >= 1000000) return `${sign}$${numberText(absolute / 1000000)}M`;
+    return `${sign}$${numberText(absolute, 0)}`;
+  }
+
+  function formatPercent(value) {
+    if (typeof value !== "number" || !Number.isFinite(value)) return getCopy("filing.notAvailable");
+    return `${value >= 0 ? "+" : ""}${numberText(value)}%`;
+  }
+
+  function formatDate(value) {
+    if (!value) return "";
+    const match = String(value).match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (!match) return String(value);
+    const [, year, month, day] = match;
+    if (pageLanguage === "zh") return `${year} 年 ${Number(month)} 月 ${Number(day)} 日`;
+    return new Date(Date.UTC(Number(year), Number(month) - 1, Number(day))).toLocaleDateString("en-US", {
+      timeZone: "UTC",
+      month: "short",
+      day: "numeric",
+      year: "numeric"
+    }).replace(",", "");
+  }
+
+  function fiscalPeriodLabel(evidence) {
+    if (!evidence) return "";
+    const yearMatch = String(evidence.period || "").match(/(?:FY|CY)?(\d{4})/i);
+    const year = evidence.fiscal_year || (yearMatch && yearMatch[1]);
+    const fiscalPeriod = String(evidence.fiscal_period || "").toUpperCase();
+    if (fiscalPeriod === "FY" || /^FY\d{4}$/i.test(String(evidence.period || ""))) {
+      return year ? (pageLanguage === "zh" ? `${year} 財年` : `Fiscal ${year}`) : "";
+    }
+    const quarterMatch = String(evidence.period || "").match(/(?:CY)?(\d{4})Q([1-4])/i);
+    if (quarterMatch) {
+      return pageLanguage === "zh"
+        ? `曆年 Q${quarterMatch[2]} ${quarterMatch[1]}`
+        : `Calendar Q${quarterMatch[2]} ${quarterMatch[1]}`;
+    }
+    return evidence.period || evidence.fiscal_period || "";
+  }
+
+  function periodText(evidence) {
+    if (!evidence) return getCopy("filing.notAvailable");
+    const period = fiscalPeriodLabel(evidence);
+    const dates = [evidence.start, evidence.end].filter(Boolean).map(formatDate);
+    const dateText = dates.join(pageLanguage === "zh" ? " – " : " – ");
+    return period && dateText
+      ? `${period} · ${dateText}`
+      : period || dateText || getCopy("filing.notAvailable");
+  }
+
+  function scaleText(scale) {
+    const numericScale = Number(scale);
+    if (numericScale === 6) return getCopy("filing.inMillions");
+    if (numericScale === 3) return getCopy("filing.inThousands");
+    if (numericScale === 9) return getCopy("filing.inBillions");
+    if (Number.isFinite(numericScale)) return getCopy("filing.reportedUnits")(numericScale);
+    return getCopy("filing.notAvailable");
+  }
+
+  function recordEntries(claim) {
+    const evidence = claim.evidence || [];
+    const excerptRecords = claim.excerpts || [];
+    const recordsByIndex = new Map(
+      excerptRecords.map((record, index) => [
+        Number.isInteger(record.evidence_index) ? record.evidence_index : index,
+        record
+      ])
+    );
+    return evidence.map((item, index) => ({
+      evidence: item,
+      record: recordsByIndex.get(index) || {
+        evidence_id: item.id,
+        evidence_index: index,
+        evidence_key: `${item.id || "evidence"}:${index}`,
+        role: item.role,
+        excerpt: null,
+        reason: getCopy("filing.noPassage"),
+        primary_url: null,
+        inline_url: null
+      },
+      index
+    }));
+  }
+
+  function evidenceLabel(entry) {
+    const id = entry.evidence.id || entry.record.evidence_id || "Evidence";
+    if (entry.evidence.role === "current") return `${id} ${getCopy("filing.thisPeriod")}`;
+    if (entry.evidence.role === "comparison") return `${id} ${getCopy("filing.comparisonPeriod")}`;
+    return id;
+  }
+
+  function factIdentity(entry) {
+    const evidence = entry.evidence || {};
+    const fact = entry.record && entry.record.excerpt && entry.record.excerpt.fact;
+    if (!fact && !entry.record?.excerpt) return `unmatched:${entry.index}`;
+    return [
+      evidence.accn || "",
+      evidence.concept || "",
+      evidence.start || "",
+      evidence.end || "",
+      evidence.unit || "",
+      fact && fact.full_value !== undefined ? fact.full_value : evidence.value
+    ].join("|");
+  }
+
+  function groupFilingRecords(claim) {
+    const entries = recordEntries(claim);
+    const entriesByIndex = new Map(entries.map((entry) => [entry.index, entry]));
+    const roleRank = { current: 0, comparison: 1 };
+    if (Array.isArray(claim.modal_blocks) && claim.modal_blocks.length) {
+      return claim.modal_blocks
+        .map((block) => {
+          const records = (block.evidence_indices || [])
+            .map((index) => entriesByIndex.get(index))
+            .filter(Boolean);
+          return {
+            key: block.fact_key,
+            records,
+            label: records.map(evidenceLabel).join(" · ")
+          };
+        })
+        .filter((group) => group.records.length)
+        .sort((left, right) => {
+          const leftRole = roleRank[left.records[0].evidence.role] ?? 0;
+          const rightRole = roleRank[right.records[0].evidence.role] ?? 0;
+          return leftRole - rightRole || left.records[0].index - right.records[0].index;
+        });
+    }
+    const groups = new Map();
+    entries.forEach((entry) => {
+      const key = factIdentity(entry);
+      if (!groups.has(key)) groups.set(key, { key, records: [] });
+      groups.get(key).records.push(entry);
+    });
+    return Array.from(groups.values())
+      .map((group) => {
+        group.records.sort((left, right) => {
+          const leftRank = roleRank[left.evidence.role] ?? 0;
+          const rightRank = roleRank[right.evidence.role] ?? 0;
+          return leftRank - rightRank || left.index - right.index;
+        });
+        group.label = group.records.map(evidenceLabel).join(" · ");
+        return group;
+      })
+      .sort((left, right) => {
+        const leftRole = roleRank[left.records[0].evidence.role] ?? 0;
+        const rightRole = roleRank[right.records[0].evidence.role] ?? 0;
+        return leftRole - rightRole || left.records[0].index - right.records[0].index;
+      });
+  }
+
+  function evidenceForCheck(claim, check) {
+    const ids = new Set(check.evidence_ids || []);
+    const entries = recordEntries(claim);
+    return ids.size ? entries.filter((entry) => ids.has(entry.evidence.id)) : entries;
+  }
+
+  function isChangeCheck(claim, check) {
+    const entries = evidenceForCheck(claim, check);
+    return entries.some((entry) => entry.evidence.role === "current")
+      && entries.some((entry) => entry.evidence.role === "comparison")
+      && typeof check.stated_value_used === "number"
+      && Math.abs(check.stated_value_used) < 1000;
+  }
+
+  function reportedValue(entry) {
+    const fact = entry && entry.record && entry.record.excerpt && entry.record.excerpt.fact;
+    if (fact && fact.raw_value) return fact.raw_value;
+    const scale = fact && Number.isFinite(Number(fact.scale)) ? Number(fact.scale) : null;
+    const value = entry && entry.evidence && entry.evidence.value;
+    if (typeof value === "number" && scale !== null) return numberText(value / (10 ** scale), 3);
+    return typeof value === "number" ? numberText(value, 0) : getCopy("filing.notAvailable");
+  }
+
+  function summaryStatedValue(claim, check) {
+    return isChangeCheck(claim, check)
+      ? formatPercent(check.stated_value_used)
+      : formatMoneyShort(check.stated_value_used);
+  }
+
+  function summaryFilingValue(claim, check) {
+    const entries = evidenceForCheck(claim, check);
+    if (isChangeCheck(claim, check)) {
+      const current = entries.find((entry) => entry.evidence.role === "current");
+      const comparison = entries.find((entry) => entry.evidence.role === "comparison");
+      const filingLabel = pageLanguage === "zh"
+        ? `${getCopy("filing.filingShort")}：`
+        : `${getCopy("filing.filingShort")}: `;
+      if (!current || !comparison || typeof check.actual_value !== "number") {
+        return `${filingLabel}${getCopy("filing.notEnoughForChange")}`;
+      }
+      return `${filingLabel}${reportedValue(current)} vs ${reportedValue(comparison)} = ${formatPercent(check.actual_value)}`;
+    }
+    const evidence = entries[0] && entries[0].evidence;
+    const period = fiscalPeriodLabel(evidence);
+    const qualifier = period
+      ? (pageLanguage === "zh" ? `（${period}）` : ` (${period.toLowerCase()})`)
+      : "";
+    return `${getCopy("filing.filingSays")} ${formatMoneyShort(check.actual_value)}${qualifier}`;
+  }
+
+  function filingSummaryText(claim) {
+    const checks = claim.program_checks || [];
+    if (!checks.length) return claim.summary || getCopy("filing.notAvailable");
+    const stated = checks.map((check) => summaryStatedValue(claim, check)).join(" · ");
+    const filing = checks.map((check) => summaryFilingValue(claim, check)).join(" · ");
+    return `${getCopy("filing.summaryPost")} ${stated} · ${filing}`;
+  }
+
+  function appendMarkedText(parent, text, range) {
+    if (!range || !Number.isInteger(range.start) || !Number.isInteger(range.end)) {
+      parent.textContent = text || "";
+      return;
+    }
+    const start = Math.max(0, Math.min(text.length, range.start));
+    const end = Math.max(start, Math.min(text.length, range.end));
+    parent.append(document.createTextNode(text.slice(0, start)));
+    const mark = document.createElement("mark");
+    mark.className = "filing-fact-highlight";
+    mark.textContent = text.slice(start, end);
+    parent.append(mark, document.createTextNode(text.slice(end)));
+  }
+
+  function appendFactTable(parent, excerpt) {
+    const table = document.createElement("table");
+    table.className = "filing-excerpt-table";
+    const caption = document.createElement("caption");
+    caption.textContent = excerpt.type === "table"
+      ? (excerpt.compact && excerpt.compact.caption) || getCopy("filing.table")
+      : getCopy("filing.text");
+    table.append(caption);
+
+    if (excerpt.type === "table") {
+      if (excerpt.compact) {
+        const head = document.createElement("thead");
+        const headerRow = document.createElement("tr");
+        (excerpt.compact.columns || []).forEach((column) => {
+          const th = document.createElement("th");
+          th.scope = "col";
+          th.className = column.is_fact ? "is-period-header" : "";
+          th.textContent = column.label || "";
+          headerRow.append(th);
+        });
+        head.append(headerRow);
+        table.append(head);
+
+        const body = document.createElement("tbody");
+        (excerpt.compact.rows || []).forEach((compactRow) => {
+          const row = document.createElement("tr");
+          (compactRow.cells || []).forEach((cell) => {
+            const td = document.createElement("td");
+            if (cell.is_fact) td.className = "is-fact";
+            if (cell.is_row_label) td.classList.add("is-row-label");
+            if (cell.is_fact || cell.is_row_label) {
+              const strong = document.createElement("strong");
+              strong.textContent = cell.text || "";
+              td.append(strong);
+            } else {
+              td.textContent = cell.text || "";
+            }
+            row.append(td);
+          });
+          body.append(row);
+        });
+        table.append(body);
+        const tableWrap = document.createElement("div");
+        tableWrap.className = "filing-table-wrap";
+        tableWrap.append(table);
+        parent.append(tableWrap);
+        return;
+      }
+      const head = document.createElement("thead");
+      (excerpt.headers || []).forEach((header) => {
+        const row = document.createElement("tr");
+        (header.cells || []).forEach((cell) => {
+          const th = document.createElement("th");
+          th.scope = "col";
+          th.colSpan = Math.max(1, Number(cell.colspan) || 1);
+          th.className = cell.covers_fact ? "is-period-header" : "";
+          th.textContent = cell.text || "";
+          row.append(th);
+        });
+        head.append(row);
+      });
+      table.append(head);
+
+      const body = document.createElement("tbody");
+      const row = document.createElement("tr");
+      (excerpt.row && excerpt.row.cells || []).forEach((cell) => {
+        const td = document.createElement("td");
+        td.colSpan = Math.max(1, Number(cell.colspan) || 1);
+        if (cell.is_fact) {
+          td.className = "is-fact";
+          const strong = document.createElement("strong");
+          strong.textContent = cell.text || "";
+          td.append(strong);
+        } else if (cell.is_row_label) {
+          td.className = "is-row-label";
+          const label = document.createElement("span");
+          label.textContent = cell.text || "";
+          td.append(label);
+        } else {
+          td.textContent = cell.text || "";
+        }
+        row.append(td);
+      });
+      body.append(row);
+      table.append(body);
+      const tableWrap = document.createElement("div");
+      tableWrap.className = "filing-table-wrap";
+      tableWrap.append(table);
+      parent.append(tableWrap);
+      return;
+    }
+
+    const paragraph = document.createElement("blockquote");
+    paragraph.className = "filing-excerpt-text";
+    appendMarkedText(paragraph, excerpt.text || "", excerpt.fact_range);
+    parent.append(paragraph);
+  }
+
+  function appendFact(parent, label, value, className = "") {
+    const term = document.createElement("dt");
+    term.textContent = label;
+    const description = document.createElement("dd");
+    if (className) description.className = className;
+    description.textContent = value || getCopy("filing.notAvailable");
+    parent.append(term, description);
+  }
+
+  function appendFilingFacts(parent, claim, evidence, record) {
+    const heading = document.createElement("h4");
+    heading.textContent = getCopy("filing.sourceFacts");
+    parent.append(heading);
+    const facts = document.createElement("dl");
+    facts.className = "filing-facts";
+    const excerptFact = record.excerpt && record.excerpt.fact;
+    appendFact(facts, getCopy("filing.company"), evidence.entity || evidence.ticker);
+    const formDate = [evidence.form, evidence.filed].filter(Boolean).join(" · ");
+    appendFact(facts, getCopy("filing.formDate"), formDate);
+    appendFact(facts, getCopy("filing.period"), periodText(evidence));
+    // Show the concept actually highlighted in the passage (an equivalent revenue tag may have matched).
+    const shownConcept = (excerptFact && excerptFact.concept ? excerptFact.concept.replace(/^us-gaap:/, "") : "") || evidence.concept;
+    appendFact(facts, getCopy("filing.concept"), shownConcept, "filing-concept");
+    const fullValue = typeof evidence.value === "number" ? evidence.value : excerptFact && excerptFact.full_value;
+    const rawValue = excerptFact && excerptFact.raw_value
+      ? excerptFact.raw_value
+      : (typeof fullValue === "number" ? formatMoneyShort(fullValue) : getCopy("filing.notAvailable"));
+    const scale = excerptFact ? scaleText(excerptFact.scale) : getCopy("filing.notAvailable");
+    const valueLine = document.createElement("p");
+    valueLine.className = "filing-value-line";
+    valueLine.textContent = `${rawValue} (${scale}) = ${formatMoneyShort(fullValue)}`;
+    parent.append(valueLine);
+    parent.append(facts);
+  }
+
+  function appendFilingLinks(parent, entries) {
+    const links = document.createElement("div");
+    links.className = "filing-links";
+    const firstRecord = entries[0] && entries[0].record;
+    const factId = firstRecord && firstRecord.excerpt && firstRecord.excerpt.fact && firstRecord.excerpt.fact.id;
+    const primaryRecord = entries.find((entry) => entry.record.primary_url);
+    const inlineRecord = entries.find((entry) => entry.record.inline_url);
+    if (primaryRecord) {
+      const original = document.createElement("a");
+      original.href = factId ? `${primaryRecord.record.primary_url}#${encodeURIComponent(factId)}` : primaryRecord.record.primary_url;
+      original.target = "_blank";
+      original.rel = "noreferrer";
+      original.textContent = factId ? getCopy("filing.original") : getCopy("filing.primary");
+      links.append(original);
+    }
+    if (inlineRecord) {
+      const inline = document.createElement("a");
+      inline.href = inlineRecord.record.inline_url;
+      inline.target = "_blank";
+      inline.rel = "noreferrer";
+      inline.textContent = getCopy("filing.inline");
+      links.append(inline);
+    }
+    if (!links.children.length) {
+      const noLink = document.createElement("p");
+      noLink.className = "filing-no-link";
+      noLink.textContent = getCopy("filing.noLink");
+      links.append(noLink);
+    }
+    parent.append(links);
+  }
+
+  function appendFilingSummary(parent, claim) {
+    const summary = document.createElement("p");
+    summary.className = `filing-summary ${verdictClass(claim)}`;
+    summary.append(document.createTextNode(`${filingSummaryText(claim)} · `));
+    const verdict = document.createElement("strong");
+    verdict.className = "filing-summary-verdict";
+    verdict.textContent = verdictCopy(claim);
+    summary.append(verdict);
+    parent.append(summary);
+  }
+
+  function renderFilingEvidence(parent, claim, group) {
+    const entry = group.records[0];
+    const item = document.createElement("section");
+    item.className = "filing-evidence";
+    const itemHeading = document.createElement("h3");
+    itemHeading.textContent = group.label || getCopy("filing.component")();
+    item.append(itemHeading);
+
+    if (entry.record.excerpt) {
+      const passageHeading = document.createElement("h4");
+      passageHeading.textContent = getCopy("filing.passage");
+      item.append(passageHeading);
+      if (entry.record.excerpt.section_title) {
+        const sectionTitle = document.createElement("p");
+        sectionTitle.className = "filing-section-title";
+        sectionTitle.textContent = entry.record.excerpt.section_title;
+        item.append(sectionTitle);
+      }
+      appendFactTable(item, entry.record.excerpt);
+    } else {
+      const empty = document.createElement("div");
+      empty.className = "filing-empty";
+      const noPassage = document.createElement("p");
+      noPassage.textContent = getCopy("filing.noPassage");
+      empty.append(noPassage);
+      if (entry.record.reason) {
+        const reason = document.createElement("p");
+        reason.append(document.createElement("strong"));
+        reason.firstChild.textContent = `${getCopy("filing.reason")}: `;
+        reason.append(document.createTextNode(entry.record.reason));
+        empty.append(reason);
+      }
+      item.append(empty);
+    }
+
+    appendFilingFacts(item, claim, entry.evidence, entry.record);
+    appendFilingLinks(item, group.records);
+    parent.append(item);
+  }
+
+  function renderFilingDialog(claim) {
+    const title = $("#filing-dialog-title");
+    const body = $("#filing-dialog-body");
+    if (!title || !body || !claim) return;
+    const firstEvidence = (claim.evidence || [])[0] || {};
+    title.textContent = `${getCopy("filing.title")} · ${firstEvidence.ticker || claim.ticker || "SEC"}`;
+    body.replaceChildren();
+    appendFilingSummary(body, claim);
+    groupFilingRecords(claim).forEach((group) => renderFilingEvidence(body, claim, group));
+  }
+
+  function focusableFilingElements(dialog) {
+    return Array.from(dialog.querySelectorAll("button, a[href], [tabindex]:not([tabindex=\"-1\"])")).filter((element) => !element.hasAttribute("disabled"));
+  }
+
+  function closeFilingDialog() {
+    const dialog = $("#filing-dialog");
+    if (!dialog) return;
+    if (dialog.open) dialog.close();
+    else dialog.removeAttribute("open");
+  }
+
+  function openFilingDialog(claim, trigger) {
+    const dialog = $("#filing-dialog");
+    if (!dialog) return;
+    activeFilingClaim = claim;
+    filingReturnFocus = trigger;
+    renderFilingDialog(claim);
+    if (typeof dialog.showModal === "function") dialog.showModal();
+    else dialog.setAttribute("open", "");
+    requestAnimationFrame(() => $("#filing-dialog-close")?.focus());
+  }
+
+  function setupFilingDialog() {
+    const dialog = $("#filing-dialog");
+    const close = $("#filing-dialog-close");
+    if (!dialog || !close) return;
+    close.addEventListener("click", closeFilingDialog);
+    dialog.addEventListener("click", (event) => {
+      if (event.target === dialog) closeFilingDialog();
+    });
+    dialog.addEventListener("cancel", (event) => {
+      event.preventDefault();
+      closeFilingDialog();
+    });
+    dialog.addEventListener("keydown", (event) => {
+      if (event.key === "Tab") {
+        const focusable = focusableFilingElements(dialog);
+        if (!focusable.length) return;
+        const first = focusable[0];
+        const last = focusable[focusable.length - 1];
+        if (event.shiftKey && document.activeElement === first) {
+          event.preventDefault();
+          last.focus();
+        } else if (!event.shiftKey && document.activeElement === last) {
+          event.preventDefault();
+          first.focus();
+        }
+      }
+    });
+    dialog.addEventListener("close", () => {
+      activeFilingClaim = null;
+      const returnFocus = filingReturnFocus;
+      filingReturnFocus = null;
+      if (returnFocus && document.contains(returnFocus)) requestAnimationFrame(() => returnFocus.focus());
+    });
+  }
+
   function appendSource(card, claim) {
     const sourceLine = document.createElement("p");
     sourceLine.className = "claim-source";
     const source = claim.source;
 
+    const addFilingTrigger = () => {
+      if (claim.status !== "verified" || !(claim.evidence || []).length) return;
+      const trigger = document.createElement("button");
+      trigger.type = "button";
+      trigger.className = "claim-filing-trigger";
+      trigger.textContent = getCopy("claimSource.see");
+      trigger.addEventListener("click", () => openFilingDialog(claim, trigger));
+      sourceLine.append(document.createTextNode(" "), trigger);
+    };
+
     if (!source) {
       sourceLine.textContent = getCopy("claimSource.notChecked");
+      addFilingTrigger();
       card.append(sourceLine);
       return;
     }
@@ -326,14 +928,7 @@
       sourceLine.append(document.createTextNode(`${getCopy("claimSource.derived")}: ${summary}${summary && !summary.endsWith(".") ? "." : ""}`));
     }
 
-    if (source.filing_url) {
-      const link = document.createElement("a");
-      link.href = source.filing_url;
-      link.target = "_blank";
-      link.rel = "noreferrer";
-      link.textContent = getCopy("claimSource.see");
-      sourceLine.append(link);
-    }
+    addFilingTrigger();
     card.append(sourceLine);
   }
 
@@ -520,6 +1115,7 @@
     }
   }
 
+  setupFilingDialog();
   setupControls();
   applyCopy();
   loadData();
