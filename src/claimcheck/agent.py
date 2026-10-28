@@ -624,14 +624,14 @@ def _request_with_retry(
                 payload=request_payload,
                 response=response.raw_response,
                 reservation=reservation,
-                usage=response.normalized_usage if active_provider.name == "baseten" else usage,
+                usage=response.normalized_usage if active_provider.chat_completions else usage,
                 cost=cost,
                 latency_ms=latency_ms,
                 status=status,
-                raw_usage=response.raw_usage if active_provider.name == "baseten" else None,
-                normalized_usage=response.normalized_usage if active_provider.name == "baseten" else None,
+                raw_usage=response.raw_usage if active_provider.chat_completions else None,
+                normalized_usage=response.normalized_usage if active_provider.chat_completions else None,
                 finish_reason=response.finish_reason,
-                rate_limit_headers=response.rate_limit_headers if active_provider.name == "baseten" else None,
+                rate_limit_headers=response.rate_limit_headers if active_provider.chat_completions else None,
                 previous_response_fallback=using_fallback,
             )
             if status == "completed":
@@ -851,7 +851,7 @@ def verify_claim(
         if not completed:
             return _incomplete_response_result(recorder, final_response)
 
-    if active_provider.name == "baseten":
+    if active_provider.chat_completions:
         verdict = _parse_strict_verdict(_response_text(final_response))
         if verdict is None:
             repair_payload = active_provider.repair_request(

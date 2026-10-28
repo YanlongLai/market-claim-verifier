@@ -15,6 +15,8 @@ from .providers import (
     BASETEN_DEFAULT_MODEL,
     BASETEN_PROVIDER,
     DEFAULT_PROVIDER,
+    FIREWORKS_DEFAULT_MODEL,
+    FIREWORKS_PROVIDER,
     META_DEFAULT_MODEL,
     ProviderError,
     normalize_provider,
@@ -26,6 +28,7 @@ DEFAULT_BUDGET_USD = 0.50
 DEFAULT_SEC_USER_AGENT = "DappGo market-claim-verifier admin@dappgo.com"
 DEFAULT_MODEL_API_KEY_FILE = Path("~/.config/dappgo/meta-model-api.env").expanduser()
 DEFAULT_BASETEN_API_KEY_FILE = Path("~/secret/baseten_api_key.txt").expanduser()
+DEFAULT_FIREWORKS_API_KEY_FILE = Path("~/secret/fireworks-api-key.txt").expanduser()
 
 
 class SettingsError(ValueError):
@@ -51,6 +54,7 @@ class Settings:
     reasoning_effort: str | None = None
     provider: str = DEFAULT_PROVIDER
     baseten_api_key_file: Path = DEFAULT_BASETEN_API_KEY_FILE
+    fireworks_api_key_file: Path = DEFAULT_FIREWORKS_API_KEY_FILE
 
 
 def _key_from_env_file(path: Path) -> str | None:
@@ -121,11 +125,18 @@ def load_settings(
     baseten_key_file = _path_setting(
         env.get("BASETEN_API_KEY_FILE"), str(DEFAULT_BASETEN_API_KEY_FILE)
     )
+    fireworks_key_file = _path_setting(
+        env.get("FIREWORKS_API_KEY_FILE"), str(DEFAULT_FIREWORKS_API_KEY_FILE)
+    )
     api_key: str | None
     if selected_provider == BASETEN_PROVIDER:
         api_key = env.get("BASETEN_API_KEY") or None
         if api_key is None and read_key:
             api_key = _key_from_raw_file(baseten_key_file)
+    elif selected_provider == FIREWORKS_PROVIDER:
+        api_key = env.get("FIREWORKS_API_KEY") or None
+        if api_key is None and read_key:
+            api_key = _key_from_raw_file(fireworks_key_file)
     else:
         api_key = env.get("MODEL_API_KEY") or None
         if api_key is None and read_key:
@@ -146,7 +157,12 @@ def load_settings(
 
     configured_model = env.get("CLAIMCHECK_MODEL")
     if not configured_model:
-        configured_model = BASETEN_DEFAULT_MODEL if selected_provider == BASETEN_PROVIDER else META_DEFAULT_MODEL
+        if selected_provider == BASETEN_PROVIDER:
+            configured_model = BASETEN_DEFAULT_MODEL
+        elif selected_provider == FIREWORKS_PROVIDER:
+            configured_model = FIREWORKS_DEFAULT_MODEL
+        else:
+            configured_model = META_DEFAULT_MODEL
 
     return Settings(
         provider=selected_provider,
@@ -158,6 +174,7 @@ def load_settings(
         runs_dir=_path_setting(env.get("CLAIMCHECK_RUNS_DIR"), "runs"),
         model_api_key_file=key_file,
         baseten_api_key_file=baseten_key_file,
+        fireworks_api_key_file=fireworks_key_file,
         max_output_tokens=max_output_tokens,
         reasoning_effort=env.get("CLAIMCHECK_REASONING_EFFORT") or None,
     )

@@ -208,8 +208,15 @@ def main(argv: Sequence[str] | None = None) -> int:
             if missing:
                 provider = missing[0]
                 value = provider_settings[provider]
-                key_name = "BASETEN_API_KEY" if provider == "baseten" else "MODEL_API_KEY"
-                key_path = value.baseten_api_key_file if provider == "baseten" else value.model_api_key_file
+                if provider == "baseten":
+                    key_name = "BASETEN_API_KEY"
+                    key_path = value.baseten_api_key_file
+                elif provider == "fireworks":
+                    key_name = "FIREWORKS_API_KEY"
+                    key_path = value.fireworks_api_key_file
+                else:
+                    key_name = "MODEL_API_KEY"
+                    key_path = value.model_api_key_file
                 print(
                     f"Missing {provider} model API key. Set {key_name} or put the raw key in {key_path}.",
                     file=sys.stderr,
@@ -295,8 +302,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     if not settings.model_api_key:
         print(
             f"Missing {provider} model API key. Set "
-            f"{'BASETEN_API_KEY' if provider == 'baseten' else 'MODEL_API_KEY'} or put the raw key in "
-            f"{settings.baseten_api_key_file if provider == 'baseten' else settings.model_api_key_file}.",
+            f"{('BASETEN_API_KEY' if provider == 'baseten' else 'FIREWORKS_API_KEY' if provider == 'fireworks' else 'MODEL_API_KEY')} or put the raw key in "
+            f"{(settings.baseten_api_key_file if provider == 'baseten' else settings.fireworks_api_key_file if provider == 'fireworks' else settings.model_api_key_file)}.",
             file=sys.stderr,
         )
         return 2

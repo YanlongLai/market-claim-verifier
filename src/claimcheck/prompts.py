@@ -16,6 +16,10 @@ PROMPT_FILE_NAMES = {
     "baseten_final_verdict_prompt": "baseten-final-verdict-prompt.md",
     "baseten_repair_prompt": "baseten-repair-prompt.md",
     "baseten_single_shot_instructions": "baseten-single-shot-instructions.md",
+    "fireworks_tool_loop_instructions": "fireworks-tool-loop-instructions.md",
+    "fireworks_final_verdict_prompt": "fireworks-final-verdict-prompt.md",
+    "fireworks_repair_prompt": "fireworks-repair-prompt.md",
+    "fireworks_single_shot_instructions": "fireworks-single-shot-instructions.md",
     "verdict_json_schema": "verdict-json-schema.md",
     "tool_schemas": "tool-schemas.md",
     "single_shot_instructions": "single-shot-instructions.md",
@@ -28,6 +32,10 @@ PROMPT_LABELS = {
     "baseten_final_verdict_prompt": "Baseten final-verdict JSON prompt",
     "baseten_repair_prompt": "Baseten verdict repair prompt",
     "baseten_single_shot_instructions": "Baseten single-shot instructions",
+    "fireworks_tool_loop_instructions": "Fireworks tool-loop instructions",
+    "fireworks_final_verdict_prompt": "Fireworks final-verdict JSON prompt",
+    "fireworks_repair_prompt": "Fireworks verdict repair prompt",
+    "fireworks_single_shot_instructions": "Fireworks single-shot instructions",
     "verdict_json_schema": "Verdict JSON schema",
     "tool_schemas": "Tool schemas",
     "single_shot_instructions": "Single-shot instructions",
@@ -57,6 +65,10 @@ def prompt_registry() -> dict[str, dict[str, str]]:
         baseten_repair_prompt,
         baseten_single_shot_instructions,
         baseten_tool_loop_instructions,
+        fireworks_final_verdict_prompt,
+        fireworks_repair_prompt,
+        fireworks_single_shot_instructions,
+        fireworks_tool_loop_instructions,
     )
     from .tools import TOOL_DEFINITIONS
 
@@ -67,6 +79,10 @@ def prompt_registry() -> dict[str, dict[str, str]]:
         "baseten_final_verdict_prompt": baseten_final_verdict_prompt(),
         "baseten_repair_prompt": baseten_repair_prompt(),
         "baseten_single_shot_instructions": baseten_single_shot_instructions("{today}"),
+        "fireworks_tool_loop_instructions": fireworks_tool_loop_instructions(),
+        "fireworks_final_verdict_prompt": fireworks_final_verdict_prompt(),
+        "fireworks_repair_prompt": fireworks_repair_prompt(),
+        "fireworks_single_shot_instructions": fireworks_single_shot_instructions("{today}"),
         "verdict_json_schema": _json_text(VERDICT_SCHEMA),
         "tool_schemas": _json_text(TOOL_DEFINITIONS),
         "single_shot_instructions": SINGLE_SHOT_INSTRUCTIONS,
@@ -101,6 +117,16 @@ def prompt_versions_for(system: str) -> dict[str, str]:
             "baseten_tool_loop_instructions",
             "baseten_final_verdict_prompt",
             "baseten_repair_prompt",
+            "verdict_json_schema",
+            "tool_schemas",
+        )
+    elif system == "single_shot@fireworks":
+        names = ("fireworks_single_shot_instructions", "verdict_json_schema")
+    elif system == "agent@fireworks":
+        names = (
+            "fireworks_tool_loop_instructions",
+            "fireworks_final_verdict_prompt",
+            "fireworks_repair_prompt",
             "verdict_json_schema",
             "tool_schemas",
         )

@@ -10,6 +10,15 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Mapping
 
+from .providers import (
+    BASETEN_DEFAULT_MODEL,
+    BASETEN_PRICING,
+    BASETEN_PROVIDER,
+    FIREWORKS_DEFAULT_MODEL,
+    FIREWORKS_PRICING,
+    FIREWORKS_PROVIDER,
+)
+
 
 MODEL_PRICES = {
     ("meta", "muse-spark-1.3"): {
@@ -22,11 +31,8 @@ MODEL_PRICES = {
         "cached_input": 0.20 / 1_000_000,
         "output": 20.00 / 1_000_000,
     },
-    ("baseten", "meta-models/muse-spark-open-1026"): {
-        "input": 1.25 / 1_000_000,
-        "cached_input": 0.15 / 1_000_000,
-        "output": 4.25 / 1_000_000,
-    },
+    (BASETEN_PROVIDER, BASETEN_DEFAULT_MODEL): BASETEN_PRICING,
+    (FIREWORKS_PROVIDER, FIREWORKS_DEFAULT_MODEL): FIREWORKS_PRICING,
 }
 
 

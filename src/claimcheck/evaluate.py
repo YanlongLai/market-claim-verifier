@@ -32,8 +32,8 @@ from .budget import BudgetExceeded, Ledger, UnknownModel
 from .edgar import EdgarClient
 from .prompts import prompt_registry, prompt_versions_for
 from .providers import (
-    BASETEN_PROVIDER,
     META_PROVIDER,
+    PROVIDERS,
     ProviderAdapter,
     canonical_system,
     default_model,
@@ -48,6 +48,8 @@ SYSTEMS = (
     "agent@meta",
     "single_shot@baseten",
     "agent@baseten",
+    "single_shot@fireworks",
+    "agent@fireworks",
 )
 LEGACY_SYSTEMS = ("single_shot", "agent")
 DEFAULT_CLAIMS_PATH = Path("eval/claims.jsonl")
@@ -243,7 +245,7 @@ def _call_single_shot(
     )
     if not completed:
         raise EvaluationError(f"single-shot response status was {response.status}")
-    if active_provider.name == BASETEN_PROVIDER:
+    if active_provider.chat_completions:
         verdict = _parse_strict_verdict(_response_text(response))
         if verdict is None:
             repair_payload = active_provider.repair_request(
@@ -627,7 +629,13 @@ def run_evaluation(
     traces = out / "traces"
     traces.mkdir(parents=True, exist_ok=True)
     ledger_file = Path(ledger_path) if ledger_path is not None else out / "ledger.jsonl"
-    ledger = Ledger(ledger_file, budget_usd=budget_usd)
+    ledger = Ledger(
+        ledger_file,
+        budget_usd=budget_usd,
+        provider_budgets={
+            provider: budget_usd for _, provider in system_info.values()
+        },
+    )
     if edgar is None and any(method == "agent" for method, _ in system_info.values()):
         edgar = EdgarClient(cache_dir, fetcher=_offline_fetcher)
 
@@ -958,16 +966,14 @@ def _agent_final_payload(
     # This is a planning-only payload.  No request is made and no tool output
     # is fabricated; the reservation is explicitly labeled as an upper bound.
     active_provider = get_provider(provider)
-    if active_provider.name == BASETEN_PROVIDER:
-        from .providers import baseten_final_verdict_prompt, baseten_tool_loop_instructions
-
+    if active_provider.chat_completions:
         payload = {
             "model": model,
             "messages": [
-                {"role": "system", "content": baseten_tool_loop_instructions()},
+                {"role": "system", "content": active_provider.tool_loop_instructions()},
                 {"role": "user", "content": claim},
                 {"role": "assistant", "content": None},
-                {"role": "user", "content": baseten_final_verdict_prompt()},
+                {"role": "user", "content": active_provider.final_verdict_prompt()},
             ],
             "max_tokens": max_output_tokens or MAX_FINAL_OUTPUT_TOKENS,
         }
@@ -1353,7 +1359,7 @@ def _provider_comparison(
 
     gold = {str(claim.get("id")): claim.get("gold_verdict") for claim in claims}
     comparison: dict[str, dict[str, Any]] = {}
-    for provider in (META_PROVIDER, BASETEN_PROVIDER):
+    for provider in PROVIDERS:
         matching: list[Mapping[str, Any]] = []
         for result in results:
             try:
@@ -1484,7 +1490,7 @@ def _write_report(path: Path, summary: Mapping[str, Any], claims: Sequence[Mappi
     )
     provider_values = summary.get("provider_comparison", {})
     if isinstance(provider_values, Mapping):
-        for provider in (META_PROVIDER, BASETEN_PROVIDER):
+        for provider in PROVIDERS:
             value = provider_values.get(provider, {})
             if not isinstance(value, Mapping):
                 continue

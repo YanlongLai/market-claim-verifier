@@ -274,4 +274,6 @@ def test_baseten_request_and_eval_system_aliases() -> None:
         "agent@meta",
         "single_shot@baseten",
         "agent@baseten",
+        "single_shot@fireworks",
+        "agent@fireworks",
     )

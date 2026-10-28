@@ -1,4 +1,4 @@
-"""Provider adapters for the Meta Responses API and Baseten Chat Completions.
+"""Provider adapters for Meta Responses API and OpenAI-compatible chat APIs.
 
 The evidence loop deliberately knows as little as possible about either API.
 This module owns request shapes, response parsing, and the small amount of
@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import copy
 import json
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
@@ -18,12 +18,64 @@ from .tools import TOOL_DEFINITIONS
 
 META_PROVIDER = "meta"
 BASETEN_PROVIDER = "baseten"
-PROVIDERS = (META_PROVIDER, BASETEN_PROVIDER)
+FIREWORKS_PROVIDER = "fireworks"
+PROVIDERS = (META_PROVIDER, BASETEN_PROVIDER, FIREWORKS_PROVIDER)
 DEFAULT_PROVIDER = META_PROVIDER
 META_DEFAULT_MODEL = "muse-spark-1.3"
 BASETEN_DEFAULT_MODEL = "meta-models/muse-spark-open-1026"
+FIREWORKS_DEFAULT_MODEL = "accounts/fireworks/models/muse-spark-open"
 BASETEN_BASE_URL = "https://inference.baseten.co/v1"
+FIREWORKS_BASE_URL = "https://api.fireworks.ai/inference/v1"
 META_BASE_URL = "https://api.meta.ai/v1"
+
+
+BASETEN_PRICING = {
+    "input": 1.25 / 1_000_000,
+    "cached_input": 0.15 / 1_000_000,
+    "output": 4.25 / 1_000_000,
+}
+FIREWORKS_PRICING = {
+    "input": 1.25 / 1_000_000,
+    "cached_input": 0.15 / 1_000_000,
+    "output": 4.25 / 1_000_000,
+}
+
+
+@dataclass(frozen=True)
+class OpenAIChatProviderConfig:
+    """Host-specific settings shared by OpenAI-compatible chat providers."""
+
+    name: str
+    default_model: str
+    base_url: str
+    api_key_env: str
+    api_key_file_env: str
+    default_api_key_file: str
+    pricing: Mapping[str, float]
+
+
+BASETEN_CONFIG = OpenAIChatProviderConfig(
+    name=BASETEN_PROVIDER,
+    default_model=BASETEN_DEFAULT_MODEL,
+    base_url=BASETEN_BASE_URL,
+    api_key_env="BASETEN_API_KEY",
+    api_key_file_env="BASETEN_API_KEY_FILE",
+    default_api_key_file="~/secret/baseten_api_key.txt",
+    pricing=BASETEN_PRICING,
+)
+FIREWORKS_CONFIG = OpenAIChatProviderConfig(
+    name=FIREWORKS_PROVIDER,
+    default_model=FIREWORKS_DEFAULT_MODEL,
+    base_url=FIREWORKS_BASE_URL,
+    api_key_env="FIREWORKS_API_KEY",
+    api_key_file_env="FIREWORKS_API_KEY_FILE",
+    default_api_key_file="~/secret/fireworks-api-key.txt",
+    pricing=FIREWORKS_PRICING,
+)
+OPENAI_CHAT_PROVIDER_CONFIGS = {
+    BASETEN_PROVIDER: BASETEN_CONFIG,
+    FIREWORKS_PROVIDER: FIREWORKS_CONFIG,
+}
 
 
 class ProviderError(ValueError):
@@ -58,7 +110,9 @@ def canonical_system(system: str, *, provider: str | None = None) -> str:
 
 def default_model(provider: str) -> str:
     provider = normalize_provider(provider)
-    return BASETEN_DEFAULT_MODEL if provider == BASETEN_PROVIDER else META_DEFAULT_MODEL
+    if provider == META_PROVIDER:
+        return META_DEFAULT_MODEL
+    return OPENAI_CHAT_PROVIDER_CONFIGS[provider].default_model
 
 
 def _get(value: Any, key: str, default: Any = None) -> Any:
@@ -148,7 +202,7 @@ def _rate_limit_headers(headers: Any) -> dict[str, str]:
     result: dict[str, str] = {}
     for key, value in items:
         lowered = str(key).lower()
-        if lowered.startswith("x-ratelimit-"):
+        if lowered.startswith("x-ratelimit"):
             result[lowered] = str(value)
     return result
 
@@ -217,6 +271,30 @@ def baseten_single_shot_instructions(today: str) -> str:
         "verdict schema: "
         + _verdict_schema_text()
     )
+
+
+def fireworks_tool_loop_instructions() -> str:
+    """Fireworks uses the same chat prompt as the Baseten adapter."""
+
+    return baseten_tool_loop_instructions()
+
+
+def fireworks_final_verdict_prompt() -> str:
+    """Fireworks uses the same plain-JSON final prompt as Baseten."""
+
+    return baseten_final_verdict_prompt()
+
+
+def fireworks_repair_prompt() -> str:
+    """Fireworks uses the same one-request schema repair as Baseten."""
+
+    return baseten_repair_prompt()
+
+
+def fireworks_single_shot_instructions(today: str) -> str:
+    """Fireworks uses the same no-tools chat prompt as Baseten."""
+
+    return baseten_single_shot_instructions(today)
 
 
 @dataclass(frozen=True)
@@ -511,11 +589,41 @@ def _usage_buckets_from_ledger(usage: Any) -> dict[str, int]:
     }
 
 
-class BasetenProvider(ProviderAdapter):
-    name = BASETEN_PROVIDER
-    default_model = BASETEN_DEFAULT_MODEL
-    base_url = BASETEN_BASE_URL
+class OpenAIChatProvider(ProviderAdapter):
+    """Shared adapter for providers exposing OpenAI Chat Completions."""
+
     chat_completions = True
+
+    def __init__(
+        self,
+        config: OpenAIChatProviderConfig,
+        *,
+        tool_loop_instructions: Callable[[], str],
+        final_verdict_prompt: Callable[[], str],
+        repair_prompt: Callable[[], str],
+        single_shot_instructions: Callable[[str], str],
+    ) -> None:
+        self.config = config
+        self.name = config.name
+        self.default_model = config.default_model
+        self.base_url = config.base_url
+        self.api_key_env = config.api_key_env
+        self.api_key_file_env = config.api_key_file_env
+        self.default_api_key_file = config.default_api_key_file
+        self.pricing = config.pricing
+        self._tool_loop_instructions = tool_loop_instructions
+        self._final_verdict_prompt = final_verdict_prompt
+        self._repair_prompt = repair_prompt
+        self._single_shot_instructions = single_shot_instructions
+
+    def tool_loop_instructions(self) -> str:
+        return self._tool_loop_instructions()
+
+    def final_verdict_prompt(self) -> str:
+        return self._final_verdict_prompt()
+
+    def repair_prompt(self) -> str:
+        return self._repair_prompt()
 
     @staticmethod
     def _reasoning(payload: dict[str, Any], reasoning_effort: str | None) -> dict[str, Any]:
@@ -527,7 +635,7 @@ class BasetenProvider(ProviderAdapter):
         payload = {
             "model": model,
             "messages": [
-                {"role": "system", "content": baseten_tool_loop_instructions()},
+                {"role": "system", "content": self.tool_loop_instructions()},
                 {"role": "user", "content": claim},
             ],
             "tools": chat_tool_definitions(),
@@ -576,7 +684,7 @@ class BasetenProvider(ProviderAdapter):
         next_payload = {
             "model": model,
             "messages": self._messages_with_response(payload, response)
-            + [{"role": "user", "content": baseten_final_verdict_prompt()}],
+            + [{"role": "user", "content": self.final_verdict_prompt()}],
             "max_tokens": max_output_tokens,
         }
         return self._reasoning(next_payload, reasoning_effort)
@@ -587,7 +695,7 @@ class BasetenProvider(ProviderAdapter):
         next_payload = {
             "model": model,
             "messages": self._messages_with_response(payload, response)
-            + [{"role": "user", "content": baseten_repair_prompt()}],
+            + [{"role": "user", "content": self.repair_prompt()}],
             "max_tokens": max_output_tokens,
         }
         return self._reasoning(next_payload, reasoning_effort)
@@ -598,7 +706,7 @@ class BasetenProvider(ProviderAdapter):
         payload = {
             "model": model,
             "messages": [
-                {"role": "system", "content": baseten_single_shot_instructions(today)},
+                {"role": "system", "content": self._single_shot_instructions(today)},
                 {"role": "user", "content": claim},
             ],
             "max_tokens": max_output_tokens,
@@ -697,9 +805,46 @@ class BasetenProvider(ProviderAdapter):
         )
 
 
+class BasetenProvider(OpenAIChatProvider):
+    name = BASETEN_PROVIDER
+    default_model = BASETEN_DEFAULT_MODEL
+    base_url = BASETEN_BASE_URL
+    chat_completions = True
+
+    def __init__(self) -> None:
+        super().__init__(
+            BASETEN_CONFIG,
+            tool_loop_instructions=baseten_tool_loop_instructions,
+            final_verdict_prompt=baseten_final_verdict_prompt,
+            repair_prompt=baseten_repair_prompt,
+            single_shot_instructions=baseten_single_shot_instructions,
+        )
+
+
+class FireworksProvider(OpenAIChatProvider):
+    name = FIREWORKS_PROVIDER
+    default_model = FIREWORKS_DEFAULT_MODEL
+    base_url = FIREWORKS_BASE_URL
+    chat_completions = True
+
+    def __init__(self) -> None:
+        super().__init__(
+            FIREWORKS_CONFIG,
+            tool_loop_instructions=fireworks_tool_loop_instructions,
+            final_verdict_prompt=fireworks_final_verdict_prompt,
+            repair_prompt=fireworks_repair_prompt,
+            single_shot_instructions=fireworks_single_shot_instructions,
+        )
+
+
 META = MetaProvider()
 BASETEN = BasetenProvider()
-_PROVIDER_INSTANCES = {META_PROVIDER: META, BASETEN_PROVIDER: BASETEN}
+FIREWORKS = FireworksProvider()
+_PROVIDER_INSTANCES = {
+    META_PROVIDER: META,
+    BASETEN_PROVIDER: BASETEN,
+    FIREWORKS_PROVIDER: FIREWORKS,
+}
 
 
 def get_provider(value: str | ProviderAdapter | None = None) -> ProviderAdapter:
@@ -731,12 +876,25 @@ provider_for = get_provider
 __all__ = [
     "BASETEN",
     "BASETEN_BASE_URL",
+    "BASETEN_CONFIG",
     "BASETEN_DEFAULT_MODEL",
+    "BASETEN_PRICING",
     "BASETEN_PROVIDER",
+    "BasetenProvider",
+    "FIREWORKS",
+    "FIREWORKS_BASE_URL",
+    "FIREWORKS_CONFIG",
+    "FIREWORKS_DEFAULT_MODEL",
+    "FIREWORKS_PRICING",
+    "FIREWORKS_PROVIDER",
+    "FireworksProvider",
     "META",
     "META_BASE_URL",
     "META_DEFAULT_MODEL",
     "META_PROVIDER",
+    "OPENAI_CHAT_PROVIDER_CONFIGS",
+    "OpenAIChatProvider",
+    "OpenAIChatProviderConfig",
     "PROVIDERS",
     "ProviderAdapter",
     "Provider",
@@ -751,6 +909,10 @@ __all__ = [
     "chat_tool_definitions",
     "create_client",
     "default_model",
+    "fireworks_final_verdict_prompt",
+    "fireworks_repair_prompt",
+    "fireworks_single_shot_instructions",
+    "fireworks_tool_loop_instructions",
     "get_provider",
     "provider_for",
     "normalize_provider",
