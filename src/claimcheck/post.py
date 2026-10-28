@@ -232,18 +232,49 @@ def extract_claims(
 
 
 def _evidence_rows(trace: Mapping[str, Any], cited: set[str]) -> list[dict[str, Any]]:
+    """Cited evidence as flat fact rows; a year-over-year change becomes its two underlying filed facts."""
+
     keep = ("ticker", "entity", "metric", "concept", "value", "unit", "start", "end", "form", "filed", "accn",
             "frame", "fiscal_year", "fiscal_period", "derived", "filing_url", "period")
+
+    def row(result: Mapping[str, Any], ev_id: str, role: str | None = None) -> dict[str, Any]:
+        out = {key: result[key] for key in keep if result.get(key) is not None}
+        out["id"] = ev_id
+        out["tier"] = (result.get("provenance") or {}).get("tier")
+        if role:
+            out["role"] = role
+        return out
+
     rows = []
     for call in trace.get("tool_calls") or []:
         result = call.get("result")
         if not isinstance(result, Mapping) or result.get("evidence_id") not in cited:
             continue
-        row = {key: result[key] for key in keep if result.get(key) is not None}
-        row["id"] = result["evidence_id"]
-        row["tier"] = (result.get("provenance") or {}).get("tier")
-        rows.append(row)
+        ev_id = result["evidence_id"]
+        components = [(result.get(key), role) for key, role in (("current", "current"), ("base", "comparison"))]
+        if any(isinstance(component, Mapping) for component, _ in components):
+            for component, role in components:
+                if isinstance(component, Mapping):
+                    rows.append(row(component, ev_id, role))
+        else:
+            rows.append(row(result, ev_id))
     return rows
+
+
+def refresh_evidence(report_dir: Path) -> dict[str, Any]:
+    """Rebuild each verified claim's evidence rows from its saved trace (no model calls) and rewrite the report."""
+
+    report_path = report_dir / "report.json"
+    report = json.loads(report_path.read_text(encoding="utf-8"))
+    for item in report["claims"]:
+        if item.get("status") != "verified" or not item.get("trace_path"):
+            continue
+        trace = json.loads((report_dir / item["trace_path"]).read_text(encoding="utf-8"))
+        cited = {ev for check in item.get("program_checks") or [] for ev in check.get("evidence_ids") or []}
+        item["evidence"] = _evidence_rows(trace, cited)
+    report_path.write_text(json.dumps(report, indent=2, ensure_ascii=False, default=str) + "\n", encoding="utf-8")
+    (report_dir / "report.html").write_text(render_html(report), encoding="utf-8")
+    return report
 
 
 def check_post(

@@ -79,3 +79,16 @@ def test_literal_hundred_million_is_rescaled_before_verification() -> None:
     post = "可口可樂 2024 年營收突破 500 億美元。"
     item = {"quote": "可口可樂 2024 年營收突破 500 億美元", "claim": "Coca-Cola's 2024 revenue exceeded 500 hundred million US dollars.", "kind": "reported_fact"}
     assert screen_claims(post, [item])[0]["claim"] == "Coca-Cola's 2024 revenue exceeded 50 billion US dollars."
+
+
+def test_change_evidence_keeps_both_filed_facts() -> None:
+    from claimcheck.post import _evidence_rows
+
+    fact = lambda value, end, accn: {"ticker": "TSLA", "concept": "Revenues", "value": value, "start": end[:4] + "-01-01", "end": end, "form": "10-K", "accn": accn, "provenance": {"tier": "L1"}}
+    trace = {"tool_calls": [{"name": "compute_change", "result": {
+        "evidence_id": "E3", "pct_change": -2.93,
+        "current": fact(94827000000, "2025-12-31", "A-26"), "base": fact(97690000000, "2024-12-31", "A-26"),
+    }}]}
+    rows = _evidence_rows(trace, {"E3"})
+    assert [(row["id"], row["role"], row["value"]) for row in rows] == [("E3", "current", 94827000000), ("E3", "comparison", 97690000000)]
+    assert all(row["accn"] == "A-26" and row["tier"] == "L1" for row in rows)
