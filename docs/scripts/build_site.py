@@ -4,18 +4,22 @@
 The landing page only needs a few evaluation values and two real post reports.
 Keeping the extraction here means the page never has to copy a claim, span,
 verdict, filing value, or URL by hand.
+Use --offline to reuse matching filing excerpts from the existing site snapshot.
 """
 
 from __future__ import annotations
 
+import argparse
 import json
 import math
 from pathlib import Path
 from typing import Any
 
 try:
+    from .build_explorer_data import posthoc_snapshot
     from .filing_excerpts import SECFilingFetcher, claim_excerpts, group_excerpt_records
 except ImportError:  # Running this file directly from the docs/scripts directory.
+    from build_explorer_data import posthoc_snapshot
     from filing_excerpts import SECFilingFetcher, claim_excerpts, group_excerpt_records
 
 
@@ -199,10 +203,12 @@ def source_snapshot(claim: dict[str, Any]) -> dict[str, Any] | None:
     return None
 
 
-def claim_snapshot(claim: dict[str, Any], filing_fetcher: SECFilingFetcher) -> dict[str, Any]:
+def claim_snapshot(
+    claim: dict[str, Any], filing_fetcher: SECFilingFetcher | None,
+    cached_claim: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     evidence = claim.get("evidence") or []
-    excerpts = claim_excerpts(claim, filing_fetcher)
-    return {
+    snapshot = {
         "index": claim.get("index"),
         "quote": claim.get("quote"),
         "span": claim.get("span"),
@@ -217,9 +223,17 @@ def claim_snapshot(claim: dict[str, Any], filing_fetcher: SECFilingFetcher) -> d
         ],
         "source": source_snapshot(claim),
         "evidence": [evidence_snapshot(item) for item in evidence],
-        "excerpts": excerpts,
-        "modal_blocks": group_excerpt_records(evidence, excerpts),
     }
+    if filing_fetcher is None:
+        if cached_claim is None or "excerpts" not in cached_claim or any(
+            cached_claim.get(key) != value for key, value in snapshot.items()
+        ):
+            raise ValueError(f"--offline requires matching stored filing excerpts for claim {claim.get('index')}")
+        excerpts = cached_claim["excerpts"]
+    else:
+        excerpts = claim_excerpts(claim, filing_fetcher)
+    snapshot.update({"excerpts": excerpts, "modal_blocks": group_excerpt_records(evidence, excerpts)})
+    return snapshot
 
 
 def excerpt_summary(claims: list[dict[str, Any]]) -> dict[str, Any]:
@@ -254,8 +268,12 @@ def excerpt_summary(claims: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
-def example_snapshot(example_id: str, report: dict[str, Any], filing_fetcher: SECFilingFetcher) -> dict[str, Any]:
-    claims = [claim_snapshot(claim, filing_fetcher) for claim in report.get("claims", [])]
+def example_snapshot(
+    example_id: str, report: dict[str, Any], filing_fetcher: SECFilingFetcher | None,
+    cached_example: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    cached_claims = {claim["index"]: claim for claim in (cached_example or {}).get("claims", [])}
+    claims = [claim_snapshot(claim, filing_fetcher, cached_claims.get(claim.get("index"))) for claim in report.get("claims", [])]
     return {
         "id": example_id,
         "post": report.get("post", ""),
@@ -423,6 +441,9 @@ def research_snapshot(systems: dict[str, dict[str, Any]], paired: dict[str, Any]
 
 
 def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--offline", action="store_true", help="Reuse matching stored filing excerpts without fetching SEC filings")
+    args = parser.parse_args()
     explorer = read_json(EXPLORER_PATH)
     stats = explorer["stats"]
     summary = read_json(SUMMARY_PATH) if SUMMARY_PATH.exists() else {}
@@ -435,9 +456,10 @@ def main() -> None:
         family_snapshot(stats, "period_trap"),
     ]
 
-    filing_fetcher = SECFilingFetcher(FILING_CACHE_PATH)
+    cached_examples = read_json(OUTPUT_PATH).get("examples", {}) if args.offline else {}
+    filing_fetcher = None if args.offline else SECFilingFetcher(FILING_CACHE_PATH)
     examples = {
-        language: example_snapshot(EXAMPLE_IDS[language], read_json(report_path), filing_fetcher)
+        language: example_snapshot(EXAMPLE_IDS[language], read_json(report_path), filing_fetcher, cached_examples.get(language))
         for language, report_path in EXAMPLE_REPORTS.items()
     }
 
@@ -450,6 +472,7 @@ def main() -> None:
         },
         "systems": list(systems.values()),
         "chart": chart_snapshot(systems, paired),
+        "posthoc_rerun": posthoc_snapshot(explorer["claims"], ROOT / explorer["posthoc_rerun"]["run"]),
         "paired": paired,
         "families": families,
         "research": research_snapshot(systems, paired, families),

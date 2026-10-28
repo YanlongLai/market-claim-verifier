@@ -97,6 +97,15 @@
         withChecks: "With SEC lookup + checks",
         change: (points) => `+${points} points`
       },
+      posthoc: {
+        title: "After two fixes · post-hoc rerun",
+        key: "Agents only · v2 → rerun",
+        provider: "Provider",
+        accuracy: "Accuracy",
+        falseSupported: "False “supported”",
+        note: "The fixes were made after seeing these mistakes, so this is a regression check, not a new test score. Accuracy changes are within noise; false 'supported' answers dropped to zero.",
+        report: "Rerun report"
+      },
       research: {
         summary: "For researchers",
         ci: "95% intervals",
@@ -221,6 +230,15 @@
         withChecks: "查 SEC + 檢查",
         change: (points) => `增加 ${points} 個百分點`
       },
+      posthoc: {
+        title: "修正後重跑（事後）",
+        key: "僅 Agent · v2 → 重跑",
+        provider: "執行方式",
+        accuracy: "準確率",
+        falseSupported: "把錯的判成正確",
+        note: "這兩個修正是看到錯誤後才做的，所以這是回歸檢查，不是新的測試成績。準確率變化在誤差內；把錯的判成正確降到零。",
+        report: "重跑報告"
+      },
       research: {
         summary: "研究者資料",
         ci: "95% 區間",
@@ -321,6 +339,7 @@
     if (siteData) {
       renderExample(siteData.examples[exampleLanguage]);
       renderChart(siteData);
+      renderPosthocRerun(siteData);
       renderResearch(siteData);
       const dialog = $("#filing-dialog");
       if (activeFilingClaim && dialog && dialog.open) renderFilingDialog(activeFilingClaim);
@@ -1030,6 +1049,28 @@
     });
   }
 
+  function renderPosthocRerun(data) {
+    const block = $("#posthoc-rerun");
+    const rows = $("#posthoc-rows");
+    if (!block || !rows) return;
+    block.hidden = !data.posthoc_rerun;
+    rows.replaceChildren();
+    if (!data.posthoc_rerun) return;
+    data.posthoc_rerun.systems.forEach((system) => {
+      const row = document.createElement("tr");
+      const provider = document.createElement("th");
+      provider.scope = "row";
+      provider.textContent = system.provider;
+      const accuracy = document.createElement("td");
+      accuracy.textContent = `${percent(system.v2.accuracy, 1)} → ${percent(system.rerun.accuracy, 1)}`;
+      const falseSupported = document.createElement("td");
+      falseSupported.textContent = `${system.v2.false_supported} → ${system.rerun.false_supported}`;
+      row.append(provider, accuracy, falseSupported);
+      rows.append(row);
+    });
+    $("#posthoc-report").href = data.posthoc_rerun.report_url;
+  }
+
   function addResearchItem(list, text) {
     const item = document.createElement("li");
     item.textContent = text;
@@ -1102,6 +1143,7 @@
       siteData = await response.json();
       renderExample(siteData.examples[exampleLanguage] || siteData.examples.en);
       renderChart(siteData);
+      renderPosthocRerun(siteData);
       renderResearch(siteData);
     } catch (_error) {
       const list = $("#claim-list");
