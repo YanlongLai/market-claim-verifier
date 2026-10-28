@@ -24,6 +24,7 @@ PROMPT_FILE_NAMES = {
     "tool_schemas": "tool-schemas.md",
     "single_shot_instructions": "single-shot-instructions.md",
     "v2_paraphrase": "v2-paraphrase.md",
+    "post_extraction": "post-extraction.md",
 }
 
 PROMPT_LABELS = {
@@ -41,6 +42,7 @@ PROMPT_LABELS = {
     "tool_schemas": "Tool schemas",
     "single_shot_instructions": "Single-shot instructions",
     "v2_paraphrase": "v2 claim paraphrase prompt",
+    "post_extraction": "Post claim-extraction prompt",
 }
 
 
@@ -72,6 +74,7 @@ def prompt_registry() -> dict[str, dict[str, str]]:
         fireworks_single_shot_instructions,
         fireworks_tool_loop_instructions,
     )
+    from .post import EXTRACTION_PROMPT
     from .tools import TOOL_DEFINITIONS
 
     v2_paraphrase = """Rewrite the supplied financial claim as one concise news headline or social post. Return only the rewritten claim, with no quotation marks, explanation, or bullet. Keep the company identity, every exact number phrase, the period, and the direction or comparison meaning unchanged. Preserve approximate words such as about or roughly when they appear. Do not add facts, sources, or a new time period.
@@ -94,6 +97,7 @@ Claim:
         "tool_schemas": _json_text(TOOL_DEFINITIONS),
         "single_shot_instructions": SINGLE_SHOT_INSTRUCTIONS,
         "v2_paraphrase": v2_paraphrase,
+        "post_extraction": EXTRACTION_PROMPT,
     }
     return {
         name: {

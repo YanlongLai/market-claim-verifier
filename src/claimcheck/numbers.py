@@ -103,6 +103,30 @@ def _candidate_score(match: re.Match[str]) -> int:
     return 1 if not has_marker else 0
 
 
+_MULTIPLIER_WORDS = (("double", 100), ("doubled", 100), ("doubling", 100), ("twice", 100), ("triple", 200),
+                     ("tripled", 200), ("tripling", 200), ("quadruple", 300), ("quadrupled", 300))
+_MULTIPLIER_PATTERN = re.compile(
+    r"(?P<hedge>\b(?:more than|over|at least|nearly|almost|about|roughly|less than|under)\s+)?"
+    r"\b(?P<word>" + "|".join(word for word, _ in _MULTIPLIER_WORDS) + r")\b",
+    re.IGNORECASE,
+)
+
+
+def multiplier_words_to_percent(text: str) -> str:
+    """Rewrite growth multipliers as percent growth: "more than double" -> "more than 100%".
+
+    A bare "doubled" becomes "about 100%": in prose it rarely means exactly 100.0% growth.
+    """
+
+    growth = {word: pct for word, pct in _MULTIPLIER_WORDS}
+
+    def repl(match: re.Match[str]) -> str:
+        hedge = match.group("hedge") or "about "
+        return f"{hedge}{growth[match.group('word').lower()]}%"
+
+    return _MULTIPLIER_PATTERN.sub(repl, text or "")
+
+
 def parse_stated_number(stated_text: str) -> ParsedNumber | None:
     """Parse a claim's number phrase into ``(value, precision)``.
 
@@ -114,6 +138,9 @@ def parse_stated_number(stated_text: str) -> ParsedNumber | None:
 
     if not isinstance(stated_text, str) or not stated_text.strip():
         return None
+    original_text = stated_text
+    growth_word = _MULTIPLIER_PATTERN.search(stated_text)
+    stated_text = multiplier_words_to_percent(stated_text)
     matches = list(_NUMBER_PATTERN.finditer(stated_text))
     if not matches:
         return None
@@ -141,6 +168,9 @@ def parse_stated_number(stated_text: str) -> ParsedNumber | None:
         precision = (place * Decimal(str(multiplier))) / Decimal(2)
     except (InvalidOperation, ValueError):
         return None
+    if growth_word is not None and not re.search(r"\d", original_text):
+        # "doubled" is a rough multiple: accept growth within 15% of the implied rate (100% -> 85-115%).
+        precision = Decimal(str(float(value))) * Decimal("0.15") / Decimal(2)
     return ParsedNumber(float(value), float(precision))
 
 
@@ -179,7 +209,7 @@ def infer_comparator(
     """
 
     texts = [
-        value.strip().replace("≈", "~")
+        multiplier_words_to_percent(value.strip().replace("≈", "~"))
         for value in (stated_text, sub_claim_text, original_claim)
         if isinstance(value, str) and value.strip()
     ]

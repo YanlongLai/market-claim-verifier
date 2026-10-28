@@ -252,3 +252,19 @@ reasoning, cost, latency) and `REPORT.md`. Gold labels for the 30 claims were co
 - **Remaining agent false "supported".** Meta API agent on two "Q2/Q4 2024"-style claims for non-calendar issuers (NVIDIA, Apple). It checked only the fiscal reading, and gold is "insufficient evidence" because the readings disagree.
   - **Next:** have the program detect an unlabeled quarter for a non-calendar issuer and require both readings.
 - **Tests and figures.** Added regression tests for the TTM label and the 52/53-week calendar quarter (192 tests pass). Regenerated `docs/figures/eval-summary.*` from the v2 summary.
+
+## Day 3 — 2026-10-28 (Wed)
+
+- **Results explorer.** [`docs/explorer/`](docs/explorer/) shows six-system accuracy with CIs, per-family heatmap, and every claim's six verdicts, the program's decision steps and the cited SEC filing. Data comes from `docs/scripts/build_explorer_data.py`.
+- **Post checking.** New `python -m claimcheck post` (module `claimcheck.post`, prompt `prompts/post-extraction.md`).
+  - Muse Spark extracts claims with an exact quote. The program accepts a claim only if the quote is a span of the post and every number in the rewrite appears in it. Years and quarters may come from elsewhere in the post.
+  - Forecasts and opinions are labeled, not verified. Output is `report.json` plus a highlighted `report.html`.
+- **Bug: growth multipliers.** First live run, English thread on Baseten: NVIDIA "fiscal 2024 revenue … more than double the year before" came back contradicted, although the actual figure is +125.9%.
+  - **Cause:** "more than double" has no digits. The parser found no number, the comparator inference fell back to `eq`, and that overrode the model's correct `gt`.
+  - **Fix:** growth multipliers are rewritten as percent growth before parsing. "more than double" → `gt 100%`. A bare "doubled" → `approx 100%` with ±15% of the implied rate. "tripled" → 200%.
+  - **Rerun:** 4/4 checkable claims right. The before-fix run is kept as `bigtech-thread-baseten-before-multiplier-fix/`.
+- **Bug: Chinese 億 units.** First Chinese run on the Meta API: the extraction translated 億 literally ("500 hundred million US dollars"), and the parser read it as $500 million. That made a false Coca-Cola "revenue over 500 億美元" claim supported; actual 2024 revenue was $47.06B.
+  - **Fix:** the extraction prompt converts 億/萬 to billion/thousand, and the program also rewrites any literal "hundred million" / "ten thousand" before verification.
+  - **Rerun:** Microsoft FY2024 supported, Coca-Cola contradicted, Meta "623 億" contradicted (filed $62.36B rounds to 624 億). The before-fix run is kept.
+- **Tests.** 199 pass, including 9 new ones for screening, scale words and multipliers.
+- **Spend.** Post runs: about $0.07 (Baseten) and $0.09–0.10 per run (Meta API). The per-provider budget cap was raised to $60 by the owner.

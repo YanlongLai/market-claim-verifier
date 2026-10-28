@@ -284,6 +284,24 @@ For a live run, keep the model key outside the repository (`MODEL_API_KEY` for M
 
 `verify` also accepts `--model`, `--budget`, `--max-output-tokens`, and `--reasoning-effort`. Tool turns default to 4,000 output tokens and the final verdict to 3,000; the CLI flag or environment setting can override both.
 
+## Check a whole post
+
+Paste a social post or article (English or Chinese); every financial claim in it is found and checked:
+
+```bash
+.venv/bin/python -m claimcheck post examples/posts/bigtech-thread.txt --provider baseten
+```
+
+- **The model extracts.** Muse Spark lists each claim twice: the exact quote from the post, and a standalone English sentence.
+- **The program decides what gets checked.** It rejects a claim unless its quote is an exact span of the post and every number in the rewritten sentence appears in that quote. Unit rescaling is allowed (7,597 億 = 759.7 billion). Years and quarters may come from a headline elsewhere in the post.
+- **Forecasts and opinions are labeled, not verified.**
+- **Reported facts go through the same agent and program checks as above.** The output is `report.json` plus `report.html`: the post with every claim highlighted by verdict, linked to a card showing the stated number, the SEC value, the tolerance, and the filing on SEC EDGAR.
+
+Example runs are in [`docs/evidence/posts-2026-10-28/`](docs/evidence/posts-2026-10-28/).
+
+- **The English thread (Baseten), 4 of 4 checkable claims right.** These include NVIDIA "more than double" (true) and Tesla "grew 3% in 2025" (false). The forecast and the valuation opinion were skipped.
+- **The Chinese post (Meta API).** Microsoft FY2024 $245.1B, +16%: supported. Coca-Cola "over 500 億": contradicted, actual $47.1B. Meta 2024 net income "623 億": contradicted, because the filed $62.36B rounds to 624 億.
+
 ## Evaluation
 
 [`eval/claims.yaml`](eval/claims.yaml) holds 30 claims (20 `dev`, 10 `test`) across 11 trap categories — rounded and approximate values, inequalities, year-over-year changes with direction words, YTD-vs-quarter and fiscal-vs-calendar traps, unit traps, multi-part claims, first-time records and uncheckable claims. Gold facts come from [`eval/build_gold.py`](eval/build_gold.py), which reads raw SEC JSON with its own code and does not import the verifier.

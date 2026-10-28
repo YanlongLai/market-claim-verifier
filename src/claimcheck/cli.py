@@ -67,6 +67,18 @@ def _parser() -> argparse.ArgumentParser:
     verify.add_argument("--reasoning-effort")
     verify.add_argument("--dry-run", action="store_true")
 
+    post = subparsers.add_parser(
+        "post", help="extract and verify every financial claim in a pasted post or article"
+    )
+    post.add_argument("file", help="text file with the post, or - for stdin")
+    post.add_argument("--provider", choices=PROVIDERS)
+    post.add_argument("--model")
+    post.add_argument("--budget", type=float)
+    post.add_argument("--max-claims", type=_positive_int, default=8)
+    post.add_argument("--max-output-tokens", type=_positive_int)
+    post.add_argument("--reasoning-effort")
+    post.add_argument("--out", type=Path, help="output directory (default runs/posts/<UTC time>)")
+
     evaluation = subparsers.add_parser("eval", help="run or report the labeled evaluation")
     evaluation_subparsers = evaluation.add_subparsers(dest="eval_action", required=True)
 
@@ -135,7 +147,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         # EDGAR, evaluation reports, and dry runs do not need to inspect a key file.
         reads_key = (
-            args.command == "verify" and not getattr(args, "dry_run", False)
+            args.command in {"verify", "post"} and not getattr(args, "dry_run", False)
         ) or (
             args.command == "eval"
             and args.eval_action == "run"
@@ -292,6 +304,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         _print_json(manifest)
         return 0
 
+    if args.command == "post":
+        return _run_post(args, settings)
+
     model = args.model or settings.model
     provider = settings.provider
     budget = settings.budget_usd if args.budget is None else args.budget
@@ -381,3 +396,49 @@ def main(argv: Sequence[str] | None = None) -> int:
     except Exception as exc:
         print(f"Verification failed: {exc}", file=sys.stderr)
         return 1
+
+
+def _run_post(args: argparse.Namespace, settings: object) -> int:
+    from .post import PostError, check_post
+
+    text = sys.stdin.read() if args.file == "-" else Path(args.file).read_text(encoding="utf-8")
+    provider = settings.provider
+    model = args.model or settings.model
+    budget = settings.budget_usd if args.budget is None else args.budget
+    if not settings.model_api_key:
+        print(f"Missing {provider} model API key.", file=sys.stderr)
+        return 2
+    out = args.out or settings.runs_dir / "posts" / datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    ledger = Ledger(settings.runs_dir / "ledger.jsonl", budget_usd=budget, provider=provider)
+    try:
+        report = check_post(
+            text,
+            client=create_client(provider, settings.model_api_key),
+            edgar=EdgarClient(cache_dir=settings.cache_dir, user_agent=settings.sec_user_agent),
+            ledger=ledger,
+            model=model,
+            provider=provider,
+            out_dir=Path(out),
+            max_claims=args.max_claims,
+            secrets=[settings.model_api_key],
+            max_output_tokens=args.max_output_tokens or settings.max_output_tokens,
+            reasoning_effort=args.reasoning_effort or settings.reasoning_effort,
+        )
+    except (BudgetExceeded, UnknownModel) as exc:
+        print(f"Post check refused: {exc}", file=sys.stderr)
+        return 2
+    except PostError as exc:
+        print(f"Post check failed: {exc}", file=sys.stderr)
+        return 1
+    _print_json({
+        "out": str(out),
+        "report": str(Path(out) / "report.html"),
+        "counts": report["counts"],
+        "verdicts": report["verdicts"],
+        "cost_usd": report["cost_usd"],
+        "claims": [
+            {k: item.get(k) for k in ("index", "quote", "claim", "kind", "status", "verdict", "screen_reason")}
+            for item in report["claims"]
+        ],
+    })
+    return 0
