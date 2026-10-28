@@ -13,11 +13,18 @@ import math
 from pathlib import Path
 from typing import Any
 
+try:
+    from .filing_excerpts import SECFilingFetcher, claim_excerpts, group_excerpt_records
+except ImportError:  # Running this file directly from the docs/scripts directory.
+    from filing_excerpts import SECFilingFetcher, claim_excerpts, group_excerpt_records
+
 
 ROOT = Path(__file__).resolve().parents[2]
 EXPLORER_PATH = ROOT / "docs" / "explorer" / "data.json"
 SUMMARY_PATH = ROOT / "docs" / "evidence" / "eval-v2-2026-10-27" / "summary.json"
 OUTPUT_PATH = ROOT / "docs" / "site" / "data" / "site.json"
+BUILD_SUMMARY_PATH = ROOT / "docs" / "site" / "BUILD_SUMMARY.md"
+FILING_CACHE_PATH = ROOT / ".cache" / "filings"
 
 EXAMPLE_REPORTS = {
     "en": ROOT / "docs" / "evidence" / "posts-2026-10-28" / "bigtech-thread-baseten" / "report.json",
@@ -121,12 +128,27 @@ def evidence_snapshot(item: dict[str, Any]) -> dict[str, Any]:
         "period",
         "filing_url",
         "id",
+        "role",
         "tier",
     )
     snapshot = {key: item.get(key) for key in fields if key in item}
     if is_number(item.get("value")):
         snapshot["display_value"] = display_value(item["value"], item.get("unit"))
     return snapshot
+
+
+def program_check_snapshot(check: dict[str, Any]) -> dict[str, Any]:
+    """Keep only the check fields the modal needs for its conclusion line."""
+
+    fields = (
+        "text",
+        "stated_value_used",
+        "actual_value",
+        "comparator",
+        "program_verdict",
+        "evidence_ids",
+    )
+    return {key: check.get(key) for key in fields if key in check}
 
 
 def first_form(evidence: list[dict[str, Any]]) -> str | None:
@@ -177,8 +199,9 @@ def source_snapshot(claim: dict[str, Any]) -> dict[str, Any] | None:
     return None
 
 
-def claim_snapshot(claim: dict[str, Any]) -> dict[str, Any]:
+def claim_snapshot(claim: dict[str, Any], filing_fetcher: SECFilingFetcher) -> dict[str, Any]:
     evidence = claim.get("evidence") or []
+    excerpts = claim_excerpts(claim, filing_fetcher)
     return {
         "index": claim.get("index"),
         "quote": claim.get("quote"),
@@ -189,12 +212,50 @@ def claim_snapshot(claim: dict[str, Any]) -> dict[str, Any]:
         "status": claim.get("status"),
         "verdict": claim.get("verdict"),
         "summary": claim.get("summary"),
+        "program_checks": [
+            program_check_snapshot(check) for check in (claim.get("program_checks") or [])
+        ],
         "source": source_snapshot(claim),
         "evidence": [evidence_snapshot(item) for item in evidence],
+        "excerpts": excerpts,
+        "modal_blocks": group_excerpt_records(evidence, excerpts),
     }
 
 
-def example_snapshot(example_id: str, report: dict[str, Any]) -> dict[str, Any]:
+def excerpt_summary(claims: list[dict[str, Any]]) -> dict[str, Any]:
+    claim_results = []
+    matched_components = 0
+    unmatched_components = 0
+    for claim in claims:
+        if claim.get("status") != "verified":
+            continue
+        excerpts = claim.get("excerpts") or []
+        matched = sum(1 for item in excerpts if item.get("excerpt") is not None)
+        unmatched = len(excerpts) - matched
+        matched_components += matched
+        unmatched_components += unmatched
+        claim_results.append(
+            {
+                "index": claim.get("index"),
+                "claim": claim.get("claim"),
+                "matched": matched,
+                "unmatched": unmatched,
+                "reasons": [item.get("reason") for item in excerpts if item.get("reason")],
+            }
+        )
+    return {
+        "verified_claims": len(claim_results),
+        "matched_claims": sum(1 for item in claim_results if item["matched"]),
+        "partial_claims": sum(1 for item in claim_results if item["matched"] and item["unmatched"]),
+        "unmatched_claims": sum(1 for item in claim_results if not item["matched"]),
+        "matched_components": matched_components,
+        "unmatched_components": unmatched_components,
+        "claims": claim_results,
+    }
+
+
+def example_snapshot(example_id: str, report: dict[str, Any], filing_fetcher: SECFilingFetcher) -> dict[str, Any]:
+    claims = [claim_snapshot(claim, filing_fetcher) for claim in report.get("claims", [])]
     return {
         "id": example_id,
         "post": report.get("post", ""),
@@ -203,8 +264,78 @@ def example_snapshot(example_id: str, report: dict[str, Any]) -> dict[str, Any]:
         "proposed_count": report.get("proposed_count"),
         "counts": report.get("counts", {}),
         "verdicts": report.get("verdicts", {}),
-        "claims": [claim_snapshot(claim) for claim in report.get("claims", [])],
+        "claims": claims,
+        "filing_excerpt_summary": excerpt_summary(claims),
     }
+
+
+def write_build_summary(examples: dict[str, dict[str, Any]]) -> None:
+    lines = [
+        "# Site build summary",
+        "",
+        "- The bilingual site reads both example `report.json` files directly and writes the checked claims, SEC facts, filing excerpts, and original-filing links to `docs/site/data/site.json`.",
+        "- SEC downloads use the required User-Agent, are limited to five requests per second, and are cached under `.cache/filings/`.",
+        "",
+        "## Filing excerpt results",
+        "",
+    ]
+    for language, example in examples.items():
+        summary = example["filing_excerpt_summary"]
+        lines.append(
+            f"### {language}: {example['id']} — {summary['matched_components']} matched, {summary['unmatched_components']} unmatched component facts"
+        )
+        lines.append("")
+        for item in summary["claims"]:
+            lines.append(
+                f"- Claim {item['index']}: {item['claim']} — {item['matched']} matched, {item['unmatched']} unmatched."
+            )
+            claim = next(
+                (candidate for candidate in example["claims"] if candidate.get("index") == item["index"]),
+                None,
+            )
+            if claim:
+                excerpts_by_index = {
+                    record.get("evidence_index"): record for record in claim.get("excerpts") or []
+                }
+                for block in claim.get("modal_blocks") or []:
+                    labels = []
+                    highlights = []
+                    for evidence_index in block.get("evidence_indices") or []:
+                        evidence = (claim.get("evidence") or [])[evidence_index]
+                        label = evidence.get("id") or "Evidence"
+                        if evidence.get("role") == "current":
+                            label += " this period"
+                        elif evidence.get("role") == "comparison":
+                            label += " comparison"
+                        labels.append(label)
+                        record = excerpts_by_index.get(evidence_index) or {}
+                        fact = (record.get("excerpt") or {}).get("fact") or {}
+                        highlight = str(fact.get("raw_value") or fact.get("full_value") or "not available")
+                        if highlight not in highlights:
+                            highlights.append(highlight)
+                    lines.append(
+                        f"  - Modal block after dedupe: {' · '.join(labels)} — highlighted value: {', '.join(highlights)}."
+                    )
+            for reason in item["reasons"]:
+                lines.append(f"  - Reason: {reason}")
+        lines.append("")
+
+    lines.extend(
+        [
+            "## Files changed",
+            "",
+            "- `docs/site/index.html`",
+            "- `docs/site/script.js`",
+            "- `docs/site/styles.css`",
+            "- `docs/site/data/site.json`",
+            "- `docs/scripts/build_site.py`",
+            "- `docs/scripts/filing_excerpts.py`",
+            "- `tests/test_filing_excerpts.py`",
+            "- `docs/site/BUILD_SUMMARY.md`",
+            "",
+        ]
+    )
+    BUILD_SUMMARY_PATH.write_text("\n".join(lines), encoding="utf-8")
 
 
 def family_snapshot(stats: dict[str, Any], family: str) -> dict[str, Any]:
@@ -304,6 +435,12 @@ def main() -> None:
         family_snapshot(stats, "period_trap"),
     ]
 
+    filing_fetcher = SECFilingFetcher(FILING_CACHE_PATH)
+    examples = {
+        language: example_snapshot(EXAMPLE_IDS[language], read_json(report_path), filing_fetcher)
+        for language, report_path in EXAMPLE_REPORTS.items()
+    }
+
     output = {
         "eval": {
             "claim_count": len(explorer["claims"]),
@@ -316,9 +453,10 @@ def main() -> None:
         "paired": paired,
         "families": families,
         "research": research_snapshot(systems, paired, families),
-        "examples": {
-            language: example_snapshot(EXAMPLE_IDS[language], read_json(report_path))
-            for language, report_path in EXAMPLE_REPORTS.items()
+        "examples": examples,
+        "filing_excerpts": {
+            "cache_dir": ".cache/filings",
+            "examples": {language: example["filing_excerpt_summary"] for language, example in examples.items()},
         },
     }
 
@@ -326,6 +464,7 @@ def main() -> None:
     with OUTPUT_PATH.open("w", encoding="utf-8") as handle:
         json.dump(output, handle, indent=2, ensure_ascii=False)
         handle.write("\n")
+    write_build_summary(examples)
 
 
 if __name__ == "__main__":
