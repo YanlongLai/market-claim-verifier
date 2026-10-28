@@ -325,6 +325,57 @@ def test_ambiguous_evidence_is_unchecked() -> None:
     assert check["disagreement"] is False
 
 
+def test_history_evidence_deduplicates_results_with_the_same_window() -> None:
+    periods = [
+        {"period": "2024Q3", "end": "2024-09-30", "value": 10},
+        {"period": "2025Q3", "end": "2025-09-30", "value": 12},
+    ]
+    fiscal_periods = [
+        {"period": "FY2024Q3", "end": "2024-09-30", "value": 10},
+        {"period": "FY2025Q3", "end": "2025-09-30", "value": 12},
+    ]
+    runner = SimpleNamespace(
+        evidence={
+            "E1": {
+                "ticker": "TSLA",
+                "metric": "revenue",
+                "period": "2025Q3",
+                "periods": periods,
+                "periods_considered": {"first": "2024Q3", "last": "2025Q3"},
+                "value": 12,
+            },
+            "E2": {
+                "ticker": "TSLA",
+                "metric": "revenue",
+                "period": "FY2025Q3",
+                "periods": fiscal_periods,
+                "periods_considered": {"first": "FY2024Q3", "last": "FY2025Q3"},
+                "value": 12,
+            },
+        },
+        evidence_kind={"E1": "history_rank", "E2": "history_rank"},
+    )
+
+    check = evaluate_sub_claim(
+        {
+            "text": "Tesla Q3 2025 revenue was a record high",
+            "stated_text": "record high",
+            "claim_type": "record_high",
+            "comparator": "eq",
+            "stated_value": 1,
+            "evidence_ids": ["E1", "E2"],
+            "verdict": "supported",
+            "model_found_value": 1,
+            "note": "same history window",
+        },
+        runner,
+    )
+
+    assert check["program_verdict"] == "supported"
+    assert check["evidence_ids"] == ["E1"]
+    assert check["deduplicated_evidence"] == ["E1", "E2"]
+
+
 def test_stated_text_correction_and_unparsed_fallback_are_flagged() -> None:
     corrected = evaluate_sub_claim(
         claim(stated_text="$1.3B"), runner_with_evidence(1.3e9)

@@ -247,7 +247,11 @@ def _select_period_interpretations(
 
 
 def _resolve_interpretation_ids(
-    sub_claim: Mapping[str, Any], evidence_ids: Sequence[str], runner: Any
+    sub_claim: Mapping[str, Any],
+    evidence_ids: Sequence[str],
+    runner: Any,
+    *,
+    single_deduplicated: bool = False,
 ) -> tuple[list[str], bool]:
     """Resolve safe period citations and report dropped model entries.
 
@@ -267,6 +271,9 @@ def _resolve_interpretation_ids(
             for evidence_id in raw_entries
         )
     )
+
+    if single_deduplicated and len(valid_explicit) == 1:
+        return valid_explicit, invalid
 
     if len(_distinct_period_readings(valid_explicit, runner)) >= 2:
         selected = _select_period_interpretations(
@@ -384,14 +391,153 @@ def _component_ids(compute: Mapping[str, Any]) -> set[str]:
     return component_ids
 
 
+def _lookup_fact_identity(evidence: Mapping[str, Any] | None) -> tuple[Any, ...] | None:
+    """Return the identity of a numeric lookup fact, ignoring filing metadata."""
+
+    if evidence is None or "error" in evidence:
+        return None
+    required = ("concept", "start", "end", "value")
+    if not all(key in evidence for key in required) or not _is_number(evidence["value"]):
+        return None
+    return (
+        "lookup_fact",
+        evidence.get("ticker"),
+        evidence.get("metric"),
+        evidence["concept"],
+        evidence["start"],
+        evidence["end"],
+        float(evidence["value"]),
+    )
+
+
+def _compute_change_identity(evidence: Mapping[str, Any] | None) -> tuple[Any, ...] | None:
+    """Return the identity of a compute result from its current/base facts."""
+
+    if evidence is None or "error" in evidence:
+        return None
+    current = next(
+        (
+            value
+            for field in ("current_fact", "current")
+            if isinstance(value := evidence.get(field), Mapping)
+        ),
+        None,
+    )
+    base = next(
+        (
+            value
+            for field in ("base_fact", "base")
+            if isinstance(value := evidence.get(field), Mapping)
+        ),
+        None,
+    )
+    current_identity = _lookup_fact_identity(current)
+    base_identity = _lookup_fact_identity(base)
+    if current_identity is None or base_identity is None:
+        return None
+    return ("compute_change", current_identity, base_identity)
+
+
+def _history_rank_identity(evidence: Mapping[str, Any] | None) -> tuple[Any, ...] | None:
+    """Return the comparable-period window used by a history result."""
+
+    if evidence is None or "error" in evidence:
+        return None
+    rows = evidence.get("periods")
+    if not isinstance(rows, list):
+        rows = evidence.get("comparable_periods")
+    if isinstance(rows, list):
+        window = tuple(
+            (
+                row.get("end", row.get("end_date")),
+                row.get("value"),
+                row.get("period_type"),
+                (
+                    re.sub(r"^FY(\d{4})Q", r"\1Q", str(row.get("period")))
+                    if row.get("period") is not None
+                    else None
+                ),
+            )
+            for row in rows
+            if isinstance(row, Mapping)
+        )
+    else:
+        window = ()
+    if not window:
+        periods_considered = evidence.get("periods_considered")
+        if not isinstance(periods_considered, Mapping):
+            return None
+        window = (
+            (
+                re.sub(
+                    r"^FY(\d{4})Q", r"\1Q", str(periods_considered.get("first"))
+                ),
+                re.sub(
+                    r"^FY(\d{4})Q", r"\1Q", str(periods_considered.get("last"))
+                ),
+            ),
+        )
+    return (
+        "history_rank",
+        evidence.get("ticker"),
+        evidence.get("metric"),
+        window,
+    )
+
+
+def _evidence_identity(
+    evidence_id: str, runner: Any
+) -> tuple[Any, ...] | None:
+    evidence = _evidence(runner, evidence_id)
+    if evidence is None:
+        return None
+    kind = _runner_evidence_kind(runner, evidence_id, evidence)
+    if kind == "lookup_fact":
+        return _lookup_fact_identity(evidence)
+    if kind == "compute_change":
+        return _compute_change_identity(evidence)
+    if kind == "history_rank":
+        return _history_rank_identity(evidence)
+    return None
+
+
+def _deduplicate_evidence_ids(
+    evidence_ids: Sequence[str], runner: Any
+) -> tuple[list[str], list[list[str]]]:
+    """Collapse citations that resolve to the same underlying evidence.
+
+    The first citation remains authoritative.  The returned groups include that
+    citation and every citation collapsed into it so callers can retain a
+    complete audit trail.
+    """
+
+    selected: list[str] = []
+    seen: dict[tuple[Any, ...], int] = {}
+    groups: list[list[str]] = []
+    for evidence_id in _normalise_evidence_ids(list(evidence_ids)):
+        identity = _evidence_identity(evidence_id, runner)
+        if identity is None:
+            if evidence_id not in selected:
+                selected.append(evidence_id)
+            continue
+        group_index = seen.get(identity)
+        if group_index is None:
+            seen[identity] = len(groups)
+            groups.append([evidence_id])
+            selected.append(evidence_id)
+        else:
+            groups[group_index].append(evidence_id)
+    return selected, [group for group in groups if len(group) > 1]
+
+
 def _same_fact(left: Mapping[str, Any], right: Mapping[str, Any]) -> bool:
     """Compare the identifying fact fields used by duplicate evidence."""
 
-    keys = ("concept", "start", "end", "accn", "value")
-    if not _is_number(left.get("value")) or not _is_number(right.get("value")):
+    left_identity = _lookup_fact_identity(left)
+    right_identity = _lookup_fact_identity(right)
+    if left_identity is None or right_identity is None:
         return False
-    available = [key for key in keys if key in left and key in right]
-    return bool(available) and all(left.get(key) == right.get(key) for key in available)
+    return left_identity == right_identity
 
 
 def _numeric_citation(evidence_ids: Sequence[str], runner: Any) -> bool:
@@ -811,6 +957,7 @@ def _evaluate_period_interpretations(
     evidence_ids: list[str],
     interpretation_ids: list[str],
     invalid_interpretations: bool,
+    deduplicated_evidence: list[str],
 ) -> dict[str, Any]:
     child_claims = []
     for evidence_id in interpretation_ids:
@@ -842,6 +989,7 @@ def _evaluate_period_interpretations(
         result["evidence_ids"] = evidence_ids
         result["interpretations"] = []
         result["invalid_interpretations"] = invalid_interpretations
+        result["deduplicated_evidence"] = deduplicated_evidence
         if invalid_interpretations:
             result["reason"] = f"invalid_interpretations; {result.get('reason', '')}"
         return result
@@ -893,6 +1041,7 @@ def _evaluate_period_interpretations(
             "reason": reason,
             "period_ambiguous": period_ambiguous,
             "invalid_interpretations": invalid_interpretations,
+            "deduplicated_evidence": deduplicated_evidence,
             "disagreement": (
                 program_verdict != "unchecked" and model_verdict != program_verdict
             ),
@@ -922,9 +1071,22 @@ def evaluate_sub_claim(
 ) -> dict[str, Any]:
     """Evaluate one normalized model sub-claim against cited evidence."""
 
-    evidence_ids = _normalise_evidence_ids(sub_claim.get("evidence_ids"))
+    raw_evidence_ids = _normalise_evidence_ids(sub_claim.get("evidence_ids"))
+    evidence_ids, evidence_groups = _deduplicate_evidence_ids(raw_evidence_ids, runner)
+    raw_interpretation_ids = _normalise_evidence_ids(sub_claim.get("interpretations"))
+    interpretation_source_ids, interpretation_groups = _deduplicate_evidence_ids(
+        raw_interpretation_ids, runner
+    )
+    deduplicated_evidence = _unique_ids(
+        [evidence_id for group in [*evidence_groups, *interpretation_groups] for evidence_id in group]
+    )
     interpretation_ids, invalid_interpretations = (
-        _resolve_interpretation_ids(sub_claim, evidence_ids, runner)
+        _resolve_interpretation_ids(
+            {**sub_claim, "interpretations": interpretation_source_ids},
+            evidence_ids,
+            runner,
+            single_deduplicated=bool(interpretation_groups),
+        )
         if _allow_interpretations
         else ([], False)
     )
@@ -960,6 +1122,7 @@ def evaluate_sub_claim(
             evidence_ids,
             interpretation_ids,
             invalid_interpretations,
+            deduplicated_evidence,
         )
 
     if claim_type in {"record_high", "record_low"}:
@@ -1074,6 +1237,7 @@ def evaluate_sub_claim(
                         "interpretations": [],
                         "period_ambiguous": False,
                         "invalid_interpretations": invalid_interpretations,
+                        "deduplicated_evidence": deduplicated_evidence,
                     }
     elif stated is None or precision is None:
         reason = "stated_text_unparsed"
@@ -1146,6 +1310,7 @@ def evaluate_sub_claim(
         "interpretations": [],
         "period_ambiguous": False,
         "invalid_interpretations": invalid_interpretations,
+        "deduplicated_evidence": deduplicated_evidence,
         **flag_fields,
     }
 

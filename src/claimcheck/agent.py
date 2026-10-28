@@ -114,7 +114,11 @@ the calendar label (for example 2025Q4) and the fiscal label (for example
 FY2025Q4), cite both IDs in evidence_ids, and put those two IDs in
 interpretations. Keep interpretations empty unless both fiscal and calendar
 readings were looked up. If the claim says fiscal, cite only the fiscal
-reading; if it says calendar, cite only the calendar reading.
+reading; if it says calendar, cite only the calendar reading. When a lookup or
+compute result has fiscal_equals_calendar=true, the issuer's fiscal year is the
+calendar year: fiscal and calendar labels refer to the same underlying facts,
+so look up and cite only one reading even when the claim has no
+fiscal/calendar qualifier.
 
 Examples:
 1. "Tesla net income was about $1.4 billion": lookup_fact; stated_text
@@ -526,7 +530,14 @@ def _is_previous_response_not_found_error(
     status_code = _exception_status_code(exc)
     not_found = (
         ("response" in message and "not found" in message)
-        or "expired" in message
+        or (
+            "reasoning item" in message
+            and ("not found" in message or "expired" in message)
+        )
+        or (
+            "expired" in message
+            and ("response" in message or "reasoning item" in message)
+        )
         or ("previous_response_id" in message and "not" in message)
     )
     if not not_found:

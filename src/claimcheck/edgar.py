@@ -167,6 +167,40 @@ def _period_type(fact: Mapping[str, Any]) -> str:
     return "ytd"
 
 
+def _fiscal_year_equals_calendar(facts: Mapping[str, Any]) -> bool:
+    """Return whether the issuer reports fiscal years ending on December 31."""
+
+    if not isinstance(facts, Mapping):
+        return False
+    for namespace_data in facts.values():
+        if not isinstance(namespace_data, Mapping):
+            continue
+        for concept_data in namespace_data.values():
+            if not isinstance(concept_data, Mapping):
+                continue
+            units = concept_data.get("units")
+            if not isinstance(units, Mapping):
+                continue
+            for values in units.values():
+                if not isinstance(values, list):
+                    continue
+                for fact in values:
+                    if not isinstance(fact, Mapping):
+                        continue
+                    if str(fact.get("fp") or "").strip().upper() != "FY":
+                        continue
+                    end = _date(fact.get("end"))
+                    fiscal_year = _fact_fiscal_year(fact)
+                    if (
+                        end is not None
+                        and end.month == 12
+                        and end.day == 31
+                        and fiscal_year == end.year
+                    ):
+                        return True
+    return False
+
+
 def _fact_identity(fact: Mapping[str, Any]) -> tuple[str | None, str | None]:
     return (
         str(fact.get("start")) if fact.get("start") else None,
@@ -1408,6 +1442,9 @@ class EdgarClient:
             "fiscal_period": fact.get("fp"),
             "duration_days": _days(_date(fact.get("start")), _date(fact.get("end"))),
             "period_type": _period_type(fact),
+            "fiscal_equals_calendar": _fiscal_year_equals_calendar(
+                document.get("facts", {})
+            ),
             "derived": False,
             "filing_url": _filing_url(str(resolved["cik"]), fact),
             "source_sha256": source_sha256,
@@ -1456,6 +1493,9 @@ class EdgarClient:
             "fiscal_period": candidate.current.get("fp"),
             "duration_days": _days(derived_start, current_end),
             "period_type": "quarter",
+            "fiscal_equals_calendar": _fiscal_year_equals_calendar(
+                document.get("facts", {})
+            ),
             "derived": True,
             "derivation": candidate.derivation,
             "components": [

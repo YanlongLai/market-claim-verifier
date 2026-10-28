@@ -21,11 +21,13 @@ LOOKUP_FACT_TOOL = {
         "Look up one SEC EDGAR XBRL fact for a ticker, metric, and calendar "
         "quarter, fiscal quarter (FY2025Q4), or fiscal year. Successful results "
         "include period (the normalized requested label, or the resolved label "
-        "for latest), period_basis (calendar or fiscal), duration_days, and "
-        "period_type (quarter, ytd, annual, or "
+        "for latest), period_basis (calendar or fiscal), fiscal_equals_calendar, "
+        "duration_days, and period_type (quarter, ytd, annual, or "
         "instant). Additive flows may "
         "return derived=true with derivation and components; never treat a "
-        "ytd result as a quarter or recompute a derived result."
+        "ytd result as a quarter or recompute a derived result. When "
+        "fiscal_equals_calendar is true, fiscal and calendar labels identify "
+        "the same fact; do not look up both readings."
     ),
     "parameters": {
         "type": "object",
@@ -49,6 +51,7 @@ LOOKUP_FACT_OUTPUT_SCHEMA = {
         "evidence_id": {"type": "string"},
         "period": {"type": "string"},
         "period_basis": {"type": "string", "enum": ["calendar", "fiscal"]},
+        "fiscal_equals_calendar": {"type": "boolean"},
         "value": {"type": ["number", "null"]},
         "start": {"type": ["string", "null"]},
         "end": {"type": ["string", "null"]},
@@ -100,7 +103,8 @@ COMPUTE_CHANGE_TOOL = {
         "metric. The period and base_period must be the same kind of period; "
         "when base_period is omitted, null, empty, \"null\", or \"none\", use "
         "the same quarter or fiscal year one year earlier. The result includes "
-        "both cited lookup facts and a percentage change in percent points."
+        "both cited lookup facts, fiscal_equals_calendar, and a percentage "
+        "change in percent points."
     ),
     "parameters": {
         "type": "object",
@@ -195,6 +199,7 @@ COMPUTE_CHANGE_OUTPUT_SCHEMA = {
         "period": {"type": "string"},
         "base_period": {"type": "string"},
         "period_basis": {"type": "string", "enum": ["calendar", "fiscal"]},
+        "fiscal_equals_calendar": {"type": "boolean"},
         "current_fact": {"$ref": "#/$defs/fact"},
         "base_fact": {"$ref": "#/$defs/fact"},
         "current": {"$ref": "#/$defs/fact"},
@@ -212,6 +217,7 @@ COMPUTE_CHANGE_OUTPUT_SCHEMA = {
         "period",
         "base_period",
         "period_basis",
+        "fiscal_equals_calendar",
         "current_fact",
         "base_fact",
         "abs_change",
@@ -336,7 +342,12 @@ def _add_lookup_period(result: Any, requested_period: str) -> Any:
     basis = str(result.get("period_basis") or "").strip().lower()
     if basis not in {"calendar", "fiscal"}:
         basis = _period_basis_for_label(period)
-    return {**result, "period": period, "period_basis": basis}
+    return {
+        **result,
+        "period": period,
+        "period_basis": basis,
+        "fiscal_equals_calendar": bool(result.get("fiscal_equals_calendar", False)),
+    }
 
 
 def _validate_lookup(args: Any) -> dict[str, str]:
@@ -545,6 +556,13 @@ class ToolRunner:
             "period": valid["period"],
             "base_period": valid["base_period"],
             "period_basis": _period_basis_for_label(valid["period"]),
+            "fiscal_equals_calendar": any(
+                value is True
+                for value in (
+                    current.get("fiscal_equals_calendar"),
+                    base.get("fiscal_equals_calendar"),
+                )
+            ),
             "current_fact": current,
             "base_fact": base,
             # Short aliases make the relationship obvious to callers inspecting

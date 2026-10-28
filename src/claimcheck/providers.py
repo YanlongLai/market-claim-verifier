@@ -442,6 +442,14 @@ class ProviderAdapter:
         return [dict(result) for result in results]
 
 
+def _is_reasoning_item(item: Mapping[str, Any]) -> bool:
+    """Return whether a Responses output item is provider reasoning state."""
+
+    item_type = str(item.get("type") or "").strip().lower()
+    item_id = str(item.get("id") or "").strip().lower()
+    return item_type == "reasoning" or (not item_type and item_id.startswith("rs_"))
+
+
 class MetaProvider(ProviderAdapter):
     name = META_PROVIDER
     default_model = META_DEFAULT_MODEL
@@ -506,7 +514,11 @@ class MetaProvider(ProviderAdapter):
     ) -> dict[str, Any]:
         fallback_payload = copy.deepcopy(dict(payload))
         fallback_payload.pop("previous_response_id", None)
-        fallback_payload["input"] = copy.deepcopy(list(conversation))
+        fallback_payload["input"] = [
+            copy.deepcopy(item)
+            for item in conversation
+            if isinstance(item, Mapping) and not _is_reasoning_item(item)
+        ]
         # A previous-response continuation normally inherits the initial
         # instructions from the server-side response.  A standalone replay
         # does not, so carry them explicitly with the fallback request.
