@@ -1,0 +1,561 @@
+{
+  "claim": "Microsoft held 23% of the global market in the fiscal third quarter of 2024.",
+  "model": "accounts/fireworks/models/muse-spark-open",
+  "provider": "fireworks",
+  "requests": [
+    {
+      "request": {
+        "model": "accounts/fireworks/models/muse-spark-open",
+        "messages": [
+          {
+            "role": "system",
+            "content": "You verify financial claims against SEC EDGAR facts.\nDecompose the claim into every atomic factual assertion. Every factual assertion\nin the user's claim must become a sub-claim, including a value, a change, a\nrecord, and a first-time assertion in the same sentence. Assertions that the\ntools cannot check must still become a sub-claim with claim_type other; the\nprogram will leave those unchecked. Use lookup_fact for a value,\ncompute_change for YoY or other period-to-period growth, history_rank for\nrecord/first-time assertions, and list_periods only to understand missing data.\nNever use memory for numbers. A quarter must have period_type=quarter and\nduration_days around 80-100, not period_type=ytd. If a result has derived=true,\nuse its derivation and components as evidence and do not calculate that fact\nagain. For compute_change, cite its own evidence ID; its two nested component\nfact IDs may also be cited and are ignored by the verifier.\n\nEach final sub_claim must contain exactly these model fields:\ntext, stated_text, claim_type (value, change_pct, change_abs, record_high,\nrecord_low, first_time_above, or other), comparator (eq, approx, gt, gte, lt,\nor lte), stated_value in base units (USD, USD/share, percentage points, or 1\nfor a record boolean), evidence_ids, interpretations, verdict, note, and\nmodel_found_value. interpretations is required and may be empty. Every non-empty\nitem must be an evidence id like E3 — never free text.\nCopy stated_text verbatim from the claim, including words such as \"about\",\n\"up\", or \"fell\" (for example, \"about $1.4 billion\", \"up 22%\", or\n\"fell 10%\"). For a change_pct, stated_value is 22 for 22%, not 0.22; the\nverifier applies the sign implied by direction words such as fell/down or\nrose/up. model_found_value is the number read from the cited evidence in the\nsame units, or null when it is missing.\n\nComparator wording is deterministic: a plain numeric statement with no hedge\nor inequality phrase is eq; about/around/roughly/approximately/nearly/almost,\nclose to, some, or ~ means approx; topped/exceeded/above/more than/over/\nsurpassed/beat means gt; at least/no less than means gte; below/under/less\nthan/short of means lt; at most/no more than/up to means lte. The program\nrecords and may correct the model comparator from these words. \"up\" and\n\"fell\" describe change direction, not approximation.\n\nFor a quarter claim at a non-calendar-fiscal issuer, use period_basis from\nthe tool results. If the claim says neither fiscal nor calendar, look up both\nthe calendar label (for example 2025Q4) and the fiscal label (for example\nFY2025Q4), cite both IDs in evidence_ids, and put those two IDs in\ninterpretations. Keep interpretations empty unless both fiscal and calendar\nreadings were looked up. If the claim says fiscal, cite only the fiscal\nreading; if it says calendar, cite only the calendar reading. When a lookup or\ncompute result has fiscal_equals_calendar=true, the issuer's fiscal year is the\ncalendar year: fiscal and calendar labels refer to the same underlying facts,\nso look up and cite only one reading even when the claim has no\nfiscal/calendar qualifier.\n\nExamples:\n1. \"Tesla net income was about $1.4 billion\": lookup_fact; stated_text\n   \"about $1.4 billion\", claim_type value, comparator approx, stated_value\n   1400000000.\n2. \"Alphabet revenue exceeded $100 billion\": lookup_fact; stated_text\n   \"exceeded $100 billion\", claim_type value, comparator gt, stated_value\n   100000000000.\n3. \"Meta revenue was up 22% YoY\": compute_change(META, revenue, 2025Q2,\n   null); stated_text \"up 22%\", claim_type change_pct, comparator eq,\n   stated_value 22, and cite the compute_change evidence ID.\n4. \"Tesla revenue fell 10% YoY\": compute_change(TSLA, revenue, 2025Q3,\n   null); stated_text \"fell 10%\", claim_type change_pct, comparator eq,\n   stated_value -10, and cite the compute_change evidence ID.\n5. \"Alphabet Q3 2025 revenue was a record high\": history_rank(GOOGL,\n   revenue, 2025Q3); claim_type record_high, comparator eq, stated_value 1,\n   and cite the history_rank evidence ID.\n6. \"Alphabet Q3 2025 revenue topped $100 billion for the first time\": create\n   two sub-claims: value gt 100000000000 and first_time_above with stated_value\n   100000000000, both citing the relevant evidence; the latter is supported\n   only when this period is above the threshold and no earlier comparable\n   period is above it.\n7. If a requested fact is unavailable, leave model_found_value null, cite any\n   relevant evidence, and set that sub-claim to insufficient_evidence. Say\n   insufficient_evidence when data is missing or evidence is ambiguous."
+          },
+          {
+            "role": "user",
+            "content": "Microsoft held 23% of the global market in the fiscal third quarter of 2024."
+          }
+        ],
+        "tools": [
+          {
+            "type": "function",
+            "function": {
+              "name": "lookup_fact",
+              "description": "Look up one SEC EDGAR XBRL fact for a ticker, metric, and calendar quarter, fiscal quarter (FY2025Q4), or fiscal year. Successful results include period (the normalized requested label, or the resolved label for latest), period_basis (calendar or fiscal), fiscal_equals_calendar, duration_days, and period_type (quarter, ytd, annual, or instant). Additive flows may return derived=true with derivation and components; never treat a ytd result as a quarter or recompute a derived result. When fiscal_equals_calendar is true, fiscal and calendar labels identify the same fact; do not look up both readings. Every fact includes compact provenance: L1 audited 10-K, L2 reviewed 10-Q, or L3 program-derived, with confirmations, restatement, amendment, and evidence strength.",
+              "parameters": {
+                "type": "object",
+                "properties": {
+                  "ticker": {
+                    "type": "string"
+                  },
+                  "metric": {
+                    "type": "string",
+                    "enum": [
+                      "revenue",
+                      "net_income",
+                      "operating_income",
+                      "eps_diluted",
+                      "gross_profit",
+                      "total_assets",
+                      "cash",
+                      "capex",
+                      "rd_expense",
+                      "shares_outstanding"
+                    ]
+                  },
+                  "period": {
+                    "type": "string",
+                    "pattern": "^(latest|FY\\d{4}(?:Q[1-4])?|\\d{4}Q[1-4])$"
+                  }
+                },
+                "required": [
+                  "ticker",
+                  "metric",
+                  "period"
+                ],
+                "additionalProperties": false
+              }
+            }
+          },
+          {
+            "type": "function",
+            "function": {
+              "name": "list_periods",
+              "description": "List the recent directly available SEC EDGAR quarter and fiscal-year periods for a ticker and metric.",
+              "parameters": {
+                "type": "object",
+                "properties": {
+                  "ticker": {
+                    "type": "string"
+                  },
+                  "metric": {
+                    "type": "string",
+                    "enum": [
+                      "revenue",
+                      "net_income",
+                      "operating_income",
+                      "eps_diluted",
+                      "gross_profit",
+                      "total_assets",
+                      "cash",
+                      "capex",
+                      "rd_expense",
+                      "shares_outstanding"
+                    ]
+                  }
+                },
+                "required": [
+                  "ticker",
+                  "metric"
+                ],
+                "additionalProperties": false
+              }
+            }
+          },
+          {
+            "type": "function",
+            "function": {
+              "name": "compute_change",
+              "description": "Compute the absolute and year-over-year change for one SEC EDGAR XBRL metric. The period and base_period must be the same kind of period; when base_period is omitted, null, empty, \"null\", or \"none\", use the same quarter or fiscal year one year earlier. The result includes both cited lookup facts, fiscal_equals_calendar, their fact-level provenance, and a percentage change in percent points.",
+              "parameters": {
+                "type": "object",
+                "properties": {
+                  "ticker": {
+                    "type": "string"
+                  },
+                  "metric": {
+                    "type": "string",
+                    "enum": [
+                      "revenue",
+                      "net_income",
+                      "operating_income",
+                      "eps_diluted",
+                      "gross_profit",
+                      "total_assets",
+                      "cash",
+                      "capex",
+                      "rd_expense",
+                      "shares_outstanding"
+                    ]
+                  },
+                  "period": {
+                    "type": "string",
+                    "pattern": "^(latest|FY\\d{4}(?:Q[1-4])?|\\d{4}Q[1-4])$"
+                  },
+                  "base_period": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "pattern": "^(FY\\d{4}(?:Q[1-4])?|\\d{4}Q[1-4])$"
+                  }
+                },
+                "required": [
+                  "ticker",
+                  "metric",
+                  "period",
+                  "base_period"
+                ],
+                "additionalProperties": false
+              }
+            }
+          },
+          {
+            "type": "function",
+            "function": {
+              "name": "history_rank",
+              "description": "Compare one quarter or fiscal-year fact with every available comparable period of the same period_type. Quarters include derived Q4 values when available; annual periods are compared only with annual periods. Return the rank, record flags through the requested period, prior high/low, and the comparison window with period end dates. The requested period also includes compact fact provenance and evidence strength.",
+              "parameters": {
+                "type": "object",
+                "properties": {
+                  "ticker": {
+                    "type": "string"
+                  },
+                  "metric": {
+                    "type": "string",
+                    "enum": [
+                      "revenue",
+                      "net_income",
+                      "operating_income",
+                      "eps_diluted",
+                      "gross_profit",
+                      "total_assets",
+                      "cash",
+                      "capex",
+                      "rd_expense",
+                      "shares_outstanding"
+                    ]
+                  },
+                  "period": {
+                    "type": "string",
+                    "pattern": "^(latest|FY\\d{4}(?:Q[1-4])?|\\d{4}Q[1-4])$"
+                  }
+                },
+                "required": [
+                  "ticker",
+                  "metric",
+                  "period"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        ],
+        "parallel_tool_calls": true,
+        "max_tokens": 4000
+      },
+      "reservation": {
+        "reservation_id": "4275e6b037594a66bd1d9e84792dae71",
+        "provider": "fireworks",
+        "model": "accounts/fireworks/models/muse-spark-open",
+        "estimated_input_tokens": 2848,
+        "max_output_tokens": 4000,
+        "amount": 0.020560000000000002,
+        "payload_chars": 8544,
+        "context_chars": 0
+      },
+      "raw_response": {
+        "id": "chatcmpl-0578f61ab5f54084a24148ed511cf1d7",
+        "choices": [
+          {
+            "finish_reason": "stop",
+            "index": 0,
+            "logprobs": null,
+            "message": {
+              "content": "{\n  \"sub_claims\": [\n    {\n      \"text\": \"Microsoft held 23% of the global market in the fiscal third quarter of 2024.\",\n      \"stated_text\": \"23% of the global market in the fiscal third quarter of 2024\",\n      \"claim_type\": \"other\",\n      \"comparator\": \"eq\",\n      \"stated_value\": 23,\n      \"evidence_ids\": [],\n      \"interpretations\": [],\n      \"verdict\": \"insufficient_evidence\",\n      \"note\": \"Global market share is not an SEC EDGAR XBRL disclosure. No EDGAR metric (revenue/net_income/etc.) measures market share percentage, and the claim does not specify which market (e.g., cloud, OS, productivity software). Cannot be verified from EDGAR facts.\",\n      \"model_found_value\": null\n    }\n  ]\n}",
+              "refusal": null,
+              "role": "assistant",
+              "annotations": null,
+              "audio": null,
+              "function_call": null,
+              "tool_calls": null,
+              "reasoning_content": "Need to decompose claim: \"Microsoft held 23% of the global market in the fiscal third quarter of 2024.\"\n\nThis is about Microsoft market share? Need to verify against SEC EDGAR facts. The tool only has financial metrics: revenue, net_income, operating_income, eps_diluted, gross_profit, total_assets, cash, capex, rd_expense, shares_outstanding. Market share is not in SEC EDGAR XBRL facts.\n\nPossibly need to treat as other claim_type? But we must still create sub-claims. The claim: \"Microsoft held 23% of the global market in the fiscal third quarter of 2024.\"\n\nWe need to attempt to look up Microsoft fiscal Q3 2024 facts maybe revenue? But claim is about market share 23%. This cannot be checked via EDGAR tools. Must become sub-claim with claim_type other, unchecked.\n\nWe must still follow instructions: decompose into every atomic factual assertion. Every factual assertion must become a sub-claim, including value, change, record, first-time.\n\nHere we have one assertion: held 23% of global market in fiscal third quarter of 2024.\n\nWe need to categorize as claim_type other? Since not value from EDGAR metrics? The allowed claim_type values: value, change_pct, change_abs, record_high, record_low, first_time_above, or other. For assertions that tools cannot check must still become sub-claim with claim_type other.\n\nSo we should have one sub_claim with text something, stated_text verbatim, claim_type other, comparator approx? But for other, comparator maybe eq? Need stated_value? For other, stated_value in base units? But we could set stated_value 23? However spec says stated_value in base units (USD, USD/share, percentage points, or 1 for record boolean). For market share 23%, that is percentage points? Could be 23.\n\nBut need evidence_ids, interpretations, verdict, note, model_found_value.\n\nWe must attempt lookup? The instructions say Assertions that the tools cannot check must still become a sub-claim with claim_type other; the program will leave those unchecked. Use lookup_fact for a value, compute_change for YoY... So we should not call lookup_fact for market share? There's no metric for market share.\n\nWe could still try to demonstrate that we attempted to understand but we know tools cannot check market share.\n\nHowever to satisfy rigor, we might still call list_periods for Microsoft to show no market share metric available? Or we could just directly return sub_claim with insufficient_evidence.\n\nThe system expects we call tools for verifiable financial claims. For this claim, no financial metric is mentioned. So we should not call lookup_fact? But we could call something to show we checked? However instruction says use lookup_fact for a value, compute_change for YoY...\n\nWe need to produce final JSON with sub_claims.\n\nWe need to decide evidence_ids: empty? For other, evidence_ids could be [].\n\nWe need to provide note explaining.\n\nWe must include fields: text, stated_text, claim_type, comparator, stated_value, evidence_ids, interpretations, verdict, note, model_found_value.\n\nFor this claim, text: \"Microsoft held 23% of the global market in the fiscal third quarter of 2024.\" stated_text same verbatim.\n\nclaim_type other, comparator eq? But stated \"23%\" without hedge like about, so eq. stated_value 23 (percentage points). evidence_ids [] interpretations [] verdict insufficient_evidence note: No SEC EDGAR XBRL metric corresponds to global market share; cannot be verified via EDGAR. model_found_value null.\n\nShould we split into two sub-claims? \"Microsoft held 23% of the global market\" and \"in the fiscal third quarter of 2024\" is temporal qualifier, not separate assertion. But instruction says decompose into every atomic factual assertion. Could be one assertion includes both value and period.\n\nWe could interpret as one sub-claim.\n\nAlternatively, we might have two interpretations? No.\n\nWe must ensure we follow required output format. The expected final answer is a JSON structure? The prompt doesn't explicitly say output format for final answer, but earlier instructions describe each final sub_claim must contain exactly these model fields. So we need to output JSON with sub_claims array.\n\nProbably provide reasoning and then JSON.\n\nWe should also note fiscal third quarter 2024 for Microsoft = FY2024 Q3 corresponds to calendar 2024Q1? Actually Microsoft fiscal year ends June 30. Fiscal Q3 2024 = Jan-Mar 2024 = 2024Q1 calendar. But not relevant since market share not in EDGAR.\n\nShould we attempt lookup_fact for Microsoft revenue to show fiscal Q3 2024? Could provide context but not needed. The claim is about market share, not revenue.\n\nBetter to not call tools, directly answer insufficient_evidence.\n\nHowever the system might expect we call tools and find nothing. The guidelines: \"If a requested fact is unavailable, leave model_found_value null, cite any relevant evidence, and set that sub-claim to insufficient_evidence. Say insufficient_evidence when data is missing or evidence is ambiguous.\"\n\nWe have no tool for market share, so we can set insufficient_evidence.\n\nWe must not invent numbers.\n\nWe should output final verdict.\n\nMake sure to include interpretations empty.\n\nPotentially also need to note that global market undefined (which market? cloud, OS, etc.)\n\nThus final answer: one sub_claim.\n\nWe should also include model_found_value null.\n\nWe need to ensure compliance with comparator wording: \"held 23%\" plain numeric = eq.\n\nWe should provide note explaining lack of EDGAR coverage.\n\nProceed to final.",
+              "tools": null
+            }
+          }
+        ],
+        "created": 1793225455,
+        "model": "accounts/fireworks/models/muse-spark-open",
+        "object": "chat.completion",
+        "metadata": null,
+        "moderation": null,
+        "service_tier": null,
+        "system_fingerprint": null,
+        "usage": {
+          "completion_tokens": 1355,
+          "prompt_tokens": 2695,
+          "total_tokens": 4050,
+          "completion_tokens_details": {
+            "accepted_prediction_tokens": null,
+            "audio_tokens": null,
+            "reasoning_tokens": 1166,
+            "rejected_prediction_tokens": null,
+            "text_tokens": null
+          },
+          "prompt_tokens_details": {
+            "audio_tokens": null,
+            "cache_write_tokens": null,
+            "cached_tokens": 2624,
+            "image_tokens": null,
+            "text_tokens": null
+          },
+          "output_tokens_details": {
+            "reasoning_tokens": 1166
+          }
+        }
+      },
+      "usage": {
+        "input": 2695,
+        "cached": 2624,
+        "output": 1355,
+        "reasoning": 1166
+      },
+      "cost": 0.0062411,
+      "latency_ms": 30544.744,
+      "status": "completed",
+      "raw_usage": {
+        "completion_tokens": 1355,
+        "prompt_tokens": 2695,
+        "total_tokens": 4050,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 1166,
+          "rejected_prediction_tokens": null,
+          "text_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cache_write_tokens": null,
+          "cached_tokens": 2624,
+          "image_tokens": null,
+          "text_tokens": null
+        },
+        "output_tokens_details": {
+          "reasoning_tokens": 1166
+        }
+      },
+      "normalized_usage": {
+        "input": 2695,
+        "cached": 2624,
+        "output": 1355,
+        "reasoning": 1166
+      },
+      "finish_reason": "stop",
+      "rate_limit_headers": {
+        "x-ratelimit-limit-tokens-cache-adjusted-prompt": "1800000",
+        "x-ratelimit-limit-tokens-generated": "72000",
+        "x-ratelimit-limit-tokens-prompt": "7200000",
+        "x-ratelimit-limit-tokens-uncached-prompt": "1800000",
+        "x-ratelimit-over-limit": "no",
+        "x-ratelimit-remaining-tokens-prompt": "7197305"
+      }
+    },
+    {
+      "request": {
+        "model": "accounts/fireworks/models/muse-spark-open",
+        "messages": [
+          {
+            "role": "system",
+            "content": "You verify financial claims against SEC EDGAR facts.\nDecompose the claim into every atomic factual assertion. Every factual assertion\nin the user's claim must become a sub-claim, including a value, a change, a\nrecord, and a first-time assertion in the same sentence. Assertions that the\ntools cannot check must still become a sub-claim with claim_type other; the\nprogram will leave those unchecked. Use lookup_fact for a value,\ncompute_change for YoY or other period-to-period growth, history_rank for\nrecord/first-time assertions, and list_periods only to understand missing data.\nNever use memory for numbers. A quarter must have period_type=quarter and\nduration_days around 80-100, not period_type=ytd. If a result has derived=true,\nuse its derivation and components as evidence and do not calculate that fact\nagain. For compute_change, cite its own evidence ID; its two nested component\nfact IDs may also be cited and are ignored by the verifier.\n\nEach final sub_claim must contain exactly these model fields:\ntext, stated_text, claim_type (value, change_pct, change_abs, record_high,\nrecord_low, first_time_above, or other), comparator (eq, approx, gt, gte, lt,\nor lte), stated_value in base units (USD, USD/share, percentage points, or 1\nfor a record boolean), evidence_ids, interpretations, verdict, note, and\nmodel_found_value. interpretations is required and may be empty. Every non-empty\nitem must be an evidence id like E3 — never free text.\nCopy stated_text verbatim from the claim, including words such as \"about\",\n\"up\", or \"fell\" (for example, \"about $1.4 billion\", \"up 22%\", or\n\"fell 10%\"). For a change_pct, stated_value is 22 for 22%, not 0.22; the\nverifier applies the sign implied by direction words such as fell/down or\nrose/up. model_found_value is the number read from the cited evidence in the\nsame units, or null when it is missing.\n\nComparator wording is deterministic: a plain numeric statement with no hedge\nor inequality phrase is eq; about/around/roughly/approximately/nearly/almost,\nclose to, some, or ~ means approx; topped/exceeded/above/more than/over/\nsurpassed/beat means gt; at least/no less than means gte; below/under/less\nthan/short of means lt; at most/no more than/up to means lte. The program\nrecords and may correct the model comparator from these words. \"up\" and\n\"fell\" describe change direction, not approximation.\n\nFor a quarter claim at a non-calendar-fiscal issuer, use period_basis from\nthe tool results. If the claim says neither fiscal nor calendar, look up both\nthe calendar label (for example 2025Q4) and the fiscal label (for example\nFY2025Q4), cite both IDs in evidence_ids, and put those two IDs in\ninterpretations. Keep interpretations empty unless both fiscal and calendar\nreadings were looked up. If the claim says fiscal, cite only the fiscal\nreading; if it says calendar, cite only the calendar reading. When a lookup or\ncompute result has fiscal_equals_calendar=true, the issuer's fiscal year is the\ncalendar year: fiscal and calendar labels refer to the same underlying facts,\nso look up and cite only one reading even when the claim has no\nfiscal/calendar qualifier.\n\nExamples:\n1. \"Tesla net income was about $1.4 billion\": lookup_fact; stated_text\n   \"about $1.4 billion\", claim_type value, comparator approx, stated_value\n   1400000000.\n2. \"Alphabet revenue exceeded $100 billion\": lookup_fact; stated_text\n   \"exceeded $100 billion\", claim_type value, comparator gt, stated_value\n   100000000000.\n3. \"Meta revenue was up 22% YoY\": compute_change(META, revenue, 2025Q2,\n   null); stated_text \"up 22%\", claim_type change_pct, comparator eq,\n   stated_value 22, and cite the compute_change evidence ID.\n4. \"Tesla revenue fell 10% YoY\": compute_change(TSLA, revenue, 2025Q3,\n   null); stated_text \"fell 10%\", claim_type change_pct, comparator eq,\n   stated_value -10, and cite the compute_change evidence ID.\n5. \"Alphabet Q3 2025 revenue was a record high\": history_rank(GOOGL,\n   revenue, 2025Q3); claim_type record_high, comparator eq, stated_value 1,\n   and cite the history_rank evidence ID.\n6. \"Alphabet Q3 2025 revenue topped $100 billion for the first time\": create\n   two sub-claims: value gt 100000000000 and first_time_above with stated_value\n   100000000000, both citing the relevant evidence; the latter is supported\n   only when this period is above the threshold and no earlier comparable\n   period is above it.\n7. If a requested fact is unavailable, leave model_found_value null, cite any\n   relevant evidence, and set that sub-claim to insufficient_evidence. Say\n   insufficient_evidence when data is missing or evidence is ambiguous."
+          },
+          {
+            "role": "user",
+            "content": "Microsoft held 23% of the global market in the fiscal third quarter of 2024."
+          },
+          {
+            "role": "assistant",
+            "content": "{\n  \"sub_claims\": [\n    {\n      \"text\": \"Microsoft held 23% of the global market in the fiscal third quarter of 2024.\",\n      \"stated_text\": \"23% of the global market in the fiscal third quarter of 2024\",\n      \"claim_type\": \"other\",\n      \"comparator\": \"eq\",\n      \"stated_value\": 23,\n      \"evidence_ids\": [],\n      \"interpretations\": [],\n      \"verdict\": \"insufficient_evidence\",\n      \"note\": \"Global market share is not an SEC EDGAR XBRL disclosure. No EDGAR metric (revenue/net_income/etc.) measures market share percentage, and the claim does not specify which market (e.g., cloud, OS, productivity software). Cannot be verified from EDGAR facts.\",\n      \"model_found_value\": null\n    }\n  ]\n}"
+          },
+          {
+            "role": "user",
+            "content": "Return only one plain JSON object for the final verdict. Do not use Markdown fences or explanatory text. Include every atomic factual assertion as a sub-claim, including claim_type other when the tools cannot check it. Copy stated_text verbatim from the claim and include claim_type, comparator, stated_value in base units, evidence_ids, interpretations (evidence ids like E3 — never free text), verdict, model_found_value, and a concise note. The object must match this existing verdict schema: {\"type\":\"object\",\"properties\":{\"verdict\":{\"type\":\"string\",\"enum\":[\"supported\",\"contradicted\",\"insufficient_evidence\"]},\"summary\":{\"type\":\"string\"},\"sub_claims\":{\"type\":\"array\",\"items\":{\"type\":\"object\",\"properties\":{\"text\":{\"type\":\"string\"},\"stated_text\":{\"type\":\"string\"},\"claim_type\":{\"type\":\"string\",\"enum\":[\"value\",\"change_pct\",\"change_abs\",\"record_high\",\"record_low\",\"first_time_above\",\"other\"]},\"comparator\":{\"type\":\"string\",\"enum\":[\"eq\",\"approx\",\"gt\",\"gte\",\"lt\",\"lte\"]},\"stated_value\":{\"type\":[\"number\",\"null\"]},\"evidence_ids\":{\"type\":\"array\",\"items\":{\"type\":\"string\"}},\"interpretations\":{\"type\":\"array\",\"items\":{\"type\":\"string\",\"description\":\"evidence id like E3 — never free text\"}},\"verdict\":{\"type\":\"string\",\"enum\":[\"supported\",\"contradicted\",\"insufficient_evidence\"]},\"note\":{\"type\":\"string\"},\"model_found_value\":{\"type\":[\"number\",\"null\"]}},\"required\":[\"text\",\"stated_text\",\"claim_type\",\"comparator\",\"stated_value\",\"evidence_ids\",\"interpretations\",\"verdict\",\"note\",\"model_found_value\"],\"additionalProperties\":false}}},\"required\":[\"verdict\",\"summary\",\"sub_claims\"],\"additionalProperties\":false}"
+          }
+        ],
+        "max_tokens": 3000
+      },
+      "reservation": {
+        "reservation_id": "249c9289c75b419d9ddf8d51ea32f8ae",
+        "provider": "fireworks",
+        "model": "accounts/fireworks/models/muse-spark-open",
+        "estimated_input_tokens": 2515,
+        "max_output_tokens": 3000,
+        "amount": 0.015893749999999998,
+        "payload_chars": 7543,
+        "context_chars": 0
+      },
+      "raw_response": {
+        "id": "chatcmpl-a834f2308a6447409acbb4f25c2ab94c",
+        "choices": [
+          {
+            "finish_reason": "stop",
+            "index": 0,
+            "logprobs": null,
+            "message": {
+              "content": "{\"verdict\":\"insufficient_evidence\",\"summary\":\"Microsoft's global market share is not disclosed in SEC EDGAR XBRL financial statements. The claim asserts 23% in FY2024 Q3, but EDGAR tools only provide financial statement metrics (revenue, net income, etc.) and do not report market share percentages, so the assertion cannot be verified from EDGAR facts.\",\"sub_claims\":[{\"text\":\"Microsoft held 23% of the global market in the fiscal third quarter of 2024.\",\"stated_text\":\"23%\",\"claim_type\":\"other\",\"comparator\":\"eq\",\"stated_value\":23,\"evidence_ids\":[],\"interpretations\":[],\"verdict\":\"insufficient_evidence\",\"note\":\"Global market share percentage is not an SEC EDGAR XBRL disclosure; no EDGAR metric measures market share and the claim does not define which market. Cannot be verified from EDGAR facts.\",\"model_found_value\":null}]}",
+              "refusal": null,
+              "role": "assistant",
+              "annotations": null,
+              "audio": null,
+              "function_call": null,
+              "tool_calls": null,
+              "reasoning_content": "Need to decompose Microsoft claim: Microsoft held 23% of the global market in fiscal third quarter of 2024.\n\nWe must use tools. Microsoft ticker MSFT. Fiscal third quarter 2024 => FY2024Q3.\n\nClaim is about global market share 23%. This is not SEC EDGAR metric. But we must still verify? The instructions say we verify financial claims against SEC EDGAR facts. Market share not in EDGAR. So claim_type other, insufficient_evidence.\n\nBut we need to follow tool usage: lookup_fact for value? But market share is not a lookup_fact metric. The allowed metrics: revenue, net_income etc. No market share. So we cannot lookup.\n\nWe need to attempt lookup to demonstrate? The instruction: Never use memory for numbers. But we can attempt to lookup revenue maybe? But claim is about market share, not revenue.\n\nWe should still consider: Could we attempt to lookup something? We must produce final JSON matching schema with sub_claims.\n\nWe have to include every atomic factual assertion. There's one assertion: Microsoft held 23% global market in fiscal Q3 2024.\n\nWe must set claim_type other, because tools cannot check market share. evidence_ids empty, interpretations empty.\n\nBut need to think about compliance with tool usage guidelines: The general instructions say Use lookup_fact for value, compute_change, etc. For assertions that tools cannot check must still become sub-claim with claim_type other; program will leave those unchecked. So we don't need tool call.\n\nWe should provide verdict insufficient_evidence.\n\nPotentially need to check if fiscal third quarter 2024 exists? Microsoft fiscal year ends June 30. So FY2024 Q3 is calendar Q1 2024? Let's see: FY2024 = July 2023-June 2024. FY2024Q3 = Jan-Mar 2024. But claim says fiscal third quarter 2024. That's FY2024Q3. We could attempt lookup_fact to show period exists, but market share still not verifiable.\n\nGiven user asks to return only plain JSON, we must produce that.\n\nWe must ensure sub_claims includes all fields: text, stated_text, claim_type, comparator, stated_value, evidence_ids, interpretations, verdict, note, model_found_value.\n\nstated_text must be verbatim from claim: \"23% of the global market in the fiscal third quarter of 2024\" — or perhaps \"23%\"? Example says copy stated_text verbatim including words such as \"about\". So for this claim, stated_text should be \"23%\" or full phrase? Instruction: Copy stated_text verbatim from the claim, including words such as \"about\", \"up\", or \"fell\" (for example, \"about $1.4 billion\", \"up 22%\", or \"fell 10%\"). For record assertions, etc. So for market share, stated_text is \"23%\". But earlier assistant used \"23% of the global market in the fiscal third quarter of 2024\". Need to pick consistent.\n\nThe schema requires text field also. text is presumably full assertion. stated_text is verbatim slice.\n\nWe need to produce final verdict: overall verdict = insufficient_evidence (since only subclaim is insufficient). Summary explains market share not in EDGAR.\n\nWe must not use markdown fences.\n\nWe should include evidence_ids [].\n\nMake sure comparator eq, stated_value 23.\n\nAlso need to ensure we obey reasoning strength 32. We have not yet used tools, but for claim_type other no tools needed.\n\nPotentially we should attempt a tool call to show due diligence? The instructions: Assertions that the tools cannot check must still become a sub-claim with claim_type other; the program will leave those unchecked. Use lookup_fact etc. Never use memory. So for market share, we cannot lookup market share, so we leave it other.\n\nThus final JSON:\n\n{\n  \"verdict\": \"insufficient_evidence\",\n  \"summary\": \"The claim asserts Microsoft's global market share of 23% in FY2024 Q3, which is not disclosed in SEC EDGAR XBRL financial statements. No EDGAR metric measures market share percentage, so the claim cannot be verified from EDGAR facts.\",\n  \"sub_claims\": [...]\n}\n\nNeed to ensure all required fields present.\n\nLet's craft sub_claims entry:\n\ntext: \"Microsoft held 23% of the global market in the fiscal third quarter of 2024.\"\nstated_text: \"23%\"  (or full phrase) — both could be considered verbatim. To be safe, use \"23%\" as it's verbatim number phrase. The earlier example assistant gave included full phrase, but spec says copy stated_text verbatim from claim, including words such as \"about\". The example 1: \"Tesla net income was about $1.4 billion\": lookup_fact; stated_text \"about $1.4 billion\". So they included hedge word. So for market share claim, stated_text should be \"23%\". Or \"23% of the global market\" ?\n\nThe safest is \"23%\" - it's definitely verbatim. But to capture context, maybe \"23% of the global market in the fiscal third quarter of 2024\" is also verbatim substring. The spec says Copy stated_text verbatim from the claim, including words such as \"about\", \"up\", or \"fell\". So they want exact excerpt.\n\nWe'll use \"23%\" as stated_text.\n\nclaim_type: \"other\"\ncomparator: \"eq\"\nstated_value: 23\nevidence_ids: []\ninterpretations: []\nverdict: \"insufficient_evidence\"\nnote: \"Global market share percentage is not reported in SEC EDGAR XBRL filings; EDGAR tools provide financial statement metrics (revenue, income, etc.) but not market share. No evidence available to verify 23% figure.\"\nmodel_found_value: null\n\nMake sure all fields types correct: stated_value number, evidence_ids array of strings, interpretations array.\n\nOverall verdict insufficient_evidence.\n\nWe must output only JSON.\n\nCheck schema requires type object with verdict, summary, sub_claims. Provide those.\n\nLet's output.",
+              "tools": null
+            }
+          }
+        ],
+        "created": 1793225486,
+        "model": "accounts/fireworks/models/muse-spark-open",
+        "object": "chat.completion",
+        "metadata": null,
+        "moderation": null,
+        "service_tier": null,
+        "system_fingerprint": null,
+        "usage": {
+          "completion_tokens": 1453,
+          "prompt_tokens": 1833,
+          "total_tokens": 3286,
+          "completion_tokens_details": {
+            "accepted_prediction_tokens": null,
+            "audio_tokens": null,
+            "reasoning_tokens": 1257,
+            "rejected_prediction_tokens": null,
+            "text_tokens": null
+          },
+          "prompt_tokens_details": {
+            "audio_tokens": null,
+            "cache_write_tokens": null,
+            "cached_tokens": 1216,
+            "image_tokens": null,
+            "text_tokens": null
+          },
+          "output_tokens_details": {
+            "reasoning_tokens": 1257
+          }
+        }
+      },
+      "usage": {
+        "input": 1833,
+        "cached": 1216,
+        "output": 1453,
+        "reasoning": 1257
+      },
+      "cost": 0.0071289000000000005,
+      "latency_ms": 33159.858,
+      "status": "completed",
+      "raw_usage": {
+        "completion_tokens": 1453,
+        "prompt_tokens": 1833,
+        "total_tokens": 3286,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 1257,
+          "rejected_prediction_tokens": null,
+          "text_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cache_write_tokens": null,
+          "cached_tokens": 1216,
+          "image_tokens": null,
+          "text_tokens": null
+        },
+        "output_tokens_details": {
+          "reasoning_tokens": 1257
+        }
+      },
+      "normalized_usage": {
+        "input": 1833,
+        "cached": 1216,
+        "output": 1453,
+        "reasoning": 1257
+      },
+      "finish_reason": "stop",
+      "rate_limit_headers": {
+        "x-ratelimit-limit-tokens-cache-adjusted-prompt": "1800000",
+        "x-ratelimit-limit-tokens-generated": "72000",
+        "x-ratelimit-limit-tokens-prompt": "7200000",
+        "x-ratelimit-limit-tokens-uncached-prompt": "1800000",
+        "x-ratelimit-over-limit": "no",
+        "x-ratelimit-remaining-tokens-generated": "60782",
+        "x-ratelimit-remaining-tokens-prompt": "7180008",
+        "x-ratelimit-remaining-tokens-uncached-prompt": "1796230"
+      }
+    }
+  ],
+  "tool_calls": [],
+  "usage": [
+    {
+      "input": 2695,
+      "cached": 2624,
+      "output": 1355,
+      "reasoning": 1166
+    },
+    {
+      "input": 1833,
+      "cached": 1216,
+      "output": 1453,
+      "reasoning": 1257
+    }
+  ],
+  "tokens": {
+    "input": 4528,
+    "cached": 3840,
+    "output": 2808,
+    "reasoning": 2423
+  },
+  "model_calls": 2,
+  "cost": 0.01337,
+  "cost_usd": 0.01337,
+  "latency_ms": 63704.602,
+  "tool_call_count": 0,
+  "incomplete_turns": [],
+  "previous_response_fallback": false,
+  "final_verdict": {
+    "verdict": "insufficient_evidence",
+    "summary": "Microsoft's global market share is not disclosed in SEC EDGAR XBRL financial statements. The claim asserts 23% in FY2024 Q3, but EDGAR tools only provide financial statement metrics (revenue, net income, etc.) and do not report market share percentages, so the assertion cannot be verified from EDGAR facts.",
+    "sub_claims": [
+      {
+        "text": "Microsoft held 23% of the global market in the fiscal third quarter of 2024.",
+        "stated_text": "23%",
+        "claim_type": "other",
+        "comparator": "eq",
+        "stated_value": 23.0,
+        "verdict": "insufficient_evidence",
+        "evidence_ids": [],
+        "interpretations": [],
+        "model_found_value": null,
+        "note": "Global market share percentage is not an SEC EDGAR XBRL disclosure; no EDGAR metric measures market share and the claim does not define which market. Cannot be verified from EDGAR facts.",
+        "evidence_valid": false,
+        "program_verdict": "unchecked",
+        "actual_value": null,
+        "tolerance": null,
+        "reason": "unchecked_other_claim",
+        "disagreement": false,
+        "precision": null,
+        "stated_value_used": 23.0,
+        "period_ambiguous": false,
+        "program_added_interpretation": false,
+        "program_evidence_ids": [],
+        "invalid_interpretations": false,
+        "deduplicated_evidence": [],
+        "stated_value_corrected": false,
+        "stated_text_unparsed": false,
+        "stated_sign_corrected": false,
+        "threshold_from_model": false,
+        "model_comparator": "eq",
+        "comparator_corrected": false,
+        "evidence_strength": "low",
+        "evidence_summary": "Evidence: unavailable",
+        "restated_evidence": false
+      }
+    ],
+    "model_verdict": "insufficient_evidence",
+    "program_checks": [
+      {
+        "text": "Microsoft held 23% of the global market in the fiscal third quarter of 2024.",
+        "stated_value": 23.0,
+        "evidence_ids": [],
+        "evidence_valid": false,
+        "program_verdict": "unchecked",
+        "actual_value": null,
+        "tolerance": null,
+        "reason": "unchecked_other_claim",
+        "disagreement": false,
+        "precision": null,
+        "stated_value_used": 23.0,
+        "comparator": "eq",
+        "interpretations": [],
+        "period_ambiguous": false,
+        "program_added_interpretation": false,
+        "program_evidence_ids": [],
+        "invalid_interpretations": false,
+        "deduplicated_evidence": [],
+        "stated_value_corrected": false,
+        "stated_text_unparsed": false,
+        "stated_sign_corrected": false,
+        "threshold_from_model": false,
+        "model_comparator": "eq",
+        "comparator_corrected": false,
+        "evidence_strength": "low",
+        "evidence_summary": "Evidence: unavailable",
+        "restated_evidence": false
+      }
+    ],
+    "evidence_strength": "low",
+    "evidence_summary": "Evidence: unavailable",
+    "model_program_disagreement": false
+  },
+  "program_checks": [
+    {
+      "text": "Microsoft held 23% of the global market in the fiscal third quarter of 2024.",
+      "stated_value": 23.0,
+      "evidence_ids": [],
+      "evidence_valid": false,
+      "program_verdict": "unchecked",
+      "actual_value": null,
+      "tolerance": null,
+      "reason": "unchecked_other_claim",
+      "disagreement": false,
+      "precision": null,
+      "stated_value_used": 23.0,
+      "comparator": "eq",
+      "interpretations": [],
+      "period_ambiguous": false,
+      "program_added_interpretation": false,
+      "program_evidence_ids": [],
+      "invalid_interpretations": false,
+      "deduplicated_evidence": [],
+      "stated_value_corrected": false,
+      "stated_text_unparsed": false,
+      "stated_sign_corrected": false,
+      "threshold_from_model": false,
+      "model_comparator": "eq",
+      "comparator_corrected": false,
+      "evidence_strength": "low",
+      "evidence_summary": "Evidence: unavailable",
+      "restated_evidence": false
+    }
+  ]
+}

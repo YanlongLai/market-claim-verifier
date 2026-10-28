@@ -1,0 +1,1746 @@
+{
+  "claim": "Netflix's quarter ended March 2023 report put net income at $1.3B, with revenue of $9.2 billion.",
+  "model": "muse-spark-1.3",
+  "provider": "meta",
+  "requests": [
+    {
+      "request": {
+        "model": "muse-spark-1.3",
+        "instructions": "You verify financial claims against SEC EDGAR facts.\nDecompose the claim into every atomic factual assertion. Every factual assertion\nin the user's claim must become a sub-claim, including a value, a change, a\nrecord, and a first-time assertion in the same sentence. Assertions that the\ntools cannot check must still become a sub-claim with claim_type other; the\nprogram will leave those unchecked. Use lookup_fact for a value,\ncompute_change for YoY or other period-to-period growth, history_rank for\nrecord/first-time assertions, and list_periods only to understand missing data.\nNever use memory for numbers. A quarter must have period_type=quarter and\nduration_days around 80-100, not period_type=ytd. If a result has derived=true,\nuse its derivation and components as evidence and do not calculate that fact\nagain. For compute_change, cite its own evidence ID; its two nested component\nfact IDs may also be cited and are ignored by the verifier.\n\nEach final sub_claim must contain exactly these model fields:\ntext, stated_text, claim_type (value, change_pct, change_abs, record_high,\nrecord_low, first_time_above, or other), comparator (eq, approx, gt, gte, lt,\nor lte), stated_value in base units (USD, USD/share, percentage points, or 1\nfor a record boolean), evidence_ids, interpretations, verdict, note, and\nmodel_found_value. interpretations is required and may be empty. Every non-empty\nitem must be an evidence id like E3 — never free text.\nCopy stated_text verbatim from the claim, including words such as \"about\",\n\"up\", or \"fell\" (for example, \"about $1.4 billion\", \"up 22%\", or\n\"fell 10%\"). For a change_pct, stated_value is 22 for 22%, not 0.22; the\nverifier applies the sign implied by direction words such as fell/down or\nrose/up. model_found_value is the number read from the cited evidence in the\nsame units, or null when it is missing.\n\nComparator wording is deterministic: a plain numeric statement with no hedge\nor inequality phrase is eq; about/around/roughly/approximately/nearly/almost,\nclose to, some, or ~ means approx; topped/exceeded/above/more than/over/\nsurpassed/beat means gt; at least/no less than means gte; below/under/less\nthan/short of means lt; at most/no more than/up to means lte. The program\nrecords and may correct the model comparator from these words. \"up\" and\n\"fell\" describe change direction, not approximation.\n\nFor a quarter claim at a non-calendar-fiscal issuer, use period_basis from\nthe tool results. If the claim says neither fiscal nor calendar, look up both\nthe calendar label (for example 2025Q4) and the fiscal label (for example\nFY2025Q4), cite both IDs in evidence_ids, and put those two IDs in\ninterpretations. Keep interpretations empty unless both fiscal and calendar\nreadings were looked up. If the claim says fiscal, cite only the fiscal\nreading; if it says calendar, cite only the calendar reading. When a lookup or\ncompute result has fiscal_equals_calendar=true, the issuer's fiscal year is the\ncalendar year: fiscal and calendar labels refer to the same underlying facts,\nso look up and cite only one reading even when the claim has no\nfiscal/calendar qualifier.\n\nExamples:\n1. \"Tesla net income was about $1.4 billion\": lookup_fact; stated_text\n   \"about $1.4 billion\", claim_type value, comparator approx, stated_value\n   1400000000.\n2. \"Alphabet revenue exceeded $100 billion\": lookup_fact; stated_text\n   \"exceeded $100 billion\", claim_type value, comparator gt, stated_value\n   100000000000.\n3. \"Meta revenue was up 22% YoY\": compute_change(META, revenue, 2025Q2,\n   null); stated_text \"up 22%\", claim_type change_pct, comparator eq,\n   stated_value 22, and cite the compute_change evidence ID.\n4. \"Tesla revenue fell 10% YoY\": compute_change(TSLA, revenue, 2025Q3,\n   null); stated_text \"fell 10%\", claim_type change_pct, comparator eq,\n   stated_value -10, and cite the compute_change evidence ID.\n5. \"Alphabet Q3 2025 revenue was a record high\": history_rank(GOOGL,\n   revenue, 2025Q3); claim_type record_high, comparator eq, stated_value 1,\n   and cite the history_rank evidence ID.\n6. \"Alphabet Q3 2025 revenue topped $100 billion for the first time\": create\n   two sub-claims: value gt 100000000000 and first_time_above with stated_value\n   100000000000, both citing the relevant evidence; the latter is supported\n   only when this period is above the threshold and no earlier comparable\n   period is above it.\n7. If a requested fact is unavailable, leave model_found_value null, cite any\n   relevant evidence, and set that sub-claim to insufficient_evidence. Say\n   insufficient_evidence when data is missing or evidence is ambiguous.",
+        "input": [
+          {
+            "role": "user",
+            "content": "Netflix's quarter ended March 2023 report put net income at $1.3B, with revenue of $9.2 billion."
+          }
+        ],
+        "tools": [
+          {
+            "type": "function",
+            "name": "lookup_fact",
+            "description": "Look up one SEC EDGAR XBRL fact for a ticker, metric, and calendar quarter, fiscal quarter (FY2025Q4), or fiscal year. Successful results include period (the normalized requested label, or the resolved label for latest), period_basis (calendar or fiscal), fiscal_equals_calendar, duration_days, and period_type (quarter, ytd, annual, or instant). Additive flows may return derived=true with derivation and components; never treat a ytd result as a quarter or recompute a derived result. When fiscal_equals_calendar is true, fiscal and calendar labels identify the same fact; do not look up both readings. Every fact includes compact provenance: L1 audited 10-K, L2 reviewed 10-Q, or L3 program-derived, with confirmations, restatement, amendment, and evidence strength.",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "ticker": {
+                  "type": "string"
+                },
+                "metric": {
+                  "type": "string",
+                  "enum": [
+                    "revenue",
+                    "net_income",
+                    "operating_income",
+                    "eps_diluted",
+                    "gross_profit",
+                    "total_assets",
+                    "cash",
+                    "capex",
+                    "rd_expense",
+                    "shares_outstanding"
+                  ]
+                },
+                "period": {
+                  "type": "string",
+                  "pattern": "^(latest|FY\\d{4}(?:Q[1-4])?|\\d{4}Q[1-4])$"
+                }
+              },
+              "required": [
+                "ticker",
+                "metric",
+                "period"
+              ],
+              "additionalProperties": false
+            },
+            "strict": true
+          },
+          {
+            "type": "function",
+            "name": "list_periods",
+            "description": "List the recent directly available SEC EDGAR quarter and fiscal-year periods for a ticker and metric.",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "ticker": {
+                  "type": "string"
+                },
+                "metric": {
+                  "type": "string",
+                  "enum": [
+                    "revenue",
+                    "net_income",
+                    "operating_income",
+                    "eps_diluted",
+                    "gross_profit",
+                    "total_assets",
+                    "cash",
+                    "capex",
+                    "rd_expense",
+                    "shares_outstanding"
+                  ]
+                }
+              },
+              "required": [
+                "ticker",
+                "metric"
+              ],
+              "additionalProperties": false
+            },
+            "strict": true
+          },
+          {
+            "type": "function",
+            "name": "compute_change",
+            "description": "Compute the absolute and year-over-year change for one SEC EDGAR XBRL metric. The period and base_period must be the same kind of period; when base_period is omitted, null, empty, \"null\", or \"none\", use the same quarter or fiscal year one year earlier. The result includes both cited lookup facts, fiscal_equals_calendar, their fact-level provenance, and a percentage change in percent points.",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "ticker": {
+                  "type": "string"
+                },
+                "metric": {
+                  "type": "string",
+                  "enum": [
+                    "revenue",
+                    "net_income",
+                    "operating_income",
+                    "eps_diluted",
+                    "gross_profit",
+                    "total_assets",
+                    "cash",
+                    "capex",
+                    "rd_expense",
+                    "shares_outstanding"
+                  ]
+                },
+                "period": {
+                  "type": "string",
+                  "pattern": "^(latest|FY\\d{4}(?:Q[1-4])?|\\d{4}Q[1-4])$"
+                },
+                "base_period": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "pattern": "^(FY\\d{4}(?:Q[1-4])?|\\d{4}Q[1-4])$"
+                }
+              },
+              "required": [
+                "ticker",
+                "metric",
+                "period",
+                "base_period"
+              ],
+              "additionalProperties": false
+            },
+            "strict": true
+          },
+          {
+            "type": "function",
+            "name": "history_rank",
+            "description": "Compare one quarter or fiscal-year fact with every available comparable period of the same period_type. Quarters include derived Q4 values when available; annual periods are compared only with annual periods. Return the rank, record flags through the requested period, prior high/low, and the comparison window with period end dates. The requested period also includes compact fact provenance and evidence strength.",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "ticker": {
+                  "type": "string"
+                },
+                "metric": {
+                  "type": "string",
+                  "enum": [
+                    "revenue",
+                    "net_income",
+                    "operating_income",
+                    "eps_diluted",
+                    "gross_profit",
+                    "total_assets",
+                    "cash",
+                    "capex",
+                    "rd_expense",
+                    "shares_outstanding"
+                  ]
+                },
+                "period": {
+                  "type": "string",
+                  "pattern": "^(latest|FY\\d{4}(?:Q[1-4])?|\\d{4}Q[1-4])$"
+                }
+              },
+              "required": [
+                "ticker",
+                "metric",
+                "period"
+              ],
+              "additionalProperties": false
+            },
+            "strict": true
+          }
+        ],
+        "parallel_tool_calls": true,
+        "max_output_tokens": 4000
+      },
+      "reservation": {
+        "reservation_id": "347d06a5eb1040b585563702e37c6880",
+        "provider": "meta",
+        "model": "muse-spark-1.3",
+        "estimated_input_tokens": 2844,
+        "max_output_tokens": 4000,
+        "amount": 0.020555,
+        "payload_chars": 8532,
+        "context_chars": 0
+      },
+      "raw_response": {
+        "id": "resp_6ae26f0a9ef3825e26114e40",
+        "access_programs": null,
+        "created_at": 1793224458.0,
+        "error": null,
+        "incomplete_details": null,
+        "instructions": "You verify financial claims against SEC EDGAR facts.\nDecompose the claim into every atomic factual assertion. Every factual assertion\nin the user's claim must become a sub-claim, including a value, a change, a\nrecord, and a first-time assertion in the same sentence. Assertions that the\ntools cannot check must still become a sub-claim with claim_type other; the\nprogram will leave those unchecked. Use lookup_fact for a value,\ncompute_change for YoY or other period-to-period growth, history_rank for\nrecord/first-time assertions, and list_periods only to understand missing data.\nNever use memory for numbers. A quarter must have period_type=quarter and\nduration_days around 80-100, not period_type=ytd. If a result has derived=true,\nuse its derivation and components as evidence and do not calculate that fact\nagain. For compute_change, cite its own evidence ID; its two nested component\nfact IDs may also be cited and are ignored by the verifier.\n\nEach final sub_claim must contain exactly these model fields:\ntext, stated_text, claim_type (value, change_pct, change_abs, record_high,\nrecord_low, first_time_above, or other), comparator (eq, approx, gt, gte, lt,\nor lte), stated_value in base units (USD, USD/share, percentage points, or 1\nfor a record boolean), evidence_ids, interpretations, verdict, note, and\nmodel_found_value. interpretations is required and may be empty. Every non-empty\nitem must be an evidence id like E3 — never free text.\nCopy stated_text verbatim from the claim, including words such as \"about\",\n\"up\", or \"fell\" (for example, \"about $1.4 billion\", \"up 22%\", or\n\"fell 10%\"). For a change_pct, stated_value is 22 for 22%, not 0.22; the\nverifier applies the sign implied by direction words such as fell/down or\nrose/up. model_found_value is the number read from the cited evidence in the\nsame units, or null when it is missing.\n\nComparator wording is deterministic: a plain numeric statement with no hedge\nor inequality phrase is eq; about/around/roughly/approximately/nearly/almost,\nclose to, some, or ~ means approx; topped/exceeded/above/more than/over/\nsurpassed/beat means gt; at least/no less than means gte; below/under/less\nthan/short of means lt; at most/no more than/up to means lte. The program\nrecords and may correct the model comparator from these words. \"up\" and\n\"fell\" describe change direction, not approximation.\n\nFor a quarter claim at a non-calendar-fiscal issuer, use period_basis from\nthe tool results. If the claim says neither fiscal nor calendar, look up both\nthe calendar label (for example 2025Q4) and the fiscal label (for example\nFY2025Q4), cite both IDs in evidence_ids, and put those two IDs in\ninterpretations. Keep interpretations empty unless both fiscal and calendar\nreadings were looked up. If the claim says fiscal, cite only the fiscal\nreading; if it says calendar, cite only the calendar reading. When a lookup or\ncompute result has fiscal_equals_calendar=true, the issuer's fiscal year is the\ncalendar year: fiscal and calendar labels refer to the same underlying facts,\nso look up and cite only one reading even when the claim has no\nfiscal/calendar qualifier.\n\nExamples:\n1. \"Tesla net income was about $1.4 billion\": lookup_fact; stated_text\n   \"about $1.4 billion\", claim_type value, comparator approx, stated_value\n   1400000000.\n2. \"Alphabet revenue exceeded $100 billion\": lookup_fact; stated_text\n   \"exceeded $100 billion\", claim_type value, comparator gt, stated_value\n   100000000000.\n3. \"Meta revenue was up 22% YoY\": compute_change(META, revenue, 2025Q2,\n   null); stated_text \"up 22%\", claim_type change_pct, comparator eq,\n   stated_value 22, and cite the compute_change evidence ID.\n4. \"Tesla revenue fell 10% YoY\": compute_change(TSLA, revenue, 2025Q3,\n   null); stated_text \"fell 10%\", claim_type change_pct, comparator eq,\n   stated_value -10, and cite the compute_change evidence ID.\n5. \"Alphabet Q3 2025 revenue was a record high\": history_rank(GOOGL,\n   revenue, 2025Q3); claim_type record_high, comparator eq, stated_value 1,\n   and cite the history_rank evidence ID.\n6. \"Alphabet Q3 2025 revenue topped $100 billion for the first time\": create\n   two sub-claims: value gt 100000000000 and first_time_above with stated_value\n   100000000000, both citing the relevant evidence; the latter is supported\n   only when this period is above the threshold and no earlier comparable\n   period is above it.\n7. If a requested fact is unavailable, leave model_found_value null, cite any\n   relevant evidence, and set that sub-claim to insufficient_evidence. Say\n   insufficient_evidence when data is missing or evidence is ambiguous.",
+        "metadata": null,
+        "model": "muse-spark-1.3",
+        "object": "response",
+        "output": [
+          {
+            "id": "rs_6ae26f0a9ef3825e26114e40:rs_5a2f05d4-8dbd-48c6-a106-98094bf8995e",
+            "summary": [],
+            "type": "reasoning",
+            "content": null,
+            "encrypted_content": null,
+            "status": "completed"
+          },
+          {
+            "id": "rs_74bb73a4-bab0-409e-96b7-f30f9a55c38d",
+            "content": [
+              {
+                "annotations": [],
+                "text": "Verifying Netflix's March 2023 quarter — pulling revenue and net income from EDGAR.",
+                "type": "output_text",
+                "logprobs": []
+              }
+            ],
+            "role": "assistant",
+            "status": "completed",
+            "type": "message",
+            "phase": "commentary"
+          },
+          {
+            "arguments": "{\"metric\":\"net_income\",\"period\":\"2023Q1\",\"ticker\":\"NFLX\"}",
+            "call_id": "call_f140e4f1-2ad6-4f59-85db-dbb022556141",
+            "name": "lookup_fact",
+            "type": "function_call",
+            "id": "fc_f140e4f1-2ad6-4f59-85db-dbb022556141",
+            "async_": null,
+            "caller": null,
+            "namespace": null,
+            "status": "completed"
+          },
+          {
+            "arguments": "{\"metric\":\"revenue\",\"period\":\"2023Q1\",\"ticker\":\"NFLX\"}",
+            "call_id": "call_fc0f371a-d4ae-4b7d-9758-69ee3e0083a9",
+            "name": "lookup_fact",
+            "type": "function_call",
+            "id": "fc_fc0f371a-d4ae-4b7d-9758-69ee3e0083a9",
+            "async_": null,
+            "caller": null,
+            "namespace": null,
+            "status": "completed"
+          }
+        ],
+        "parallel_tool_calls": true,
+        "temperature": 1.0,
+        "tool_choice": "auto",
+        "tools": [
+          {
+            "name": "lookup_fact",
+            "parameters": {
+              "properties": {
+                "metric": {
+                  "enum": [
+                    "revenue",
+                    "net_income",
+                    "operating_income",
+                    "eps_diluted",
+                    "gross_profit",
+                    "total_assets",
+                    "cash",
+                    "capex",
+                    "rd_expense",
+                    "shares_outstanding"
+                  ],
+                  "type": "string"
+                },
+                "period": {
+                  "pattern": "^(latest|FY\\d{4}(?:Q[1-4])?|\\d{4}Q[1-4])$",
+                  "type": "string"
+                },
+                "ticker": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "ticker",
+                "metric",
+                "period"
+              ],
+              "additionalProperties": false,
+              "type": "object"
+            },
+            "strict": true,
+            "type": "function",
+            "allowed_callers": null,
+            "async_": null,
+            "defer_loading": null,
+            "description": "Look up one SEC EDGAR XBRL fact for a ticker, metric, and calendar quarter, fiscal quarter (FY2025Q4), or fiscal year. Successful results include period (the normalized requested label, or the resolved label for latest), period_basis (calendar or fiscal), fiscal_equals_calendar, duration_days, and period_type (quarter, ytd, annual, or instant). Additive flows may return derived=true with derivation and components; never treat a ytd result as a quarter or recompute a derived result. When fiscal_equals_calendar is true, fiscal and calendar labels identify the same fact; do not look up both readings. Every fact includes compact provenance: L1 audited 10-K, L2 reviewed 10-Q, or L3 program-derived, with confirmations, restatement, amendment, and evidence strength.",
+            "output_schema": null
+          },
+          {
+            "name": "list_periods",
+            "parameters": {
+              "additionalProperties": false,
+              "properties": {
+                "metric": {
+                  "enum": [
+                    "revenue",
+                    "net_income",
+                    "operating_income",
+                    "eps_diluted",
+                    "gross_profit",
+                    "total_assets",
+                    "cash",
+                    "capex",
+                    "rd_expense",
+                    "shares_outstanding"
+                  ],
+                  "type": "string"
+                },
+                "ticker": {
+                  "type": "string"
+                }
+              },
+              "type": "object",
+              "required": [
+                "ticker",
+                "metric"
+              ]
+            },
+            "strict": true,
+            "type": "function",
+            "allowed_callers": null,
+            "async_": null,
+            "defer_loading": null,
+            "description": "List the recent directly available SEC EDGAR quarter and fiscal-year periods for a ticker and metric.",
+            "output_schema": null
+          },
+          {
+            "name": "compute_change",
+            "parameters": {
+              "properties": {
+                "base_period": {
+                  "pattern": "^(FY\\d{4}(?:Q[1-4])?|\\d{4}Q[1-4])$",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "metric": {
+                  "enum": [
+                    "revenue",
+                    "net_income",
+                    "operating_income",
+                    "eps_diluted",
+                    "gross_profit",
+                    "total_assets",
+                    "cash",
+                    "capex",
+                    "rd_expense",
+                    "shares_outstanding"
+                  ],
+                  "type": "string"
+                },
+                "period": {
+                  "pattern": "^(latest|FY\\d{4}(?:Q[1-4])?|\\d{4}Q[1-4])$",
+                  "type": "string"
+                },
+                "ticker": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "ticker",
+                "metric",
+                "period",
+                "base_period"
+              ],
+              "type": "object",
+              "additionalProperties": false
+            },
+            "strict": true,
+            "type": "function",
+            "allowed_callers": null,
+            "async_": null,
+            "defer_loading": null,
+            "description": "Compute the absolute and year-over-year change for one SEC EDGAR XBRL metric. The period and base_period must be the same kind of period; when base_period is omitted, null, empty, \"null\", or \"none\", use the same quarter or fiscal year one year earlier. The result includes both cited lookup facts, fiscal_equals_calendar, their fact-level provenance, and a percentage change in percent points.",
+            "output_schema": null
+          },
+          {
+            "name": "history_rank",
+            "parameters": {
+              "properties": {
+                "metric": {
+                  "enum": [
+                    "revenue",
+                    "net_income",
+                    "operating_income",
+                    "eps_diluted",
+                    "gross_profit",
+                    "total_assets",
+                    "cash",
+                    "capex",
+                    "rd_expense",
+                    "shares_outstanding"
+                  ],
+                  "type": "string"
+                },
+                "period": {
+                  "pattern": "^(latest|FY\\d{4}(?:Q[1-4])?|\\d{4}Q[1-4])$",
+                  "type": "string"
+                },
+                "ticker": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "ticker",
+                "metric",
+                "period"
+              ],
+              "type": "object"
+            },
+            "strict": true,
+            "type": "function",
+            "allowed_callers": null,
+            "async_": null,
+            "defer_loading": null,
+            "description": "Compare one quarter or fiscal-year fact with every available comparable period of the same period_type. Quarters include derived Q4 values when available; annual periods are compared only with annual periods. Return the rank, record flags through the requested period, prior high/low, and the comparison window with period end dates. The requested period also includes compact fact provenance and evidence strength.",
+            "output_schema": null
+          }
+        ],
+        "top_p": 1.0,
+        "background": false,
+        "completed_at": 1793224458.0,
+        "conversation": null,
+        "max_output_tokens": 4000,
+        "max_tool_calls": null,
+        "moderation": null,
+        "previous_response_id": null,
+        "prompt": null,
+        "prompt_cache_diagnostics": null,
+        "prompt_cache_key": null,
+        "prompt_cache_options": null,
+        "prompt_cache_retention": null,
+        "reasoning": {
+          "context": null,
+          "effort": "high",
+          "generate_summary": null,
+          "mode": null,
+          "summary": null
+        },
+        "safety_identifier": null,
+        "service_tier": "auto",
+        "status": "completed",
+        "text": null,
+        "top_logprobs": 0,
+        "truncation": "disabled",
+        "usage": {
+          "input_tokens": 2579,
+          "input_tokens_details": {
+            "cache_write_tokens": null,
+            "cached_tokens": 2545
+          },
+          "output_tokens": 593,
+          "output_tokens_details": {
+            "reasoning_tokens": 403
+          },
+          "total_tokens": 3172
+        },
+        "user": null,
+        "store": true
+      },
+      "usage": {
+        "input_tokens": 2579,
+        "output_tokens": 593,
+        "input_tokens_details": {
+          "cached_tokens": 2545
+        },
+        "output_tokens_details": {
+          "reasoning_tokens": 403
+        }
+      },
+      "cost": 0.0029445,
+      "latency_ms": 2961.143,
+      "status": "completed"
+    },
+    {
+      "request": {
+        "model": "muse-spark-1.3",
+        "previous_response_id": "resp_6ae26f0a9ef3825e26114e40",
+        "input": [
+          {
+            "type": "function_call_output",
+            "call_id": "call_f140e4f1-2ad6-4f59-85db-dbb022556141",
+            "output": "{\"ticker\":\"NFLX\",\"cik\":\"0001065280\",\"entity\":\"Netflix, Inc.\",\"metric\":\"net_income\",\"concept\":\"NetIncomeLoss\",\"unit\":\"USD\",\"value\":1305120000,\"start\":\"2023-01-01\",\"end\":\"2023-03-31\",\"form\":\"10-Q\",\"form_fallback\":false,\"accn\":\"0001065280-24-000128\",\"filed\":\"2024-04-22\",\"frame\":\"CY2023Q1\",\"fiscal_year\":2023,\"fiscal_period\":\"Q1\",\"duration_days\":90,\"period_type\":\"quarter\",\"fiscal_equals_calendar\":true,\"derived\":false,\"filing_url\":\"https://www.sec.gov/Archives/edgar/data/1065280/000106528024000128/\",\"source_sha256\":\"fd31bc147b36495f6912e063188aea71434077236f4e995268620b47fda99e61\",\"provenance\":{\"tier\":\"L2\",\"audited\":false,\"confirmations\":2,\"forms\":[\"10-Q\"],\"first_filed\":\"2023-04-21\",\"latest_filed\":\"2024-04-22\",\"restated\":false,\"amended\":false,\"strength\":\"medium\"},\"period\":\"2023Q1\",\"period_basis\":\"calendar\",\"evidence_id\":\"E1\"}"
+          },
+          {
+            "type": "function_call_output",
+            "call_id": "call_fc0f371a-d4ae-4b7d-9758-69ee3e0083a9",
+            "output": "{\"ticker\":\"NFLX\",\"cik\":\"0001065280\",\"entity\":\"Netflix, Inc.\",\"metric\":\"revenue\",\"concept\":\"Revenues\",\"unit\":\"USD\",\"value\":8161503000,\"start\":\"2023-01-01\",\"end\":\"2023-03-31\",\"form\":\"10-Q\",\"form_fallback\":false,\"accn\":\"0001065280-24-000128\",\"filed\":\"2024-04-22\",\"frame\":\"CY2023Q1\",\"fiscal_year\":2023,\"fiscal_period\":\"Q1\",\"duration_days\":90,\"period_type\":\"quarter\",\"fiscal_equals_calendar\":true,\"derived\":false,\"filing_url\":\"https://www.sec.gov/Archives/edgar/data/1065280/000106528024000128/\",\"source_sha256\":\"fd31bc147b36495f6912e063188aea71434077236f4e995268620b47fda99e61\",\"provenance\":{\"tier\":\"L2\",\"audited\":false,\"confirmations\":2,\"forms\":[\"10-Q\"],\"first_filed\":\"2023-04-21\",\"latest_filed\":\"2024-04-22\",\"restated\":false,\"amended\":false,\"strength\":\"medium\"},\"period\":\"2023Q1\",\"period_basis\":\"calendar\",\"evidence_id\":\"E2\"}"
+          }
+        ],
+        "tools": [
+          {
+            "type": "function",
+            "name": "lookup_fact",
+            "description": "Look up one SEC EDGAR XBRL fact for a ticker, metric, and calendar quarter, fiscal quarter (FY2025Q4), or fiscal year. Successful results include period (the normalized requested label, or the resolved label for latest), period_basis (calendar or fiscal), fiscal_equals_calendar, duration_days, and period_type (quarter, ytd, annual, or instant). Additive flows may return derived=true with derivation and components; never treat a ytd result as a quarter or recompute a derived result. When fiscal_equals_calendar is true, fiscal and calendar labels identify the same fact; do not look up both readings. Every fact includes compact provenance: L1 audited 10-K, L2 reviewed 10-Q, or L3 program-derived, with confirmations, restatement, amendment, and evidence strength.",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "ticker": {
+                  "type": "string"
+                },
+                "metric": {
+                  "type": "string",
+                  "enum": [
+                    "revenue",
+                    "net_income",
+                    "operating_income",
+                    "eps_diluted",
+                    "gross_profit",
+                    "total_assets",
+                    "cash",
+                    "capex",
+                    "rd_expense",
+                    "shares_outstanding"
+                  ]
+                },
+                "period": {
+                  "type": "string",
+                  "pattern": "^(latest|FY\\d{4}(?:Q[1-4])?|\\d{4}Q[1-4])$"
+                }
+              },
+              "required": [
+                "ticker",
+                "metric",
+                "period"
+              ],
+              "additionalProperties": false
+            },
+            "strict": true
+          },
+          {
+            "type": "function",
+            "name": "list_periods",
+            "description": "List the recent directly available SEC EDGAR quarter and fiscal-year periods for a ticker and metric.",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "ticker": {
+                  "type": "string"
+                },
+                "metric": {
+                  "type": "string",
+                  "enum": [
+                    "revenue",
+                    "net_income",
+                    "operating_income",
+                    "eps_diluted",
+                    "gross_profit",
+                    "total_assets",
+                    "cash",
+                    "capex",
+                    "rd_expense",
+                    "shares_outstanding"
+                  ]
+                }
+              },
+              "required": [
+                "ticker",
+                "metric"
+              ],
+              "additionalProperties": false
+            },
+            "strict": true
+          },
+          {
+            "type": "function",
+            "name": "compute_change",
+            "description": "Compute the absolute and year-over-year change for one SEC EDGAR XBRL metric. The period and base_period must be the same kind of period; when base_period is omitted, null, empty, \"null\", or \"none\", use the same quarter or fiscal year one year earlier. The result includes both cited lookup facts, fiscal_equals_calendar, their fact-level provenance, and a percentage change in percent points.",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "ticker": {
+                  "type": "string"
+                },
+                "metric": {
+                  "type": "string",
+                  "enum": [
+                    "revenue",
+                    "net_income",
+                    "operating_income",
+                    "eps_diluted",
+                    "gross_profit",
+                    "total_assets",
+                    "cash",
+                    "capex",
+                    "rd_expense",
+                    "shares_outstanding"
+                  ]
+                },
+                "period": {
+                  "type": "string",
+                  "pattern": "^(latest|FY\\d{4}(?:Q[1-4])?|\\d{4}Q[1-4])$"
+                },
+                "base_period": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "pattern": "^(FY\\d{4}(?:Q[1-4])?|\\d{4}Q[1-4])$"
+                }
+              },
+              "required": [
+                "ticker",
+                "metric",
+                "period",
+                "base_period"
+              ],
+              "additionalProperties": false
+            },
+            "strict": true
+          },
+          {
+            "type": "function",
+            "name": "history_rank",
+            "description": "Compare one quarter or fiscal-year fact with every available comparable period of the same period_type. Quarters include derived Q4 values when available; annual periods are compared only with annual periods. Return the rank, record flags through the requested period, prior high/low, and the comparison window with period end dates. The requested period also includes compact fact provenance and evidence strength.",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "ticker": {
+                  "type": "string"
+                },
+                "metric": {
+                  "type": "string",
+                  "enum": [
+                    "revenue",
+                    "net_income",
+                    "operating_income",
+                    "eps_diluted",
+                    "gross_profit",
+                    "total_assets",
+                    "cash",
+                    "capex",
+                    "rd_expense",
+                    "shares_outstanding"
+                  ]
+                },
+                "period": {
+                  "type": "string",
+                  "pattern": "^(latest|FY\\d{4}(?:Q[1-4])?|\\d{4}Q[1-4])$"
+                }
+              },
+              "required": [
+                "ticker",
+                "metric",
+                "period"
+              ],
+              "additionalProperties": false
+            },
+            "strict": true
+          }
+        ],
+        "parallel_tool_calls": true,
+        "max_output_tokens": 4000
+      },
+      "reservation": {
+        "reservation_id": "0d7ab97af4b64a6c8e3ea4e996fb0d99",
+        "provider": "meta",
+        "model": "muse-spark-1.3",
+        "estimated_input_tokens": 2654,
+        "max_output_tokens": 4000,
+        "amount": 0.020317500000000002,
+        "payload_chars": 5810,
+        "context_chars": 2150
+      },
+      "raw_response": {
+        "id": "resp_6ae26f11bb5d8a2c26fd4464",
+        "access_programs": null,
+        "created_at": 1793224465.0,
+        "error": null,
+        "incomplete_details": null,
+        "instructions": null,
+        "metadata": null,
+        "model": "muse-spark-1.3",
+        "object": "response",
+        "output": [
+          {
+            "id": "rs_6ae26f11bb5d8a2c26fd4464:rs_74d4470e-a33a-4ff0-b872-3095c8439ba9",
+            "summary": [],
+            "type": "reasoning",
+            "content": null,
+            "encrypted_content": null,
+            "status": "completed"
+          },
+          {
+            "id": "msg_572570f6-2625-4fc2-a167-03face84cdc6",
+            "content": [
+              {
+                "annotations": [],
+                "text": "Netflix quarter ended **March 2023 = 2023Q1 / CY2023Q1**\nJan 1, 2023 - Mar 31, 2023, 90 days. Fiscal = calendar.\n\nFrom SEC EDGAR 10-Q:\n\n* **Net income: $1,305,120,000**\n\n> ~ **$1.3B - as claimed - CORRECT**\n\n> L2 reviewed 10-Q, 2 confirmations, first filed 2023-04-21, not restated/amended.\n\n* **Revenue: $8,161,503,000**\n\n> ~ **$8.16B - NOT $9.2B as claimed - INCORRECT**\n\n> L2 reviewed 10-Q, 2 confirmations, first filed 2023-04-21, not restated/amended.\n\nThe $9.2B revenue figure overstates actual reported revenue by ~$1.04B, ~12.7% high.\n\n**Verdict: Mixed - net income claim accurate, revenue claim false.**\n",
+                "type": "output_text",
+                "logprobs": []
+              }
+            ],
+            "role": "assistant",
+            "status": "completed",
+            "type": "message",
+            "phase": null
+          }
+        ],
+        "parallel_tool_calls": true,
+        "temperature": 1.0,
+        "tool_choice": "auto",
+        "tools": [
+          {
+            "name": "lookup_fact",
+            "parameters": {
+              "additionalProperties": false,
+              "properties": {
+                "metric": {
+                  "enum": [
+                    "revenue",
+                    "net_income",
+                    "operating_income",
+                    "eps_diluted",
+                    "gross_profit",
+                    "total_assets",
+                    "cash",
+                    "capex",
+                    "rd_expense",
+                    "shares_outstanding"
+                  ],
+                  "type": "string"
+                },
+                "period": {
+                  "pattern": "^(latest|FY\\d{4}(?:Q[1-4])?|\\d{4}Q[1-4])$",
+                  "type": "string"
+                },
+                "ticker": {
+                  "type": "string"
+                }
+              },
+              "type": "object",
+              "required": [
+                "ticker",
+                "metric",
+                "period"
+              ]
+            },
+            "strict": true,
+            "type": "function",
+            "allowed_callers": null,
+            "async_": null,
+            "defer_loading": null,
+            "description": "Look up one SEC EDGAR XBRL fact for a ticker, metric, and calendar quarter, fiscal quarter (FY2025Q4), or fiscal year. Successful results include period (the normalized requested label, or the resolved label for latest), period_basis (calendar or fiscal), fiscal_equals_calendar, duration_days, and period_type (quarter, ytd, annual, or instant). Additive flows may return derived=true with derivation and components; never treat a ytd result as a quarter or recompute a derived result. When fiscal_equals_calendar is true, fiscal and calendar labels identify the same fact; do not look up both readings. Every fact includes compact provenance: L1 audited 10-K, L2 reviewed 10-Q, or L3 program-derived, with confirmations, restatement, amendment, and evidence strength.",
+            "output_schema": null
+          },
+          {
+            "name": "list_periods",
+            "parameters": {
+              "additionalProperties": false,
+              "required": [
+                "ticker",
+                "metric"
+              ],
+              "type": "object",
+              "properties": {
+                "metric": {
+                  "enum": [
+                    "revenue",
+                    "net_income",
+                    "operating_income",
+                    "eps_diluted",
+                    "gross_profit",
+                    "total_assets",
+                    "cash",
+                    "capex",
+                    "rd_expense",
+                    "shares_outstanding"
+                  ],
+                  "type": "string"
+                },
+                "ticker": {
+                  "type": "string"
+                }
+              }
+            },
+            "strict": true,
+            "type": "function",
+            "allowed_callers": null,
+            "async_": null,
+            "defer_loading": null,
+            "description": "List the recent directly available SEC EDGAR quarter and fiscal-year periods for a ticker and metric.",
+            "output_schema": null
+          },
+          {
+            "name": "compute_change",
+            "parameters": {
+              "properties": {
+                "base_period": {
+                  "pattern": "^(FY\\d{4}(?:Q[1-4])?|\\d{4}Q[1-4])$",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "metric": {
+                  "enum": [
+                    "revenue",
+                    "net_income",
+                    "operating_income",
+                    "eps_diluted",
+                    "gross_profit",
+                    "total_assets",
+                    "cash",
+                    "capex",
+                    "rd_expense",
+                    "shares_outstanding"
+                  ],
+                  "type": "string"
+                },
+                "period": {
+                  "pattern": "^(latest|FY\\d{4}(?:Q[1-4])?|\\d{4}Q[1-4])$",
+                  "type": "string"
+                },
+                "ticker": {
+                  "type": "string"
+                }
+              },
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "ticker",
+                "metric",
+                "period",
+                "base_period"
+              ]
+            },
+            "strict": true,
+            "type": "function",
+            "allowed_callers": null,
+            "async_": null,
+            "defer_loading": null,
+            "description": "Compute the absolute and year-over-year change for one SEC EDGAR XBRL metric. The period and base_period must be the same kind of period; when base_period is omitted, null, empty, \"null\", or \"none\", use the same quarter or fiscal year one year earlier. The result includes both cited lookup facts, fiscal_equals_calendar, their fact-level provenance, and a percentage change in percent points.",
+            "output_schema": null
+          },
+          {
+            "name": "history_rank",
+            "parameters": {
+              "required": [
+                "ticker",
+                "metric",
+                "period"
+              ],
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "metric": {
+                  "enum": [
+                    "revenue",
+                    "net_income",
+                    "operating_income",
+                    "eps_diluted",
+                    "gross_profit",
+                    "total_assets",
+                    "cash",
+                    "capex",
+                    "rd_expense",
+                    "shares_outstanding"
+                  ],
+                  "type": "string"
+                },
+                "period": {
+                  "pattern": "^(latest|FY\\d{4}(?:Q[1-4])?|\\d{4}Q[1-4])$",
+                  "type": "string"
+                },
+                "ticker": {
+                  "type": "string"
+                }
+              }
+            },
+            "strict": true,
+            "type": "function",
+            "allowed_callers": null,
+            "async_": null,
+            "defer_loading": null,
+            "description": "Compare one quarter or fiscal-year fact with every available comparable period of the same period_type. Quarters include derived Q4 values when available; annual periods are compared only with annual periods. Return the rank, record flags through the requested period, prior high/low, and the comparison window with period end dates. The requested period also includes compact fact provenance and evidence strength.",
+            "output_schema": null
+          }
+        ],
+        "top_p": 1.0,
+        "background": false,
+        "completed_at": 1793224465.0,
+        "conversation": null,
+        "max_output_tokens": 4000,
+        "max_tool_calls": null,
+        "moderation": null,
+        "previous_response_id": "resp_6ae26f0a9ef3825e26114e40",
+        "prompt": null,
+        "prompt_cache_diagnostics": null,
+        "prompt_cache_key": null,
+        "prompt_cache_options": null,
+        "prompt_cache_retention": null,
+        "reasoning": {
+          "context": null,
+          "effort": "high",
+          "generate_summary": null,
+          "mode": null,
+          "summary": null
+        },
+        "safety_identifier": null,
+        "service_tier": "auto",
+        "status": "completed",
+        "text": null,
+        "top_logprobs": 0,
+        "truncation": "disabled",
+        "usage": {
+          "input_tokens": 2249,
+          "input_tokens_details": {
+            "cache_write_tokens": null,
+            "cached_tokens": 1393
+          },
+          "output_tokens": 839,
+          "output_tokens_details": {
+            "reasoning_tokens": 613
+          },
+          "total_tokens": 3088
+        },
+        "user": null,
+        "store": true
+      },
+      "usage": {
+        "input_tokens": 2249,
+        "output_tokens": 839,
+        "input_tokens_details": {
+          "cached_tokens": 1393
+        },
+        "output_tokens_details": {
+          "reasoning_tokens": 613
+        }
+      },
+      "cost": 0.0048447,
+      "latency_ms": 12640.375,
+      "status": "completed"
+    },
+    {
+      "request": {
+        "model": "muse-spark-1.3",
+        "previous_response_id": "resp_6ae26f11bb5d8a2c26fd4464",
+        "input": [
+          {
+            "role": "user",
+            "content": "Return the final structured verdict now. Include every atomic factual assertion as a sub-claim, including assertions that need claim_type other when the tools cannot check them. Copy stated_text verbatim from the claim; include claim_type, comparator, stated_value in base units, evidence_ids, interpretations (an array, possibly empty; non-empty items are evidence ids like E3, never free text), verdict, model_found_value, and a concise note."
+          }
+        ],
+        "text": {
+          "format": {
+            "type": "json_schema",
+            "name": "verdict",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "verdict": {
+                  "type": "string",
+                  "enum": [
+                    "supported",
+                    "contradicted",
+                    "insufficient_evidence"
+                  ]
+                },
+                "summary": {
+                  "type": "string"
+                },
+                "sub_claims": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "text": {
+                        "type": "string"
+                      },
+                      "stated_text": {
+                        "type": "string"
+                      },
+                      "claim_type": {
+                        "type": "string",
+                        "enum": [
+                          "value",
+                          "change_pct",
+                          "change_abs",
+                          "record_high",
+                          "record_low",
+                          "first_time_above",
+                          "other"
+                        ]
+                      },
+                      "comparator": {
+                        "type": "string",
+                        "enum": [
+                          "eq",
+                          "approx",
+                          "gt",
+                          "gte",
+                          "lt",
+                          "lte"
+                        ]
+                      },
+                      "stated_value": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "evidence_ids": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      },
+                      "interpretations": {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "description": "evidence id like E3 — never free text"
+                        }
+                      },
+                      "verdict": {
+                        "type": "string",
+                        "enum": [
+                          "supported",
+                          "contradicted",
+                          "insufficient_evidence"
+                        ]
+                      },
+                      "note": {
+                        "type": "string"
+                      },
+                      "model_found_value": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "text",
+                      "stated_text",
+                      "claim_type",
+                      "comparator",
+                      "stated_value",
+                      "evidence_ids",
+                      "interpretations",
+                      "verdict",
+                      "note",
+                      "model_found_value"
+                    ],
+                    "additionalProperties": false
+                  }
+                }
+              },
+              "required": [
+                "verdict",
+                "summary",
+                "sub_claims"
+              ],
+              "additionalProperties": false
+            },
+            "strict": true
+          }
+        },
+        "max_output_tokens": 3000
+      },
+      "reservation": {
+        "reservation_id": "af1e75240f8d46f589a5c34077254b4b",
+        "provider": "meta",
+        "model": "muse-spark-1.3",
+        "estimated_input_tokens": 1309,
+        "max_output_tokens": 3000,
+        "amount": 0.01438625,
+        "payload_chars": 1775,
+        "context_chars": 2150
+      },
+      "raw_response": {
+        "id": "resp_6ae26f22c041983867294889",
+        "access_programs": null,
+        "created_at": 1793224482.0,
+        "error": null,
+        "incomplete_details": null,
+        "instructions": null,
+        "metadata": null,
+        "model": "muse-spark-1.3",
+        "object": "response",
+        "output": [
+          {
+            "id": "rs_6ae26f22c041983867294889:rs_1ed167ae-be87-41f0-9eee-4b967353bcc9",
+            "summary": [],
+            "type": "reasoning",
+            "content": null,
+            "encrypted_content": null,
+            "status": "completed"
+          },
+          {
+            "id": "msg_bce2f029-179b-4372-a12b-2de3c12515f2",
+            "content": [
+              {
+                "annotations": [],
+                "text": "{\"sub_claims\": [{\"claim_type\": \"other\", \"comparator\": \"eq\", \"evidence_ids\": [\"E1\", \"E2\"], \"interpretations\": [\"E1\", \"E2\"], \"model_found_value\": null, \"note\": \"E1 and E2 both map to NFLX CY2023Q1 2023-01-01 to 2023-03-31 10-Q.\", \"stated_text\": \"Netflix's quarter ended March 2023 report\", \"stated_value\": null, \"text\": \"The report in question is Netflix's quarter ended March 2023 (CY2023Q1).\", \"verdict\": \"supported\"}, {\"claim_type\": \"value\", \"comparator\": \"approx\", \"evidence_ids\": [\"E1\"], \"interpretations\": [\"E1\"], \"model_found_value\": 1305120000.0, \"note\": \"Reported $1,305,120,000 vs stated $1.3B, difference ~0.4% within rounding.\", \"stated_text\": \"net income at $1.3B\", \"stated_value\": 1300000000.0, \"text\": \"Netflix quarter ended March 2023 net income was $1.3B.\", \"verdict\": \"supported\"}, {\"claim_type\": \"value\", \"comparator\": \"approx\", \"evidence_ids\": [\"E2\"], \"interpretations\": [\"E2\"], \"model_found_value\": 8161503000.0, \"note\": \"Reported $8,161,503,000 vs stated $9.2B, overstated by ~$1.04B (~12.7%).\", \"stated_text\": \"revenue of $9.2 billion\", \"stated_value\": 9200000000.0, \"text\": \"Netflix quarter ended March 2023 revenue was $9.2 billion.\", \"verdict\": \"contradicted\"}], \"summary\": \"Netflix Q1 2023 (ended March 2023) 10-Q reported net income ~$1.31B, supporting the $1.3B claim, but revenue was $8.16B, contradicting the $9.2B claim.\", \"verdict\": \"contradicted\"}",
+                "type": "output_text",
+                "logprobs": []
+              }
+            ],
+            "role": "assistant",
+            "status": "completed",
+            "type": "message",
+            "phase": null
+          }
+        ],
+        "parallel_tool_calls": true,
+        "temperature": 1.0,
+        "tool_choice": "auto",
+        "tools": [],
+        "top_p": 1.0,
+        "background": false,
+        "completed_at": 1793224482.0,
+        "conversation": null,
+        "max_output_tokens": 3000,
+        "max_tool_calls": null,
+        "moderation": null,
+        "previous_response_id": "resp_6ae26f11bb5d8a2c26fd4464",
+        "prompt": null,
+        "prompt_cache_diagnostics": null,
+        "prompt_cache_key": null,
+        "prompt_cache_options": null,
+        "prompt_cache_retention": null,
+        "reasoning": {
+          "context": null,
+          "effort": "high",
+          "generate_summary": null,
+          "mode": null,
+          "summary": null
+        },
+        "safety_identifier": null,
+        "service_tier": "auto",
+        "status": "completed",
+        "text": {
+          "format": {
+            "name": "verdict",
+            "schema_": {
+              "required": [
+                "verdict",
+                "summary",
+                "sub_claims"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "sub_claims": {
+                  "items": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "claim_type": {
+                        "enum": [
+                          "value",
+                          "change_pct",
+                          "change_abs",
+                          "record_high",
+                          "record_low",
+                          "first_time_above",
+                          "other"
+                        ],
+                        "type": "string"
+                      },
+                      "comparator": {
+                        "enum": [
+                          "eq",
+                          "approx",
+                          "gt",
+                          "gte",
+                          "lt",
+                          "lte"
+                        ],
+                        "type": "string"
+                      },
+                      "evidence_ids": {
+                        "items": {
+                          "type": "string"
+                        },
+                        "type": "array"
+                      },
+                      "interpretations": {
+                        "items": {
+                          "description": "evidence id like E3 — never free text",
+                          "type": "string"
+                        },
+                        "type": "array"
+                      },
+                      "model_found_value": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "note": {
+                        "type": "string"
+                      },
+                      "stated_text": {
+                        "type": "string"
+                      },
+                      "stated_value": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "text": {
+                        "type": "string"
+                      },
+                      "verdict": {
+                        "enum": [
+                          "supported",
+                          "contradicted",
+                          "insufficient_evidence"
+                        ],
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "text",
+                      "stated_text",
+                      "claim_type",
+                      "comparator",
+                      "stated_value",
+                      "evidence_ids",
+                      "interpretations",
+                      "verdict",
+                      "note",
+                      "model_found_value"
+                    ],
+                    "type": "object"
+                  },
+                  "type": "array"
+                },
+                "summary": {
+                  "type": "string"
+                },
+                "verdict": {
+                  "enum": [
+                    "supported",
+                    "contradicted",
+                    "insufficient_evidence"
+                  ],
+                  "type": "string"
+                }
+              },
+              "type": "object"
+            },
+            "type": "json_schema",
+            "description": null,
+            "strict": true
+          },
+          "verbosity": null
+        },
+        "top_logprobs": 0,
+        "truncation": "disabled",
+        "usage": {
+          "input_tokens": 1128,
+          "input_tokens_details": {
+            "cache_write_tokens": null,
+            "cached_tokens": 0
+          },
+          "output_tokens": 2900,
+          "output_tokens_details": {
+            "reasoning_tokens": 2418
+          },
+          "total_tokens": 4028
+        },
+        "user": null,
+        "store": true
+      },
+      "usage": {
+        "input_tokens": 1128,
+        "output_tokens": 2900,
+        "input_tokens_details": {
+          "cached_tokens": 0
+        },
+        "output_tokens_details": {
+          "reasoning_tokens": 2418
+        }
+      },
+      "cost": 0.013734999999999999,
+      "latency_ms": 18842.147,
+      "status": "completed"
+    }
+  ],
+  "tool_calls": [
+    {
+      "name": "lookup_fact",
+      "arguments": {
+        "metric": "net_income",
+        "period": "2023Q1",
+        "ticker": "NFLX"
+      },
+      "call_id": "call_f140e4f1-2ad6-4f59-85db-dbb022556141",
+      "result": {
+        "ticker": "NFLX",
+        "cik": "0001065280",
+        "entity": "Netflix, Inc.",
+        "metric": "net_income",
+        "concept": "NetIncomeLoss",
+        "unit": "USD",
+        "value": 1305120000,
+        "start": "2023-01-01",
+        "end": "2023-03-31",
+        "form": "10-Q",
+        "form_fallback": false,
+        "accn": "0001065280-24-000128",
+        "filed": "2024-04-22",
+        "frame": "CY2023Q1",
+        "fiscal_year": 2023,
+        "fiscal_period": "Q1",
+        "duration_days": 90,
+        "period_type": "quarter",
+        "fiscal_equals_calendar": true,
+        "derived": false,
+        "filing_url": "https://www.sec.gov/Archives/edgar/data/1065280/000106528024000128/",
+        "source_sha256": "fd31bc147b36495f6912e063188aea71434077236f4e995268620b47fda99e61",
+        "provenance": {
+          "tier": "L2",
+          "audited": false,
+          "confirmations": 2,
+          "forms": [
+            "10-Q"
+          ],
+          "first_filed": "2023-04-21",
+          "latest_filed": "2024-04-22",
+          "restated": false,
+          "amended": false,
+          "strength": "medium"
+        },
+        "period": "2023Q1",
+        "period_basis": "calendar",
+        "evidence_id": "E1"
+      }
+    },
+    {
+      "name": "lookup_fact",
+      "arguments": {
+        "metric": "revenue",
+        "period": "2023Q1",
+        "ticker": "NFLX"
+      },
+      "call_id": "call_fc0f371a-d4ae-4b7d-9758-69ee3e0083a9",
+      "result": {
+        "ticker": "NFLX",
+        "cik": "0001065280",
+        "entity": "Netflix, Inc.",
+        "metric": "revenue",
+        "concept": "Revenues",
+        "unit": "USD",
+        "value": 8161503000,
+        "start": "2023-01-01",
+        "end": "2023-03-31",
+        "form": "10-Q",
+        "form_fallback": false,
+        "accn": "0001065280-24-000128",
+        "filed": "2024-04-22",
+        "frame": "CY2023Q1",
+        "fiscal_year": 2023,
+        "fiscal_period": "Q1",
+        "duration_days": 90,
+        "period_type": "quarter",
+        "fiscal_equals_calendar": true,
+        "derived": false,
+        "filing_url": "https://www.sec.gov/Archives/edgar/data/1065280/000106528024000128/",
+        "source_sha256": "fd31bc147b36495f6912e063188aea71434077236f4e995268620b47fda99e61",
+        "provenance": {
+          "tier": "L2",
+          "audited": false,
+          "confirmations": 2,
+          "forms": [
+            "10-Q"
+          ],
+          "first_filed": "2023-04-21",
+          "latest_filed": "2024-04-22",
+          "restated": false,
+          "amended": false,
+          "strength": "medium"
+        },
+        "period": "2023Q1",
+        "period_basis": "calendar",
+        "evidence_id": "E2"
+      }
+    }
+  ],
+  "usage": [
+    {
+      "input_tokens": 2579,
+      "output_tokens": 593,
+      "input_tokens_details": {
+        "cached_tokens": 2545
+      },
+      "output_tokens_details": {
+        "reasoning_tokens": 403
+      }
+    },
+    {
+      "input_tokens": 2249,
+      "output_tokens": 839,
+      "input_tokens_details": {
+        "cached_tokens": 1393
+      },
+      "output_tokens_details": {
+        "reasoning_tokens": 613
+      }
+    },
+    {
+      "input_tokens": 1128,
+      "output_tokens": 2900,
+      "input_tokens_details": {
+        "cached_tokens": 0
+      },
+      "output_tokens_details": {
+        "reasoning_tokens": 2418
+      }
+    }
+  ],
+  "tokens": {
+    "input": 5956,
+    "cached": 3938,
+    "output": 4332,
+    "reasoning": 3434
+  },
+  "model_calls": 3,
+  "cost": 0.0215242,
+  "cost_usd": 0.0215242,
+  "latency_ms": 34443.665,
+  "tool_call_count": 2,
+  "incomplete_turns": [],
+  "previous_response_fallback": false,
+  "final_verdict": {
+    "verdict": "contradicted",
+    "summary": "Netflix Q1 2023 (ended March 2023) 10-Q reported net income ~$1.31B, supporting the $1.3B claim, but revenue was $8.16B, contradicting the $9.2B claim.",
+    "sub_claims": [
+      {
+        "text": "The report in question is Netflix's quarter ended March 2023 (CY2023Q1).",
+        "stated_text": "Netflix's quarter ended March 2023 report",
+        "claim_type": "other",
+        "comparator": "eq",
+        "stated_value": null,
+        "verdict": "supported",
+        "evidence_ids": [
+          "E1",
+          "E2"
+        ],
+        "interpretations": [],
+        "model_found_value": null,
+        "note": "E1 and E2 both map to NFLX CY2023Q1 2023-01-01 to 2023-03-31 10-Q.",
+        "evidence_valid": false,
+        "program_verdict": "unchecked",
+        "actual_value": null,
+        "tolerance": null,
+        "reason": "unchecked_other_claim",
+        "disagreement": false,
+        "precision": null,
+        "stated_value_used": null,
+        "period_ambiguous": false,
+        "program_added_interpretation": false,
+        "program_evidence_ids": [],
+        "invalid_interpretations": false,
+        "deduplicated_evidence": [],
+        "stated_value_corrected": false,
+        "stated_text_unparsed": false,
+        "stated_sign_corrected": false,
+        "threshold_from_model": false,
+        "model_comparator": "eq",
+        "comparator_corrected": false,
+        "evidence_strength": "medium",
+        "evidence_summary": "Evidence: reviewed 10-Q, confirmed in 2 filings, not restated",
+        "restated_evidence": false
+      },
+      {
+        "text": "Netflix quarter ended March 2023 net income was $1.3B.",
+        "stated_text": "net income at $1.3B",
+        "claim_type": "value",
+        "comparator": "eq",
+        "stated_value": 1300000000.0,
+        "verdict": "supported",
+        "evidence_ids": [
+          "E1"
+        ],
+        "interpretations": [],
+        "model_found_value": 1305120000.0,
+        "note": "Reported $1,305,120,000 vs stated $1.3B, difference ~0.4% within rounding.",
+        "evidence_valid": true,
+        "program_verdict": "supported",
+        "actual_value": 1305120000.0,
+        "tolerance": 50000000.0,
+        "reason": "comparator_corrected; actual 1.30512e+09 is consistent with stated 1.3e+09 using eq tolerance 5e+07",
+        "disagreement": false,
+        "precision": 50000000.0,
+        "stated_value_used": 1300000000.0,
+        "period_ambiguous": false,
+        "program_added_interpretation": false,
+        "program_evidence_ids": [],
+        "invalid_interpretations": false,
+        "deduplicated_evidence": [],
+        "stated_value_corrected": false,
+        "stated_text_unparsed": false,
+        "stated_sign_corrected": false,
+        "threshold_from_model": false,
+        "model_comparator": "approx",
+        "comparator_corrected": true,
+        "evidence_strength": "medium",
+        "evidence_summary": "Evidence: reviewed 10-Q, confirmed in 2 filings, not restated",
+        "restated_evidence": false
+      },
+      {
+        "text": "Netflix quarter ended March 2023 revenue was $9.2 billion.",
+        "stated_text": "revenue of $9.2 billion",
+        "claim_type": "value",
+        "comparator": "eq",
+        "stated_value": 9200000000.0,
+        "verdict": "contradicted",
+        "evidence_ids": [
+          "E2"
+        ],
+        "interpretations": [],
+        "model_found_value": 8161503000.0,
+        "note": "Reported $8,161,503,000 vs stated $9.2B, overstated by ~$1.04B (~12.7%).",
+        "evidence_valid": true,
+        "program_verdict": "contradicted",
+        "actual_value": 8161503000.0,
+        "tolerance": 50000000.0,
+        "reason": "comparator_corrected; actual 8.1615e+09 is not consistent with stated 9.2e+09 using eq tolerance 5e+07",
+        "disagreement": false,
+        "precision": 50000000.0,
+        "stated_value_used": 9200000000.0,
+        "period_ambiguous": false,
+        "program_added_interpretation": false,
+        "program_evidence_ids": [],
+        "invalid_interpretations": false,
+        "deduplicated_evidence": [],
+        "stated_value_corrected": false,
+        "stated_text_unparsed": false,
+        "stated_sign_corrected": false,
+        "threshold_from_model": false,
+        "model_comparator": "approx",
+        "comparator_corrected": true,
+        "evidence_strength": "medium",
+        "evidence_summary": "Evidence: reviewed 10-Q, confirmed in 2 filings, not restated",
+        "restated_evidence": false
+      }
+    ],
+    "model_verdict": "contradicted",
+    "program_checks": [
+      {
+        "text": "The report in question is Netflix's quarter ended March 2023 (CY2023Q1).",
+        "stated_value": null,
+        "evidence_ids": [
+          "E1",
+          "E2"
+        ],
+        "evidence_valid": false,
+        "program_verdict": "unchecked",
+        "actual_value": null,
+        "tolerance": null,
+        "reason": "unchecked_other_claim",
+        "disagreement": false,
+        "precision": null,
+        "stated_value_used": null,
+        "comparator": "eq",
+        "interpretations": [],
+        "period_ambiguous": false,
+        "program_added_interpretation": false,
+        "program_evidence_ids": [],
+        "invalid_interpretations": false,
+        "deduplicated_evidence": [],
+        "stated_value_corrected": false,
+        "stated_text_unparsed": false,
+        "stated_sign_corrected": false,
+        "threshold_from_model": false,
+        "model_comparator": "eq",
+        "comparator_corrected": false,
+        "evidence_strength": "medium",
+        "evidence_summary": "Evidence: reviewed 10-Q, confirmed in 2 filings, not restated",
+        "restated_evidence": false
+      },
+      {
+        "text": "Netflix quarter ended March 2023 net income was $1.3B.",
+        "stated_value": 1300000000.0,
+        "evidence_ids": [
+          "E1"
+        ],
+        "evidence_valid": true,
+        "program_verdict": "supported",
+        "actual_value": 1305120000.0,
+        "tolerance": 50000000.0,
+        "reason": "comparator_corrected; actual 1.30512e+09 is consistent with stated 1.3e+09 using eq tolerance 5e+07",
+        "disagreement": false,
+        "precision": 50000000.0,
+        "stated_value_used": 1300000000.0,
+        "comparator": "eq",
+        "interpretations": [],
+        "period_ambiguous": false,
+        "program_added_interpretation": false,
+        "program_evidence_ids": [],
+        "invalid_interpretations": false,
+        "deduplicated_evidence": [],
+        "stated_value_corrected": false,
+        "stated_text_unparsed": false,
+        "stated_sign_corrected": false,
+        "threshold_from_model": false,
+        "model_comparator": "approx",
+        "comparator_corrected": true,
+        "evidence_strength": "medium",
+        "evidence_summary": "Evidence: reviewed 10-Q, confirmed in 2 filings, not restated",
+        "restated_evidence": false
+      },
+      {
+        "text": "Netflix quarter ended March 2023 revenue was $9.2 billion.",
+        "stated_value": 9200000000.0,
+        "evidence_ids": [
+          "E2"
+        ],
+        "evidence_valid": true,
+        "program_verdict": "contradicted",
+        "actual_value": 8161503000.0,
+        "tolerance": 50000000.0,
+        "reason": "comparator_corrected; actual 8.1615e+09 is not consistent with stated 9.2e+09 using eq tolerance 5e+07",
+        "disagreement": false,
+        "precision": 50000000.0,
+        "stated_value_used": 9200000000.0,
+        "comparator": "eq",
+        "interpretations": [],
+        "period_ambiguous": false,
+        "program_added_interpretation": false,
+        "program_evidence_ids": [],
+        "invalid_interpretations": false,
+        "deduplicated_evidence": [],
+        "stated_value_corrected": false,
+        "stated_text_unparsed": false,
+        "stated_sign_corrected": false,
+        "threshold_from_model": false,
+        "model_comparator": "approx",
+        "comparator_corrected": true,
+        "evidence_strength": "medium",
+        "evidence_summary": "Evidence: reviewed 10-Q, confirmed in 2 filings, not restated",
+        "restated_evidence": false
+      }
+    ],
+    "evidence_strength": "medium",
+    "evidence_summary": "Evidence: reviewed 10-Q, confirmed in 2 filings, not restated",
+    "model_program_disagreement": false
+  },
+  "program_checks": [
+    {
+      "text": "The report in question is Netflix's quarter ended March 2023 (CY2023Q1).",
+      "stated_value": null,
+      "evidence_ids": [
+        "E1",
+        "E2"
+      ],
+      "evidence_valid": false,
+      "program_verdict": "unchecked",
+      "actual_value": null,
+      "tolerance": null,
+      "reason": "unchecked_other_claim",
+      "disagreement": false,
+      "precision": null,
+      "stated_value_used": null,
+      "comparator": "eq",
+      "interpretations": [],
+      "period_ambiguous": false,
+      "program_added_interpretation": false,
+      "program_evidence_ids": [],
+      "invalid_interpretations": false,
+      "deduplicated_evidence": [],
+      "stated_value_corrected": false,
+      "stated_text_unparsed": false,
+      "stated_sign_corrected": false,
+      "threshold_from_model": false,
+      "model_comparator": "eq",
+      "comparator_corrected": false,
+      "evidence_strength": "medium",
+      "evidence_summary": "Evidence: reviewed 10-Q, confirmed in 2 filings, not restated",
+      "restated_evidence": false
+    },
+    {
+      "text": "Netflix quarter ended March 2023 net income was $1.3B.",
+      "stated_value": 1300000000.0,
+      "evidence_ids": [
+        "E1"
+      ],
+      "evidence_valid": true,
+      "program_verdict": "supported",
+      "actual_value": 1305120000.0,
+      "tolerance": 50000000.0,
+      "reason": "comparator_corrected; actual 1.30512e+09 is consistent with stated 1.3e+09 using eq tolerance 5e+07",
+      "disagreement": false,
+      "precision": 50000000.0,
+      "stated_value_used": 1300000000.0,
+      "comparator": "eq",
+      "interpretations": [],
+      "period_ambiguous": false,
+      "program_added_interpretation": false,
+      "program_evidence_ids": [],
+      "invalid_interpretations": false,
+      "deduplicated_evidence": [],
+      "stated_value_corrected": false,
+      "stated_text_unparsed": false,
+      "stated_sign_corrected": false,
+      "threshold_from_model": false,
+      "model_comparator": "approx",
+      "comparator_corrected": true,
+      "evidence_strength": "medium",
+      "evidence_summary": "Evidence: reviewed 10-Q, confirmed in 2 filings, not restated",
+      "restated_evidence": false
+    },
+    {
+      "text": "Netflix quarter ended March 2023 revenue was $9.2 billion.",
+      "stated_value": 9200000000.0,
+      "evidence_ids": [
+        "E2"
+      ],
+      "evidence_valid": true,
+      "program_verdict": "contradicted",
+      "actual_value": 8161503000.0,
+      "tolerance": 50000000.0,
+      "reason": "comparator_corrected; actual 8.1615e+09 is not consistent with stated 9.2e+09 using eq tolerance 5e+07",
+      "disagreement": false,
+      "precision": 50000000.0,
+      "stated_value_used": 9200000000.0,
+      "comparator": "eq",
+      "interpretations": [],
+      "period_ambiguous": false,
+      "program_added_interpretation": false,
+      "program_evidence_ids": [],
+      "invalid_interpretations": false,
+      "deduplicated_evidence": [],
+      "stated_value_corrected": false,
+      "stated_text_unparsed": false,
+      "stated_sign_corrected": false,
+      "threshold_from_model": false,
+      "model_comparator": "approx",
+      "comparator_corrected": true,
+      "evidence_strength": "medium",
+      "evidence_summary": "Evidence: reviewed 10-Q, confirmed in 2 filings, not restated",
+      "restated_evidence": false
+    }
+  ]
+}

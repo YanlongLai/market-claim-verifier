@@ -1,0 +1,1651 @@
+{
+  "claim": "The December 2024 quarter filing showed capital expenditures up 90% for Meta.",
+  "model": "accounts/fireworks/models/muse-spark-open",
+  "provider": "fireworks",
+  "requests": [
+    {
+      "request": {
+        "model": "accounts/fireworks/models/muse-spark-open",
+        "messages": [
+          {
+            "role": "system",
+            "content": "You verify financial claims against SEC EDGAR facts.\nDecompose the claim into every atomic factual assertion. Every factual assertion\nin the user's claim must become a sub-claim, including a value, a change, a\nrecord, and a first-time assertion in the same sentence. Assertions that the\ntools cannot check must still become a sub-claim with claim_type other; the\nprogram will leave those unchecked. Use lookup_fact for a value,\ncompute_change for YoY or other period-to-period growth, history_rank for\nrecord/first-time assertions, and list_periods only to understand missing data.\nNever use memory for numbers. A quarter must have period_type=quarter and\nduration_days around 80-100, not period_type=ytd. If a result has derived=true,\nuse its derivation and components as evidence and do not calculate that fact\nagain. For compute_change, cite its own evidence ID; its two nested component\nfact IDs may also be cited and are ignored by the verifier.\n\nEach final sub_claim must contain exactly these model fields:\ntext, stated_text, claim_type (value, change_pct, change_abs, record_high,\nrecord_low, first_time_above, or other), comparator (eq, approx, gt, gte, lt,\nor lte), stated_value in base units (USD, USD/share, percentage points, or 1\nfor a record boolean), evidence_ids, interpretations, verdict, note, and\nmodel_found_value. interpretations is required and may be empty. Every non-empty\nitem must be an evidence id like E3 — never free text.\nCopy stated_text verbatim from the claim, including words such as \"about\",\n\"up\", or \"fell\" (for example, \"about $1.4 billion\", \"up 22%\", or\n\"fell 10%\"). For a change_pct, stated_value is 22 for 22%, not 0.22; the\nverifier applies the sign implied by direction words such as fell/down or\nrose/up. model_found_value is the number read from the cited evidence in the\nsame units, or null when it is missing.\n\nComparator wording is deterministic: a plain numeric statement with no hedge\nor inequality phrase is eq; about/around/roughly/approximately/nearly/almost,\nclose to, some, or ~ means approx; topped/exceeded/above/more than/over/\nsurpassed/beat means gt; at least/no less than means gte; below/under/less\nthan/short of means lt; at most/no more than/up to means lte. The program\nrecords and may correct the model comparator from these words. \"up\" and\n\"fell\" describe change direction, not approximation.\n\nFor a quarter claim at a non-calendar-fiscal issuer, use period_basis from\nthe tool results. If the claim says neither fiscal nor calendar, look up both\nthe calendar label (for example 2025Q4) and the fiscal label (for example\nFY2025Q4), cite both IDs in evidence_ids, and put those two IDs in\ninterpretations. Keep interpretations empty unless both fiscal and calendar\nreadings were looked up. If the claim says fiscal, cite only the fiscal\nreading; if it says calendar, cite only the calendar reading. When a lookup or\ncompute result has fiscal_equals_calendar=true, the issuer's fiscal year is the\ncalendar year: fiscal and calendar labels refer to the same underlying facts,\nso look up and cite only one reading even when the claim has no\nfiscal/calendar qualifier.\n\nExamples:\n1. \"Tesla net income was about $1.4 billion\": lookup_fact; stated_text\n   \"about $1.4 billion\", claim_type value, comparator approx, stated_value\n   1400000000.\n2. \"Alphabet revenue exceeded $100 billion\": lookup_fact; stated_text\n   \"exceeded $100 billion\", claim_type value, comparator gt, stated_value\n   100000000000.\n3. \"Meta revenue was up 22% YoY\": compute_change(META, revenue, 2025Q2,\n   null); stated_text \"up 22%\", claim_type change_pct, comparator eq,\n   stated_value 22, and cite the compute_change evidence ID.\n4. \"Tesla revenue fell 10% YoY\": compute_change(TSLA, revenue, 2025Q3,\n   null); stated_text \"fell 10%\", claim_type change_pct, comparator eq,\n   stated_value -10, and cite the compute_change evidence ID.\n5. \"Alphabet Q3 2025 revenue was a record high\": history_rank(GOOGL,\n   revenue, 2025Q3); claim_type record_high, comparator eq, stated_value 1,\n   and cite the history_rank evidence ID.\n6. \"Alphabet Q3 2025 revenue topped $100 billion for the first time\": create\n   two sub-claims: value gt 100000000000 and first_time_above with stated_value\n   100000000000, both citing the relevant evidence; the latter is supported\n   only when this period is above the threshold and no earlier comparable\n   period is above it.\n7. If a requested fact is unavailable, leave model_found_value null, cite any\n   relevant evidence, and set that sub-claim to insufficient_evidence. Say\n   insufficient_evidence when data is missing or evidence is ambiguous."
+          },
+          {
+            "role": "user",
+            "content": "The December 2024 quarter filing showed capital expenditures up 90% for Meta."
+          }
+        ],
+        "tools": [
+          {
+            "type": "function",
+            "function": {
+              "name": "lookup_fact",
+              "description": "Look up one SEC EDGAR XBRL fact for a ticker, metric, and calendar quarter, fiscal quarter (FY2025Q4), or fiscal year. Successful results include period (the normalized requested label, or the resolved label for latest), period_basis (calendar or fiscal), fiscal_equals_calendar, duration_days, and period_type (quarter, ytd, annual, or instant). Additive flows may return derived=true with derivation and components; never treat a ytd result as a quarter or recompute a derived result. When fiscal_equals_calendar is true, fiscal and calendar labels identify the same fact; do not look up both readings. Every fact includes compact provenance: L1 audited 10-K, L2 reviewed 10-Q, or L3 program-derived, with confirmations, restatement, amendment, and evidence strength.",
+              "parameters": {
+                "type": "object",
+                "properties": {
+                  "ticker": {
+                    "type": "string"
+                  },
+                  "metric": {
+                    "type": "string",
+                    "enum": [
+                      "revenue",
+                      "net_income",
+                      "operating_income",
+                      "eps_diluted",
+                      "gross_profit",
+                      "total_assets",
+                      "cash",
+                      "capex",
+                      "rd_expense",
+                      "shares_outstanding"
+                    ]
+                  },
+                  "period": {
+                    "type": "string",
+                    "pattern": "^(latest|FY\\d{4}(?:Q[1-4])?|\\d{4}Q[1-4])$"
+                  }
+                },
+                "required": [
+                  "ticker",
+                  "metric",
+                  "period"
+                ],
+                "additionalProperties": false
+              }
+            }
+          },
+          {
+            "type": "function",
+            "function": {
+              "name": "list_periods",
+              "description": "List the recent directly available SEC EDGAR quarter and fiscal-year periods for a ticker and metric.",
+              "parameters": {
+                "type": "object",
+                "properties": {
+                  "ticker": {
+                    "type": "string"
+                  },
+                  "metric": {
+                    "type": "string",
+                    "enum": [
+                      "revenue",
+                      "net_income",
+                      "operating_income",
+                      "eps_diluted",
+                      "gross_profit",
+                      "total_assets",
+                      "cash",
+                      "capex",
+                      "rd_expense",
+                      "shares_outstanding"
+                    ]
+                  }
+                },
+                "required": [
+                  "ticker",
+                  "metric"
+                ],
+                "additionalProperties": false
+              }
+            }
+          },
+          {
+            "type": "function",
+            "function": {
+              "name": "compute_change",
+              "description": "Compute the absolute and year-over-year change for one SEC EDGAR XBRL metric. The period and base_period must be the same kind of period; when base_period is omitted, null, empty, \"null\", or \"none\", use the same quarter or fiscal year one year earlier. The result includes both cited lookup facts, fiscal_equals_calendar, their fact-level provenance, and a percentage change in percent points.",
+              "parameters": {
+                "type": "object",
+                "properties": {
+                  "ticker": {
+                    "type": "string"
+                  },
+                  "metric": {
+                    "type": "string",
+                    "enum": [
+                      "revenue",
+                      "net_income",
+                      "operating_income",
+                      "eps_diluted",
+                      "gross_profit",
+                      "total_assets",
+                      "cash",
+                      "capex",
+                      "rd_expense",
+                      "shares_outstanding"
+                    ]
+                  },
+                  "period": {
+                    "type": "string",
+                    "pattern": "^(latest|FY\\d{4}(?:Q[1-4])?|\\d{4}Q[1-4])$"
+                  },
+                  "base_period": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "pattern": "^(FY\\d{4}(?:Q[1-4])?|\\d{4}Q[1-4])$"
+                  }
+                },
+                "required": [
+                  "ticker",
+                  "metric",
+                  "period",
+                  "base_period"
+                ],
+                "additionalProperties": false
+              }
+            }
+          },
+          {
+            "type": "function",
+            "function": {
+              "name": "history_rank",
+              "description": "Compare one quarter or fiscal-year fact with every available comparable period of the same period_type. Quarters include derived Q4 values when available; annual periods are compared only with annual periods. Return the rank, record flags through the requested period, prior high/low, and the comparison window with period end dates. The requested period also includes compact fact provenance and evidence strength.",
+              "parameters": {
+                "type": "object",
+                "properties": {
+                  "ticker": {
+                    "type": "string"
+                  },
+                  "metric": {
+                    "type": "string",
+                    "enum": [
+                      "revenue",
+                      "net_income",
+                      "operating_income",
+                      "eps_diluted",
+                      "gross_profit",
+                      "total_assets",
+                      "cash",
+                      "capex",
+                      "rd_expense",
+                      "shares_outstanding"
+                    ]
+                  },
+                  "period": {
+                    "type": "string",
+                    "pattern": "^(latest|FY\\d{4}(?:Q[1-4])?|\\d{4}Q[1-4])$"
+                  }
+                },
+                "required": [
+                  "ticker",
+                  "metric",
+                  "period"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        ],
+        "parallel_tool_calls": true,
+        "max_tokens": 4000
+      },
+      "reservation": {
+        "reservation_id": "d7d12d3d89a34d45964d8fbf982a625b",
+        "provider": "fireworks",
+        "model": "accounts/fireworks/models/muse-spark-open",
+        "estimated_input_tokens": 2849,
+        "max_output_tokens": 4000,
+        "amount": 0.020561250000000003,
+        "payload_chars": 8545,
+        "context_chars": 0
+      },
+      "raw_response": {
+        "id": "chatcmpl-141a19b2ebe643b0b32531f76a63e035",
+        "choices": [
+          {
+            "finish_reason": "tool_calls",
+            "index": 0,
+            "logprobs": null,
+            "message": {
+              "content": "Your claim about Meta's capex surge is in — I'll pull the December 2024 filing to verify that 90% jump.",
+              "refusal": null,
+              "role": "assistant",
+              "annotations": null,
+              "audio": null,
+              "function_call": null,
+              "tool_calls": [
+                {
+                  "id": "chatcmpl-tool-8b501f9a127dfe25",
+                  "function": {
+                    "arguments": "{\"ticker\": \"META\", \"metric\": \"capex\", \"period\": \"2024Q4\", \"base_period\": null}",
+                    "name": "compute_change"
+                  },
+                  "type": "function",
+                  "index": 0,
+                  "name": null
+                },
+                {
+                  "id": "chatcmpl-tool-96b5ca3e5dfeac2e",
+                  "function": {
+                    "arguments": "{\"ticker\": \"META\", \"metric\": \"capex\", \"period\": \"2024Q4\"}",
+                    "name": "lookup_fact"
+                  },
+                  "type": "function",
+                  "index": 1,
+                  "name": null
+                },
+                {
+                  "id": "chatcmpl-tool-b8b9097988284c8f",
+                  "function": {
+                    "arguments": "{\"ticker\": \"META\", \"metric\": \"capex\"}",
+                    "name": "list_periods"
+                  },
+                  "type": "function",
+                  "index": 2,
+                  "name": null
+                }
+              ],
+              "reasoning_content": "We need to decompose claim: The December 2024 quarter filing showed capital expenditures up 90% for Meta.\n\nWe need to verify.\n\nWe need ticker for Meta = META.\n\nWe need to evaluate capital expenditures = capex metric. December 2024 quarter -> That is 2024Q4.\n\nNeed to check calendar vs fiscal. Need to determine fiscal equals calendar? Lookup.\n\nWe need compute_change for META capex 2024Q4 vs 2023Q4.\n\nAlso need to consider filing? But claim says capital expenditures up 90%. Need to verify via tools.\n\nWe must perform lookup/compute.\n\nProceed to call compute_change, and maybe lookup_fact to see.\n\nWe need to handle comparator: \"up 90%\" => claim_type change_pct, comparator eq? Probably approx? But says up 90% -> eq, stated_value 90.\n\nBut need to check actual value.\n\nWe also need to decompose? Possibly also need to parse date? But claim includes \"December 2024 quarter filing showed\" - might be other type but main is capex up 90%.\n\nWe need to create sub-claim(s).\n\nRequirement: Decompose into every atomic factual assertion. So:\n\n- Capital expenditures up 90% => one sub-claim change_pct.\n\nBut also possibly \"December 2024 quarter filing showed\" is context, not value.\n\nWe need to also consider fiscal vs calendar. We need to check fiscal_equals_calendar. Call tools.\n\nWe should call compute_change for META capex 2024Q4.\n\nAnd lookup_fact for context, list_periods maybe.\n\nLet's do compute_change.",
+              "tools": null
+            }
+          }
+        ],
+        "created": 1793222733,
+        "model": "accounts/fireworks/models/muse-spark-open",
+        "object": "chat.completion",
+        "metadata": null,
+        "moderation": null,
+        "service_tier": null,
+        "system_fingerprint": null,
+        "usage": {
+          "completion_tokens": 601,
+          "prompt_tokens": 2693,
+          "total_tokens": 3294,
+          "completion_tokens_details": {
+            "accepted_prediction_tokens": null,
+            "audio_tokens": null,
+            "reasoning_tokens": 329,
+            "rejected_prediction_tokens": null,
+            "text_tokens": null
+          },
+          "prompt_tokens_details": {
+            "audio_tokens": null,
+            "cache_write_tokens": null,
+            "cached_tokens": 2624,
+            "image_tokens": null,
+            "text_tokens": null
+          },
+          "output_tokens_details": {
+            "reasoning_tokens": 329
+          }
+        }
+      },
+      "usage": {
+        "input": 2693,
+        "cached": 2624,
+        "output": 601,
+        "reasoning": 329
+      },
+      "cost": 0.0030341,
+      "latency_ms": 7468.634,
+      "status": "completed",
+      "raw_usage": {
+        "completion_tokens": 601,
+        "prompt_tokens": 2693,
+        "total_tokens": 3294,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 329,
+          "rejected_prediction_tokens": null,
+          "text_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cache_write_tokens": null,
+          "cached_tokens": 2624,
+          "image_tokens": null,
+          "text_tokens": null
+        },
+        "output_tokens_details": {
+          "reasoning_tokens": 329
+        }
+      },
+      "normalized_usage": {
+        "input": 2693,
+        "cached": 2624,
+        "output": 601,
+        "reasoning": 329
+      },
+      "finish_reason": "tool_calls",
+      "rate_limit_headers": {
+        "x-ratelimit-limit-tokens-cache-adjusted-prompt": "1800000",
+        "x-ratelimit-limit-tokens-generated": "72000",
+        "x-ratelimit-limit-tokens-prompt": "7200000",
+        "x-ratelimit-limit-tokens-uncached-prompt": "1800000",
+        "x-ratelimit-over-limit": "no",
+        "x-ratelimit-remaining-tokens-prompt": "7197307"
+      }
+    },
+    {
+      "request": {
+        "model": "accounts/fireworks/models/muse-spark-open",
+        "messages": [
+          {
+            "role": "system",
+            "content": "You verify financial claims against SEC EDGAR facts.\nDecompose the claim into every atomic factual assertion. Every factual assertion\nin the user's claim must become a sub-claim, including a value, a change, a\nrecord, and a first-time assertion in the same sentence. Assertions that the\ntools cannot check must still become a sub-claim with claim_type other; the\nprogram will leave those unchecked. Use lookup_fact for a value,\ncompute_change for YoY or other period-to-period growth, history_rank for\nrecord/first-time assertions, and list_periods only to understand missing data.\nNever use memory for numbers. A quarter must have period_type=quarter and\nduration_days around 80-100, not period_type=ytd. If a result has derived=true,\nuse its derivation and components as evidence and do not calculate that fact\nagain. For compute_change, cite its own evidence ID; its two nested component\nfact IDs may also be cited and are ignored by the verifier.\n\nEach final sub_claim must contain exactly these model fields:\ntext, stated_text, claim_type (value, change_pct, change_abs, record_high,\nrecord_low, first_time_above, or other), comparator (eq, approx, gt, gte, lt,\nor lte), stated_value in base units (USD, USD/share, percentage points, or 1\nfor a record boolean), evidence_ids, interpretations, verdict, note, and\nmodel_found_value. interpretations is required and may be empty. Every non-empty\nitem must be an evidence id like E3 — never free text.\nCopy stated_text verbatim from the claim, including words such as \"about\",\n\"up\", or \"fell\" (for example, \"about $1.4 billion\", \"up 22%\", or\n\"fell 10%\"). For a change_pct, stated_value is 22 for 22%, not 0.22; the\nverifier applies the sign implied by direction words such as fell/down or\nrose/up. model_found_value is the number read from the cited evidence in the\nsame units, or null when it is missing.\n\nComparator wording is deterministic: a plain numeric statement with no hedge\nor inequality phrase is eq; about/around/roughly/approximately/nearly/almost,\nclose to, some, or ~ means approx; topped/exceeded/above/more than/over/\nsurpassed/beat means gt; at least/no less than means gte; below/under/less\nthan/short of means lt; at most/no more than/up to means lte. The program\nrecords and may correct the model comparator from these words. \"up\" and\n\"fell\" describe change direction, not approximation.\n\nFor a quarter claim at a non-calendar-fiscal issuer, use period_basis from\nthe tool results. If the claim says neither fiscal nor calendar, look up both\nthe calendar label (for example 2025Q4) and the fiscal label (for example\nFY2025Q4), cite both IDs in evidence_ids, and put those two IDs in\ninterpretations. Keep interpretations empty unless both fiscal and calendar\nreadings were looked up. If the claim says fiscal, cite only the fiscal\nreading; if it says calendar, cite only the calendar reading. When a lookup or\ncompute result has fiscal_equals_calendar=true, the issuer's fiscal year is the\ncalendar year: fiscal and calendar labels refer to the same underlying facts,\nso look up and cite only one reading even when the claim has no\nfiscal/calendar qualifier.\n\nExamples:\n1. \"Tesla net income was about $1.4 billion\": lookup_fact; stated_text\n   \"about $1.4 billion\", claim_type value, comparator approx, stated_value\n   1400000000.\n2. \"Alphabet revenue exceeded $100 billion\": lookup_fact; stated_text\n   \"exceeded $100 billion\", claim_type value, comparator gt, stated_value\n   100000000000.\n3. \"Meta revenue was up 22% YoY\": compute_change(META, revenue, 2025Q2,\n   null); stated_text \"up 22%\", claim_type change_pct, comparator eq,\n   stated_value 22, and cite the compute_change evidence ID.\n4. \"Tesla revenue fell 10% YoY\": compute_change(TSLA, revenue, 2025Q3,\n   null); stated_text \"fell 10%\", claim_type change_pct, comparator eq,\n   stated_value -10, and cite the compute_change evidence ID.\n5. \"Alphabet Q3 2025 revenue was a record high\": history_rank(GOOGL,\n   revenue, 2025Q3); claim_type record_high, comparator eq, stated_value 1,\n   and cite the history_rank evidence ID.\n6. \"Alphabet Q3 2025 revenue topped $100 billion for the first time\": create\n   two sub-claims: value gt 100000000000 and first_time_above with stated_value\n   100000000000, both citing the relevant evidence; the latter is supported\n   only when this period is above the threshold and no earlier comparable\n   period is above it.\n7. If a requested fact is unavailable, leave model_found_value null, cite any\n   relevant evidence, and set that sub-claim to insufficient_evidence. Say\n   insufficient_evidence when data is missing or evidence is ambiguous."
+          },
+          {
+            "role": "user",
+            "content": "The December 2024 quarter filing showed capital expenditures up 90% for Meta."
+          },
+          {
+            "role": "assistant",
+            "content": "Your claim about Meta's capex surge is in — I'll pull the December 2024 filing to verify that 90% jump.",
+            "tool_calls": [
+              {
+                "id": "chatcmpl-tool-8b501f9a127dfe25",
+                "type": "function",
+                "function": {
+                  "name": "compute_change",
+                  "arguments": "{\"ticker\": \"META\", \"metric\": \"capex\", \"period\": \"2024Q4\", \"base_period\": null}"
+                }
+              },
+              {
+                "id": "chatcmpl-tool-96b5ca3e5dfeac2e",
+                "type": "function",
+                "function": {
+                  "name": "lookup_fact",
+                  "arguments": "{\"ticker\": \"META\", \"metric\": \"capex\", \"period\": \"2024Q4\"}"
+                }
+              },
+              {
+                "id": "chatcmpl-tool-b8b9097988284c8f",
+                "type": "function",
+                "function": {
+                  "name": "list_periods",
+                  "arguments": "{\"ticker\": \"META\", \"metric\": \"capex\"}"
+                }
+              }
+            ]
+          },
+          {
+            "role": "tool",
+            "tool_call_id": "chatcmpl-tool-8b501f9a127dfe25",
+            "content": "{\"ticker\":\"META\",\"metric\":\"capex\",\"period\":\"2024Q4\",\"base_period\":\"2023Q4\",\"period_basis\":\"calendar\",\"current_fact\":{\"ticker\":\"META\",\"cik\":\"0001326801\",\"entity\":\"Meta Platforms, Inc.\",\"metric\":\"capex\",\"concept\":\"PaymentsToAcquirePropertyPlantAndEquipment\",\"unit\":\"USD\",\"value\":14425000000,\"start\":\"2024-10-01\",\"end\":\"2024-12-31\",\"form\":\"derived\",\"form_fallback\":false,\"accn\":null,\"filed\":\"2026-01-29\",\"frame\":null,\"fiscal_year\":2024,\"fiscal_period\":\"FY\",\"duration_days\":92,\"period_type\":\"quarter\",\"fiscal_equals_calendar\":true,\"derived\":true,\"derivation\":\"FY2024 - 9M YTD\",\"components\":[{\"value\":37256000000,\"start\":\"2024-01-01\",\"end\":\"2024-12-31\",\"accn\":\"0001628280-26-003942\",\"form\":\"10-K\",\"filed\":\"2026-01-29\",\"duration_days\":366,\"period_type\":\"annual\",\"provenance\":{\"tier\":\"L1\",\"audited\":true,\"confirmations\":2,\"forms\":[\"10-K\"],\"first_filed\":\"2025-01-30\",\"latest_filed\":\"2026-01-29\",\"restated\":false,\"amended\":false,\"strength\":\"high\"}},{\"value\":22831000000,\"start\":\"2024-01-01\",\"end\":\"2024-09-30\",\"accn\":\"0001628280-25-047240\",\"form\":\"10-Q\",\"filed\":\"2025-10-30\",\"duration_days\":274,\"period_type\":\"ytd\",\"provenance\":{\"tier\":\"L2\",\"audited\":false,\"confirmations\":2,\"forms\":[\"10-Q\"],\"first_filed\":\"2024-10-31\",\"latest_filed\":\"2025-10-30\",\"restated\":false,\"amended\":false,\"strength\":\"medium\"}}],\"filing_url\":null,\"source_sha256\":\"52f806ebd7961834d5ac8073e516361e60e800a52ada0ed7f46fb5f615b6050d\",\"provenance\":{\"tier\":\"L3\",\"component_tiers\":[\"L1\",\"L2\"],\"component_strengths\":[\"high\",\"medium\"],\"audited\":false,\"confirmations\":0,\"forms\":[\"derived\"],\"first_filed\":\"2024-10-31\",\"latest_filed\":\"2026-01-29\",\"restated\":false,\"amended\":false,\"strength\":\"medium\"},\"period\":\"2024Q4\",\"period_basis\":\"calendar\",\"evidence_id\":\"E1\"},\"base_fact\":{\"ticker\":\"META\",\"cik\":\"0001326801\",\"entity\":\"Meta Platforms, Inc.\",\"metric\":\"capex\",\"concept\":\"PaymentsToAcquirePropertyPlantAndEquipment\",\"unit\":\"USD\",\"value\":7592000000,\"start\":\"2023-10-01\",\"end\":\"2023-12-31\",\"form\":\"derived\",\"form_fallback\":false,\"accn\":null,\"filed\":\"2026-01-29\",\"frame\":null,\"fiscal_year\":2023,\"fiscal_period\":\"FY\",\"duration_days\":92,\"period_type\":\"quarter\",\"fiscal_equals_calendar\":true,\"derived\":true,\"derivation\":\"FY2023 - 9M YTD\",\"components\":[{\"value\":27045000000,\"start\":\"2023-01-01\",\"end\":\"2023-12-31\",\"accn\":\"0001628280-26-003942\",\"form\":\"10-K\",\"filed\":\"2026-01-29\",\"duration_days\":365,\"period_type\":\"annual\",\"provenance\":{\"tier\":\"L1\",\"audited\":true,\"confirmations\":3,\"forms\":[\"10-K\"],\"first_filed\":\"2024-02-02\",\"latest_filed\":\"2026-01-29\",\"restated\":true,\"amended\":false,\"strength\":\"low\",\"values_seen\":[{\"value\":27266000000,\"accn\":[\"0001326801-24-000012\"]},{\"value\":27045000000,\"accn\":[\"0001326801-25-000017\",\"0001628280-26-003942\"]}]}},{\"value\":19453000000,\"start\":\"2023-01-01\",\"end\":\"2023-09-30\",\"accn\":\"0001326801-24-000081\",\"form\":\"10-Q\",\"filed\":\"2024-10-31\",\"duration_days\":273,\"period_type\":\"ytd\",\"provenance\":{\"tier\":\"L2\",\"audited\":false,\"confirmations\":2,\"forms\":[\"10-Q\"],\"first_filed\":\"2023-10-26\",\"latest_filed\":\"2024-10-31\",\"restated\":true,\"amended\":false,\"strength\":\"low\",\"values_seen\":[{\"value\":19601000000,\"accn\":[\"0001326801-23-000103\"]},{\"value\":19453000000,\"accn\":[\"0001326801-24-000081\"]}]}}],\"filing_url\":null,\"source_sha256\":\"52f806ebd7961834d5ac8073e516361e60e800a52ada0ed7f46fb5f615b6050d\",\"provenance\":{\"tier\":\"L3\",\"component_tiers\":[\"L1\",\"L2\"],\"component_strengths\":[\"low\",\"low\"],\"audited\":false,\"confirmations\":0,\"forms\":[\"derived\"],\"first_filed\":\"2023-10-26\",\"latest_filed\":\"2026-01-29\",\"restated\":true,\"amended\":false,\"strength\":\"low\",\"values_seen\":[{\"component\":0,\"values_seen\":[{\"value\":27266000000,\"accn\":[\"0001326801-24-000012\"]},{\"value\":27045000000,\"accn\":[\"0001326801-25-000017\",\"0001628280-26-003942\"]}]},{\"component\":1,\"values_seen\":[{\"value\":19601000000,\"accn\":[\"0001326801-23-000103\"]},{\"value\":19453000000,\"accn\":[\"0001326801-24-000081\"]}]}]},\"period\":\"2023Q4\",\"period_basis\":\"calendar\",\"evidence_id\":\"E2\"},\"current\":{\"ticker\":\"META\",\"cik\":\"0001326801\",\"entity\":\"Meta Platforms, Inc.\",\"metric\":\"capex\",\"concept\":\"PaymentsToAcquirePropertyPlantAndEquipment\",\"unit\":\"USD\",\"value\":14425000000,\"start\":\"2024-10-01\",\"end\":\"2024-12-31\",\"form\":\"derived\",\"form_fallback\":false,\"accn\":null,\"filed\":\"2026-01-29\",\"frame\":null,\"fiscal_year\":2024,\"fiscal_period\":\"FY\",\"duration_days\":92,\"period_type\":\"quarter\",\"fiscal_equals_calendar\":true,\"derived\":true,\"derivation\":\"FY2024 - 9M YTD\",\"components\":[{\"value\":37256000000,\"start\":\"2024-01-01\",\"end\":\"2024-12-31\",\"accn\":\"0001628280-26-003942\",\"form\":\"10-K\",\"filed\":\"2026-01-29\",\"duration_days\":366,\"period_type\":\"annual\",\"provenance\":{\"tier\":\"L1\",\"audited\":true,\"confirmations\":2,\"forms\":[\"10-K\"],\"first_filed\":\"2025-01-30\",\"latest_filed\":\"2026-01-29\",\"restated\":false,\"amended\":false,\"strength\":\"high\"}},{\"value\":22831000000,\"start\":\"2024-01-01\",\"end\":\"2024-09-30\",\"accn\":\"0001628280-25-047240\",\"form\":\"10-Q\",\"filed\":\"2025-10-30\",\"duration_days\":274,\"period_type\":\"ytd\",\"provenance\":{\"tier\":\"L2\",\"audited\":false,\"confirmations\":2,\"forms\":[\"10-Q\"],\"first_filed\":\"2024-10-31\",\"latest_filed\":\"2025-10-30\",\"restated\":false,\"amended\":false,\"strength\":\"medium\"}}],\"filing_url\":null,\"source_sha256\":\"52f806ebd7961834d5ac8073e516361e60e800a52ada0ed7f46fb5f615b6050d\",\"provenance\":{\"tier\":\"L3\",\"component_tiers\":[\"L1\",\"L2\"],\"component_strengths\":[\"high\",\"medium\"],\"audited\":false,\"confirmations\":0,\"forms\":[\"derived\"],\"first_filed\":\"2024-10-31\",\"latest_filed\":\"2026-01-29\",\"restated\":false,\"amended\":false,\"strength\":\"medium\"},\"period\":\"2024Q4\",\"period_basis\":\"calendar\",\"evidence_id\":\"E1\"},\"base\":{\"ticker\":\"META\",\"cik\":\"0001326801\",\"entity\":\"Meta Platforms, Inc.\",\"metric\":\"capex\",\"concept\":\"PaymentsToAcquirePropertyPlantAndEquipment\",\"unit\":\"USD\",\"value\":7592000000,\"start\":\"2023-10-01\",\"end\":\"2023-12-31\",\"form\":\"derived\",\"form_fallback\":false,\"accn\":null,\"filed\":\"2026-01-29\",\"frame\":null,\"fiscal_year\":2023,\"fiscal_period\":\"FY\",\"duration_days\":92,\"period_type\":\"quarter\",\"fiscal_equals_calendar\":true,\"derived\":true,\"derivation\":\"FY2023 - 9M YTD\",\"components\":[{\"value\":27045000000,\"start\":\"2023-01-01\",\"end\":\"2023-12-31\",\"accn\":\"0001628280-26-003942\",\"form\":\"10-K\",\"filed\":\"2026-01-29\",\"duration_days\":365,\"period_type\":\"annual\",\"provenance\":{\"tier\":\"L1\",\"audited\":true,\"confirmations\":3,\"forms\":[\"10-K\"],\"first_filed\":\"2024-02-02\",\"latest_filed\":\"2026-01-29\",\"restated\":true,\"amended\":false,\"strength\":\"low\",\"values_seen\":[{\"value\":27266000000,\"accn\":[\"0001326801-24-000012\"]},{\"value\":27045000000,\"accn\":[\"0001326801-25-000017\",\"0001628280-26-003942\"]}]}},{\"value\":19453000000,\"start\":\"2023-01-01\",\"end\":\"2023-09-30\",\"accn\":\"0001326801-24-000081\",\"form\":\"10-Q\",\"filed\":\"2024-10-31\",\"duration_days\":273,\"period_type\":\"ytd\",\"provenance\":{\"tier\":\"L2\",\"audited\":false,\"confirmations\":2,\"forms\":[\"10-Q\"],\"first_filed\":\"2023-10-26\",\"latest_filed\":\"2024-10-31\",\"restated\":true,\"amended\":false,\"strength\":\"low\",\"values_seen\":[{\"value\":19601000000,\"accn\":[\"0001326801-23-000103\"]},{\"value\":19453000000,\"accn\":[\"0001326801-24-000081\"]}]}}],\"filing_url\":null,\"source_sha256\":\"52f806ebd7961834d5ac8073e516361e60e800a52ada0ed7f46fb5f615b6050d\",\"provenance\":{\"tier\":\"L3\",\"component_tiers\":[\"L1\",\"L2\"],\"component_strengths\":[\"low\",\"low\"],\"audited\":false,\"confirmations\":0,\"forms\":[\"derived\"],\"first_filed\":\"2023-10-26\",\"latest_filed\":\"2026-01-29\",\"restated\":true,\"amended\":false,\"strength\":\"low\",\"values_seen\":[{\"component\":0,\"values_seen\":[{\"value\":27266000000,\"accn\":[\"0001326801-24-000012\"]},{\"value\":27045000000,\"accn\":[\"0001326801-25-000017\",\"0001628280-26-003942\"]}]},{\"component\":1,\"values_seen\":[{\"value\":19601000000,\"accn\":[\"0001326801-23-000103\"]},{\"value\":19453000000,\"accn\":[\"0001326801-24-000081\"]}]}]},\"period\":\"2023Q4\",\"period_basis\":\"calendar\",\"evidence_id\":\"E2\"},\"abs_change\":6833000000,\"pct_change\":90.00263435194941,\"fiscal_equals_calendar\":true,\"evidence_id\":\"E3\"}"
+          },
+          {
+            "role": "tool",
+            "tool_call_id": "chatcmpl-tool-96b5ca3e5dfeac2e",
+            "content": "{\"ticker\":\"META\",\"cik\":\"0001326801\",\"entity\":\"Meta Platforms, Inc.\",\"metric\":\"capex\",\"concept\":\"PaymentsToAcquirePropertyPlantAndEquipment\",\"unit\":\"USD\",\"value\":14425000000,\"start\":\"2024-10-01\",\"end\":\"2024-12-31\",\"form\":\"derived\",\"form_fallback\":false,\"accn\":null,\"filed\":\"2026-01-29\",\"frame\":null,\"fiscal_year\":2024,\"fiscal_period\":\"FY\",\"duration_days\":92,\"period_type\":\"quarter\",\"fiscal_equals_calendar\":true,\"derived\":true,\"derivation\":\"FY2024 - 9M YTD\",\"components\":[{\"value\":37256000000,\"start\":\"2024-01-01\",\"end\":\"2024-12-31\",\"accn\":\"0001628280-26-003942\",\"form\":\"10-K\",\"filed\":\"2026-01-29\",\"duration_days\":366,\"period_type\":\"annual\",\"provenance\":{\"tier\":\"L1\",\"audited\":true,\"confirmations\":2,\"forms\":[\"10-K\"],\"first_filed\":\"2025-01-30\",\"latest_filed\":\"2026-01-29\",\"restated\":false,\"amended\":false,\"strength\":\"high\"}},{\"value\":22831000000,\"start\":\"2024-01-01\",\"end\":\"2024-09-30\",\"accn\":\"0001628280-25-047240\",\"form\":\"10-Q\",\"filed\":\"2025-10-30\",\"duration_days\":274,\"period_type\":\"ytd\",\"provenance\":{\"tier\":\"L2\",\"audited\":false,\"confirmations\":2,\"forms\":[\"10-Q\"],\"first_filed\":\"2024-10-31\",\"latest_filed\":\"2025-10-30\",\"restated\":false,\"amended\":false,\"strength\":\"medium\"}}],\"filing_url\":null,\"source_sha256\":\"52f806ebd7961834d5ac8073e516361e60e800a52ada0ed7f46fb5f615b6050d\",\"provenance\":{\"tier\":\"L3\",\"component_tiers\":[\"L1\",\"L2\"],\"component_strengths\":[\"high\",\"medium\"],\"audited\":false,\"confirmations\":0,\"forms\":[\"derived\"],\"first_filed\":\"2024-10-31\",\"latest_filed\":\"2026-01-29\",\"restated\":false,\"amended\":false,\"strength\":\"medium\"},\"period\":\"2024Q4\",\"period_basis\":\"calendar\",\"evidence_id\":\"E4\"}"
+          },
+          {
+            "role": "tool",
+            "tool_call_id": "chatcmpl-tool-b8b9097988284c8f",
+            "content": "{\"value\":[\"FY2026Q1\",\"2026Q1\",\"FY2025Q4\",\"FY2025\",\"FY2025Q1\",\"2025Q1\",\"FY2024Q4\",\"FY2024\"],\"evidence_id\":\"E5\"}"
+          }
+        ],
+        "tools": [
+          {
+            "type": "function",
+            "function": {
+              "name": "lookup_fact",
+              "description": "Look up one SEC EDGAR XBRL fact for a ticker, metric, and calendar quarter, fiscal quarter (FY2025Q4), or fiscal year. Successful results include period (the normalized requested label, or the resolved label for latest), period_basis (calendar or fiscal), fiscal_equals_calendar, duration_days, and period_type (quarter, ytd, annual, or instant). Additive flows may return derived=true with derivation and components; never treat a ytd result as a quarter or recompute a derived result. When fiscal_equals_calendar is true, fiscal and calendar labels identify the same fact; do not look up both readings. Every fact includes compact provenance: L1 audited 10-K, L2 reviewed 10-Q, or L3 program-derived, with confirmations, restatement, amendment, and evidence strength.",
+              "parameters": {
+                "type": "object",
+                "properties": {
+                  "ticker": {
+                    "type": "string"
+                  },
+                  "metric": {
+                    "type": "string",
+                    "enum": [
+                      "revenue",
+                      "net_income",
+                      "operating_income",
+                      "eps_diluted",
+                      "gross_profit",
+                      "total_assets",
+                      "cash",
+                      "capex",
+                      "rd_expense",
+                      "shares_outstanding"
+                    ]
+                  },
+                  "period": {
+                    "type": "string",
+                    "pattern": "^(latest|FY\\d{4}(?:Q[1-4])?|\\d{4}Q[1-4])$"
+                  }
+                },
+                "required": [
+                  "ticker",
+                  "metric",
+                  "period"
+                ],
+                "additionalProperties": false
+              }
+            }
+          },
+          {
+            "type": "function",
+            "function": {
+              "name": "list_periods",
+              "description": "List the recent directly available SEC EDGAR quarter and fiscal-year periods for a ticker and metric.",
+              "parameters": {
+                "type": "object",
+                "properties": {
+                  "ticker": {
+                    "type": "string"
+                  },
+                  "metric": {
+                    "type": "string",
+                    "enum": [
+                      "revenue",
+                      "net_income",
+                      "operating_income",
+                      "eps_diluted",
+                      "gross_profit",
+                      "total_assets",
+                      "cash",
+                      "capex",
+                      "rd_expense",
+                      "shares_outstanding"
+                    ]
+                  }
+                },
+                "required": [
+                  "ticker",
+                  "metric"
+                ],
+                "additionalProperties": false
+              }
+            }
+          },
+          {
+            "type": "function",
+            "function": {
+              "name": "compute_change",
+              "description": "Compute the absolute and year-over-year change for one SEC EDGAR XBRL metric. The period and base_period must be the same kind of period; when base_period is omitted, null, empty, \"null\", or \"none\", use the same quarter or fiscal year one year earlier. The result includes both cited lookup facts, fiscal_equals_calendar, their fact-level provenance, and a percentage change in percent points.",
+              "parameters": {
+                "type": "object",
+                "properties": {
+                  "ticker": {
+                    "type": "string"
+                  },
+                  "metric": {
+                    "type": "string",
+                    "enum": [
+                      "revenue",
+                      "net_income",
+                      "operating_income",
+                      "eps_diluted",
+                      "gross_profit",
+                      "total_assets",
+                      "cash",
+                      "capex",
+                      "rd_expense",
+                      "shares_outstanding"
+                    ]
+                  },
+                  "period": {
+                    "type": "string",
+                    "pattern": "^(latest|FY\\d{4}(?:Q[1-4])?|\\d{4}Q[1-4])$"
+                  },
+                  "base_period": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "pattern": "^(FY\\d{4}(?:Q[1-4])?|\\d{4}Q[1-4])$"
+                  }
+                },
+                "required": [
+                  "ticker",
+                  "metric",
+                  "period",
+                  "base_period"
+                ],
+                "additionalProperties": false
+              }
+            }
+          },
+          {
+            "type": "function",
+            "function": {
+              "name": "history_rank",
+              "description": "Compare one quarter or fiscal-year fact with every available comparable period of the same period_type. Quarters include derived Q4 values when available; annual periods are compared only with annual periods. Return the rank, record flags through the requested period, prior high/low, and the comparison window with period end dates. The requested period also includes compact fact provenance and evidence strength.",
+              "parameters": {
+                "type": "object",
+                "properties": {
+                  "ticker": {
+                    "type": "string"
+                  },
+                  "metric": {
+                    "type": "string",
+                    "enum": [
+                      "revenue",
+                      "net_income",
+                      "operating_income",
+                      "eps_diluted",
+                      "gross_profit",
+                      "total_assets",
+                      "cash",
+                      "capex",
+                      "rd_expense",
+                      "shares_outstanding"
+                    ]
+                  },
+                  "period": {
+                    "type": "string",
+                    "pattern": "^(latest|FY\\d{4}(?:Q[1-4])?|\\d{4}Q[1-4])$"
+                  }
+                },
+                "required": [
+                  "ticker",
+                  "metric",
+                  "period"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        ],
+        "parallel_tool_calls": true,
+        "max_tokens": 4000
+      },
+      "reservation": {
+        "reservation_id": "2faf13c3339848f7bb7d708bf0c05042",
+        "provider": "fireworks",
+        "model": "accounts/fireworks/models/muse-spark-open",
+        "estimated_input_tokens": 6800,
+        "max_output_tokens": 4000,
+        "amount": 0.025500000000000002,
+        "payload_chars": 20399,
+        "context_chars": 0
+      },
+      "raw_response": {
+        "id": "chatcmpl-d774850a1fde4781ba4de99643a82fcc",
+        "choices": [
+          {
+            "finish_reason": "stop",
+            "index": 0,
+            "logprobs": null,
+            "message": {
+              "content": "{\"sub_claims\": [{\"text\": \"Meta capital expenditures up 90% YoY in December 2024 quarter (2024Q4 vs 2023Q4)\", \"stated_text\": \"up 90%\", \"claim_type\": \"change_pct\", \"comparator\": \"eq\", \"stated_value\": 90, \"evidence_ids\": [\"E3\"], \"interpretations\": [], \"verdict\": \"supported\", \"note\": \"Derived Q4 capex $14.425B in 2024Q4 vs $7.592B in 2023Q4 = +90.00% YoY, consistent with stated 90%. Fiscal equals calendar year (fiscal_equals_calendar=true).\", \"model_found_value\": 90.00263435194941}]}",
+              "refusal": null,
+              "role": "assistant",
+              "annotations": null,
+              "audio": null,
+              "function_call": null,
+              "tool_calls": null,
+              "reasoning_content": "Claim: December 2024 quarter filing showed capital expenditures up 90% for Meta.\n\nNeed to decompose into atomic assertions. The claim is:\n\n- The December 2024 quarter filing showed capital expenditures up 90% for Meta.\n\nWe need to parse. It's about capex up 90% YoY for December 2024 quarter.\n\nWe have compute_change evidence showing pct_change 90.0026... from Q4 2023 to Q4 2024. That matches \"up 90%\".\n\nWe need to break into sub-claims. Should include:\n\n1. Value claim? Or change_pct claim. The stated_text \"up 90%\" is change_pct.\n\nWe need to ensure we use appropriate tools. We have evidence ID E3 for compute_change which includes both current and base.\n\nWe need to produce sub_claims.\n\nWe need to follow format: Each final sub_claim must contain exactly these model fields: text, stated_text, claim_type (value, change_pct, change_abs, record_high, record_low, first_time_above, or other), comparator (eq, approx, gt, gte, lt, or lte), stated_value in base units, evidence_ids, interpretations, verdict, note, model_found_value.\n\nWe need to decompose claim into every atomic factual assertion. For Meta capex up 90%, that's one assertion. Possibly also need to assert ticker = META, period = 2024Q4. But the instruction says decompose into every atomic factual assertion. Every factual assertion in the user's claim must become a sub-claim, including a value, a change, a record, and a first-time assertion in the same sentence.\n\nFor this claim, there is one assertion: capital expenditures up 90% for Meta in Dec 2024 quarter.\n\nWe need to produce one sub-claim with claim_type change_pct, comparator approx or eq? The stated_text is \"up 90%\". No hedging like about. But comparator rules: plain numeric statement with no hedge is eq; about/around means approx. So here \"up 90%\" is eq, stated_value 90.\n\nBut should we consider approx due to rounding? The actual pct_change is 90.0026% which rounds to 90%. If we use eq with 90, with tolerance? The verifier may have tolerance. But maybe we should use approx comparator? However example says \"up 22%\" with comparator eq. So we should follow that: up 90% -> comparator eq.\n\nWe have evidence showing 90.00% -> supports_eq true.\n\nWe must cite evidence_ids: [\"E3\"] for compute_change. Also interpretations empty? Need to consider fiscal_equals_calendar = true, so we only need one reading. So interpretations empty.\n\nstated_text must be verbatim from claim, including words such as \"about\", \"up\", or \"fell\". So stated_text should be \"up 90%\". Exactly as appears.\n\ntext: a readable description e.g., \"Meta capex up 90% YoY in December 2024 quarter (2024Q4)\"\n\nstated_value 90\n\nmodel_found_value should be 90.002634... or approximate. Use the pct_change value.\n\nverdict: supported if model_found_value close to stated.\n\nWe need to also consider that December 2024 quarter corresponds to 2024Q4. fiscal_equals_calendar true, so calendar Q4 is correct.\n\nWe should set comparator eq, verdict supported.\n\nNote should explain.\n\nWe also need to consider other possible sub-claim due to \"December 2024 quarter filing showed\" – implies that filing exists. But that's not a checkable fact via tools? But we could ignore? The instruction says every factual assertion must become a sub-claim, including a value, a change, a record, and a first-time assertion. Assertions that tools cannot check must still become a sub-claim with claim_type other; program will leave unchecked.\n\nBut does \"December 2024 quarter filing showed\" count as assertion? It's temporal anchor. Probably we just need one sub-claim for change_pct.\n\nPotential nuance: Need to choose base_period null automatically means YoY. We did compute_change with base null and got 90.00% which matches.\n\nWe must ensure evidence_ids correct: E3 is compute_change. Use that.\n\nProvide response JSON with sub_claims array.\n\nWe need to ensure model_found_value is number read from cited evidence in same units. For change_pct, units percentage points. So model_found_value = 90.00263435194941\n\nverdict: supported\n\nevidence_ids: [\"E3\"]\n\ninterpretations: []\n\nPotentially also need to cite E1/E2? But E3 already contains both. The instruction says for compute_change, cite its own evidence ID; its two nested component fact IDs may also be cited and are ignored. So just E3.\n\nWe should produce final answer.\n\nWe need to ensure formatting: JSON output with sub_claims.\n\nWe have available E4 lookup, E5 list, but we use E3.\n\nDouble-check fiscal_equals_calendar true: Means we only need one reading even when claim has no fiscal/calendar qualifier. Our period 2024Q4 is correct.\n\nMake verdict supported because within tolerance for eq.\n\nAdd note: Derived Q4 capex 14.425B vs 7.592B YoY = 90.0% increase, consistent with stated 90%.\n\nWe should return one sub_claim.\n\nPossibly also need to include claim about capital expenditures? Metric capex correct.\n\nEnsure claim_type change_pct\n\nstated_text \"up 90%\"\n\ncomparator eq\n\nstated_value 90\n\nevidence_ids [\"E3\"]\n\ninterpretations []\n\nverdict supported\n\nmodel_found_value 90.00263435194941\n\nText field: \"Meta capital expenditures up 90% YoY in December 2024 quarter\"\n\nWe should ensure JSON valid.\n\nPossibly add second sub-claim for period existence? But not needed. One is enough to capture claim.\n\nThe example of Tesla net income about $1.4B uses approx. Here no approx.\n\nWe should output.\n\nEdge: Should comparator be approx due to rounding? The verifier may expect approx? But instruction says plain numeric with no hedge is eq. So we follow eq. If actual 90.00, supports_eq true. So supported.\n\nLet's produce final answer.",
+              "tools": null
+            }
+          }
+        ],
+        "created": 1793222741,
+        "model": "accounts/fireworks/models/muse-spark-open",
+        "object": "chat.completion",
+        "metadata": null,
+        "moderation": null,
+        "service_tier": null,
+        "system_fingerprint": null,
+        "usage": {
+          "completion_tokens": 1484,
+          "prompt_tokens": 6204,
+          "total_tokens": 7688,
+          "completion_tokens_details": {
+            "accepted_prediction_tokens": null,
+            "audio_tokens": null,
+            "reasoning_tokens": 1311,
+            "rejected_prediction_tokens": null,
+            "text_tokens": null
+          },
+          "prompt_tokens_details": {
+            "audio_tokens": null,
+            "cache_write_tokens": null,
+            "cached_tokens": 2688,
+            "image_tokens": null,
+            "text_tokens": null
+          },
+          "output_tokens_details": {
+            "reasoning_tokens": 1311
+          }
+        }
+      },
+      "usage": {
+        "input": 6204,
+        "cached": 2688,
+        "output": 1484,
+        "reasoning": 1311
+      },
+      "cost": 0.0111052,
+      "latency_ms": 22230.78,
+      "status": "completed",
+      "raw_usage": {
+        "completion_tokens": 1484,
+        "prompt_tokens": 6204,
+        "total_tokens": 7688,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 1311,
+          "rejected_prediction_tokens": null,
+          "text_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cache_write_tokens": null,
+          "cached_tokens": 2688,
+          "image_tokens": null,
+          "text_tokens": null
+        },
+        "output_tokens_details": {
+          "reasoning_tokens": 1311
+        }
+      },
+      "normalized_usage": {
+        "input": 6204,
+        "cached": 2688,
+        "output": 1484,
+        "reasoning": 1311
+      },
+      "finish_reason": "stop",
+      "rate_limit_headers": {
+        "x-ratelimit-limit-tokens-cache-adjusted-prompt": "1800000",
+        "x-ratelimit-limit-tokens-generated": "72000",
+        "x-ratelimit-limit-tokens-prompt": "7200000",
+        "x-ratelimit-limit-tokens-uncached-prompt": "1800000",
+        "x-ratelimit-over-limit": "no",
+        "x-ratelimit-remaining-tokens-generated": "61227",
+        "x-ratelimit-remaining-tokens-prompt": "7145932",
+        "x-ratelimit-remaining-tokens-uncached-prompt": "1783734"
+      }
+    },
+    {
+      "request": {
+        "model": "accounts/fireworks/models/muse-spark-open",
+        "messages": [
+          {
+            "role": "system",
+            "content": "You verify financial claims against SEC EDGAR facts.\nDecompose the claim into every atomic factual assertion. Every factual assertion\nin the user's claim must become a sub-claim, including a value, a change, a\nrecord, and a first-time assertion in the same sentence. Assertions that the\ntools cannot check must still become a sub-claim with claim_type other; the\nprogram will leave those unchecked. Use lookup_fact for a value,\ncompute_change for YoY or other period-to-period growth, history_rank for\nrecord/first-time assertions, and list_periods only to understand missing data.\nNever use memory for numbers. A quarter must have period_type=quarter and\nduration_days around 80-100, not period_type=ytd. If a result has derived=true,\nuse its derivation and components as evidence and do not calculate that fact\nagain. For compute_change, cite its own evidence ID; its two nested component\nfact IDs may also be cited and are ignored by the verifier.\n\nEach final sub_claim must contain exactly these model fields:\ntext, stated_text, claim_type (value, change_pct, change_abs, record_high,\nrecord_low, first_time_above, or other), comparator (eq, approx, gt, gte, lt,\nor lte), stated_value in base units (USD, USD/share, percentage points, or 1\nfor a record boolean), evidence_ids, interpretations, verdict, note, and\nmodel_found_value. interpretations is required and may be empty. Every non-empty\nitem must be an evidence id like E3 — never free text.\nCopy stated_text verbatim from the claim, including words such as \"about\",\n\"up\", or \"fell\" (for example, \"about $1.4 billion\", \"up 22%\", or\n\"fell 10%\"). For a change_pct, stated_value is 22 for 22%, not 0.22; the\nverifier applies the sign implied by direction words such as fell/down or\nrose/up. model_found_value is the number read from the cited evidence in the\nsame units, or null when it is missing.\n\nComparator wording is deterministic: a plain numeric statement with no hedge\nor inequality phrase is eq; about/around/roughly/approximately/nearly/almost,\nclose to, some, or ~ means approx; topped/exceeded/above/more than/over/\nsurpassed/beat means gt; at least/no less than means gte; below/under/less\nthan/short of means lt; at most/no more than/up to means lte. The program\nrecords and may correct the model comparator from these words. \"up\" and\n\"fell\" describe change direction, not approximation.\n\nFor a quarter claim at a non-calendar-fiscal issuer, use period_basis from\nthe tool results. If the claim says neither fiscal nor calendar, look up both\nthe calendar label (for example 2025Q4) and the fiscal label (for example\nFY2025Q4), cite both IDs in evidence_ids, and put those two IDs in\ninterpretations. Keep interpretations empty unless both fiscal and calendar\nreadings were looked up. If the claim says fiscal, cite only the fiscal\nreading; if it says calendar, cite only the calendar reading. When a lookup or\ncompute result has fiscal_equals_calendar=true, the issuer's fiscal year is the\ncalendar year: fiscal and calendar labels refer to the same underlying facts,\nso look up and cite only one reading even when the claim has no\nfiscal/calendar qualifier.\n\nExamples:\n1. \"Tesla net income was about $1.4 billion\": lookup_fact; stated_text\n   \"about $1.4 billion\", claim_type value, comparator approx, stated_value\n   1400000000.\n2. \"Alphabet revenue exceeded $100 billion\": lookup_fact; stated_text\n   \"exceeded $100 billion\", claim_type value, comparator gt, stated_value\n   100000000000.\n3. \"Meta revenue was up 22% YoY\": compute_change(META, revenue, 2025Q2,\n   null); stated_text \"up 22%\", claim_type change_pct, comparator eq,\n   stated_value 22, and cite the compute_change evidence ID.\n4. \"Tesla revenue fell 10% YoY\": compute_change(TSLA, revenue, 2025Q3,\n   null); stated_text \"fell 10%\", claim_type change_pct, comparator eq,\n   stated_value -10, and cite the compute_change evidence ID.\n5. \"Alphabet Q3 2025 revenue was a record high\": history_rank(GOOGL,\n   revenue, 2025Q3); claim_type record_high, comparator eq, stated_value 1,\n   and cite the history_rank evidence ID.\n6. \"Alphabet Q3 2025 revenue topped $100 billion for the first time\": create\n   two sub-claims: value gt 100000000000 and first_time_above with stated_value\n   100000000000, both citing the relevant evidence; the latter is supported\n   only when this period is above the threshold and no earlier comparable\n   period is above it.\n7. If a requested fact is unavailable, leave model_found_value null, cite any\n   relevant evidence, and set that sub-claim to insufficient_evidence. Say\n   insufficient_evidence when data is missing or evidence is ambiguous."
+          },
+          {
+            "role": "user",
+            "content": "The December 2024 quarter filing showed capital expenditures up 90% for Meta."
+          },
+          {
+            "role": "assistant",
+            "content": "Your claim about Meta's capex surge is in — I'll pull the December 2024 filing to verify that 90% jump.",
+            "tool_calls": [
+              {
+                "id": "chatcmpl-tool-8b501f9a127dfe25",
+                "type": "function",
+                "function": {
+                  "name": "compute_change",
+                  "arguments": "{\"ticker\": \"META\", \"metric\": \"capex\", \"period\": \"2024Q4\", \"base_period\": null}"
+                }
+              },
+              {
+                "id": "chatcmpl-tool-96b5ca3e5dfeac2e",
+                "type": "function",
+                "function": {
+                  "name": "lookup_fact",
+                  "arguments": "{\"ticker\": \"META\", \"metric\": \"capex\", \"period\": \"2024Q4\"}"
+                }
+              },
+              {
+                "id": "chatcmpl-tool-b8b9097988284c8f",
+                "type": "function",
+                "function": {
+                  "name": "list_periods",
+                  "arguments": "{\"ticker\": \"META\", \"metric\": \"capex\"}"
+                }
+              }
+            ]
+          },
+          {
+            "role": "tool",
+            "tool_call_id": "chatcmpl-tool-8b501f9a127dfe25",
+            "content": "{\"ticker\":\"META\",\"metric\":\"capex\",\"period\":\"2024Q4\",\"base_period\":\"2023Q4\",\"period_basis\":\"calendar\",\"current_fact\":{\"ticker\":\"META\",\"cik\":\"0001326801\",\"entity\":\"Meta Platforms, Inc.\",\"metric\":\"capex\",\"concept\":\"PaymentsToAcquirePropertyPlantAndEquipment\",\"unit\":\"USD\",\"value\":14425000000,\"start\":\"2024-10-01\",\"end\":\"2024-12-31\",\"form\":\"derived\",\"form_fallback\":false,\"accn\":null,\"filed\":\"2026-01-29\",\"frame\":null,\"fiscal_year\":2024,\"fiscal_period\":\"FY\",\"duration_days\":92,\"period_type\":\"quarter\",\"fiscal_equals_calendar\":true,\"derived\":true,\"derivation\":\"FY2024 - 9M YTD\",\"components\":[{\"value\":37256000000,\"start\":\"2024-01-01\",\"end\":\"2024-12-31\",\"accn\":\"0001628280-26-003942\",\"form\":\"10-K\",\"filed\":\"2026-01-29\",\"duration_days\":366,\"period_type\":\"annual\",\"provenance\":{\"tier\":\"L1\",\"audited\":true,\"confirmations\":2,\"forms\":[\"10-K\"],\"first_filed\":\"2025-01-30\",\"latest_filed\":\"2026-01-29\",\"restated\":false,\"amended\":false,\"strength\":\"high\"}},{\"value\":22831000000,\"start\":\"2024-01-01\",\"end\":\"2024-09-30\",\"accn\":\"0001628280-25-047240\",\"form\":\"10-Q\",\"filed\":\"2025-10-30\",\"duration_days\":274,\"period_type\":\"ytd\",\"provenance\":{\"tier\":\"L2\",\"audited\":false,\"confirmations\":2,\"forms\":[\"10-Q\"],\"first_filed\":\"2024-10-31\",\"latest_filed\":\"2025-10-30\",\"restated\":false,\"amended\":false,\"strength\":\"medium\"}}],\"filing_url\":null,\"source_sha256\":\"52f806ebd7961834d5ac8073e516361e60e800a52ada0ed7f46fb5f615b6050d\",\"provenance\":{\"tier\":\"L3\",\"component_tiers\":[\"L1\",\"L2\"],\"component_strengths\":[\"high\",\"medium\"],\"audited\":false,\"confirmations\":0,\"forms\":[\"derived\"],\"first_filed\":\"2024-10-31\",\"latest_filed\":\"2026-01-29\",\"restated\":false,\"amended\":false,\"strength\":\"medium\"},\"period\":\"2024Q4\",\"period_basis\":\"calendar\",\"evidence_id\":\"E1\"},\"base_fact\":{\"ticker\":\"META\",\"cik\":\"0001326801\",\"entity\":\"Meta Platforms, Inc.\",\"metric\":\"capex\",\"concept\":\"PaymentsToAcquirePropertyPlantAndEquipment\",\"unit\":\"USD\",\"value\":7592000000,\"start\":\"2023-10-01\",\"end\":\"2023-12-31\",\"form\":\"derived\",\"form_fallback\":false,\"accn\":null,\"filed\":\"2026-01-29\",\"frame\":null,\"fiscal_year\":2023,\"fiscal_period\":\"FY\",\"duration_days\":92,\"period_type\":\"quarter\",\"fiscal_equals_calendar\":true,\"derived\":true,\"derivation\":\"FY2023 - 9M YTD\",\"components\":[{\"value\":27045000000,\"start\":\"2023-01-01\",\"end\":\"2023-12-31\",\"accn\":\"0001628280-26-003942\",\"form\":\"10-K\",\"filed\":\"2026-01-29\",\"duration_days\":365,\"period_type\":\"annual\",\"provenance\":{\"tier\":\"L1\",\"audited\":true,\"confirmations\":3,\"forms\":[\"10-K\"],\"first_filed\":\"2024-02-02\",\"latest_filed\":\"2026-01-29\",\"restated\":true,\"amended\":false,\"strength\":\"low\",\"values_seen\":[{\"value\":27266000000,\"accn\":[\"0001326801-24-000012\"]},{\"value\":27045000000,\"accn\":[\"0001326801-25-000017\",\"0001628280-26-003942\"]}]}},{\"value\":19453000000,\"start\":\"2023-01-01\",\"end\":\"2023-09-30\",\"accn\":\"0001326801-24-000081\",\"form\":\"10-Q\",\"filed\":\"2024-10-31\",\"duration_days\":273,\"period_type\":\"ytd\",\"provenance\":{\"tier\":\"L2\",\"audited\":false,\"confirmations\":2,\"forms\":[\"10-Q\"],\"first_filed\":\"2023-10-26\",\"latest_filed\":\"2024-10-31\",\"restated\":true,\"amended\":false,\"strength\":\"low\",\"values_seen\":[{\"value\":19601000000,\"accn\":[\"0001326801-23-000103\"]},{\"value\":19453000000,\"accn\":[\"0001326801-24-000081\"]}]}}],\"filing_url\":null,\"source_sha256\":\"52f806ebd7961834d5ac8073e516361e60e800a52ada0ed7f46fb5f615b6050d\",\"provenance\":{\"tier\":\"L3\",\"component_tiers\":[\"L1\",\"L2\"],\"component_strengths\":[\"low\",\"low\"],\"audited\":false,\"confirmations\":0,\"forms\":[\"derived\"],\"first_filed\":\"2023-10-26\",\"latest_filed\":\"2026-01-29\",\"restated\":true,\"amended\":false,\"strength\":\"low\",\"values_seen\":[{\"component\":0,\"values_seen\":[{\"value\":27266000000,\"accn\":[\"0001326801-24-000012\"]},{\"value\":27045000000,\"accn\":[\"0001326801-25-000017\",\"0001628280-26-003942\"]}]},{\"component\":1,\"values_seen\":[{\"value\":19601000000,\"accn\":[\"0001326801-23-000103\"]},{\"value\":19453000000,\"accn\":[\"0001326801-24-000081\"]}]}]},\"period\":\"2023Q4\",\"period_basis\":\"calendar\",\"evidence_id\":\"E2\"},\"current\":{\"ticker\":\"META\",\"cik\":\"0001326801\",\"entity\":\"Meta Platforms, Inc.\",\"metric\":\"capex\",\"concept\":\"PaymentsToAcquirePropertyPlantAndEquipment\",\"unit\":\"USD\",\"value\":14425000000,\"start\":\"2024-10-01\",\"end\":\"2024-12-31\",\"form\":\"derived\",\"form_fallback\":false,\"accn\":null,\"filed\":\"2026-01-29\",\"frame\":null,\"fiscal_year\":2024,\"fiscal_period\":\"FY\",\"duration_days\":92,\"period_type\":\"quarter\",\"fiscal_equals_calendar\":true,\"derived\":true,\"derivation\":\"FY2024 - 9M YTD\",\"components\":[{\"value\":37256000000,\"start\":\"2024-01-01\",\"end\":\"2024-12-31\",\"accn\":\"0001628280-26-003942\",\"form\":\"10-K\",\"filed\":\"2026-01-29\",\"duration_days\":366,\"period_type\":\"annual\",\"provenance\":{\"tier\":\"L1\",\"audited\":true,\"confirmations\":2,\"forms\":[\"10-K\"],\"first_filed\":\"2025-01-30\",\"latest_filed\":\"2026-01-29\",\"restated\":false,\"amended\":false,\"strength\":\"high\"}},{\"value\":22831000000,\"start\":\"2024-01-01\",\"end\":\"2024-09-30\",\"accn\":\"0001628280-25-047240\",\"form\":\"10-Q\",\"filed\":\"2025-10-30\",\"duration_days\":274,\"period_type\":\"ytd\",\"provenance\":{\"tier\":\"L2\",\"audited\":false,\"confirmations\":2,\"forms\":[\"10-Q\"],\"first_filed\":\"2024-10-31\",\"latest_filed\":\"2025-10-30\",\"restated\":false,\"amended\":false,\"strength\":\"medium\"}}],\"filing_url\":null,\"source_sha256\":\"52f806ebd7961834d5ac8073e516361e60e800a52ada0ed7f46fb5f615b6050d\",\"provenance\":{\"tier\":\"L3\",\"component_tiers\":[\"L1\",\"L2\"],\"component_strengths\":[\"high\",\"medium\"],\"audited\":false,\"confirmations\":0,\"forms\":[\"derived\"],\"first_filed\":\"2024-10-31\",\"latest_filed\":\"2026-01-29\",\"restated\":false,\"amended\":false,\"strength\":\"medium\"},\"period\":\"2024Q4\",\"period_basis\":\"calendar\",\"evidence_id\":\"E1\"},\"base\":{\"ticker\":\"META\",\"cik\":\"0001326801\",\"entity\":\"Meta Platforms, Inc.\",\"metric\":\"capex\",\"concept\":\"PaymentsToAcquirePropertyPlantAndEquipment\",\"unit\":\"USD\",\"value\":7592000000,\"start\":\"2023-10-01\",\"end\":\"2023-12-31\",\"form\":\"derived\",\"form_fallback\":false,\"accn\":null,\"filed\":\"2026-01-29\",\"frame\":null,\"fiscal_year\":2023,\"fiscal_period\":\"FY\",\"duration_days\":92,\"period_type\":\"quarter\",\"fiscal_equals_calendar\":true,\"derived\":true,\"derivation\":\"FY2023 - 9M YTD\",\"components\":[{\"value\":27045000000,\"start\":\"2023-01-01\",\"end\":\"2023-12-31\",\"accn\":\"0001628280-26-003942\",\"form\":\"10-K\",\"filed\":\"2026-01-29\",\"duration_days\":365,\"period_type\":\"annual\",\"provenance\":{\"tier\":\"L1\",\"audited\":true,\"confirmations\":3,\"forms\":[\"10-K\"],\"first_filed\":\"2024-02-02\",\"latest_filed\":\"2026-01-29\",\"restated\":true,\"amended\":false,\"strength\":\"low\",\"values_seen\":[{\"value\":27266000000,\"accn\":[\"0001326801-24-000012\"]},{\"value\":27045000000,\"accn\":[\"0001326801-25-000017\",\"0001628280-26-003942\"]}]}},{\"value\":19453000000,\"start\":\"2023-01-01\",\"end\":\"2023-09-30\",\"accn\":\"0001326801-24-000081\",\"form\":\"10-Q\",\"filed\":\"2024-10-31\",\"duration_days\":273,\"period_type\":\"ytd\",\"provenance\":{\"tier\":\"L2\",\"audited\":false,\"confirmations\":2,\"forms\":[\"10-Q\"],\"first_filed\":\"2023-10-26\",\"latest_filed\":\"2024-10-31\",\"restated\":true,\"amended\":false,\"strength\":\"low\",\"values_seen\":[{\"value\":19601000000,\"accn\":[\"0001326801-23-000103\"]},{\"value\":19453000000,\"accn\":[\"0001326801-24-000081\"]}]}}],\"filing_url\":null,\"source_sha256\":\"52f806ebd7961834d5ac8073e516361e60e800a52ada0ed7f46fb5f615b6050d\",\"provenance\":{\"tier\":\"L3\",\"component_tiers\":[\"L1\",\"L2\"],\"component_strengths\":[\"low\",\"low\"],\"audited\":false,\"confirmations\":0,\"forms\":[\"derived\"],\"first_filed\":\"2023-10-26\",\"latest_filed\":\"2026-01-29\",\"restated\":true,\"amended\":false,\"strength\":\"low\",\"values_seen\":[{\"component\":0,\"values_seen\":[{\"value\":27266000000,\"accn\":[\"0001326801-24-000012\"]},{\"value\":27045000000,\"accn\":[\"0001326801-25-000017\",\"0001628280-26-003942\"]}]},{\"component\":1,\"values_seen\":[{\"value\":19601000000,\"accn\":[\"0001326801-23-000103\"]},{\"value\":19453000000,\"accn\":[\"0001326801-24-000081\"]}]}]},\"period\":\"2023Q4\",\"period_basis\":\"calendar\",\"evidence_id\":\"E2\"},\"abs_change\":6833000000,\"pct_change\":90.00263435194941,\"fiscal_equals_calendar\":true,\"evidence_id\":\"E3\"}"
+          },
+          {
+            "role": "tool",
+            "tool_call_id": "chatcmpl-tool-96b5ca3e5dfeac2e",
+            "content": "{\"ticker\":\"META\",\"cik\":\"0001326801\",\"entity\":\"Meta Platforms, Inc.\",\"metric\":\"capex\",\"concept\":\"PaymentsToAcquirePropertyPlantAndEquipment\",\"unit\":\"USD\",\"value\":14425000000,\"start\":\"2024-10-01\",\"end\":\"2024-12-31\",\"form\":\"derived\",\"form_fallback\":false,\"accn\":null,\"filed\":\"2026-01-29\",\"frame\":null,\"fiscal_year\":2024,\"fiscal_period\":\"FY\",\"duration_days\":92,\"period_type\":\"quarter\",\"fiscal_equals_calendar\":true,\"derived\":true,\"derivation\":\"FY2024 - 9M YTD\",\"components\":[{\"value\":37256000000,\"start\":\"2024-01-01\",\"end\":\"2024-12-31\",\"accn\":\"0001628280-26-003942\",\"form\":\"10-K\",\"filed\":\"2026-01-29\",\"duration_days\":366,\"period_type\":\"annual\",\"provenance\":{\"tier\":\"L1\",\"audited\":true,\"confirmations\":2,\"forms\":[\"10-K\"],\"first_filed\":\"2025-01-30\",\"latest_filed\":\"2026-01-29\",\"restated\":false,\"amended\":false,\"strength\":\"high\"}},{\"value\":22831000000,\"start\":\"2024-01-01\",\"end\":\"2024-09-30\",\"accn\":\"0001628280-25-047240\",\"form\":\"10-Q\",\"filed\":\"2025-10-30\",\"duration_days\":274,\"period_type\":\"ytd\",\"provenance\":{\"tier\":\"L2\",\"audited\":false,\"confirmations\":2,\"forms\":[\"10-Q\"],\"first_filed\":\"2024-10-31\",\"latest_filed\":\"2025-10-30\",\"restated\":false,\"amended\":false,\"strength\":\"medium\"}}],\"filing_url\":null,\"source_sha256\":\"52f806ebd7961834d5ac8073e516361e60e800a52ada0ed7f46fb5f615b6050d\",\"provenance\":{\"tier\":\"L3\",\"component_tiers\":[\"L1\",\"L2\"],\"component_strengths\":[\"high\",\"medium\"],\"audited\":false,\"confirmations\":0,\"forms\":[\"derived\"],\"first_filed\":\"2024-10-31\",\"latest_filed\":\"2026-01-29\",\"restated\":false,\"amended\":false,\"strength\":\"medium\"},\"period\":\"2024Q4\",\"period_basis\":\"calendar\",\"evidence_id\":\"E4\"}"
+          },
+          {
+            "role": "tool",
+            "tool_call_id": "chatcmpl-tool-b8b9097988284c8f",
+            "content": "{\"value\":[\"FY2026Q1\",\"2026Q1\",\"FY2025Q4\",\"FY2025\",\"FY2025Q1\",\"2025Q1\",\"FY2024Q4\",\"FY2024\"],\"evidence_id\":\"E5\"}"
+          },
+          {
+            "role": "assistant",
+            "content": "{\"sub_claims\": [{\"text\": \"Meta capital expenditures up 90% YoY in December 2024 quarter (2024Q4 vs 2023Q4)\", \"stated_text\": \"up 90%\", \"claim_type\": \"change_pct\", \"comparator\": \"eq\", \"stated_value\": 90, \"evidence_ids\": [\"E3\"], \"interpretations\": [], \"verdict\": \"supported\", \"note\": \"Derived Q4 capex $14.425B in 2024Q4 vs $7.592B in 2023Q4 = +90.00% YoY, consistent with stated 90%. Fiscal equals calendar year (fiscal_equals_calendar=true).\", \"model_found_value\": 90.00263435194941}]}"
+          },
+          {
+            "role": "user",
+            "content": "Return only one plain JSON object for the final verdict. Do not use Markdown fences or explanatory text. Include every atomic factual assertion as a sub-claim, including claim_type other when the tools cannot check it. Copy stated_text verbatim from the claim and include claim_type, comparator, stated_value in base units, evidence_ids, interpretations (evidence ids like E3 — never free text), verdict, model_found_value, and a concise note. The object must match this existing verdict schema: {\"type\":\"object\",\"properties\":{\"verdict\":{\"type\":\"string\",\"enum\":[\"supported\",\"contradicted\",\"insufficient_evidence\"]},\"summary\":{\"type\":\"string\"},\"sub_claims\":{\"type\":\"array\",\"items\":{\"type\":\"object\",\"properties\":{\"text\":{\"type\":\"string\"},\"stated_text\":{\"type\":\"string\"},\"claim_type\":{\"type\":\"string\",\"enum\":[\"value\",\"change_pct\",\"change_abs\",\"record_high\",\"record_low\",\"first_time_above\",\"other\"]},\"comparator\":{\"type\":\"string\",\"enum\":[\"eq\",\"approx\",\"gt\",\"gte\",\"lt\",\"lte\"]},\"stated_value\":{\"type\":[\"number\",\"null\"]},\"evidence_ids\":{\"type\":\"array\",\"items\":{\"type\":\"string\"}},\"interpretations\":{\"type\":\"array\",\"items\":{\"type\":\"string\",\"description\":\"evidence id like E3 — never free text\"}},\"verdict\":{\"type\":\"string\",\"enum\":[\"supported\",\"contradicted\",\"insufficient_evidence\"]},\"note\":{\"type\":\"string\"},\"model_found_value\":{\"type\":[\"number\",\"null\"]}},\"required\":[\"text\",\"stated_text\",\"claim_type\",\"comparator\",\"stated_value\",\"evidence_ids\",\"interpretations\",\"verdict\",\"note\",\"model_found_value\"],\"additionalProperties\":false}}},\"required\":[\"verdict\",\"summary\",\"sub_claims\"],\"additionalProperties\":false}"
+          }
+        ],
+        "max_tokens": 3000
+      },
+      "reservation": {
+        "reservation_id": "c9958867e8904e7ea38b8dc5ed0ad847",
+        "provider": "fireworks",
+        "model": "accounts/fireworks/models/muse-spark-open",
+        "estimated_input_tokens": 6390,
+        "max_output_tokens": 3000,
+        "amount": 0.0207375,
+        "payload_chars": 19170,
+        "context_chars": 0
+      },
+      "raw_response": {
+        "id": "chatcmpl-cdd4d359b52b4fe2a62437df75987d70",
+        "choices": [
+          {
+            "finish_reason": "stop",
+            "index": 0,
+            "logprobs": null,
+            "message": {
+              "content": "{\"verdict\":\"supported\",\"summary\":\"Meta Q4 2024 derived capex was $14.425B vs $7.592B in Q4 2023, representing +90.00% YoY, matching the claimed up 90%; fiscal year equals calendar year.\",\"sub_claims\":[{\"text\":\"Meta capital expenditures up 90% YoY in December 2024 quarter (2024Q4 vs 2023Q4)\",\"stated_text\":\"up 90%\",\"claim_type\":\"change_pct\",\"comparator\":\"eq\",\"stated_value\":90,\"evidence_ids\":[\"E3\"],\"interpretations\":[],\"verdict\":\"supported\",\"note\":\"Derived Q4 capex $14.425B in 2024Q4 vs $7.592B in 2023Q4 = +90.00% YoY, consistent with stated 90%. Fiscal equals calendar year.\",\"model_found_value\":90.00263435194941}]}",
+              "refusal": null,
+              "role": "assistant",
+              "annotations": null,
+              "audio": null,
+              "function_call": null,
+              "tool_calls": null,
+              "reasoning_content": "We need plain JSON object for final verdict. Must include every atomic factual assertion as sub-claim. The original claim: \"The December 2024 quarter filing showed capital expenditures up 90% for Meta.\"\n\nWe have already tool outputs: compute_change pct_change ~90.00% . Need to produce verdict JSON.\n\nWe have sub_claims array. Need to include every atomic factual assertion. Should include one sub-claim for change_pct up 90% .\n\nAlso need to comply with schema: verdict, summary, sub_claims.\n\nEach sub_claim must contain fields: text, stated_text, claim_type, comparator, stated_value, evidence_ids, interpretations, verdict, note, model_found_value.\n\nWe must ensure interpretations array has evidence ids like E3 — never free text. We have E3 for compute_change.\n\nWe should produce verdict supported overall.\n\nNeed to include claim_type change_pct, comparator eq (up 90% => eq), stated_value 90, evidence_ids [\"E3\"], interpretations [], verdict supported, note concise, model_found_value 90.002634... maybe approximate.\n\nAlso need to follow instruction: Return only one plain JSON object. No markdown fences.\n\nAlso need to handle fiscal_equals_calendar etc. Already noted.\n\nShould produce summary string.\n\nMake sure evidence_ids references correct. The compute_change evidence id E3 includes pct_change. That's the right.\n\nPotentially also need interpretations empty.\n\nWe must provide verdict enum supported.\n\nWe should produce final JSON object.\n\nEnsure properties: verdict, summary, sub_claims.\n\nMake sure types: stated_value number, model_found_value number.\n\nNeed to include comparator: eq (up).\n\nInclude text: maybe full claim paraphrase.\n\nMake JSON valid.\n\nWe should double-check values: pct_change 90.002634... rounded ~90%. So supported.\n\nDon't include explanatory text outside JSON.\n\nProceed to final output.",
+              "tools": null
+            }
+          }
+        ],
+        "created": 1793222763,
+        "model": "accounts/fireworks/models/muse-spark-open",
+        "object": "chat.completion",
+        "metadata": null,
+        "moderation": null,
+        "service_tier": null,
+        "system_fingerprint": null,
+        "usage": {
+          "completion_tokens": 581,
+          "prompt_tokens": 5326,
+          "total_tokens": 5907,
+          "completion_tokens_details": {
+            "accepted_prediction_tokens": null,
+            "audio_tokens": null,
+            "reasoning_tokens": 378,
+            "rejected_prediction_tokens": null,
+            "text_tokens": null
+          },
+          "prompt_tokens_details": {
+            "audio_tokens": null,
+            "cache_write_tokens": null,
+            "cached_tokens": 1216,
+            "image_tokens": null,
+            "text_tokens": null
+          },
+          "output_tokens_details": {
+            "reasoning_tokens": 378
+          }
+        }
+      },
+      "usage": {
+        "input": 5326,
+        "cached": 1216,
+        "output": 581,
+        "reasoning": 378
+      },
+      "cost": 0.007789150000000001,
+      "latency_ms": 8867.364,
+      "status": "completed",
+      "raw_usage": {
+        "completion_tokens": 581,
+        "prompt_tokens": 5326,
+        "total_tokens": 5907,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 378,
+          "rejected_prediction_tokens": null,
+          "text_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cache_write_tokens": null,
+          "cached_tokens": 1216,
+          "image_tokens": null,
+          "text_tokens": null
+        },
+        "output_tokens_details": {
+          "reasoning_tokens": 378
+        }
+      },
+      "normalized_usage": {
+        "input": 5326,
+        "cached": 1216,
+        "output": 581,
+        "reasoning": 378
+      },
+      "finish_reason": "stop",
+      "rate_limit_headers": {
+        "x-ratelimit-limit-tokens-cache-adjusted-prompt": "1800000",
+        "x-ratelimit-limit-tokens-generated": "72000",
+        "x-ratelimit-limit-tokens-prompt": "7200000",
+        "x-ratelimit-limit-tokens-uncached-prompt": "1800000",
+        "x-ratelimit-over-limit": "no",
+        "x-ratelimit-remaining-tokens-prompt": "7194674"
+      }
+    }
+  ],
+  "tool_calls": [
+    {
+      "name": "compute_change",
+      "arguments": {
+        "ticker": "META",
+        "metric": "capex",
+        "period": "2024Q4",
+        "base_period": null
+      },
+      "call_id": "chatcmpl-tool-8b501f9a127dfe25",
+      "result": {
+        "ticker": "META",
+        "metric": "capex",
+        "period": "2024Q4",
+        "base_period": "2023Q4",
+        "period_basis": "calendar",
+        "current_fact": {
+          "ticker": "META",
+          "cik": "0001326801",
+          "entity": "Meta Platforms, Inc.",
+          "metric": "capex",
+          "concept": "PaymentsToAcquirePropertyPlantAndEquipment",
+          "unit": "USD",
+          "value": 14425000000,
+          "start": "2024-10-01",
+          "end": "2024-12-31",
+          "form": "derived",
+          "form_fallback": false,
+          "accn": null,
+          "filed": "2026-01-29",
+          "frame": null,
+          "fiscal_year": 2024,
+          "fiscal_period": "FY",
+          "duration_days": 92,
+          "period_type": "quarter",
+          "fiscal_equals_calendar": true,
+          "derived": true,
+          "derivation": "FY2024 - 9M YTD",
+          "components": [
+            {
+              "value": 37256000000,
+              "start": "2024-01-01",
+              "end": "2024-12-31",
+              "accn": "0001628280-26-003942",
+              "form": "10-K",
+              "filed": "2026-01-29",
+              "duration_days": 366,
+              "period_type": "annual",
+              "provenance": {
+                "tier": "L1",
+                "audited": true,
+                "confirmations": 2,
+                "forms": [
+                  "10-K"
+                ],
+                "first_filed": "2025-01-30",
+                "latest_filed": "2026-01-29",
+                "restated": false,
+                "amended": false,
+                "strength": "high"
+              }
+            },
+            {
+              "value": 22831000000,
+              "start": "2024-01-01",
+              "end": "2024-09-30",
+              "accn": "0001628280-25-047240",
+              "form": "10-Q",
+              "filed": "2025-10-30",
+              "duration_days": 274,
+              "period_type": "ytd",
+              "provenance": {
+                "tier": "L2",
+                "audited": false,
+                "confirmations": 2,
+                "forms": [
+                  "10-Q"
+                ],
+                "first_filed": "2024-10-31",
+                "latest_filed": "2025-10-30",
+                "restated": false,
+                "amended": false,
+                "strength": "medium"
+              }
+            }
+          ],
+          "filing_url": null,
+          "source_sha256": "52f806ebd7961834d5ac8073e516361e60e800a52ada0ed7f46fb5f615b6050d",
+          "provenance": {
+            "tier": "L3",
+            "component_tiers": [
+              "L1",
+              "L2"
+            ],
+            "component_strengths": [
+              "high",
+              "medium"
+            ],
+            "audited": false,
+            "confirmations": 0,
+            "forms": [
+              "derived"
+            ],
+            "first_filed": "2024-10-31",
+            "latest_filed": "2026-01-29",
+            "restated": false,
+            "amended": false,
+            "strength": "medium"
+          },
+          "period": "2024Q4",
+          "period_basis": "calendar",
+          "evidence_id": "E1"
+        },
+        "base_fact": {
+          "ticker": "META",
+          "cik": "0001326801",
+          "entity": "Meta Platforms, Inc.",
+          "metric": "capex",
+          "concept": "PaymentsToAcquirePropertyPlantAndEquipment",
+          "unit": "USD",
+          "value": 7592000000,
+          "start": "2023-10-01",
+          "end": "2023-12-31",
+          "form": "derived",
+          "form_fallback": false,
+          "accn": null,
+          "filed": "2026-01-29",
+          "frame": null,
+          "fiscal_year": 2023,
+          "fiscal_period": "FY",
+          "duration_days": 92,
+          "period_type": "quarter",
+          "fiscal_equals_calendar": true,
+          "derived": true,
+          "derivation": "FY2023 - 9M YTD",
+          "components": [
+            {
+              "value": 27045000000,
+              "start": "2023-01-01",
+              "end": "2023-12-31",
+              "accn": "0001628280-26-003942",
+              "form": "10-K",
+              "filed": "2026-01-29",
+              "duration_days": 365,
+              "period_type": "annual",
+              "provenance": {
+                "tier": "L1",
+                "audited": true,
+                "confirmations": 3,
+                "forms": [
+                  "10-K"
+                ],
+                "first_filed": "2024-02-02",
+                "latest_filed": "2026-01-29",
+                "restated": true,
+                "amended": false,
+                "strength": "low",
+                "values_seen": [
+                  {
+                    "value": 27266000000,
+                    "accn": [
+                      "0001326801-24-000012"
+                    ]
+                  },
+                  {
+                    "value": 27045000000,
+                    "accn": [
+                      "0001326801-25-000017",
+                      "0001628280-26-003942"
+                    ]
+                  }
+                ]
+              }
+            },
+            {
+              "value": 19453000000,
+              "start": "2023-01-01",
+              "end": "2023-09-30",
+              "accn": "0001326801-24-000081",
+              "form": "10-Q",
+              "filed": "2024-10-31",
+              "duration_days": 273,
+              "period_type": "ytd",
+              "provenance": {
+                "tier": "L2",
+                "audited": false,
+                "confirmations": 2,
+                "forms": [
+                  "10-Q"
+                ],
+                "first_filed": "2023-10-26",
+                "latest_filed": "2024-10-31",
+                "restated": true,
+                "amended": false,
+                "strength": "low",
+                "values_seen": [
+                  {
+                    "value": 19601000000,
+                    "accn": [
+                      "0001326801-23-000103"
+                    ]
+                  },
+                  {
+                    "value": 19453000000,
+                    "accn": [
+                      "0001326801-24-000081"
+                    ]
+                  }
+                ]
+              }
+            }
+          ],
+          "filing_url": null,
+          "source_sha256": "52f806ebd7961834d5ac8073e516361e60e800a52ada0ed7f46fb5f615b6050d",
+          "provenance": {
+            "tier": "L3",
+            "component_tiers": [
+              "L1",
+              "L2"
+            ],
+            "component_strengths": [
+              "low",
+              "low"
+            ],
+            "audited": false,
+            "confirmations": 0,
+            "forms": [
+              "derived"
+            ],
+            "first_filed": "2023-10-26",
+            "latest_filed": "2026-01-29",
+            "restated": true,
+            "amended": false,
+            "strength": "low",
+            "values_seen": [
+              {
+                "component": 0,
+                "values_seen": [
+                  {
+                    "value": 27266000000,
+                    "accn": [
+                      "0001326801-24-000012"
+                    ]
+                  },
+                  {
+                    "value": 27045000000,
+                    "accn": [
+                      "0001326801-25-000017",
+                      "0001628280-26-003942"
+                    ]
+                  }
+                ]
+              },
+              {
+                "component": 1,
+                "values_seen": [
+                  {
+                    "value": 19601000000,
+                    "accn": [
+                      "0001326801-23-000103"
+                    ]
+                  },
+                  {
+                    "value": 19453000000,
+                    "accn": [
+                      "0001326801-24-000081"
+                    ]
+                  }
+                ]
+              }
+            ]
+          },
+          "period": "2023Q4",
+          "period_basis": "calendar",
+          "evidence_id": "E2"
+        },
+        "current": {
+          "ticker": "META",
+          "cik": "0001326801",
+          "entity": "Meta Platforms, Inc.",
+          "metric": "capex",
+          "concept": "PaymentsToAcquirePropertyPlantAndEquipment",
+          "unit": "USD",
+          "value": 14425000000,
+          "start": "2024-10-01",
+          "end": "2024-12-31",
+          "form": "derived",
+          "form_fallback": false,
+          "accn": null,
+          "filed": "2026-01-29",
+          "frame": null,
+          "fiscal_year": 2024,
+          "fiscal_period": "FY",
+          "duration_days": 92,
+          "period_type": "quarter",
+          "fiscal_equals_calendar": true,
+          "derived": true,
+          "derivation": "FY2024 - 9M YTD",
+          "components": [
+            {
+              "value": 37256000000,
+              "start": "2024-01-01",
+              "end": "2024-12-31",
+              "accn": "0001628280-26-003942",
+              "form": "10-K",
+              "filed": "2026-01-29",
+              "duration_days": 366,
+              "period_type": "annual",
+              "provenance": {
+                "tier": "L1",
+                "audited": true,
+                "confirmations": 2,
+                "forms": [
+                  "10-K"
+                ],
+                "first_filed": "2025-01-30",
+                "latest_filed": "2026-01-29",
+                "restated": false,
+                "amended": false,
+                "strength": "high"
+              }
+            },
+            {
+              "value": 22831000000,
+              "start": "2024-01-01",
+              "end": "2024-09-30",
+              "accn": "0001628280-25-047240",
+              "form": "10-Q",
+              "filed": "2025-10-30",
+              "duration_days": 274,
+              "period_type": "ytd",
+              "provenance": {
+                "tier": "L2",
+                "audited": false,
+                "confirmations": 2,
+                "forms": [
+                  "10-Q"
+                ],
+                "first_filed": "2024-10-31",
+                "latest_filed": "2025-10-30",
+                "restated": false,
+                "amended": false,
+                "strength": "medium"
+              }
+            }
+          ],
+          "filing_url": null,
+          "source_sha256": "52f806ebd7961834d5ac8073e516361e60e800a52ada0ed7f46fb5f615b6050d",
+          "provenance": {
+            "tier": "L3",
+            "component_tiers": [
+              "L1",
+              "L2"
+            ],
+            "component_strengths": [
+              "high",
+              "medium"
+            ],
+            "audited": false,
+            "confirmations": 0,
+            "forms": [
+              "derived"
+            ],
+            "first_filed": "2024-10-31",
+            "latest_filed": "2026-01-29",
+            "restated": false,
+            "amended": false,
+            "strength": "medium"
+          },
+          "period": "2024Q4",
+          "period_basis": "calendar",
+          "evidence_id": "E1"
+        },
+        "base": {
+          "ticker": "META",
+          "cik": "0001326801",
+          "entity": "Meta Platforms, Inc.",
+          "metric": "capex",
+          "concept": "PaymentsToAcquirePropertyPlantAndEquipment",
+          "unit": "USD",
+          "value": 7592000000,
+          "start": "2023-10-01",
+          "end": "2023-12-31",
+          "form": "derived",
+          "form_fallback": false,
+          "accn": null,
+          "filed": "2026-01-29",
+          "frame": null,
+          "fiscal_year": 2023,
+          "fiscal_period": "FY",
+          "duration_days": 92,
+          "period_type": "quarter",
+          "fiscal_equals_calendar": true,
+          "derived": true,
+          "derivation": "FY2023 - 9M YTD",
+          "components": [
+            {
+              "value": 27045000000,
+              "start": "2023-01-01",
+              "end": "2023-12-31",
+              "accn": "0001628280-26-003942",
+              "form": "10-K",
+              "filed": "2026-01-29",
+              "duration_days": 365,
+              "period_type": "annual",
+              "provenance": {
+                "tier": "L1",
+                "audited": true,
+                "confirmations": 3,
+                "forms": [
+                  "10-K"
+                ],
+                "first_filed": "2024-02-02",
+                "latest_filed": "2026-01-29",
+                "restated": true,
+                "amended": false,
+                "strength": "low",
+                "values_seen": [
+                  {
+                    "value": 27266000000,
+                    "accn": [
+                      "0001326801-24-000012"
+                    ]
+                  },
+                  {
+                    "value": 27045000000,
+                    "accn": [
+                      "0001326801-25-000017",
+                      "0001628280-26-003942"
+                    ]
+                  }
+                ]
+              }
+            },
+            {
+              "value": 19453000000,
+              "start": "2023-01-01",
+              "end": "2023-09-30",
+              "accn": "0001326801-24-000081",
+              "form": "10-Q",
+              "filed": "2024-10-31",
+              "duration_days": 273,
+              "period_type": "ytd",
+              "provenance": {
+                "tier": "L2",
+                "audited": false,
+                "confirmations": 2,
+                "forms": [
+                  "10-Q"
+                ],
+                "first_filed": "2023-10-26",
+                "latest_filed": "2024-10-31",
+                "restated": true,
+                "amended": false,
+                "strength": "low",
+                "values_seen": [
+                  {
+                    "value": 19601000000,
+                    "accn": [
+                      "0001326801-23-000103"
+                    ]
+                  },
+                  {
+                    "value": 19453000000,
+                    "accn": [
+                      "0001326801-24-000081"
+                    ]
+                  }
+                ]
+              }
+            }
+          ],
+          "filing_url": null,
+          "source_sha256": "52f806ebd7961834d5ac8073e516361e60e800a52ada0ed7f46fb5f615b6050d",
+          "provenance": {
+            "tier": "L3",
+            "component_tiers": [
+              "L1",
+              "L2"
+            ],
+            "component_strengths": [
+              "low",
+              "low"
+            ],
+            "audited": false,
+            "confirmations": 0,
+            "forms": [
+              "derived"
+            ],
+            "first_filed": "2023-10-26",
+            "latest_filed": "2026-01-29",
+            "restated": true,
+            "amended": false,
+            "strength": "low",
+            "values_seen": [
+              {
+                "component": 0,
+                "values_seen": [
+                  {
+                    "value": 27266000000,
+                    "accn": [
+                      "0001326801-24-000012"
+                    ]
+                  },
+                  {
+                    "value": 27045000000,
+                    "accn": [
+                      "0001326801-25-000017",
+                      "0001628280-26-003942"
+                    ]
+                  }
+                ]
+              },
+              {
+                "component": 1,
+                "values_seen": [
+                  {
+                    "value": 19601000000,
+                    "accn": [
+                      "0001326801-23-000103"
+                    ]
+                  },
+                  {
+                    "value": 19453000000,
+                    "accn": [
+                      "0001326801-24-000081"
+                    ]
+                  }
+                ]
+              }
+            ]
+          },
+          "period": "2023Q4",
+          "period_basis": "calendar",
+          "evidence_id": "E2"
+        },
+        "abs_change": 6833000000,
+        "pct_change": 90.00263435194941,
+        "fiscal_equals_calendar": true,
+        "evidence_id": "E3"
+      }
+    },
+    {
+      "name": "lookup_fact",
+      "arguments": {
+        "ticker": "META",
+        "metric": "capex",
+        "period": "2024Q4"
+      },
+      "call_id": "chatcmpl-tool-96b5ca3e5dfeac2e",
+      "result": {
+        "ticker": "META",
+        "cik": "0001326801",
+        "entity": "Meta Platforms, Inc.",
+        "metric": "capex",
+        "concept": "PaymentsToAcquirePropertyPlantAndEquipment",
+        "unit": "USD",
+        "value": 14425000000,
+        "start": "2024-10-01",
+        "end": "2024-12-31",
+        "form": "derived",
+        "form_fallback": false,
+        "accn": null,
+        "filed": "2026-01-29",
+        "frame": null,
+        "fiscal_year": 2024,
+        "fiscal_period": "FY",
+        "duration_days": 92,
+        "period_type": "quarter",
+        "fiscal_equals_calendar": true,
+        "derived": true,
+        "derivation": "FY2024 - 9M YTD",
+        "components": [
+          {
+            "value": 37256000000,
+            "start": "2024-01-01",
+            "end": "2024-12-31",
+            "accn": "0001628280-26-003942",
+            "form": "10-K",
+            "filed": "2026-01-29",
+            "duration_days": 366,
+            "period_type": "annual",
+            "provenance": {
+              "tier": "L1",
+              "audited": true,
+              "confirmations": 2,
+              "forms": [
+                "10-K"
+              ],
+              "first_filed": "2025-01-30",
+              "latest_filed": "2026-01-29",
+              "restated": false,
+              "amended": false,
+              "strength": "high"
+            }
+          },
+          {
+            "value": 22831000000,
+            "start": "2024-01-01",
+            "end": "2024-09-30",
+            "accn": "0001628280-25-047240",
+            "form": "10-Q",
+            "filed": "2025-10-30",
+            "duration_days": 274,
+            "period_type": "ytd",
+            "provenance": {
+              "tier": "L2",
+              "audited": false,
+              "confirmations": 2,
+              "forms": [
+                "10-Q"
+              ],
+              "first_filed": "2024-10-31",
+              "latest_filed": "2025-10-30",
+              "restated": false,
+              "amended": false,
+              "strength": "medium"
+            }
+          }
+        ],
+        "filing_url": null,
+        "source_sha256": "52f806ebd7961834d5ac8073e516361e60e800a52ada0ed7f46fb5f615b6050d",
+        "provenance": {
+          "tier": "L3",
+          "component_tiers": [
+            "L1",
+            "L2"
+          ],
+          "component_strengths": [
+            "high",
+            "medium"
+          ],
+          "audited": false,
+          "confirmations": 0,
+          "forms": [
+            "derived"
+          ],
+          "first_filed": "2024-10-31",
+          "latest_filed": "2026-01-29",
+          "restated": false,
+          "amended": false,
+          "strength": "medium"
+        },
+        "period": "2024Q4",
+        "period_basis": "calendar",
+        "evidence_id": "E4"
+      }
+    },
+    {
+      "name": "list_periods",
+      "arguments": {
+        "ticker": "META",
+        "metric": "capex"
+      },
+      "call_id": "chatcmpl-tool-b8b9097988284c8f",
+      "result": {
+        "value": [
+          "FY2026Q1",
+          "2026Q1",
+          "FY2025Q4",
+          "FY2025",
+          "FY2025Q1",
+          "2025Q1",
+          "FY2024Q4",
+          "FY2024"
+        ],
+        "evidence_id": "E5"
+      }
+    }
+  ],
+  "usage": [
+    {
+      "input": 2693,
+      "cached": 2624,
+      "output": 601,
+      "reasoning": 329
+    },
+    {
+      "input": 6204,
+      "cached": 2688,
+      "output": 1484,
+      "reasoning": 1311
+    },
+    {
+      "input": 5326,
+      "cached": 1216,
+      "output": 581,
+      "reasoning": 378
+    }
+  ],
+  "tokens": {
+    "input": 14223,
+    "cached": 6528,
+    "output": 2666,
+    "reasoning": 2018
+  },
+  "model_calls": 3,
+  "cost": 0.021928450000000002,
+  "cost_usd": 0.021928450000000002,
+  "latency_ms": 38566.778,
+  "tool_call_count": 3,
+  "incomplete_turns": [],
+  "previous_response_fallback": false,
+  "final_verdict": {
+    "verdict": "supported",
+    "summary": "Meta Q4 2024 derived capex was $14.425B vs $7.592B in Q4 2023, representing +90.00% YoY, matching the claimed up 90%; fiscal year equals calendar year.",
+    "sub_claims": [
+      {
+        "text": "Meta capital expenditures up 90% YoY in December 2024 quarter (2024Q4 vs 2023Q4)",
+        "stated_text": "up 90%",
+        "claim_type": "change_pct",
+        "comparator": "eq",
+        "stated_value": 90.0,
+        "verdict": "supported",
+        "evidence_ids": [
+          "E3"
+        ],
+        "interpretations": [],
+        "model_found_value": 90.00263435194941,
+        "note": "Derived Q4 capex $14.425B in 2024Q4 vs $7.592B in 2023Q4 = +90.00% YoY, consistent with stated 90%. Fiscal equals calendar year.",
+        "evidence_valid": true,
+        "program_verdict": "supported",
+        "actual_value": 90.00263435194941,
+        "tolerance": 0.5,
+        "reason": "actual 90.0026 is consistent with stated 90 using eq tolerance 0.5",
+        "disagreement": false,
+        "precision": 0.5,
+        "stated_value_used": 90.0,
+        "period_ambiguous": false,
+        "program_added_interpretation": false,
+        "program_evidence_ids": [],
+        "invalid_interpretations": false,
+        "deduplicated_evidence": [],
+        "stated_value_corrected": false,
+        "stated_text_unparsed": false,
+        "stated_sign_corrected": false,
+        "threshold_from_model": false,
+        "model_comparator": "eq",
+        "comparator_corrected": false,
+        "evidence_strength": "low",
+        "evidence_summary": "Evidence: derived L3 (L1/L2 components), not restated; derived L3 (L1/L2 components), restated",
+        "restated_evidence": false
+      }
+    ],
+    "model_verdict": "supported",
+    "program_checks": [
+      {
+        "text": "Meta capital expenditures up 90% YoY in December 2024 quarter (2024Q4 vs 2023Q4)",
+        "stated_value": 90.0,
+        "evidence_ids": [
+          "E3"
+        ],
+        "evidence_valid": true,
+        "program_verdict": "supported",
+        "actual_value": 90.00263435194941,
+        "tolerance": 0.5,
+        "reason": "actual 90.0026 is consistent with stated 90 using eq tolerance 0.5",
+        "disagreement": false,
+        "precision": 0.5,
+        "stated_value_used": 90.0,
+        "comparator": "eq",
+        "interpretations": [],
+        "period_ambiguous": false,
+        "program_added_interpretation": false,
+        "program_evidence_ids": [],
+        "invalid_interpretations": false,
+        "deduplicated_evidence": [],
+        "stated_value_corrected": false,
+        "stated_text_unparsed": false,
+        "stated_sign_corrected": false,
+        "threshold_from_model": false,
+        "model_comparator": "eq",
+        "comparator_corrected": false,
+        "evidence_strength": "low",
+        "evidence_summary": "Evidence: derived L3 (L1/L2 components), not restated; derived L3 (L1/L2 components), restated",
+        "restated_evidence": false
+      }
+    ],
+    "evidence_strength": "low",
+    "evidence_summary": "Evidence: derived L3 (L1/L2 components), not restated; derived L3 (L1/L2 components), restated",
+    "model_program_disagreement": false
+  },
+  "program_checks": [
+    {
+      "text": "Meta capital expenditures up 90% YoY in December 2024 quarter (2024Q4 vs 2023Q4)",
+      "stated_value": 90.0,
+      "evidence_ids": [
+        "E3"
+      ],
+      "evidence_valid": true,
+      "program_verdict": "supported",
+      "actual_value": 90.00263435194941,
+      "tolerance": 0.5,
+      "reason": "actual 90.0026 is consistent with stated 90 using eq tolerance 0.5",
+      "disagreement": false,
+      "precision": 0.5,
+      "stated_value_used": 90.0,
+      "comparator": "eq",
+      "interpretations": [],
+      "period_ambiguous": false,
+      "program_added_interpretation": false,
+      "program_evidence_ids": [],
+      "invalid_interpretations": false,
+      "deduplicated_evidence": [],
+      "stated_value_corrected": false,
+      "stated_text_unparsed": false,
+      "stated_sign_corrected": false,
+      "threshold_from_model": false,
+      "model_comparator": "eq",
+      "comparator_corrected": false,
+      "evidence_strength": "low",
+      "evidence_summary": "Evidence: derived L3 (L1/L2 components), not restated; derived L3 (L1/L2 components), restated",
+      "restated_evidence": false
+    }
+  ]
+}

@@ -1,0 +1,960 @@
+{
+  "claim": "Costco's disclosed revenue totaled $63.7 million during the fiscal Q2 period of 2025.",
+  "model": "accounts/fireworks/models/muse-spark-open",
+  "provider": "fireworks",
+  "requests": [
+    {
+      "request": {
+        "model": "accounts/fireworks/models/muse-spark-open",
+        "messages": [
+          {
+            "role": "system",
+            "content": "You verify financial claims against SEC EDGAR facts.\nDecompose the claim into every atomic factual assertion. Every factual assertion\nin the user's claim must become a sub-claim, including a value, a change, a\nrecord, and a first-time assertion in the same sentence. Assertions that the\ntools cannot check must still become a sub-claim with claim_type other; the\nprogram will leave those unchecked. Use lookup_fact for a value,\ncompute_change for YoY or other period-to-period growth, history_rank for\nrecord/first-time assertions, and list_periods only to understand missing data.\nNever use memory for numbers. A quarter must have period_type=quarter and\nduration_days around 80-100, not period_type=ytd. If a result has derived=true,\nuse its derivation and components as evidence and do not calculate that fact\nagain. For compute_change, cite its own evidence ID; its two nested component\nfact IDs may also be cited and are ignored by the verifier.\n\nEach final sub_claim must contain exactly these model fields:\ntext, stated_text, claim_type (value, change_pct, change_abs, record_high,\nrecord_low, first_time_above, or other), comparator (eq, approx, gt, gte, lt,\nor lte), stated_value in base units (USD, USD/share, percentage points, or 1\nfor a record boolean), evidence_ids, interpretations, verdict, note, and\nmodel_found_value. interpretations is required and may be empty. Every non-empty\nitem must be an evidence id like E3 — never free text.\nCopy stated_text verbatim from the claim, including words such as \"about\",\n\"up\", or \"fell\" (for example, \"about $1.4 billion\", \"up 22%\", or\n\"fell 10%\"). For a change_pct, stated_value is 22 for 22%, not 0.22; the\nverifier applies the sign implied by direction words such as fell/down or\nrose/up. model_found_value is the number read from the cited evidence in the\nsame units, or null when it is missing.\n\nComparator wording is deterministic: a plain numeric statement with no hedge\nor inequality phrase is eq; about/around/roughly/approximately/nearly/almost,\nclose to, some, or ~ means approx; topped/exceeded/above/more than/over/\nsurpassed/beat means gt; at least/no less than means gte; below/under/less\nthan/short of means lt; at most/no more than/up to means lte. The program\nrecords and may correct the model comparator from these words. \"up\" and\n\"fell\" describe change direction, not approximation.\n\nFor a quarter claim at a non-calendar-fiscal issuer, use period_basis from\nthe tool results. If the claim says neither fiscal nor calendar, look up both\nthe calendar label (for example 2025Q4) and the fiscal label (for example\nFY2025Q4), cite both IDs in evidence_ids, and put those two IDs in\ninterpretations. Keep interpretations empty unless both fiscal and calendar\nreadings were looked up. If the claim says fiscal, cite only the fiscal\nreading; if it says calendar, cite only the calendar reading. When a lookup or\ncompute result has fiscal_equals_calendar=true, the issuer's fiscal year is the\ncalendar year: fiscal and calendar labels refer to the same underlying facts,\nso look up and cite only one reading even when the claim has no\nfiscal/calendar qualifier.\n\nExamples:\n1. \"Tesla net income was about $1.4 billion\": lookup_fact; stated_text\n   \"about $1.4 billion\", claim_type value, comparator approx, stated_value\n   1400000000.\n2. \"Alphabet revenue exceeded $100 billion\": lookup_fact; stated_text\n   \"exceeded $100 billion\", claim_type value, comparator gt, stated_value\n   100000000000.\n3. \"Meta revenue was up 22% YoY\": compute_change(META, revenue, 2025Q2,\n   null); stated_text \"up 22%\", claim_type change_pct, comparator eq,\n   stated_value 22, and cite the compute_change evidence ID.\n4. \"Tesla revenue fell 10% YoY\": compute_change(TSLA, revenue, 2025Q3,\n   null); stated_text \"fell 10%\", claim_type change_pct, comparator eq,\n   stated_value -10, and cite the compute_change evidence ID.\n5. \"Alphabet Q3 2025 revenue was a record high\": history_rank(GOOGL,\n   revenue, 2025Q3); claim_type record_high, comparator eq, stated_value 1,\n   and cite the history_rank evidence ID.\n6. \"Alphabet Q3 2025 revenue topped $100 billion for the first time\": create\n   two sub-claims: value gt 100000000000 and first_time_above with stated_value\n   100000000000, both citing the relevant evidence; the latter is supported\n   only when this period is above the threshold and no earlier comparable\n   period is above it.\n7. If a requested fact is unavailable, leave model_found_value null, cite any\n   relevant evidence, and set that sub-claim to insufficient_evidence. Say\n   insufficient_evidence when data is missing or evidence is ambiguous."
+          },
+          {
+            "role": "user",
+            "content": "Costco's disclosed revenue totaled $63.7 million during the fiscal Q2 period of 2025."
+          }
+        ],
+        "tools": [
+          {
+            "type": "function",
+            "function": {
+              "name": "lookup_fact",
+              "description": "Look up one SEC EDGAR XBRL fact for a ticker, metric, and calendar quarter, fiscal quarter (FY2025Q4), or fiscal year. Successful results include period (the normalized requested label, or the resolved label for latest), period_basis (calendar or fiscal), fiscal_equals_calendar, duration_days, and period_type (quarter, ytd, annual, or instant). Additive flows may return derived=true with derivation and components; never treat a ytd result as a quarter or recompute a derived result. When fiscal_equals_calendar is true, fiscal and calendar labels identify the same fact; do not look up both readings. Every fact includes compact provenance: L1 audited 10-K, L2 reviewed 10-Q, or L3 program-derived, with confirmations, restatement, amendment, and evidence strength.",
+              "parameters": {
+                "type": "object",
+                "properties": {
+                  "ticker": {
+                    "type": "string"
+                  },
+                  "metric": {
+                    "type": "string",
+                    "enum": [
+                      "revenue",
+                      "net_income",
+                      "operating_income",
+                      "eps_diluted",
+                      "gross_profit",
+                      "total_assets",
+                      "cash",
+                      "capex",
+                      "rd_expense",
+                      "shares_outstanding"
+                    ]
+                  },
+                  "period": {
+                    "type": "string",
+                    "pattern": "^(latest|FY\\d{4}(?:Q[1-4])?|\\d{4}Q[1-4])$"
+                  }
+                },
+                "required": [
+                  "ticker",
+                  "metric",
+                  "period"
+                ],
+                "additionalProperties": false
+              }
+            }
+          },
+          {
+            "type": "function",
+            "function": {
+              "name": "list_periods",
+              "description": "List the recent directly available SEC EDGAR quarter and fiscal-year periods for a ticker and metric.",
+              "parameters": {
+                "type": "object",
+                "properties": {
+                  "ticker": {
+                    "type": "string"
+                  },
+                  "metric": {
+                    "type": "string",
+                    "enum": [
+                      "revenue",
+                      "net_income",
+                      "operating_income",
+                      "eps_diluted",
+                      "gross_profit",
+                      "total_assets",
+                      "cash",
+                      "capex",
+                      "rd_expense",
+                      "shares_outstanding"
+                    ]
+                  }
+                },
+                "required": [
+                  "ticker",
+                  "metric"
+                ],
+                "additionalProperties": false
+              }
+            }
+          },
+          {
+            "type": "function",
+            "function": {
+              "name": "compute_change",
+              "description": "Compute the absolute and year-over-year change for one SEC EDGAR XBRL metric. The period and base_period must be the same kind of period; when base_period is omitted, null, empty, \"null\", or \"none\", use the same quarter or fiscal year one year earlier. The result includes both cited lookup facts, fiscal_equals_calendar, their fact-level provenance, and a percentage change in percent points.",
+              "parameters": {
+                "type": "object",
+                "properties": {
+                  "ticker": {
+                    "type": "string"
+                  },
+                  "metric": {
+                    "type": "string",
+                    "enum": [
+                      "revenue",
+                      "net_income",
+                      "operating_income",
+                      "eps_diluted",
+                      "gross_profit",
+                      "total_assets",
+                      "cash",
+                      "capex",
+                      "rd_expense",
+                      "shares_outstanding"
+                    ]
+                  },
+                  "period": {
+                    "type": "string",
+                    "pattern": "^(latest|FY\\d{4}(?:Q[1-4])?|\\d{4}Q[1-4])$"
+                  },
+                  "base_period": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "pattern": "^(FY\\d{4}(?:Q[1-4])?|\\d{4}Q[1-4])$"
+                  }
+                },
+                "required": [
+                  "ticker",
+                  "metric",
+                  "period",
+                  "base_period"
+                ],
+                "additionalProperties": false
+              }
+            }
+          },
+          {
+            "type": "function",
+            "function": {
+              "name": "history_rank",
+              "description": "Compare one quarter or fiscal-year fact with every available comparable period of the same period_type. Quarters include derived Q4 values when available; annual periods are compared only with annual periods. Return the rank, record flags through the requested period, prior high/low, and the comparison window with period end dates. The requested period also includes compact fact provenance and evidence strength.",
+              "parameters": {
+                "type": "object",
+                "properties": {
+                  "ticker": {
+                    "type": "string"
+                  },
+                  "metric": {
+                    "type": "string",
+                    "enum": [
+                      "revenue",
+                      "net_income",
+                      "operating_income",
+                      "eps_diluted",
+                      "gross_profit",
+                      "total_assets",
+                      "cash",
+                      "capex",
+                      "rd_expense",
+                      "shares_outstanding"
+                    ]
+                  },
+                  "period": {
+                    "type": "string",
+                    "pattern": "^(latest|FY\\d{4}(?:Q[1-4])?|\\d{4}Q[1-4])$"
+                  }
+                },
+                "required": [
+                  "ticker",
+                  "metric",
+                  "period"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        ],
+        "parallel_tool_calls": true,
+        "max_tokens": 4000
+      },
+      "reservation": {
+        "reservation_id": "d46027053b8e44fb8fb2cae753783013",
+        "provider": "fireworks",
+        "model": "accounts/fireworks/models/muse-spark-open",
+        "estimated_input_tokens": 2851,
+        "max_output_tokens": 4000,
+        "amount": 0.020563750000000002,
+        "payload_chars": 8553,
+        "context_chars": 0
+      },
+      "raw_response": {
+        "id": "chatcmpl-08b668b15fd045a3b853b60e2c8aecbb",
+        "choices": [
+          {
+            "finish_reason": "tool_calls",
+            "index": 0,
+            "logprobs": null,
+            "message": {
+              "content": "I'll verify Costco's Q2 2025 revenue against SEC filings to check that $63.7 million figure.",
+              "refusal": null,
+              "role": "assistant",
+              "annotations": null,
+              "audio": null,
+              "function_call": null,
+              "tool_calls": [
+                {
+                  "id": "chatcmpl-tool-917175b4c1673c3a",
+                  "function": {
+                    "arguments": "{\"ticker\": \"COST\", \"metric\": \"revenue\", \"period\": \"FY2025Q2\"}",
+                    "name": "lookup_fact"
+                  },
+                  "type": "function",
+                  "index": 0,
+                  "name": null
+                }
+              ],
+              "reasoning_content": "Need to verify claim about Costco revenue $63.7 million during fiscal Q2 period of 2025.\n\nWe have COST ticker. Need to decompose.\n\nClaim: \"Costco's disclosed revenue totaled $63.7 million during the fiscal Q2 period of 2025.\"\n\nWe need to check.\n\nPotentially need to consider atomic factual assertions. The claim says revenue totaled $63.7 million during fiscal Q2 period of 2025.\n\nSo we need lookup_fact for COST revenue FY2025Q2.\n\nAlso note fiscal Q2 period of 2025 – should cite fiscal reading.\n\nWe also need to check units: $63.7 million = 63,700,000. But likely revenue is billions. Could be mistake: $63.7 billion vs million. Need to verify.\n\nWe need to call lookup_fact.\n\nWe should also consider comparator: \"totaled $63.7 million\" – plain numeric => eq.\n\nWe need to execute tool.\n\nWe should also ensure period_type quarter with duration 80-100 days.\n\nWe need to call lookup_fact for COST revenue FY2025Q2.\n\nPossibly also need to handle fiscal_equals_calendar? For Costco, fiscal year ends Aug 31? Actually Costco fiscal year ends around Aug 31/Sept. So fiscal does NOT equal calendar. Need to check tool results for fiscal_equals_calendar flag.\n\nWe need to do lookup.\n\nWe should also do list_periods maybe to understand availability? But primary is lookup_fact.\n\nLet's call lookup_fact.",
+              "tools": null
+            }
+          }
+        ],
+        "created": 1793223866,
+        "model": "accounts/fireworks/models/muse-spark-open",
+        "object": "chat.completion",
+        "metadata": null,
+        "moderation": null,
+        "service_tier": null,
+        "system_fingerprint": null,
+        "usage": {
+          "completion_tokens": 422,
+          "prompt_tokens": 2698,
+          "total_tokens": 3120,
+          "completion_tokens_details": {
+            "accepted_prediction_tokens": null,
+            "audio_tokens": null,
+            "reasoning_tokens": 307,
+            "rejected_prediction_tokens": null,
+            "text_tokens": null
+          },
+          "prompt_tokens_details": {
+            "audio_tokens": null,
+            "cache_write_tokens": null,
+            "cached_tokens": 2624,
+            "image_tokens": null,
+            "text_tokens": null
+          },
+          "output_tokens_details": {
+            "reasoning_tokens": 307
+          }
+        }
+      },
+      "usage": {
+        "input": 2698,
+        "cached": 2624,
+        "output": 422,
+        "reasoning": 307
+      },
+      "cost": 0.0022796,
+      "latency_ms": 8149.299,
+      "status": "completed",
+      "raw_usage": {
+        "completion_tokens": 422,
+        "prompt_tokens": 2698,
+        "total_tokens": 3120,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 307,
+          "rejected_prediction_tokens": null,
+          "text_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cache_write_tokens": null,
+          "cached_tokens": 2624,
+          "image_tokens": null,
+          "text_tokens": null
+        },
+        "output_tokens_details": {
+          "reasoning_tokens": 307
+        }
+      },
+      "normalized_usage": {
+        "input": 2698,
+        "cached": 2624,
+        "output": 422,
+        "reasoning": 307
+      },
+      "finish_reason": "tool_calls",
+      "rate_limit_headers": {
+        "x-ratelimit-limit-tokens-cache-adjusted-prompt": "1800000",
+        "x-ratelimit-limit-tokens-generated": "72000",
+        "x-ratelimit-limit-tokens-prompt": "7200000",
+        "x-ratelimit-limit-tokens-uncached-prompt": "1800000",
+        "x-ratelimit-over-limit": "no",
+        "x-ratelimit-remaining-tokens-prompt": "7197302"
+      }
+    },
+    {
+      "request": {
+        "model": "accounts/fireworks/models/muse-spark-open",
+        "messages": [
+          {
+            "role": "system",
+            "content": "You verify financial claims against SEC EDGAR facts.\nDecompose the claim into every atomic factual assertion. Every factual assertion\nin the user's claim must become a sub-claim, including a value, a change, a\nrecord, and a first-time assertion in the same sentence. Assertions that the\ntools cannot check must still become a sub-claim with claim_type other; the\nprogram will leave those unchecked. Use lookup_fact for a value,\ncompute_change for YoY or other period-to-period growth, history_rank for\nrecord/first-time assertions, and list_periods only to understand missing data.\nNever use memory for numbers. A quarter must have period_type=quarter and\nduration_days around 80-100, not period_type=ytd. If a result has derived=true,\nuse its derivation and components as evidence and do not calculate that fact\nagain. For compute_change, cite its own evidence ID; its two nested component\nfact IDs may also be cited and are ignored by the verifier.\n\nEach final sub_claim must contain exactly these model fields:\ntext, stated_text, claim_type (value, change_pct, change_abs, record_high,\nrecord_low, first_time_above, or other), comparator (eq, approx, gt, gte, lt,\nor lte), stated_value in base units (USD, USD/share, percentage points, or 1\nfor a record boolean), evidence_ids, interpretations, verdict, note, and\nmodel_found_value. interpretations is required and may be empty. Every non-empty\nitem must be an evidence id like E3 — never free text.\nCopy stated_text verbatim from the claim, including words such as \"about\",\n\"up\", or \"fell\" (for example, \"about $1.4 billion\", \"up 22%\", or\n\"fell 10%\"). For a change_pct, stated_value is 22 for 22%, not 0.22; the\nverifier applies the sign implied by direction words such as fell/down or\nrose/up. model_found_value is the number read from the cited evidence in the\nsame units, or null when it is missing.\n\nComparator wording is deterministic: a plain numeric statement with no hedge\nor inequality phrase is eq; about/around/roughly/approximately/nearly/almost,\nclose to, some, or ~ means approx; topped/exceeded/above/more than/over/\nsurpassed/beat means gt; at least/no less than means gte; below/under/less\nthan/short of means lt; at most/no more than/up to means lte. The program\nrecords and may correct the model comparator from these words. \"up\" and\n\"fell\" describe change direction, not approximation.\n\nFor a quarter claim at a non-calendar-fiscal issuer, use period_basis from\nthe tool results. If the claim says neither fiscal nor calendar, look up both\nthe calendar label (for example 2025Q4) and the fiscal label (for example\nFY2025Q4), cite both IDs in evidence_ids, and put those two IDs in\ninterpretations. Keep interpretations empty unless both fiscal and calendar\nreadings were looked up. If the claim says fiscal, cite only the fiscal\nreading; if it says calendar, cite only the calendar reading. When a lookup or\ncompute result has fiscal_equals_calendar=true, the issuer's fiscal year is the\ncalendar year: fiscal and calendar labels refer to the same underlying facts,\nso look up and cite only one reading even when the claim has no\nfiscal/calendar qualifier.\n\nExamples:\n1. \"Tesla net income was about $1.4 billion\": lookup_fact; stated_text\n   \"about $1.4 billion\", claim_type value, comparator approx, stated_value\n   1400000000.\n2. \"Alphabet revenue exceeded $100 billion\": lookup_fact; stated_text\n   \"exceeded $100 billion\", claim_type value, comparator gt, stated_value\n   100000000000.\n3. \"Meta revenue was up 22% YoY\": compute_change(META, revenue, 2025Q2,\n   null); stated_text \"up 22%\", claim_type change_pct, comparator eq,\n   stated_value 22, and cite the compute_change evidence ID.\n4. \"Tesla revenue fell 10% YoY\": compute_change(TSLA, revenue, 2025Q3,\n   null); stated_text \"fell 10%\", claim_type change_pct, comparator eq,\n   stated_value -10, and cite the compute_change evidence ID.\n5. \"Alphabet Q3 2025 revenue was a record high\": history_rank(GOOGL,\n   revenue, 2025Q3); claim_type record_high, comparator eq, stated_value 1,\n   and cite the history_rank evidence ID.\n6. \"Alphabet Q3 2025 revenue topped $100 billion for the first time\": create\n   two sub-claims: value gt 100000000000 and first_time_above with stated_value\n   100000000000, both citing the relevant evidence; the latter is supported\n   only when this period is above the threshold and no earlier comparable\n   period is above it.\n7. If a requested fact is unavailable, leave model_found_value null, cite any\n   relevant evidence, and set that sub-claim to insufficient_evidence. Say\n   insufficient_evidence when data is missing or evidence is ambiguous."
+          },
+          {
+            "role": "user",
+            "content": "Costco's disclosed revenue totaled $63.7 million during the fiscal Q2 period of 2025."
+          },
+          {
+            "role": "assistant",
+            "content": "I'll verify Costco's Q2 2025 revenue against SEC filings to check that $63.7 million figure.",
+            "tool_calls": [
+              {
+                "id": "chatcmpl-tool-917175b4c1673c3a",
+                "type": "function",
+                "function": {
+                  "name": "lookup_fact",
+                  "arguments": "{\"ticker\": \"COST\", \"metric\": \"revenue\", \"period\": \"FY2025Q2\"}"
+                }
+              }
+            ]
+          },
+          {
+            "role": "tool",
+            "tool_call_id": "chatcmpl-tool-917175b4c1673c3a",
+            "content": "{\"ticker\":\"COST\",\"cik\":\"0000909832\",\"entity\":\"COSTCO WHOLESALE CORP /NEW\",\"metric\":\"revenue\",\"concept\":\"Revenues\",\"unit\":\"USD\",\"value\":63723000000,\"start\":\"2024-11-25\",\"end\":\"2025-02-16\",\"form\":\"10-Q\",\"form_fallback\":false,\"accn\":\"0000909832-26-000029\",\"filed\":\"2026-03-11\",\"frame\":null,\"fiscal_year\":2025,\"fiscal_period\":\"Q2\",\"duration_days\":84,\"period_type\":\"quarter\",\"fiscal_equals_calendar\":false,\"derived\":false,\"filing_url\":\"https://www.sec.gov/Archives/edgar/data/909832/000090983226000029/\",\"source_sha256\":\"b675ced201b27ede2b0d26ca6fd873befe96a1afa9679339a2d0b964187dcdff\",\"provenance\":{\"tier\":\"L2\",\"audited\":false,\"confirmations\":2,\"forms\":[\"10-Q\"],\"first_filed\":\"2025-03-13\",\"latest_filed\":\"2026-03-11\",\"restated\":false,\"amended\":false,\"strength\":\"medium\"},\"period\":\"FY2025Q2\",\"period_basis\":\"fiscal\",\"evidence_id\":\"E1\"}"
+          }
+        ],
+        "tools": [
+          {
+            "type": "function",
+            "function": {
+              "name": "lookup_fact",
+              "description": "Look up one SEC EDGAR XBRL fact for a ticker, metric, and calendar quarter, fiscal quarter (FY2025Q4), or fiscal year. Successful results include period (the normalized requested label, or the resolved label for latest), period_basis (calendar or fiscal), fiscal_equals_calendar, duration_days, and period_type (quarter, ytd, annual, or instant). Additive flows may return derived=true with derivation and components; never treat a ytd result as a quarter or recompute a derived result. When fiscal_equals_calendar is true, fiscal and calendar labels identify the same fact; do not look up both readings. Every fact includes compact provenance: L1 audited 10-K, L2 reviewed 10-Q, or L3 program-derived, with confirmations, restatement, amendment, and evidence strength.",
+              "parameters": {
+                "type": "object",
+                "properties": {
+                  "ticker": {
+                    "type": "string"
+                  },
+                  "metric": {
+                    "type": "string",
+                    "enum": [
+                      "revenue",
+                      "net_income",
+                      "operating_income",
+                      "eps_diluted",
+                      "gross_profit",
+                      "total_assets",
+                      "cash",
+                      "capex",
+                      "rd_expense",
+                      "shares_outstanding"
+                    ]
+                  },
+                  "period": {
+                    "type": "string",
+                    "pattern": "^(latest|FY\\d{4}(?:Q[1-4])?|\\d{4}Q[1-4])$"
+                  }
+                },
+                "required": [
+                  "ticker",
+                  "metric",
+                  "period"
+                ],
+                "additionalProperties": false
+              }
+            }
+          },
+          {
+            "type": "function",
+            "function": {
+              "name": "list_periods",
+              "description": "List the recent directly available SEC EDGAR quarter and fiscal-year periods for a ticker and metric.",
+              "parameters": {
+                "type": "object",
+                "properties": {
+                  "ticker": {
+                    "type": "string"
+                  },
+                  "metric": {
+                    "type": "string",
+                    "enum": [
+                      "revenue",
+                      "net_income",
+                      "operating_income",
+                      "eps_diluted",
+                      "gross_profit",
+                      "total_assets",
+                      "cash",
+                      "capex",
+                      "rd_expense",
+                      "shares_outstanding"
+                    ]
+                  }
+                },
+                "required": [
+                  "ticker",
+                  "metric"
+                ],
+                "additionalProperties": false
+              }
+            }
+          },
+          {
+            "type": "function",
+            "function": {
+              "name": "compute_change",
+              "description": "Compute the absolute and year-over-year change for one SEC EDGAR XBRL metric. The period and base_period must be the same kind of period; when base_period is omitted, null, empty, \"null\", or \"none\", use the same quarter or fiscal year one year earlier. The result includes both cited lookup facts, fiscal_equals_calendar, their fact-level provenance, and a percentage change in percent points.",
+              "parameters": {
+                "type": "object",
+                "properties": {
+                  "ticker": {
+                    "type": "string"
+                  },
+                  "metric": {
+                    "type": "string",
+                    "enum": [
+                      "revenue",
+                      "net_income",
+                      "operating_income",
+                      "eps_diluted",
+                      "gross_profit",
+                      "total_assets",
+                      "cash",
+                      "capex",
+                      "rd_expense",
+                      "shares_outstanding"
+                    ]
+                  },
+                  "period": {
+                    "type": "string",
+                    "pattern": "^(latest|FY\\d{4}(?:Q[1-4])?|\\d{4}Q[1-4])$"
+                  },
+                  "base_period": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "pattern": "^(FY\\d{4}(?:Q[1-4])?|\\d{4}Q[1-4])$"
+                  }
+                },
+                "required": [
+                  "ticker",
+                  "metric",
+                  "period",
+                  "base_period"
+                ],
+                "additionalProperties": false
+              }
+            }
+          },
+          {
+            "type": "function",
+            "function": {
+              "name": "history_rank",
+              "description": "Compare one quarter or fiscal-year fact with every available comparable period of the same period_type. Quarters include derived Q4 values when available; annual periods are compared only with annual periods. Return the rank, record flags through the requested period, prior high/low, and the comparison window with period end dates. The requested period also includes compact fact provenance and evidence strength.",
+              "parameters": {
+                "type": "object",
+                "properties": {
+                  "ticker": {
+                    "type": "string"
+                  },
+                  "metric": {
+                    "type": "string",
+                    "enum": [
+                      "revenue",
+                      "net_income",
+                      "operating_income",
+                      "eps_diluted",
+                      "gross_profit",
+                      "total_assets",
+                      "cash",
+                      "capex",
+                      "rd_expense",
+                      "shares_outstanding"
+                    ]
+                  },
+                  "period": {
+                    "type": "string",
+                    "pattern": "^(latest|FY\\d{4}(?:Q[1-4])?|\\d{4}Q[1-4])$"
+                  }
+                },
+                "required": [
+                  "ticker",
+                  "metric",
+                  "period"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        ],
+        "parallel_tool_calls": true,
+        "max_tokens": 4000
+      },
+      "reservation": {
+        "reservation_id": "268fb00d2a224609a67553b75c02f7ed",
+        "provider": "fireworks",
+        "model": "accounts/fireworks/models/muse-spark-open",
+        "estimated_input_tokens": 3300,
+        "max_output_tokens": 4000,
+        "amount": 0.021125,
+        "payload_chars": 9898,
+        "context_chars": 0
+      },
+      "raw_response": {
+        "id": "chatcmpl-aa4bf02762564e2e9c16402a6948801a",
+        "choices": [
+          {
+            "finish_reason": "stop",
+            "index": 0,
+            "logprobs": null,
+            "message": {
+              "content": "[{\"text\": \"Costco's fiscal Q2 2025 disclosed revenue totaled $63.7 million\", \"stated_text\": \"$63.7 million\", \"claim_type\": \"value\", \"comparator\": \"eq\", \"stated_value\": 63700000, \"evidence_ids\": [\"E1\"], \"interpretations\": [], \"verdict\": \"unsupported\", \"note\": \"SEC filing FY2025Q2 shows revenue of $63,723,000,000 (~$63.7 billion), ~1000x larger than claimed $63.7 million; claim misstates units by factor of 1,000.\", \"model_found_value\": 63723000000}]",
+              "refusal": null,
+              "role": "assistant",
+              "annotations": null,
+              "audio": null,
+              "function_call": null,
+              "tool_calls": null,
+              "reasoning_content": "We need to decompose claim:\n\nCostco's disclosed revenue totaled $63.7 million during the fiscal Q2 period of 2025.\n\nWe need to verify. The fact value is 63,723,000,000 => $63.7 billion, not million. The claim says $63.7 million. That's off by factor 1000.\n\nWe need to create sub-claims.\n\nWe have: Costco's disclosed revenue totaled $63.7 million during the fiscal Q2 period of 2025.\n\nAtomic assertions:\n- Ticker COST revenue value = $63.7 million (but actual is ~$63.7B). Also period FY2025Q2.\n\nWe should produce sub_claim with text etc.\n\nWe need to check comparator: \"totaled $63.7 million\" => plain numeric => eq. stated_value = 63.7 million = 63,700,000.\n\nclaim_type value.\n\nevidence_ids: E1\n\nmodel_found_value = 63723000000\n\nverdict: The tool shows 63,723,000,000, not 63.7M. So incorrect. Should be unsupported? Actually false.\n\nWe need to determine verdict: false? The instructions: verdict field? For each sub_claim must contain verdict, note, model_found_value.\n\nWe should set verdict to unsupported? In these tasks, typically false → needs to be marked unsupported or incorrect. The system expects verdict values: supported, unsupported, insufficient_evidence? Look at prompt: \"Say insufficient_evidence when data is missing or evidence is ambiguous.\" Probably verdict options are supported/unsupported/insufficient_evidence . For false claim, verdict = unsupported.\n\nWe should provide analysis.\n\nWe looked up FY2025Q2, which matches fiscal Q2 period of 2025, with fiscal_equals_calendar false, so need only fiscal reading, which we did.\n\nNo need for list_periods or history_rank.\n\nWe have to produce JSON sub_claims.\n\nWe have one sub-claim.\n\nWe must include fields exactly: text, stated_text, claim_type, comparator, stated_value, evidence_ids, interpretations, verdict, note, model_found_value\n\nProvide interpretations empty.\n\ntext is summary? Could be \"Costco's fiscal Q2 2025 revenue totaled $63.7 million\" etc.\n\nstated_text must be verbatim from claim: \"$63.7 million\" \n\nclaim_type value, comparator eq, stated_value 63700000\n\nevidence_ids [\"E1\"], interpretations []\n\nmodel_found_value 63723000000\n\nverdict: unsupported (or false). Use unsupported.\n\nNote: explain mismatch - actual is $63.723B ~1000x larger.\n\nWe should consider also second sub-claim? The claim says \"Costco's disclosed revenue\" - that's one value. No change assertions. So only one sub-claim needed.\n\nCould also need to split fiscal Q2 period assertion? But the rule says every factual assertion must become sub-claim, including value. The period qualifier is part of the value claim. Probably just one.\n\nProvide final answer.\n\nWe must ensure JSON format? The assistant output expected to be sub_claims JSON. In previous examples, they return JSON array.\n\nWe need to output with model fields.\n\nLet's craft final response with sub_claims array.\n\nAlso need to note fiscal_equals_calendar false, so we cited only fiscal reading, correct.\n\nWe should include note explaining that revenue is $63.723B, claim understates by ~1000x.\n\nMake sure to include evidence_ids.\n\nPossibly need to add approx comparator? Claim says \"$63.7 million\" no hedge, so eq.\n\nProvide final JSON.\n\n",
+              "tools": null
+            }
+          }
+        ],
+        "created": 1793223874,
+        "model": "accounts/fireworks/models/muse-spark-open",
+        "object": "chat.completion",
+        "metadata": null,
+        "moderation": null,
+        "service_tier": null,
+        "system_fingerprint": null,
+        "usage": {
+          "completion_tokens": 898,
+          "prompt_tokens": 3111,
+          "total_tokens": 4009,
+          "completion_tokens_details": {
+            "accepted_prediction_tokens": null,
+            "audio_tokens": null,
+            "reasoning_tokens": 746,
+            "rejected_prediction_tokens": null,
+            "text_tokens": null
+          },
+          "prompt_tokens_details": {
+            "audio_tokens": null,
+            "cache_write_tokens": null,
+            "cached_tokens": 2688,
+            "image_tokens": null,
+            "text_tokens": null
+          },
+          "output_tokens_details": {
+            "reasoning_tokens": 746
+          }
+        }
+      },
+      "usage": {
+        "input": 3111,
+        "cached": 2688,
+        "output": 898,
+        "reasoning": 746
+      },
+      "cost": 0.0047484499999999995,
+      "latency_ms": 19031.227,
+      "status": "completed",
+      "raw_usage": {
+        "completion_tokens": 898,
+        "prompt_tokens": 3111,
+        "total_tokens": 4009,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 746,
+          "rejected_prediction_tokens": null,
+          "text_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cache_write_tokens": null,
+          "cached_tokens": 2688,
+          "image_tokens": null,
+          "text_tokens": null
+        },
+        "output_tokens_details": {
+          "reasoning_tokens": 746
+        }
+      },
+      "normalized_usage": {
+        "input": 3111,
+        "cached": 2688,
+        "output": 898,
+        "reasoning": 746
+      },
+      "finish_reason": "stop",
+      "rate_limit_headers": {
+        "x-ratelimit-limit-tokens-cache-adjusted-prompt": "1800000",
+        "x-ratelimit-limit-tokens-generated": "72000",
+        "x-ratelimit-limit-tokens-prompt": "7200000",
+        "x-ratelimit-limit-tokens-uncached-prompt": "1800000",
+        "x-ratelimit-over-limit": "no",
+        "x-ratelimit-remaining-tokens-generated": "62092",
+        "x-ratelimit-remaining-tokens-prompt": "7173139",
+        "x-ratelimit-remaining-tokens-uncached-prompt": "1794902"
+      }
+    },
+    {
+      "request": {
+        "model": "accounts/fireworks/models/muse-spark-open",
+        "messages": [
+          {
+            "role": "system",
+            "content": "You verify financial claims against SEC EDGAR facts.\nDecompose the claim into every atomic factual assertion. Every factual assertion\nin the user's claim must become a sub-claim, including a value, a change, a\nrecord, and a first-time assertion in the same sentence. Assertions that the\ntools cannot check must still become a sub-claim with claim_type other; the\nprogram will leave those unchecked. Use lookup_fact for a value,\ncompute_change for YoY or other period-to-period growth, history_rank for\nrecord/first-time assertions, and list_periods only to understand missing data.\nNever use memory for numbers. A quarter must have period_type=quarter and\nduration_days around 80-100, not period_type=ytd. If a result has derived=true,\nuse its derivation and components as evidence and do not calculate that fact\nagain. For compute_change, cite its own evidence ID; its two nested component\nfact IDs may also be cited and are ignored by the verifier.\n\nEach final sub_claim must contain exactly these model fields:\ntext, stated_text, claim_type (value, change_pct, change_abs, record_high,\nrecord_low, first_time_above, or other), comparator (eq, approx, gt, gte, lt,\nor lte), stated_value in base units (USD, USD/share, percentage points, or 1\nfor a record boolean), evidence_ids, interpretations, verdict, note, and\nmodel_found_value. interpretations is required and may be empty. Every non-empty\nitem must be an evidence id like E3 — never free text.\nCopy stated_text verbatim from the claim, including words such as \"about\",\n\"up\", or \"fell\" (for example, \"about $1.4 billion\", \"up 22%\", or\n\"fell 10%\"). For a change_pct, stated_value is 22 for 22%, not 0.22; the\nverifier applies the sign implied by direction words such as fell/down or\nrose/up. model_found_value is the number read from the cited evidence in the\nsame units, or null when it is missing.\n\nComparator wording is deterministic: a plain numeric statement with no hedge\nor inequality phrase is eq; about/around/roughly/approximately/nearly/almost,\nclose to, some, or ~ means approx; topped/exceeded/above/more than/over/\nsurpassed/beat means gt; at least/no less than means gte; below/under/less\nthan/short of means lt; at most/no more than/up to means lte. The program\nrecords and may correct the model comparator from these words. \"up\" and\n\"fell\" describe change direction, not approximation.\n\nFor a quarter claim at a non-calendar-fiscal issuer, use period_basis from\nthe tool results. If the claim says neither fiscal nor calendar, look up both\nthe calendar label (for example 2025Q4) and the fiscal label (for example\nFY2025Q4), cite both IDs in evidence_ids, and put those two IDs in\ninterpretations. Keep interpretations empty unless both fiscal and calendar\nreadings were looked up. If the claim says fiscal, cite only the fiscal\nreading; if it says calendar, cite only the calendar reading. When a lookup or\ncompute result has fiscal_equals_calendar=true, the issuer's fiscal year is the\ncalendar year: fiscal and calendar labels refer to the same underlying facts,\nso look up and cite only one reading even when the claim has no\nfiscal/calendar qualifier.\n\nExamples:\n1. \"Tesla net income was about $1.4 billion\": lookup_fact; stated_text\n   \"about $1.4 billion\", claim_type value, comparator approx, stated_value\n   1400000000.\n2. \"Alphabet revenue exceeded $100 billion\": lookup_fact; stated_text\n   \"exceeded $100 billion\", claim_type value, comparator gt, stated_value\n   100000000000.\n3. \"Meta revenue was up 22% YoY\": compute_change(META, revenue, 2025Q2,\n   null); stated_text \"up 22%\", claim_type change_pct, comparator eq,\n   stated_value 22, and cite the compute_change evidence ID.\n4. \"Tesla revenue fell 10% YoY\": compute_change(TSLA, revenue, 2025Q3,\n   null); stated_text \"fell 10%\", claim_type change_pct, comparator eq,\n   stated_value -10, and cite the compute_change evidence ID.\n5. \"Alphabet Q3 2025 revenue was a record high\": history_rank(GOOGL,\n   revenue, 2025Q3); claim_type record_high, comparator eq, stated_value 1,\n   and cite the history_rank evidence ID.\n6. \"Alphabet Q3 2025 revenue topped $100 billion for the first time\": create\n   two sub-claims: value gt 100000000000 and first_time_above with stated_value\n   100000000000, both citing the relevant evidence; the latter is supported\n   only when this period is above the threshold and no earlier comparable\n   period is above it.\n7. If a requested fact is unavailable, leave model_found_value null, cite any\n   relevant evidence, and set that sub-claim to insufficient_evidence. Say\n   insufficient_evidence when data is missing or evidence is ambiguous."
+          },
+          {
+            "role": "user",
+            "content": "Costco's disclosed revenue totaled $63.7 million during the fiscal Q2 period of 2025."
+          },
+          {
+            "role": "assistant",
+            "content": "I'll verify Costco's Q2 2025 revenue against SEC filings to check that $63.7 million figure.",
+            "tool_calls": [
+              {
+                "id": "chatcmpl-tool-917175b4c1673c3a",
+                "type": "function",
+                "function": {
+                  "name": "lookup_fact",
+                  "arguments": "{\"ticker\": \"COST\", \"metric\": \"revenue\", \"period\": \"FY2025Q2\"}"
+                }
+              }
+            ]
+          },
+          {
+            "role": "tool",
+            "tool_call_id": "chatcmpl-tool-917175b4c1673c3a",
+            "content": "{\"ticker\":\"COST\",\"cik\":\"0000909832\",\"entity\":\"COSTCO WHOLESALE CORP /NEW\",\"metric\":\"revenue\",\"concept\":\"Revenues\",\"unit\":\"USD\",\"value\":63723000000,\"start\":\"2024-11-25\",\"end\":\"2025-02-16\",\"form\":\"10-Q\",\"form_fallback\":false,\"accn\":\"0000909832-26-000029\",\"filed\":\"2026-03-11\",\"frame\":null,\"fiscal_year\":2025,\"fiscal_period\":\"Q2\",\"duration_days\":84,\"period_type\":\"quarter\",\"fiscal_equals_calendar\":false,\"derived\":false,\"filing_url\":\"https://www.sec.gov/Archives/edgar/data/909832/000090983226000029/\",\"source_sha256\":\"b675ced201b27ede2b0d26ca6fd873befe96a1afa9679339a2d0b964187dcdff\",\"provenance\":{\"tier\":\"L2\",\"audited\":false,\"confirmations\":2,\"forms\":[\"10-Q\"],\"first_filed\":\"2025-03-13\",\"latest_filed\":\"2026-03-11\",\"restated\":false,\"amended\":false,\"strength\":\"medium\"},\"period\":\"FY2025Q2\",\"period_basis\":\"fiscal\",\"evidence_id\":\"E1\"}"
+          },
+          {
+            "role": "assistant",
+            "content": "[{\"text\": \"Costco's fiscal Q2 2025 disclosed revenue totaled $63.7 million\", \"stated_text\": \"$63.7 million\", \"claim_type\": \"value\", \"comparator\": \"eq\", \"stated_value\": 63700000, \"evidence_ids\": [\"E1\"], \"interpretations\": [], \"verdict\": \"unsupported\", \"note\": \"SEC filing FY2025Q2 shows revenue of $63,723,000,000 (~$63.7 billion), ~1000x larger than claimed $63.7 million; claim misstates units by factor of 1,000.\", \"model_found_value\": 63723000000}]"
+          },
+          {
+            "role": "user",
+            "content": "Return only one plain JSON object for the final verdict. Do not use Markdown fences or explanatory text. Include every atomic factual assertion as a sub-claim, including claim_type other when the tools cannot check it. Copy stated_text verbatim from the claim and include claim_type, comparator, stated_value in base units, evidence_ids, interpretations (evidence ids like E3 — never free text), verdict, model_found_value, and a concise note. The object must match this existing verdict schema: {\"type\":\"object\",\"properties\":{\"verdict\":{\"type\":\"string\",\"enum\":[\"supported\",\"contradicted\",\"insufficient_evidence\"]},\"summary\":{\"type\":\"string\"},\"sub_claims\":{\"type\":\"array\",\"items\":{\"type\":\"object\",\"properties\":{\"text\":{\"type\":\"string\"},\"stated_text\":{\"type\":\"string\"},\"claim_type\":{\"type\":\"string\",\"enum\":[\"value\",\"change_pct\",\"change_abs\",\"record_high\",\"record_low\",\"first_time_above\",\"other\"]},\"comparator\":{\"type\":\"string\",\"enum\":[\"eq\",\"approx\",\"gt\",\"gte\",\"lt\",\"lte\"]},\"stated_value\":{\"type\":[\"number\",\"null\"]},\"evidence_ids\":{\"type\":\"array\",\"items\":{\"type\":\"string\"}},\"interpretations\":{\"type\":\"array\",\"items\":{\"type\":\"string\",\"description\":\"evidence id like E3 — never free text\"}},\"verdict\":{\"type\":\"string\",\"enum\":[\"supported\",\"contradicted\",\"insufficient_evidence\"]},\"note\":{\"type\":\"string\"},\"model_found_value\":{\"type\":[\"number\",\"null\"]}},\"required\":[\"text\",\"stated_text\",\"claim_type\",\"comparator\",\"stated_value\",\"evidence_ids\",\"interpretations\",\"verdict\",\"note\",\"model_found_value\"],\"additionalProperties\":false}}},\"required\":[\"verdict\",\"summary\",\"sub_claims\"],\"additionalProperties\":false}"
+          }
+        ],
+        "max_tokens": 3000
+      },
+      "reservation": {
+        "reservation_id": "03eb62f28d85437f81e1d5c360606ee4",
+        "provider": "fireworks",
+        "model": "accounts/fireworks/models/muse-spark-open",
+        "estimated_input_tokens": 2878,
+        "max_output_tokens": 3000,
+        "amount": 0.0163475,
+        "payload_chars": 8634,
+        "context_chars": 0
+      },
+      "raw_response": {
+        "id": "chatcmpl-e05516e78e5a47f681d6beacab4f0e9e",
+        "choices": [
+          {
+            "finish_reason": "stop",
+            "index": 0,
+            "logprobs": null,
+            "message": {
+              "content": "{\"verdict\":\"contradicted\",\"summary\":\"Costco FY2025 Q2 revenue per SEC 10-Q was $63.723 billion, not $63.7 million — claim understates by ~1000x due to unit error.\",\"sub_claims\":[{\"text\":\"Costco's disclosed revenue totaled $63.7 million during the fiscal Q2 period of 2025.\",\"stated_text\":\"$63.7 million\",\"claim_type\":\"value\",\"comparator\":\"eq\",\"stated_value\":63700000,\"evidence_ids\":[\"E1\"],\"interpretations\":[],\"verdict\":\"contradicted\",\"note\":\"E1 shows FY2025Q2 revenue of $63,723,000,000 (~$63.7 billion), ~1000x the claimed $63.7 million.\",\"model_found_value\":63723000000}]}",
+              "refusal": null,
+              "role": "assistant",
+              "annotations": null,
+              "audio": null,
+              "function_call": null,
+              "tool_calls": null,
+              "reasoning_content": "We need to produce one plain JSON object for final verdict. Need to match schema. We have claim: Costco's disclosed revenue totaled $63.7 million during the fiscal Q2 period of 2025.\n\nWe looked up FY2025Q2 revenue = 63,723,000,000 USD = 63.723 billion. Claim says $63.7 million - off by factor 1000. So verdict contradicted? But earlier assistant said unsupported. Need to produce final verdict. Need to determine verdict overall: contradicted because value is wrong.\n\nWe need to provide sub_claims array with every atomic factual assertion. So one sub_claim: text = \"Costco's disclosed revenue totaled $63.7 million during the fiscal Q2 period of 2025.\" Or text same as claim. stated_text = \"$63.7 million\". claim_type = value, comparator eq, stated_value 63700000, evidence_ids [\"E1\"], interpretations [], verdict contradicted, note explaining, model_found_value 63723000000.\n\nNeed also provide overall verdict: \"contradicted\" and summary.\n\nWe must ensure JSON object matches schema exactly.\n\nWe have evidence E1 already retrieved.\n\nWe should provide final JSON with verdict, summary, sub_claims.\n\nMake sure to include required fields: type? The schema describes object with verdict, summary, sub_claims. We must output that.\n\nSummary: explain discrepancy.\n\nUse precise language.\n\nCheck comparator: claim says totaled $63.7 million - plain numeric, so eq.\n\nstated_value in base units: 63700000.\n\nmodel_found_value: 63723000000.\n\nverdict for sub_claim: contradicted.\n\nOverall verdict: contradicted.\n\nNeed to ensure interpretations is array of evidence ids - empty.\n\nNote concise.\n\nProvide JSON only, no markdown.\n\n",
+              "tools": null
+            }
+          }
+        ],
+        "created": 1793223893,
+        "model": "accounts/fireworks/models/muse-spark-open",
+        "object": "chat.completion",
+        "metadata": null,
+        "moderation": null,
+        "service_tier": null,
+        "system_fingerprint": null,
+        "usage": {
+          "completion_tokens": 549,
+          "prompt_tokens": 2212,
+          "total_tokens": 2761,
+          "completion_tokens_details": {
+            "accepted_prediction_tokens": null,
+            "audio_tokens": null,
+            "reasoning_tokens": 369,
+            "rejected_prediction_tokens": null,
+            "text_tokens": null
+          },
+          "prompt_tokens_details": {
+            "audio_tokens": null,
+            "cache_write_tokens": null,
+            "cached_tokens": 1216,
+            "image_tokens": null,
+            "text_tokens": null
+          },
+          "output_tokens_details": {
+            "reasoning_tokens": 369
+          }
+        }
+      },
+      "usage": {
+        "input": 2212,
+        "cached": 1216,
+        "output": 549,
+        "reasoning": 369
+      },
+      "cost": 0.00376065,
+      "latency_ms": 11454.811,
+      "status": "completed",
+      "raw_usage": {
+        "completion_tokens": 549,
+        "prompt_tokens": 2212,
+        "total_tokens": 2761,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 369,
+          "rejected_prediction_tokens": null,
+          "text_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cache_write_tokens": null,
+          "cached_tokens": 1216,
+          "image_tokens": null,
+          "text_tokens": null
+        },
+        "output_tokens_details": {
+          "reasoning_tokens": 369
+        }
+      },
+      "normalized_usage": {
+        "input": 2212,
+        "cached": 1216,
+        "output": 549,
+        "reasoning": 369
+      },
+      "finish_reason": "stop",
+      "rate_limit_headers": {
+        "x-ratelimit-limit-tokens-cache-adjusted-prompt": "1800000",
+        "x-ratelimit-limit-tokens-generated": "72000",
+        "x-ratelimit-limit-tokens-prompt": "7200000",
+        "x-ratelimit-limit-tokens-uncached-prompt": "1800000",
+        "x-ratelimit-over-limit": "no",
+        "x-ratelimit-remaining-tokens-prompt": "7197788"
+      }
+    }
+  ],
+  "tool_calls": [
+    {
+      "name": "lookup_fact",
+      "arguments": {
+        "ticker": "COST",
+        "metric": "revenue",
+        "period": "FY2025Q2"
+      },
+      "call_id": "chatcmpl-tool-917175b4c1673c3a",
+      "result": {
+        "ticker": "COST",
+        "cik": "0000909832",
+        "entity": "COSTCO WHOLESALE CORP /NEW",
+        "metric": "revenue",
+        "concept": "Revenues",
+        "unit": "USD",
+        "value": 63723000000,
+        "start": "2024-11-25",
+        "end": "2025-02-16",
+        "form": "10-Q",
+        "form_fallback": false,
+        "accn": "0000909832-26-000029",
+        "filed": "2026-03-11",
+        "frame": null,
+        "fiscal_year": 2025,
+        "fiscal_period": "Q2",
+        "duration_days": 84,
+        "period_type": "quarter",
+        "fiscal_equals_calendar": false,
+        "derived": false,
+        "filing_url": "https://www.sec.gov/Archives/edgar/data/909832/000090983226000029/",
+        "source_sha256": "b675ced201b27ede2b0d26ca6fd873befe96a1afa9679339a2d0b964187dcdff",
+        "provenance": {
+          "tier": "L2",
+          "audited": false,
+          "confirmations": 2,
+          "forms": [
+            "10-Q"
+          ],
+          "first_filed": "2025-03-13",
+          "latest_filed": "2026-03-11",
+          "restated": false,
+          "amended": false,
+          "strength": "medium"
+        },
+        "period": "FY2025Q2",
+        "period_basis": "fiscal",
+        "evidence_id": "E1"
+      }
+    }
+  ],
+  "usage": [
+    {
+      "input": 2698,
+      "cached": 2624,
+      "output": 422,
+      "reasoning": 307
+    },
+    {
+      "input": 3111,
+      "cached": 2688,
+      "output": 898,
+      "reasoning": 746
+    },
+    {
+      "input": 2212,
+      "cached": 1216,
+      "output": 549,
+      "reasoning": 369
+    }
+  ],
+  "tokens": {
+    "input": 8021,
+    "cached": 6528,
+    "output": 1869,
+    "reasoning": 1422
+  },
+  "model_calls": 3,
+  "cost": 0.0107887,
+  "cost_usd": 0.0107887,
+  "latency_ms": 38635.337,
+  "tool_call_count": 1,
+  "incomplete_turns": [],
+  "previous_response_fallback": false,
+  "final_verdict": {
+    "verdict": "contradicted",
+    "summary": "Costco FY2025 Q2 revenue per SEC 10-Q was $63.723 billion, not $63.7 million — claim understates by ~1000x due to unit error.",
+    "sub_claims": [
+      {
+        "text": "Costco's disclosed revenue totaled $63.7 million during the fiscal Q2 period of 2025.",
+        "stated_text": "$63.7 million",
+        "claim_type": "value",
+        "comparator": "eq",
+        "stated_value": 63700000.0,
+        "verdict": "contradicted",
+        "evidence_ids": [
+          "E1"
+        ],
+        "interpretations": [],
+        "model_found_value": 63723000000,
+        "note": "E1 shows FY2025Q2 revenue of $63,723,000,000 (~$63.7 billion), ~1000x the claimed $63.7 million.",
+        "evidence_valid": true,
+        "program_verdict": "contradicted",
+        "actual_value": 63723000000.0,
+        "tolerance": 50000.0,
+        "reason": "actual 6.3723e+10 is not consistent with stated 6.37e+07 using eq tolerance 50000",
+        "disagreement": false,
+        "precision": 50000.0,
+        "stated_value_used": 63700000.0,
+        "period_ambiguous": false,
+        "program_added_interpretation": false,
+        "program_evidence_ids": [],
+        "invalid_interpretations": false,
+        "deduplicated_evidence": [],
+        "stated_value_corrected": false,
+        "stated_text_unparsed": false,
+        "stated_sign_corrected": false,
+        "threshold_from_model": false,
+        "model_comparator": "eq",
+        "comparator_corrected": false,
+        "evidence_strength": "medium",
+        "evidence_summary": "Evidence: reviewed 10-Q, confirmed in 2 filings, not restated",
+        "restated_evidence": false
+      }
+    ],
+    "model_verdict": "contradicted",
+    "program_checks": [
+      {
+        "text": "Costco's disclosed revenue totaled $63.7 million during the fiscal Q2 period of 2025.",
+        "stated_value": 63700000.0,
+        "evidence_ids": [
+          "E1"
+        ],
+        "evidence_valid": true,
+        "program_verdict": "contradicted",
+        "actual_value": 63723000000.0,
+        "tolerance": 50000.0,
+        "reason": "actual 6.3723e+10 is not consistent with stated 6.37e+07 using eq tolerance 50000",
+        "disagreement": false,
+        "precision": 50000.0,
+        "stated_value_used": 63700000.0,
+        "comparator": "eq",
+        "interpretations": [],
+        "period_ambiguous": false,
+        "program_added_interpretation": false,
+        "program_evidence_ids": [],
+        "invalid_interpretations": false,
+        "deduplicated_evidence": [],
+        "stated_value_corrected": false,
+        "stated_text_unparsed": false,
+        "stated_sign_corrected": false,
+        "threshold_from_model": false,
+        "model_comparator": "eq",
+        "comparator_corrected": false,
+        "evidence_strength": "medium",
+        "evidence_summary": "Evidence: reviewed 10-Q, confirmed in 2 filings, not restated",
+        "restated_evidence": false
+      }
+    ],
+    "evidence_strength": "medium",
+    "evidence_summary": "Evidence: reviewed 10-Q, confirmed in 2 filings, not restated",
+    "model_program_disagreement": false
+  },
+  "program_checks": [
+    {
+      "text": "Costco's disclosed revenue totaled $63.7 million during the fiscal Q2 period of 2025.",
+      "stated_value": 63700000.0,
+      "evidence_ids": [
+        "E1"
+      ],
+      "evidence_valid": true,
+      "program_verdict": "contradicted",
+      "actual_value": 63723000000.0,
+      "tolerance": 50000.0,
+      "reason": "actual 6.3723e+10 is not consistent with stated 6.37e+07 using eq tolerance 50000",
+      "disagreement": false,
+      "precision": 50000.0,
+      "stated_value_used": 63700000.0,
+      "comparator": "eq",
+      "interpretations": [],
+      "period_ambiguous": false,
+      "program_added_interpretation": false,
+      "program_evidence_ids": [],
+      "invalid_interpretations": false,
+      "deduplicated_evidence": [],
+      "stated_value_corrected": false,
+      "stated_text_unparsed": false,
+      "stated_sign_corrected": false,
+      "threshold_from_model": false,
+      "model_comparator": "eq",
+      "comparator_corrected": false,
+      "evidence_strength": "medium",
+      "evidence_summary": "Evidence: reviewed 10-Q, confirmed in 2 filings, not restated",
+      "restated_evidence": false
+    }
+  ]
+}

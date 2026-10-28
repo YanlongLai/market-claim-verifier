@@ -268,3 +268,10 @@ reasoning, cost, latency) and `REPORT.md`. Gold labels for the 30 claims were co
   - **Rerun:** Microsoft FY2024 supported, Coca-Cola contradicted, Meta "623 億" contradicted (filed $62.36B rounds to 624 億). The before-fix run is kept.
 - **Tests.** 199 pass, including 9 new ones for screening, scale words and multipliers.
 - **Spend.** Post runs: about $0.07 (Baseten) and $0.09–0.10 per run (Meta API). The per-provider budget cap was raised to $60 by the owner.
+- **Fix: ambiguous quarters (commit `102b20c`).** A claim like "Q2 2024" with no fiscal/calendar label, for a non-calendar issuer, now makes the program fetch the reading the model did not check (evidence IDs `P*`). If the two readings disagree, the verdict is insufficient evidence. Implemented by Codex, reviewed; 215 tests pass.
+- **Post-hoc agent rerun (UTC 21:07–22:49).** The three agents on all 357 claims with the corrected gold, $60 cap per provider; single-shot was not rerun (its code path is unchanged), so its rows in this report read 0 and are not results. Evidence: `docs/evidence/eval-v2-2026-10-28-r2-posthoc/`.
+  - Fireworks 329/357 = 92.2% (v2 90.5%), Baseten 325/357 = 91.0% (90.5%), Meta API 305/357 = 85.4% (83.2%).
+  - False "supported" 0/186 for all three (v2: 1, 1, 4). G0235/G0240/G0249 moved to insufficient evidence.
+  - Paired flips vs v2 (fixed/broke): Fireworks 9/3, Baseten 8/6, Meta API 27/19; McNemar p = 0.15, 0.79, 0.30, so accuracy changes are within noise.
+  - Meta API: 3 provider errors (two 400 "No tool output found for function call", one 503), counted wrong.
+  - Spend: Meta $8.96, Baseten $7.23, Fireworks $7.31. Labeled post-hoc: fixes were designed after seeing v2 failures.

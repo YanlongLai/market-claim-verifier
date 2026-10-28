@@ -1,0 +1,961 @@
+{
+  "claim": "For the first fiscal quarter of 2026, Intel cleared the $6.0B mark in gross profit.",
+  "model": "accounts/fireworks/models/muse-spark-open",
+  "provider": "fireworks",
+  "requests": [
+    {
+      "request": {
+        "model": "accounts/fireworks/models/muse-spark-open",
+        "messages": [
+          {
+            "role": "system",
+            "content": "You verify financial claims against SEC EDGAR facts.\nDecompose the claim into every atomic factual assertion. Every factual assertion\nin the user's claim must become a sub-claim, including a value, a change, a\nrecord, and a first-time assertion in the same sentence. Assertions that the\ntools cannot check must still become a sub-claim with claim_type other; the\nprogram will leave those unchecked. Use lookup_fact for a value,\ncompute_change for YoY or other period-to-period growth, history_rank for\nrecord/first-time assertions, and list_periods only to understand missing data.\nNever use memory for numbers. A quarter must have period_type=quarter and\nduration_days around 80-100, not period_type=ytd. If a result has derived=true,\nuse its derivation and components as evidence and do not calculate that fact\nagain. For compute_change, cite its own evidence ID; its two nested component\nfact IDs may also be cited and are ignored by the verifier.\n\nEach final sub_claim must contain exactly these model fields:\ntext, stated_text, claim_type (value, change_pct, change_abs, record_high,\nrecord_low, first_time_above, or other), comparator (eq, approx, gt, gte, lt,\nor lte), stated_value in base units (USD, USD/share, percentage points, or 1\nfor a record boolean), evidence_ids, interpretations, verdict, note, and\nmodel_found_value. interpretations is required and may be empty. Every non-empty\nitem must be an evidence id like E3 — never free text.\nCopy stated_text verbatim from the claim, including words such as \"about\",\n\"up\", or \"fell\" (for example, \"about $1.4 billion\", \"up 22%\", or\n\"fell 10%\"). For a change_pct, stated_value is 22 for 22%, not 0.22; the\nverifier applies the sign implied by direction words such as fell/down or\nrose/up. model_found_value is the number read from the cited evidence in the\nsame units, or null when it is missing.\n\nComparator wording is deterministic: a plain numeric statement with no hedge\nor inequality phrase is eq; about/around/roughly/approximately/nearly/almost,\nclose to, some, or ~ means approx; topped/exceeded/above/more than/over/\nsurpassed/beat means gt; at least/no less than means gte; below/under/less\nthan/short of means lt; at most/no more than/up to means lte. The program\nrecords and may correct the model comparator from these words. \"up\" and\n\"fell\" describe change direction, not approximation.\n\nFor a quarter claim at a non-calendar-fiscal issuer, use period_basis from\nthe tool results. If the claim says neither fiscal nor calendar, look up both\nthe calendar label (for example 2025Q4) and the fiscal label (for example\nFY2025Q4), cite both IDs in evidence_ids, and put those two IDs in\ninterpretations. Keep interpretations empty unless both fiscal and calendar\nreadings were looked up. If the claim says fiscal, cite only the fiscal\nreading; if it says calendar, cite only the calendar reading. When a lookup or\ncompute result has fiscal_equals_calendar=true, the issuer's fiscal year is the\ncalendar year: fiscal and calendar labels refer to the same underlying facts,\nso look up and cite only one reading even when the claim has no\nfiscal/calendar qualifier.\n\nExamples:\n1. \"Tesla net income was about $1.4 billion\": lookup_fact; stated_text\n   \"about $1.4 billion\", claim_type value, comparator approx, stated_value\n   1400000000.\n2. \"Alphabet revenue exceeded $100 billion\": lookup_fact; stated_text\n   \"exceeded $100 billion\", claim_type value, comparator gt, stated_value\n   100000000000.\n3. \"Meta revenue was up 22% YoY\": compute_change(META, revenue, 2025Q2,\n   null); stated_text \"up 22%\", claim_type change_pct, comparator eq,\n   stated_value 22, and cite the compute_change evidence ID.\n4. \"Tesla revenue fell 10% YoY\": compute_change(TSLA, revenue, 2025Q3,\n   null); stated_text \"fell 10%\", claim_type change_pct, comparator eq,\n   stated_value -10, and cite the compute_change evidence ID.\n5. \"Alphabet Q3 2025 revenue was a record high\": history_rank(GOOGL,\n   revenue, 2025Q3); claim_type record_high, comparator eq, stated_value 1,\n   and cite the history_rank evidence ID.\n6. \"Alphabet Q3 2025 revenue topped $100 billion for the first time\": create\n   two sub-claims: value gt 100000000000 and first_time_above with stated_value\n   100000000000, both citing the relevant evidence; the latter is supported\n   only when this period is above the threshold and no earlier comparable\n   period is above it.\n7. If a requested fact is unavailable, leave model_found_value null, cite any\n   relevant evidence, and set that sub-claim to insufficient_evidence. Say\n   insufficient_evidence when data is missing or evidence is ambiguous."
+          },
+          {
+            "role": "user",
+            "content": "For the first fiscal quarter of 2026, Intel cleared the $6.0B mark in gross profit."
+          }
+        ],
+        "tools": [
+          {
+            "type": "function",
+            "function": {
+              "name": "lookup_fact",
+              "description": "Look up one SEC EDGAR XBRL fact for a ticker, metric, and calendar quarter, fiscal quarter (FY2025Q4), or fiscal year. Successful results include period (the normalized requested label, or the resolved label for latest), period_basis (calendar or fiscal), fiscal_equals_calendar, duration_days, and period_type (quarter, ytd, annual, or instant). Additive flows may return derived=true with derivation and components; never treat a ytd result as a quarter or recompute a derived result. When fiscal_equals_calendar is true, fiscal and calendar labels identify the same fact; do not look up both readings. Every fact includes compact provenance: L1 audited 10-K, L2 reviewed 10-Q, or L3 program-derived, with confirmations, restatement, amendment, and evidence strength.",
+              "parameters": {
+                "type": "object",
+                "properties": {
+                  "ticker": {
+                    "type": "string"
+                  },
+                  "metric": {
+                    "type": "string",
+                    "enum": [
+                      "revenue",
+                      "net_income",
+                      "operating_income",
+                      "eps_diluted",
+                      "gross_profit",
+                      "total_assets",
+                      "cash",
+                      "capex",
+                      "rd_expense",
+                      "shares_outstanding"
+                    ]
+                  },
+                  "period": {
+                    "type": "string",
+                    "pattern": "^(latest|FY\\d{4}(?:Q[1-4])?|\\d{4}Q[1-4])$"
+                  }
+                },
+                "required": [
+                  "ticker",
+                  "metric",
+                  "period"
+                ],
+                "additionalProperties": false
+              }
+            }
+          },
+          {
+            "type": "function",
+            "function": {
+              "name": "list_periods",
+              "description": "List the recent directly available SEC EDGAR quarter and fiscal-year periods for a ticker and metric.",
+              "parameters": {
+                "type": "object",
+                "properties": {
+                  "ticker": {
+                    "type": "string"
+                  },
+                  "metric": {
+                    "type": "string",
+                    "enum": [
+                      "revenue",
+                      "net_income",
+                      "operating_income",
+                      "eps_diluted",
+                      "gross_profit",
+                      "total_assets",
+                      "cash",
+                      "capex",
+                      "rd_expense",
+                      "shares_outstanding"
+                    ]
+                  }
+                },
+                "required": [
+                  "ticker",
+                  "metric"
+                ],
+                "additionalProperties": false
+              }
+            }
+          },
+          {
+            "type": "function",
+            "function": {
+              "name": "compute_change",
+              "description": "Compute the absolute and year-over-year change for one SEC EDGAR XBRL metric. The period and base_period must be the same kind of period; when base_period is omitted, null, empty, \"null\", or \"none\", use the same quarter or fiscal year one year earlier. The result includes both cited lookup facts, fiscal_equals_calendar, their fact-level provenance, and a percentage change in percent points.",
+              "parameters": {
+                "type": "object",
+                "properties": {
+                  "ticker": {
+                    "type": "string"
+                  },
+                  "metric": {
+                    "type": "string",
+                    "enum": [
+                      "revenue",
+                      "net_income",
+                      "operating_income",
+                      "eps_diluted",
+                      "gross_profit",
+                      "total_assets",
+                      "cash",
+                      "capex",
+                      "rd_expense",
+                      "shares_outstanding"
+                    ]
+                  },
+                  "period": {
+                    "type": "string",
+                    "pattern": "^(latest|FY\\d{4}(?:Q[1-4])?|\\d{4}Q[1-4])$"
+                  },
+                  "base_period": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "pattern": "^(FY\\d{4}(?:Q[1-4])?|\\d{4}Q[1-4])$"
+                  }
+                },
+                "required": [
+                  "ticker",
+                  "metric",
+                  "period",
+                  "base_period"
+                ],
+                "additionalProperties": false
+              }
+            }
+          },
+          {
+            "type": "function",
+            "function": {
+              "name": "history_rank",
+              "description": "Compare one quarter or fiscal-year fact with every available comparable period of the same period_type. Quarters include derived Q4 values when available; annual periods are compared only with annual periods. Return the rank, record flags through the requested period, prior high/low, and the comparison window with period end dates. The requested period also includes compact fact provenance and evidence strength.",
+              "parameters": {
+                "type": "object",
+                "properties": {
+                  "ticker": {
+                    "type": "string"
+                  },
+                  "metric": {
+                    "type": "string",
+                    "enum": [
+                      "revenue",
+                      "net_income",
+                      "operating_income",
+                      "eps_diluted",
+                      "gross_profit",
+                      "total_assets",
+                      "cash",
+                      "capex",
+                      "rd_expense",
+                      "shares_outstanding"
+                    ]
+                  },
+                  "period": {
+                    "type": "string",
+                    "pattern": "^(latest|FY\\d{4}(?:Q[1-4])?|\\d{4}Q[1-4])$"
+                  }
+                },
+                "required": [
+                  "ticker",
+                  "metric",
+                  "period"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        ],
+        "parallel_tool_calls": true,
+        "max_tokens": 4000
+      },
+      "reservation": {
+        "reservation_id": "516e1dd43741474fbc10896ebf55d77e",
+        "provider": "fireworks",
+        "model": "accounts/fireworks/models/muse-spark-open",
+        "estimated_input_tokens": 2851,
+        "max_output_tokens": 4000,
+        "amount": 0.020563750000000002,
+        "payload_chars": 8551,
+        "context_chars": 0
+      },
+      "raw_response": {
+        "id": "chatcmpl-e0613e32d56f486f933313f11d812501",
+        "choices": [
+          {
+            "finish_reason": "tool_calls",
+            "index": 0,
+            "logprobs": null,
+            "message": {
+              "content": "A $6B gross profit claim for Intel's Q1 fiscal 2026 — I'll verify it against SEC filings.",
+              "refusal": null,
+              "role": "assistant",
+              "annotations": null,
+              "audio": null,
+              "function_call": null,
+              "tool_calls": [
+                {
+                  "id": "chatcmpl-tool-bc2c35eaaddce40f",
+                  "function": {
+                    "arguments": "{\"ticker\": \"INTC\", \"metric\": \"gross_profit\", \"period\": \"FY2026Q1\"}",
+                    "name": "lookup_fact"
+                  },
+                  "type": "function",
+                  "index": 0,
+                  "name": null
+                }
+              ],
+              "reasoning_content": "Need to verify claim: \"For the first fiscal quarter of 2026, Intel cleared the $6.0B mark in gross profit.\"\n\nWe need to decompose into atomic factual assertions. Claim says: For first fiscal quarter of 2026, Intel cleared the $6.0B mark in gross profit.\n\nInterpretation: Ticker INTC, metric gross_profit, period FY2026Q1, comparator gt? \"cleared the $6.0B mark\" -> means exceeded $6.0B. Could be gt. Need to look up fact.\n\nWe need to provide sub-claims.\n\nWe must use tools.\n\nWe have to call lookup_fact for INTC gross_profit FY2026Q1.\n\nAlso need to consider history? The claim is value only. No record high, no change. Just value.\n\nBut need to decompose correctly. The claim says Intel cleared $6.0B mark in gross profit for first fiscal quarter 2026. So one sub-claim: gross profit > $6B.\n\nWe need to check comparator: \"cleared the $6.0B mark\" -> topped/exceeded -> gt. So comparator gt, stated_value 6000000000.\n\nWe need to lookup_fact.\n\nPotential nuance: Intel fiscal year equals calendar? Need to check. Intel fiscal year is calendar year historically? Intel fiscal year ends around Dec? Typically Intel fiscal year is calendar year (Dec 31). So fiscal_equals_calendar true likely. But we follow instruction: If claim says fiscal, cite only fiscal reading; If claim says fiscal, cite only fiscal reading. Claim says \"first fiscal quarter of 2026\" -> says fiscal, so cite only fiscal reading.\n\nWe should call lookup_fact.\n\nWe also should maybe list_periods to understand missing data? But required to verify.\n\nWe will do lookup.\n\n",
+              "tools": null
+            }
+          }
+        ],
+        "created": 1793222403,
+        "model": "accounts/fireworks/models/muse-spark-open",
+        "object": "chat.completion",
+        "metadata": null,
+        "moderation": null,
+        "service_tier": null,
+        "system_fingerprint": null,
+        "usage": {
+          "completion_tokens": 491,
+          "prompt_tokens": 2699,
+          "total_tokens": 3190,
+          "completion_tokens_details": {
+            "accepted_prediction_tokens": null,
+            "audio_tokens": null,
+            "reasoning_tokens": 374,
+            "rejected_prediction_tokens": null,
+            "text_tokens": null
+          },
+          "prompt_tokens_details": {
+            "audio_tokens": null,
+            "cache_write_tokens": null,
+            "cached_tokens": 2624,
+            "image_tokens": null,
+            "text_tokens": null
+          },
+          "output_tokens_details": {
+            "reasoning_tokens": 374
+          }
+        }
+      },
+      "usage": {
+        "input": 2699,
+        "cached": 2624,
+        "output": 491,
+        "reasoning": 374
+      },
+      "cost": 0.0025741,
+      "latency_ms": 8149.762,
+      "status": "completed",
+      "raw_usage": {
+        "completion_tokens": 491,
+        "prompt_tokens": 2699,
+        "total_tokens": 3190,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 374,
+          "rejected_prediction_tokens": null,
+          "text_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cache_write_tokens": null,
+          "cached_tokens": 2624,
+          "image_tokens": null,
+          "text_tokens": null
+        },
+        "output_tokens_details": {
+          "reasoning_tokens": 374
+        }
+      },
+      "normalized_usage": {
+        "input": 2699,
+        "cached": 2624,
+        "output": 491,
+        "reasoning": 374
+      },
+      "finish_reason": "tool_calls",
+      "rate_limit_headers": {
+        "x-ratelimit-limit-tokens-cache-adjusted-prompt": "1800000",
+        "x-ratelimit-limit-tokens-generated": "72000",
+        "x-ratelimit-limit-tokens-prompt": "7200000",
+        "x-ratelimit-limit-tokens-uncached-prompt": "1800000",
+        "x-ratelimit-over-limit": "no",
+        "x-ratelimit-remaining-tokens-prompt": "7161113"
+      }
+    },
+    {
+      "request": {
+        "model": "accounts/fireworks/models/muse-spark-open",
+        "messages": [
+          {
+            "role": "system",
+            "content": "You verify financial claims against SEC EDGAR facts.\nDecompose the claim into every atomic factual assertion. Every factual assertion\nin the user's claim must become a sub-claim, including a value, a change, a\nrecord, and a first-time assertion in the same sentence. Assertions that the\ntools cannot check must still become a sub-claim with claim_type other; the\nprogram will leave those unchecked. Use lookup_fact for a value,\ncompute_change for YoY or other period-to-period growth, history_rank for\nrecord/first-time assertions, and list_periods only to understand missing data.\nNever use memory for numbers. A quarter must have period_type=quarter and\nduration_days around 80-100, not period_type=ytd. If a result has derived=true,\nuse its derivation and components as evidence and do not calculate that fact\nagain. For compute_change, cite its own evidence ID; its two nested component\nfact IDs may also be cited and are ignored by the verifier.\n\nEach final sub_claim must contain exactly these model fields:\ntext, stated_text, claim_type (value, change_pct, change_abs, record_high,\nrecord_low, first_time_above, or other), comparator (eq, approx, gt, gte, lt,\nor lte), stated_value in base units (USD, USD/share, percentage points, or 1\nfor a record boolean), evidence_ids, interpretations, verdict, note, and\nmodel_found_value. interpretations is required and may be empty. Every non-empty\nitem must be an evidence id like E3 — never free text.\nCopy stated_text verbatim from the claim, including words such as \"about\",\n\"up\", or \"fell\" (for example, \"about $1.4 billion\", \"up 22%\", or\n\"fell 10%\"). For a change_pct, stated_value is 22 for 22%, not 0.22; the\nverifier applies the sign implied by direction words such as fell/down or\nrose/up. model_found_value is the number read from the cited evidence in the\nsame units, or null when it is missing.\n\nComparator wording is deterministic: a plain numeric statement with no hedge\nor inequality phrase is eq; about/around/roughly/approximately/nearly/almost,\nclose to, some, or ~ means approx; topped/exceeded/above/more than/over/\nsurpassed/beat means gt; at least/no less than means gte; below/under/less\nthan/short of means lt; at most/no more than/up to means lte. The program\nrecords and may correct the model comparator from these words. \"up\" and\n\"fell\" describe change direction, not approximation.\n\nFor a quarter claim at a non-calendar-fiscal issuer, use period_basis from\nthe tool results. If the claim says neither fiscal nor calendar, look up both\nthe calendar label (for example 2025Q4) and the fiscal label (for example\nFY2025Q4), cite both IDs in evidence_ids, and put those two IDs in\ninterpretations. Keep interpretations empty unless both fiscal and calendar\nreadings were looked up. If the claim says fiscal, cite only the fiscal\nreading; if it says calendar, cite only the calendar reading. When a lookup or\ncompute result has fiscal_equals_calendar=true, the issuer's fiscal year is the\ncalendar year: fiscal and calendar labels refer to the same underlying facts,\nso look up and cite only one reading even when the claim has no\nfiscal/calendar qualifier.\n\nExamples:\n1. \"Tesla net income was about $1.4 billion\": lookup_fact; stated_text\n   \"about $1.4 billion\", claim_type value, comparator approx, stated_value\n   1400000000.\n2. \"Alphabet revenue exceeded $100 billion\": lookup_fact; stated_text\n   \"exceeded $100 billion\", claim_type value, comparator gt, stated_value\n   100000000000.\n3. \"Meta revenue was up 22% YoY\": compute_change(META, revenue, 2025Q2,\n   null); stated_text \"up 22%\", claim_type change_pct, comparator eq,\n   stated_value 22, and cite the compute_change evidence ID.\n4. \"Tesla revenue fell 10% YoY\": compute_change(TSLA, revenue, 2025Q3,\n   null); stated_text \"fell 10%\", claim_type change_pct, comparator eq,\n   stated_value -10, and cite the compute_change evidence ID.\n5. \"Alphabet Q3 2025 revenue was a record high\": history_rank(GOOGL,\n   revenue, 2025Q3); claim_type record_high, comparator eq, stated_value 1,\n   and cite the history_rank evidence ID.\n6. \"Alphabet Q3 2025 revenue topped $100 billion for the first time\": create\n   two sub-claims: value gt 100000000000 and first_time_above with stated_value\n   100000000000, both citing the relevant evidence; the latter is supported\n   only when this period is above the threshold and no earlier comparable\n   period is above it.\n7. If a requested fact is unavailable, leave model_found_value null, cite any\n   relevant evidence, and set that sub-claim to insufficient_evidence. Say\n   insufficient_evidence when data is missing or evidence is ambiguous."
+          },
+          {
+            "role": "user",
+            "content": "For the first fiscal quarter of 2026, Intel cleared the $6.0B mark in gross profit."
+          },
+          {
+            "role": "assistant",
+            "content": "A $6B gross profit claim for Intel's Q1 fiscal 2026 — I'll verify it against SEC filings.",
+            "tool_calls": [
+              {
+                "id": "chatcmpl-tool-bc2c35eaaddce40f",
+                "type": "function",
+                "function": {
+                  "name": "lookup_fact",
+                  "arguments": "{\"ticker\": \"INTC\", \"metric\": \"gross_profit\", \"period\": \"FY2026Q1\"}"
+                }
+              }
+            ]
+          },
+          {
+            "role": "tool",
+            "tool_call_id": "chatcmpl-tool-bc2c35eaaddce40f",
+            "content": "{\"ticker\":\"INTC\",\"cik\":\"0000050863\",\"entity\":\"INTEL CORP\",\"metric\":\"gross_profit\",\"concept\":\"GrossProfit\",\"unit\":\"USD\",\"value\":5347000000,\"start\":\"2025-12-28\",\"end\":\"2026-03-28\",\"form\":\"10-Q\",\"form_fallback\":false,\"accn\":\"0000050863-26-000079\",\"filed\":\"2026-04-24\",\"frame\":\"CY2026Q1\",\"fiscal_year\":2026,\"fiscal_period\":\"Q1\",\"duration_days\":91,\"period_type\":\"quarter\",\"fiscal_equals_calendar\":true,\"derived\":false,\"filing_url\":\"https://www.sec.gov/Archives/edgar/data/50863/000005086326000079/\",\"source_sha256\":\"70056711b8b04d3a27e4a42b6d86e26f85ddaa3d59e480039d66ccfb353eb0b8\",\"provenance\":{\"tier\":\"L2\",\"audited\":false,\"confirmations\":1,\"forms\":[\"10-Q\"],\"first_filed\":\"2026-04-24\",\"latest_filed\":\"2026-04-24\",\"restated\":false,\"amended\":false,\"strength\":\"medium\"},\"period\":\"FY2026Q1\",\"period_basis\":\"fiscal\",\"evidence_id\":\"E1\"}"
+          }
+        ],
+        "tools": [
+          {
+            "type": "function",
+            "function": {
+              "name": "lookup_fact",
+              "description": "Look up one SEC EDGAR XBRL fact for a ticker, metric, and calendar quarter, fiscal quarter (FY2025Q4), or fiscal year. Successful results include period (the normalized requested label, or the resolved label for latest), period_basis (calendar or fiscal), fiscal_equals_calendar, duration_days, and period_type (quarter, ytd, annual, or instant). Additive flows may return derived=true with derivation and components; never treat a ytd result as a quarter or recompute a derived result. When fiscal_equals_calendar is true, fiscal and calendar labels identify the same fact; do not look up both readings. Every fact includes compact provenance: L1 audited 10-K, L2 reviewed 10-Q, or L3 program-derived, with confirmations, restatement, amendment, and evidence strength.",
+              "parameters": {
+                "type": "object",
+                "properties": {
+                  "ticker": {
+                    "type": "string"
+                  },
+                  "metric": {
+                    "type": "string",
+                    "enum": [
+                      "revenue",
+                      "net_income",
+                      "operating_income",
+                      "eps_diluted",
+                      "gross_profit",
+                      "total_assets",
+                      "cash",
+                      "capex",
+                      "rd_expense",
+                      "shares_outstanding"
+                    ]
+                  },
+                  "period": {
+                    "type": "string",
+                    "pattern": "^(latest|FY\\d{4}(?:Q[1-4])?|\\d{4}Q[1-4])$"
+                  }
+                },
+                "required": [
+                  "ticker",
+                  "metric",
+                  "period"
+                ],
+                "additionalProperties": false
+              }
+            }
+          },
+          {
+            "type": "function",
+            "function": {
+              "name": "list_periods",
+              "description": "List the recent directly available SEC EDGAR quarter and fiscal-year periods for a ticker and metric.",
+              "parameters": {
+                "type": "object",
+                "properties": {
+                  "ticker": {
+                    "type": "string"
+                  },
+                  "metric": {
+                    "type": "string",
+                    "enum": [
+                      "revenue",
+                      "net_income",
+                      "operating_income",
+                      "eps_diluted",
+                      "gross_profit",
+                      "total_assets",
+                      "cash",
+                      "capex",
+                      "rd_expense",
+                      "shares_outstanding"
+                    ]
+                  }
+                },
+                "required": [
+                  "ticker",
+                  "metric"
+                ],
+                "additionalProperties": false
+              }
+            }
+          },
+          {
+            "type": "function",
+            "function": {
+              "name": "compute_change",
+              "description": "Compute the absolute and year-over-year change for one SEC EDGAR XBRL metric. The period and base_period must be the same kind of period; when base_period is omitted, null, empty, \"null\", or \"none\", use the same quarter or fiscal year one year earlier. The result includes both cited lookup facts, fiscal_equals_calendar, their fact-level provenance, and a percentage change in percent points.",
+              "parameters": {
+                "type": "object",
+                "properties": {
+                  "ticker": {
+                    "type": "string"
+                  },
+                  "metric": {
+                    "type": "string",
+                    "enum": [
+                      "revenue",
+                      "net_income",
+                      "operating_income",
+                      "eps_diluted",
+                      "gross_profit",
+                      "total_assets",
+                      "cash",
+                      "capex",
+                      "rd_expense",
+                      "shares_outstanding"
+                    ]
+                  },
+                  "period": {
+                    "type": "string",
+                    "pattern": "^(latest|FY\\d{4}(?:Q[1-4])?|\\d{4}Q[1-4])$"
+                  },
+                  "base_period": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "pattern": "^(FY\\d{4}(?:Q[1-4])?|\\d{4}Q[1-4])$"
+                  }
+                },
+                "required": [
+                  "ticker",
+                  "metric",
+                  "period",
+                  "base_period"
+                ],
+                "additionalProperties": false
+              }
+            }
+          },
+          {
+            "type": "function",
+            "function": {
+              "name": "history_rank",
+              "description": "Compare one quarter or fiscal-year fact with every available comparable period of the same period_type. Quarters include derived Q4 values when available; annual periods are compared only with annual periods. Return the rank, record flags through the requested period, prior high/low, and the comparison window with period end dates. The requested period also includes compact fact provenance and evidence strength.",
+              "parameters": {
+                "type": "object",
+                "properties": {
+                  "ticker": {
+                    "type": "string"
+                  },
+                  "metric": {
+                    "type": "string",
+                    "enum": [
+                      "revenue",
+                      "net_income",
+                      "operating_income",
+                      "eps_diluted",
+                      "gross_profit",
+                      "total_assets",
+                      "cash",
+                      "capex",
+                      "rd_expense",
+                      "shares_outstanding"
+                    ]
+                  },
+                  "period": {
+                    "type": "string",
+                    "pattern": "^(latest|FY\\d{4}(?:Q[1-4])?|\\d{4}Q[1-4])$"
+                  }
+                },
+                "required": [
+                  "ticker",
+                  "metric",
+                  "period"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        ],
+        "parallel_tool_calls": true,
+        "max_tokens": 4000
+      },
+      "reservation": {
+        "reservation_id": "e84192fa37f144e88af7b6e636bb3b37",
+        "provider": "fireworks",
+        "model": "accounts/fireworks/models/muse-spark-open",
+        "estimated_input_tokens": 3299,
+        "max_output_tokens": 4000,
+        "amount": 0.021123750000000004,
+        "payload_chars": 9895,
+        "context_chars": 0
+      },
+      "raw_response": {
+        "id": "chatcmpl-066fd7c8108b4ccd85be9766468ad0f1",
+        "choices": [
+          {
+            "finish_reason": "stop",
+            "index": 0,
+            "logprobs": null,
+            "message": {
+              "content": "```json\n{\n  \"sub_claims\": [\n    {\n      \"text\": \"Intel gross profit for FY2026Q1 cleared the $6.0B mark\",\n      \"stated_text\": \"cleared the $6.0B mark\",\n      \"claim_type\": \"value\",\n      \"comparator\": \"gt\",\n      \"stated_value\": 6000000000,\n      \"evidence_ids\": [\"E1\"],\n      \"interpretations\": [],\n      \"verdict\": \"refuted\",\n      \"note\": \"FY2026Q1 gross profit reported as $5.347B (E1), which does not exceed $6.0B threshold.\",\n      \"model_found_value\": 5347000000\n    }\n  ]\n}\n```",
+              "refusal": null,
+              "role": "assistant",
+              "annotations": null,
+              "audio": null,
+              "function_call": null,
+              "tool_calls": null,
+              "reasoning_content": "The claim: For the first fiscal quarter of 2026, Intel cleared the $6.0B mark in gross profit.\n\nWe have looked up FY2026Q1 gross profit = 5,347,000,000 = $5.347B. This is below $6.0B. Fiscal_equals_calendar true.\n\nWe need to decompose claim into atomic assertions.\n\nClaim: \"For the first fiscal quarter of 2026, Intel cleared the $6.0B mark in gross profit.\"\n\nThis contains:\n\n- Intel gross_profit for FY2026Q1 cleared $6.0B mark.\n  \"cleared the $6.0B mark\" means exceeded? Could be gt. We need interpret. \"cleared the $6.0B mark\" ambiguous: could be topped/exceeded above -> gt. The comparator should be gt.\n\nNeed to define subclaim.\n\nWe need to provide required fields.\n\ntext, stated_text, claim_type, comparator, stated_value, evidence_ids, interpretations, verdict, note, model_found_value.\n\nstated_text verbatim from claim: \"cleared the $6.0B mark\" maybe? Or include phrase. The example: \"exceeded $100 billion\" stated_text \"exceeded $100 billion\". So for this claim, stated_text should be \"cleared the $6.0B mark\". But need to keep exact words.\n\nclaim_type: value. Because it's a value threshold. Could also be record? No.\n\ncomparator: gt (cleared, topped, exceeded). The instructions: topped/exceeded/above/more than/over/surpassed/beat means gt. \"cleared\" similar to topped/exceeded. So gt.\n\nstated_value: 6000000000 in base units USD.\n\nevidence_ids: contains E1.\n\ninterpretations: empty because we cited only fiscal reading; but fiscal_equals_calendar true, we looked up only one. Actually instructions: For a quarter claim at non-calendar-fiscal issuer, use period_basis... But here fiscal_equals_calendar true, so fiscal and calendar refer to same facts, so lookup and cite only one reading even when claim has no fiscal/calendar qualifier. We have fiscal qualifier: \"first fiscal quarter of 2026\" => we should cite only fiscal reading. So interpretations empty.\n\nverdict: Need to determine. model_found_value = 5347000000. Stated_value = 6000000000. Comparator gt means we test if model_found_value > stated_value. 5.347B is not > 6.0B, so fails.\n\nTherefore verdict = refuted.\n\nWe need to respond with final JSON.\n\nWe must provide exactly these model fields per subclaim.\n\nWe should provide one subclaim.\n\nNeed also check if we need to provide note.\n\nWe must ensure we follow output format: likely need to provide list of sub_claims in JSON.\n\nThe system expects final answer with sub_claims. Need to provide evidence citing.\n\nMake sure to include model_found_value.\n\nPotentially need to consider approx? No hedge.\n\nProvide evidence_ids: [\"E1\"]\n\ninterpretations: []\n\nverdict: \"refuted\"\n\nnote: e.g., \"Reported gross profit was $5.347B, below $6.0B threshold.\"\n\nNeed to ensure claim_type value with comparator gt.\n\nCheck instructions: Each final sub_claim must contain exactly these model fields: text, stated_text, claim_type, comparator, stated_value, evidence_ids, interpretations, verdict, note, model_found_value.\n\nWe must provide text: maybe full claim sentence? Use \"Intel gross profit for FY2026Q1 cleared $6.0B\".\n\nProvide stated_text verbatim: \"cleared the $6.0B mark\"\n\nWe should ensure stated_text matches claim substring. Keep exact.\n\nPotential nuance: \"For the first fiscal quarter of 2026, Intel cleared the $6.0B mark in gross profit.\" So we can extract stated_text = \"cleared the $6.0B mark\"\n\nAlternatively include \"in gross profit\" but the value phrase is cleared the $6.0B mark.\n\nShould we split into two subclaims? The claim also asserts existence of FY2026Q1 gross profit? No, single atomic: value > threshold.\n\nWe should produce final answer.\n\nPotentially also need to consider if we should add second subclaim about period existence? But instructions say decompose into every atomic factual assertion. The claim asserts: Period is first fiscal quarter of 2026, metric is gross profit, value cleared 6B. That's one assertion.\n\nWe must output JSON.\n\nEnsure verdict correct: refuted because actual 5.347B < 6B.\n\nProvide note.\n\nMake sure to include interpretations empty array.\n\nWe should output as JSON array?\n\nPrevious tasks expect structure like {\"sub_claims\": [...]}\n\nWe will produce that.\n\nMake sure we cite E1 evidence.\n\nWe have all fields.\n\nAdd model_found_value = 5347000000\n\nWe should ensure note explains.\n\nPotentially need to mention fiscal_equals_calendar.\n\nProceed to final.",
+              "tools": null
+            }
+          }
+        ],
+        "created": 1793222411,
+        "model": "accounts/fireworks/models/muse-spark-open",
+        "object": "chat.completion",
+        "metadata": null,
+        "moderation": null,
+        "service_tier": null,
+        "system_fingerprint": null,
+        "usage": {
+          "completion_tokens": 1203,
+          "prompt_tokens": 3118,
+          "total_tokens": 4321,
+          "completion_tokens_details": {
+            "accepted_prediction_tokens": null,
+            "audio_tokens": null,
+            "reasoning_tokens": 1036,
+            "rejected_prediction_tokens": null,
+            "text_tokens": null
+          },
+          "prompt_tokens_details": {
+            "audio_tokens": null,
+            "cache_write_tokens": null,
+            "cached_tokens": 2688,
+            "image_tokens": null,
+            "text_tokens": null
+          },
+          "output_tokens_details": {
+            "reasoning_tokens": 1036
+          }
+        }
+      },
+      "usage": {
+        "input": 3118,
+        "cached": 2688,
+        "output": 1203,
+        "reasoning": 1036
+      },
+      "cost": 0.00605345,
+      "latency_ms": 22038.159,
+      "status": "completed",
+      "raw_usage": {
+        "completion_tokens": 1203,
+        "prompt_tokens": 3118,
+        "total_tokens": 4321,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 1036,
+          "rejected_prediction_tokens": null,
+          "text_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cache_write_tokens": null,
+          "cached_tokens": 2688,
+          "image_tokens": null,
+          "text_tokens": null
+        },
+        "output_tokens_details": {
+          "reasoning_tokens": 1036
+        }
+      },
+      "normalized_usage": {
+        "input": 3118,
+        "cached": 2688,
+        "output": 1203,
+        "reasoning": 1036
+      },
+      "finish_reason": "stop",
+      "rate_limit_headers": {
+        "x-ratelimit-limit-tokens-cache-adjusted-prompt": "1800000",
+        "x-ratelimit-limit-tokens-generated": "72000",
+        "x-ratelimit-limit-tokens-prompt": "7200000",
+        "x-ratelimit-limit-tokens-uncached-prompt": "1800000",
+        "x-ratelimit-over-limit": "no",
+        "x-ratelimit-remaining-tokens-generated": "60733",
+        "x-ratelimit-remaining-tokens-prompt": "7196882"
+      }
+    },
+    {
+      "request": {
+        "model": "accounts/fireworks/models/muse-spark-open",
+        "messages": [
+          {
+            "role": "system",
+            "content": "You verify financial claims against SEC EDGAR facts.\nDecompose the claim into every atomic factual assertion. Every factual assertion\nin the user's claim must become a sub-claim, including a value, a change, a\nrecord, and a first-time assertion in the same sentence. Assertions that the\ntools cannot check must still become a sub-claim with claim_type other; the\nprogram will leave those unchecked. Use lookup_fact for a value,\ncompute_change for YoY or other period-to-period growth, history_rank for\nrecord/first-time assertions, and list_periods only to understand missing data.\nNever use memory for numbers. A quarter must have period_type=quarter and\nduration_days around 80-100, not period_type=ytd. If a result has derived=true,\nuse its derivation and components as evidence and do not calculate that fact\nagain. For compute_change, cite its own evidence ID; its two nested component\nfact IDs may also be cited and are ignored by the verifier.\n\nEach final sub_claim must contain exactly these model fields:\ntext, stated_text, claim_type (value, change_pct, change_abs, record_high,\nrecord_low, first_time_above, or other), comparator (eq, approx, gt, gte, lt,\nor lte), stated_value in base units (USD, USD/share, percentage points, or 1\nfor a record boolean), evidence_ids, interpretations, verdict, note, and\nmodel_found_value. interpretations is required and may be empty. Every non-empty\nitem must be an evidence id like E3 — never free text.\nCopy stated_text verbatim from the claim, including words such as \"about\",\n\"up\", or \"fell\" (for example, \"about $1.4 billion\", \"up 22%\", or\n\"fell 10%\"). For a change_pct, stated_value is 22 for 22%, not 0.22; the\nverifier applies the sign implied by direction words such as fell/down or\nrose/up. model_found_value is the number read from the cited evidence in the\nsame units, or null when it is missing.\n\nComparator wording is deterministic: a plain numeric statement with no hedge\nor inequality phrase is eq; about/around/roughly/approximately/nearly/almost,\nclose to, some, or ~ means approx; topped/exceeded/above/more than/over/\nsurpassed/beat means gt; at least/no less than means gte; below/under/less\nthan/short of means lt; at most/no more than/up to means lte. The program\nrecords and may correct the model comparator from these words. \"up\" and\n\"fell\" describe change direction, not approximation.\n\nFor a quarter claim at a non-calendar-fiscal issuer, use period_basis from\nthe tool results. If the claim says neither fiscal nor calendar, look up both\nthe calendar label (for example 2025Q4) and the fiscal label (for example\nFY2025Q4), cite both IDs in evidence_ids, and put those two IDs in\ninterpretations. Keep interpretations empty unless both fiscal and calendar\nreadings were looked up. If the claim says fiscal, cite only the fiscal\nreading; if it says calendar, cite only the calendar reading. When a lookup or\ncompute result has fiscal_equals_calendar=true, the issuer's fiscal year is the\ncalendar year: fiscal and calendar labels refer to the same underlying facts,\nso look up and cite only one reading even when the claim has no\nfiscal/calendar qualifier.\n\nExamples:\n1. \"Tesla net income was about $1.4 billion\": lookup_fact; stated_text\n   \"about $1.4 billion\", claim_type value, comparator approx, stated_value\n   1400000000.\n2. \"Alphabet revenue exceeded $100 billion\": lookup_fact; stated_text\n   \"exceeded $100 billion\", claim_type value, comparator gt, stated_value\n   100000000000.\n3. \"Meta revenue was up 22% YoY\": compute_change(META, revenue, 2025Q2,\n   null); stated_text \"up 22%\", claim_type change_pct, comparator eq,\n   stated_value 22, and cite the compute_change evidence ID.\n4. \"Tesla revenue fell 10% YoY\": compute_change(TSLA, revenue, 2025Q3,\n   null); stated_text \"fell 10%\", claim_type change_pct, comparator eq,\n   stated_value -10, and cite the compute_change evidence ID.\n5. \"Alphabet Q3 2025 revenue was a record high\": history_rank(GOOGL,\n   revenue, 2025Q3); claim_type record_high, comparator eq, stated_value 1,\n   and cite the history_rank evidence ID.\n6. \"Alphabet Q3 2025 revenue topped $100 billion for the first time\": create\n   two sub-claims: value gt 100000000000 and first_time_above with stated_value\n   100000000000, both citing the relevant evidence; the latter is supported\n   only when this period is above the threshold and no earlier comparable\n   period is above it.\n7. If a requested fact is unavailable, leave model_found_value null, cite any\n   relevant evidence, and set that sub-claim to insufficient_evidence. Say\n   insufficient_evidence when data is missing or evidence is ambiguous."
+          },
+          {
+            "role": "user",
+            "content": "For the first fiscal quarter of 2026, Intel cleared the $6.0B mark in gross profit."
+          },
+          {
+            "role": "assistant",
+            "content": "A $6B gross profit claim for Intel's Q1 fiscal 2026 — I'll verify it against SEC filings.",
+            "tool_calls": [
+              {
+                "id": "chatcmpl-tool-bc2c35eaaddce40f",
+                "type": "function",
+                "function": {
+                  "name": "lookup_fact",
+                  "arguments": "{\"ticker\": \"INTC\", \"metric\": \"gross_profit\", \"period\": \"FY2026Q1\"}"
+                }
+              }
+            ]
+          },
+          {
+            "role": "tool",
+            "tool_call_id": "chatcmpl-tool-bc2c35eaaddce40f",
+            "content": "{\"ticker\":\"INTC\",\"cik\":\"0000050863\",\"entity\":\"INTEL CORP\",\"metric\":\"gross_profit\",\"concept\":\"GrossProfit\",\"unit\":\"USD\",\"value\":5347000000,\"start\":\"2025-12-28\",\"end\":\"2026-03-28\",\"form\":\"10-Q\",\"form_fallback\":false,\"accn\":\"0000050863-26-000079\",\"filed\":\"2026-04-24\",\"frame\":\"CY2026Q1\",\"fiscal_year\":2026,\"fiscal_period\":\"Q1\",\"duration_days\":91,\"period_type\":\"quarter\",\"fiscal_equals_calendar\":true,\"derived\":false,\"filing_url\":\"https://www.sec.gov/Archives/edgar/data/50863/000005086326000079/\",\"source_sha256\":\"70056711b8b04d3a27e4a42b6d86e26f85ddaa3d59e480039d66ccfb353eb0b8\",\"provenance\":{\"tier\":\"L2\",\"audited\":false,\"confirmations\":1,\"forms\":[\"10-Q\"],\"first_filed\":\"2026-04-24\",\"latest_filed\":\"2026-04-24\",\"restated\":false,\"amended\":false,\"strength\":\"medium\"},\"period\":\"FY2026Q1\",\"period_basis\":\"fiscal\",\"evidence_id\":\"E1\"}"
+          },
+          {
+            "role": "assistant",
+            "content": "```json\n{\n  \"sub_claims\": [\n    {\n      \"text\": \"Intel gross profit for FY2026Q1 cleared the $6.0B mark\",\n      \"stated_text\": \"cleared the $6.0B mark\",\n      \"claim_type\": \"value\",\n      \"comparator\": \"gt\",\n      \"stated_value\": 6000000000,\n      \"evidence_ids\": [\"E1\"],\n      \"interpretations\": [],\n      \"verdict\": \"refuted\",\n      \"note\": \"FY2026Q1 gross profit reported as $5.347B (E1), which does not exceed $6.0B threshold.\",\n      \"model_found_value\": 5347000000\n    }\n  ]\n}\n```"
+          },
+          {
+            "role": "user",
+            "content": "Return only one plain JSON object for the final verdict. Do not use Markdown fences or explanatory text. Include every atomic factual assertion as a sub-claim, including claim_type other when the tools cannot check it. Copy stated_text verbatim from the claim and include claim_type, comparator, stated_value in base units, evidence_ids, interpretations (evidence ids like E3 — never free text), verdict, model_found_value, and a concise note. The object must match this existing verdict schema: {\"type\":\"object\",\"properties\":{\"verdict\":{\"type\":\"string\",\"enum\":[\"supported\",\"contradicted\",\"insufficient_evidence\"]},\"summary\":{\"type\":\"string\"},\"sub_claims\":{\"type\":\"array\",\"items\":{\"type\":\"object\",\"properties\":{\"text\":{\"type\":\"string\"},\"stated_text\":{\"type\":\"string\"},\"claim_type\":{\"type\":\"string\",\"enum\":[\"value\",\"change_pct\",\"change_abs\",\"record_high\",\"record_low\",\"first_time_above\",\"other\"]},\"comparator\":{\"type\":\"string\",\"enum\":[\"eq\",\"approx\",\"gt\",\"gte\",\"lt\",\"lte\"]},\"stated_value\":{\"type\":[\"number\",\"null\"]},\"evidence_ids\":{\"type\":\"array\",\"items\":{\"type\":\"string\"}},\"interpretations\":{\"type\":\"array\",\"items\":{\"type\":\"string\",\"description\":\"evidence id like E3 — never free text\"}},\"verdict\":{\"type\":\"string\",\"enum\":[\"supported\",\"contradicted\",\"insufficient_evidence\"]},\"note\":{\"type\":\"string\"},\"model_found_value\":{\"type\":[\"number\",\"null\"]}},\"required\":[\"text\",\"stated_text\",\"claim_type\",\"comparator\",\"stated_value\",\"evidence_ids\",\"interpretations\",\"verdict\",\"note\",\"model_found_value\"],\"additionalProperties\":false}}},\"required\":[\"verdict\",\"summary\",\"sub_claims\"],\"additionalProperties\":false}"
+          }
+        ],
+        "max_tokens": 3000
+      },
+      "reservation": {
+        "reservation_id": "fd143a10c1614c3c98d251e183c4a24c",
+        "provider": "fireworks",
+        "model": "accounts/fireworks/models/muse-spark-open",
+        "estimated_input_tokens": 2895,
+        "max_output_tokens": 3000,
+        "amount": 0.01636875,
+        "payload_chars": 8685,
+        "context_chars": 0
+      },
+      "raw_response": {
+        "id": "chatcmpl-97e5579743884f678da90c42bba40426",
+        "choices": [
+          {
+            "finish_reason": "stop",
+            "index": 0,
+            "logprobs": null,
+            "message": {
+              "content": "{\"verdict\":\"contradicted\",\"summary\":\"Intel FY2026Q1 gross profit was $5.347B (E1), which does not clear the $6.0B threshold.\",\"sub_claims\":[{\"text\":\"Intel gross profit for FY2026Q1 cleared the $6.0B mark\",\"stated_text\":\"cleared the $6.0B mark\",\"claim_type\":\"value\",\"comparator\":\"gt\",\"stated_value\":6000000000,\"evidence_ids\":[\"E1\"],\"interpretations\":[],\"verdict\":\"contradicted\",\"note\":\"Reported FY2026Q1 gross profit is $5.347B, below $6.0B.\",\"model_found_value\":5347000000}]}",
+              "refusal": null,
+              "role": "assistant",
+              "annotations": null,
+              "audio": null,
+              "function_call": null,
+              "tool_calls": null,
+              "reasoning_content": "Need to produce plain JSON object with verdict schema. Already have lookup for Intel FY2026Q1 gross profit = 5.347B, which is less than 6.0B. So claim \"cleared the $6.0B mark\" means >6.0B. So contradicted.\n\nWe need to return object with verdict, summary, sub_claims.\n\nWe need to follow schema: top-level verdict, summary, sub_claims. Sub_claims need text, stated_text, claim_type, comparator, stated_value, evidence_ids, interpretations, verdict, note, model_found_value.\n\nThe claim: \"For the first fiscal quarter of 2026, Intel cleared the $6.0B mark in gross profit.\"\n\nWe have one atomic assertion: gross profit >6.0B for FY2026Q1.\n\nWe already have evidence E1.\n\nNeed to produce final JSON object only, no markdown fences.\n\nWe should ensure comparator gt, stated_value 6000000000, claim_type value, stated_text \"cleared the $6.0B mark\" – must copy verbatim? The original claim phrase: \"cleared the $6.0B mark in gross profit.\" The stated_text should be verbatim from claim. We used \"cleared the $6.0B mark\" – that is verbatim subset. Need to ensure exact copy. The claim says: \"Intel cleared the $6.0B mark in gross profit.\" So \"cleared the $6.0B mark\" is verbatim.\n\nWe need top-level verdict: contradicted (since sub-claim contradicted). Could also be \"contradicted\" ? Enum includes supported, contradicted, insufficient_evidence. Yes.\n\nSummary: explain.\n\nWe need to include all fields.\n\nWe have only one sub-claim.\n\nWe must ensure evidence_ids [\"E1\"], interpretations [].\n\nNote concise.\n\nProvide plain JSON object.\n\nWe should ensure no extra formatting.\n\nPotentially also need to consider fiscal_equals_calendar true, so only one reading. We did that.\n\nWe should produce final JSON.\n\nNeed to ensure numeric values correct.\n\nmodel_found_value 5347000000\n\nWe should return verdict contradicted.\n\nMake JSON object valid.\n\n",
+              "tools": null
+            }
+          }
+        ],
+        "created": 1793222433,
+        "model": "accounts/fireworks/models/muse-spark-open",
+        "object": "chat.completion",
+        "metadata": null,
+        "moderation": null,
+        "service_tier": null,
+        "system_fingerprint": null,
+        "usage": {
+          "completion_tokens": 610,
+          "prompt_tokens": 2234,
+          "total_tokens": 2844,
+          "completion_tokens_details": {
+            "accepted_prediction_tokens": null,
+            "audio_tokens": null,
+            "reasoning_tokens": 454,
+            "rejected_prediction_tokens": null,
+            "text_tokens": null
+          },
+          "prompt_tokens_details": {
+            "audio_tokens": null,
+            "cache_write_tokens": null,
+            "cached_tokens": 1216,
+            "image_tokens": null,
+            "text_tokens": null
+          },
+          "output_tokens_details": {
+            "reasoning_tokens": 454
+          }
+        }
+      },
+      "usage": {
+        "input": 2234,
+        "cached": 1216,
+        "output": 610,
+        "reasoning": 454
+      },
+      "cost": 0.0040474000000000005,
+      "latency_ms": 14075.951,
+      "status": "completed",
+      "raw_usage": {
+        "completion_tokens": 610,
+        "prompt_tokens": 2234,
+        "total_tokens": 2844,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 454,
+          "rejected_prediction_tokens": null,
+          "text_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cache_write_tokens": null,
+          "cached_tokens": 1216,
+          "image_tokens": null,
+          "text_tokens": null
+        },
+        "output_tokens_details": {
+          "reasoning_tokens": 454
+        }
+      },
+      "normalized_usage": {
+        "input": 2234,
+        "cached": 1216,
+        "output": 610,
+        "reasoning": 454
+      },
+      "finish_reason": "stop",
+      "rate_limit_headers": {
+        "x-ratelimit-limit-tokens-cache-adjusted-prompt": "1800000",
+        "x-ratelimit-limit-tokens-generated": "72000",
+        "x-ratelimit-limit-tokens-prompt": "7200000",
+        "x-ratelimit-limit-tokens-uncached-prompt": "1800000",
+        "x-ratelimit-over-limit": "no",
+        "x-ratelimit-remaining-tokens-generated": "61149",
+        "x-ratelimit-remaining-tokens-prompt": "7156723",
+        "x-ratelimit-remaining-tokens-uncached-prompt": "1791374"
+      }
+    }
+  ],
+  "tool_calls": [
+    {
+      "name": "lookup_fact",
+      "arguments": {
+        "ticker": "INTC",
+        "metric": "gross_profit",
+        "period": "FY2026Q1"
+      },
+      "call_id": "chatcmpl-tool-bc2c35eaaddce40f",
+      "result": {
+        "ticker": "INTC",
+        "cik": "0000050863",
+        "entity": "INTEL CORP",
+        "metric": "gross_profit",
+        "concept": "GrossProfit",
+        "unit": "USD",
+        "value": 5347000000,
+        "start": "2025-12-28",
+        "end": "2026-03-28",
+        "form": "10-Q",
+        "form_fallback": false,
+        "accn": "0000050863-26-000079",
+        "filed": "2026-04-24",
+        "frame": "CY2026Q1",
+        "fiscal_year": 2026,
+        "fiscal_period": "Q1",
+        "duration_days": 91,
+        "period_type": "quarter",
+        "fiscal_equals_calendar": true,
+        "derived": false,
+        "filing_url": "https://www.sec.gov/Archives/edgar/data/50863/000005086326000079/",
+        "source_sha256": "70056711b8b04d3a27e4a42b6d86e26f85ddaa3d59e480039d66ccfb353eb0b8",
+        "provenance": {
+          "tier": "L2",
+          "audited": false,
+          "confirmations": 1,
+          "forms": [
+            "10-Q"
+          ],
+          "first_filed": "2026-04-24",
+          "latest_filed": "2026-04-24",
+          "restated": false,
+          "amended": false,
+          "strength": "medium"
+        },
+        "period": "FY2026Q1",
+        "period_basis": "fiscal",
+        "evidence_id": "E1"
+      }
+    }
+  ],
+  "usage": [
+    {
+      "input": 2699,
+      "cached": 2624,
+      "output": 491,
+      "reasoning": 374
+    },
+    {
+      "input": 3118,
+      "cached": 2688,
+      "output": 1203,
+      "reasoning": 1036
+    },
+    {
+      "input": 2234,
+      "cached": 1216,
+      "output": 610,
+      "reasoning": 454
+    }
+  ],
+  "tokens": {
+    "input": 8051,
+    "cached": 6528,
+    "output": 2304,
+    "reasoning": 1864
+  },
+  "model_calls": 3,
+  "cost": 0.01267495,
+  "cost_usd": 0.01267495,
+  "latency_ms": 44263.871999999996,
+  "tool_call_count": 1,
+  "incomplete_turns": [],
+  "previous_response_fallback": false,
+  "final_verdict": {
+    "verdict": "contradicted",
+    "summary": "Intel FY2026Q1 gross profit was $5.347B (E1), which does not clear the $6.0B threshold.",
+    "sub_claims": [
+      {
+        "text": "Intel gross profit for FY2026Q1 cleared the $6.0B mark",
+        "stated_text": "cleared the $6.0B mark",
+        "claim_type": "value",
+        "comparator": "eq",
+        "stated_value": 6000000000.0,
+        "verdict": "contradicted",
+        "evidence_ids": [
+          "E1"
+        ],
+        "interpretations": [],
+        "model_found_value": 5347000000,
+        "note": "Reported FY2026Q1 gross profit is $5.347B, below $6.0B.",
+        "evidence_valid": true,
+        "program_verdict": "contradicted",
+        "actual_value": 5347000000.0,
+        "tolerance": 50000000.0,
+        "reason": "comparator_corrected; actual 5.347e+09 is not consistent with stated 6e+09 using eq tolerance 5e+07",
+        "disagreement": false,
+        "precision": 50000000.0,
+        "stated_value_used": 6000000000.0,
+        "period_ambiguous": false,
+        "program_added_interpretation": false,
+        "program_evidence_ids": [],
+        "invalid_interpretations": false,
+        "deduplicated_evidence": [],
+        "stated_value_corrected": false,
+        "stated_text_unparsed": false,
+        "stated_sign_corrected": false,
+        "threshold_from_model": false,
+        "model_comparator": "gt",
+        "comparator_corrected": true,
+        "evidence_strength": "medium",
+        "evidence_summary": "Evidence: reviewed 10-Q, confirmed in 1 filing, not restated",
+        "restated_evidence": false
+      }
+    ],
+    "model_verdict": "contradicted",
+    "program_checks": [
+      {
+        "text": "Intel gross profit for FY2026Q1 cleared the $6.0B mark",
+        "stated_value": 6000000000.0,
+        "evidence_ids": [
+          "E1"
+        ],
+        "evidence_valid": true,
+        "program_verdict": "contradicted",
+        "actual_value": 5347000000.0,
+        "tolerance": 50000000.0,
+        "reason": "comparator_corrected; actual 5.347e+09 is not consistent with stated 6e+09 using eq tolerance 5e+07",
+        "disagreement": false,
+        "precision": 50000000.0,
+        "stated_value_used": 6000000000.0,
+        "comparator": "eq",
+        "interpretations": [],
+        "period_ambiguous": false,
+        "program_added_interpretation": false,
+        "program_evidence_ids": [],
+        "invalid_interpretations": false,
+        "deduplicated_evidence": [],
+        "stated_value_corrected": false,
+        "stated_text_unparsed": false,
+        "stated_sign_corrected": false,
+        "threshold_from_model": false,
+        "model_comparator": "gt",
+        "comparator_corrected": true,
+        "evidence_strength": "medium",
+        "evidence_summary": "Evidence: reviewed 10-Q, confirmed in 1 filing, not restated",
+        "restated_evidence": false
+      }
+    ],
+    "evidence_strength": "medium",
+    "evidence_summary": "Evidence: reviewed 10-Q, confirmed in 1 filing, not restated",
+    "model_program_disagreement": false
+  },
+  "program_checks": [
+    {
+      "text": "Intel gross profit for FY2026Q1 cleared the $6.0B mark",
+      "stated_value": 6000000000.0,
+      "evidence_ids": [
+        "E1"
+      ],
+      "evidence_valid": true,
+      "program_verdict": "contradicted",
+      "actual_value": 5347000000.0,
+      "tolerance": 50000000.0,
+      "reason": "comparator_corrected; actual 5.347e+09 is not consistent with stated 6e+09 using eq tolerance 5e+07",
+      "disagreement": false,
+      "precision": 50000000.0,
+      "stated_value_used": 6000000000.0,
+      "comparator": "eq",
+      "interpretations": [],
+      "period_ambiguous": false,
+      "program_added_interpretation": false,
+      "program_evidence_ids": [],
+      "invalid_interpretations": false,
+      "deduplicated_evidence": [],
+      "stated_value_corrected": false,
+      "stated_text_unparsed": false,
+      "stated_sign_corrected": false,
+      "threshold_from_model": false,
+      "model_comparator": "gt",
+      "comparator_corrected": true,
+      "evidence_strength": "medium",
+      "evidence_summary": "Evidence: reviewed 10-Q, confirmed in 1 filing, not restated",
+      "restated_evidence": false
+    }
+  ]
+}

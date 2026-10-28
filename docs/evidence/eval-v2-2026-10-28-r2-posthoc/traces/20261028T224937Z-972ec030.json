@@ -1,0 +1,1844 @@
+{
+  "claim": "UnitedHealth's adjusted EPS was $6.38 in the second quarter of 2026.",
+  "model": "muse-spark-1.3",
+  "provider": "meta",
+  "requests": [
+    {
+      "request": {
+        "model": "muse-spark-1.3",
+        "instructions": "You verify financial claims against SEC EDGAR facts.\nDecompose the claim into every atomic factual assertion. Every factual assertion\nin the user's claim must become a sub-claim, including a value, a change, a\nrecord, and a first-time assertion in the same sentence. Assertions that the\ntools cannot check must still become a sub-claim with claim_type other; the\nprogram will leave those unchecked. Use lookup_fact for a value,\ncompute_change for YoY or other period-to-period growth, history_rank for\nrecord/first-time assertions, and list_periods only to understand missing data.\nNever use memory for numbers. A quarter must have period_type=quarter and\nduration_days around 80-100, not period_type=ytd. If a result has derived=true,\nuse its derivation and components as evidence and do not calculate that fact\nagain. For compute_change, cite its own evidence ID; its two nested component\nfact IDs may also be cited and are ignored by the verifier.\n\nEach final sub_claim must contain exactly these model fields:\ntext, stated_text, claim_type (value, change_pct, change_abs, record_high,\nrecord_low, first_time_above, or other), comparator (eq, approx, gt, gte, lt,\nor lte), stated_value in base units (USD, USD/share, percentage points, or 1\nfor a record boolean), evidence_ids, interpretations, verdict, note, and\nmodel_found_value. interpretations is required and may be empty. Every non-empty\nitem must be an evidence id like E3 — never free text.\nCopy stated_text verbatim from the claim, including words such as \"about\",\n\"up\", or \"fell\" (for example, \"about $1.4 billion\", \"up 22%\", or\n\"fell 10%\"). For a change_pct, stated_value is 22 for 22%, not 0.22; the\nverifier applies the sign implied by direction words such as fell/down or\nrose/up. model_found_value is the number read from the cited evidence in the\nsame units, or null when it is missing.\n\nComparator wording is deterministic: a plain numeric statement with no hedge\nor inequality phrase is eq; about/around/roughly/approximately/nearly/almost,\nclose to, some, or ~ means approx; topped/exceeded/above/more than/over/\nsurpassed/beat means gt; at least/no less than means gte; below/under/less\nthan/short of means lt; at most/no more than/up to means lte. The program\nrecords and may correct the model comparator from these words. \"up\" and\n\"fell\" describe change direction, not approximation.\n\nFor a quarter claim at a non-calendar-fiscal issuer, use period_basis from\nthe tool results. If the claim says neither fiscal nor calendar, look up both\nthe calendar label (for example 2025Q4) and the fiscal label (for example\nFY2025Q4), cite both IDs in evidence_ids, and put those two IDs in\ninterpretations. Keep interpretations empty unless both fiscal and calendar\nreadings were looked up. If the claim says fiscal, cite only the fiscal\nreading; if it says calendar, cite only the calendar reading. When a lookup or\ncompute result has fiscal_equals_calendar=true, the issuer's fiscal year is the\ncalendar year: fiscal and calendar labels refer to the same underlying facts,\nso look up and cite only one reading even when the claim has no\nfiscal/calendar qualifier.\n\nExamples:\n1. \"Tesla net income was about $1.4 billion\": lookup_fact; stated_text\n   \"about $1.4 billion\", claim_type value, comparator approx, stated_value\n   1400000000.\n2. \"Alphabet revenue exceeded $100 billion\": lookup_fact; stated_text\n   \"exceeded $100 billion\", claim_type value, comparator gt, stated_value\n   100000000000.\n3. \"Meta revenue was up 22% YoY\": compute_change(META, revenue, 2025Q2,\n   null); stated_text \"up 22%\", claim_type change_pct, comparator eq,\n   stated_value 22, and cite the compute_change evidence ID.\n4. \"Tesla revenue fell 10% YoY\": compute_change(TSLA, revenue, 2025Q3,\n   null); stated_text \"fell 10%\", claim_type change_pct, comparator eq,\n   stated_value -10, and cite the compute_change evidence ID.\n5. \"Alphabet Q3 2025 revenue was a record high\": history_rank(GOOGL,\n   revenue, 2025Q3); claim_type record_high, comparator eq, stated_value 1,\n   and cite the history_rank evidence ID.\n6. \"Alphabet Q3 2025 revenue topped $100 billion for the first time\": create\n   two sub-claims: value gt 100000000000 and first_time_above with stated_value\n   100000000000, both citing the relevant evidence; the latter is supported\n   only when this period is above the threshold and no earlier comparable\n   period is above it.\n7. If a requested fact is unavailable, leave model_found_value null, cite any\n   relevant evidence, and set that sub-claim to insufficient_evidence. Say\n   insufficient_evidence when data is missing or evidence is ambiguous.",
+        "input": [
+          {
+            "role": "user",
+            "content": "UnitedHealth's adjusted EPS was $6.38 in the second quarter of 2026."
+          }
+        ],
+        "tools": [
+          {
+            "type": "function",
+            "name": "lookup_fact",
+            "description": "Look up one SEC EDGAR XBRL fact for a ticker, metric, and calendar quarter, fiscal quarter (FY2025Q4), or fiscal year. Successful results include period (the normalized requested label, or the resolved label for latest), period_basis (calendar or fiscal), fiscal_equals_calendar, duration_days, and period_type (quarter, ytd, annual, or instant). Additive flows may return derived=true with derivation and components; never treat a ytd result as a quarter or recompute a derived result. When fiscal_equals_calendar is true, fiscal and calendar labels identify the same fact; do not look up both readings. Every fact includes compact provenance: L1 audited 10-K, L2 reviewed 10-Q, or L3 program-derived, with confirmations, restatement, amendment, and evidence strength.",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "ticker": {
+                  "type": "string"
+                },
+                "metric": {
+                  "type": "string",
+                  "enum": [
+                    "revenue",
+                    "net_income",
+                    "operating_income",
+                    "eps_diluted",
+                    "gross_profit",
+                    "total_assets",
+                    "cash",
+                    "capex",
+                    "rd_expense",
+                    "shares_outstanding"
+                  ]
+                },
+                "period": {
+                  "type": "string",
+                  "pattern": "^(latest|FY\\d{4}(?:Q[1-4])?|\\d{4}Q[1-4])$"
+                }
+              },
+              "required": [
+                "ticker",
+                "metric",
+                "period"
+              ],
+              "additionalProperties": false
+            },
+            "strict": true
+          },
+          {
+            "type": "function",
+            "name": "list_periods",
+            "description": "List the recent directly available SEC EDGAR quarter and fiscal-year periods for a ticker and metric.",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "ticker": {
+                  "type": "string"
+                },
+                "metric": {
+                  "type": "string",
+                  "enum": [
+                    "revenue",
+                    "net_income",
+                    "operating_income",
+                    "eps_diluted",
+                    "gross_profit",
+                    "total_assets",
+                    "cash",
+                    "capex",
+                    "rd_expense",
+                    "shares_outstanding"
+                  ]
+                }
+              },
+              "required": [
+                "ticker",
+                "metric"
+              ],
+              "additionalProperties": false
+            },
+            "strict": true
+          },
+          {
+            "type": "function",
+            "name": "compute_change",
+            "description": "Compute the absolute and year-over-year change for one SEC EDGAR XBRL metric. The period and base_period must be the same kind of period; when base_period is omitted, null, empty, \"null\", or \"none\", use the same quarter or fiscal year one year earlier. The result includes both cited lookup facts, fiscal_equals_calendar, their fact-level provenance, and a percentage change in percent points.",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "ticker": {
+                  "type": "string"
+                },
+                "metric": {
+                  "type": "string",
+                  "enum": [
+                    "revenue",
+                    "net_income",
+                    "operating_income",
+                    "eps_diluted",
+                    "gross_profit",
+                    "total_assets",
+                    "cash",
+                    "capex",
+                    "rd_expense",
+                    "shares_outstanding"
+                  ]
+                },
+                "period": {
+                  "type": "string",
+                  "pattern": "^(latest|FY\\d{4}(?:Q[1-4])?|\\d{4}Q[1-4])$"
+                },
+                "base_period": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "pattern": "^(FY\\d{4}(?:Q[1-4])?|\\d{4}Q[1-4])$"
+                }
+              },
+              "required": [
+                "ticker",
+                "metric",
+                "period",
+                "base_period"
+              ],
+              "additionalProperties": false
+            },
+            "strict": true
+          },
+          {
+            "type": "function",
+            "name": "history_rank",
+            "description": "Compare one quarter or fiscal-year fact with every available comparable period of the same period_type. Quarters include derived Q4 values when available; annual periods are compared only with annual periods. Return the rank, record flags through the requested period, prior high/low, and the comparison window with period end dates. The requested period also includes compact fact provenance and evidence strength.",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "ticker": {
+                  "type": "string"
+                },
+                "metric": {
+                  "type": "string",
+                  "enum": [
+                    "revenue",
+                    "net_income",
+                    "operating_income",
+                    "eps_diluted",
+                    "gross_profit",
+                    "total_assets",
+                    "cash",
+                    "capex",
+                    "rd_expense",
+                    "shares_outstanding"
+                  ]
+                },
+                "period": {
+                  "type": "string",
+                  "pattern": "^(latest|FY\\d{4}(?:Q[1-4])?|\\d{4}Q[1-4])$"
+                }
+              },
+              "required": [
+                "ticker",
+                "metric",
+                "period"
+              ],
+              "additionalProperties": false
+            },
+            "strict": true
+          }
+        ],
+        "parallel_tool_calls": true,
+        "max_output_tokens": 4000
+      },
+      "reservation": {
+        "reservation_id": "d698b2ec39ae4095a7eb5bb38f7fe9e1",
+        "provider": "meta",
+        "model": "muse-spark-1.3",
+        "estimated_input_tokens": 2835,
+        "max_output_tokens": 4000,
+        "amount": 0.020543750000000003,
+        "payload_chars": 8504,
+        "context_chars": 0
+      },
+      "raw_response": {
+        "id": "resp_6ae27bd2e26c5ca814cc4e6a",
+        "access_programs": null,
+        "created_at": 1793227730.0,
+        "error": null,
+        "incomplete_details": null,
+        "instructions": "You verify financial claims against SEC EDGAR facts.\nDecompose the claim into every atomic factual assertion. Every factual assertion\nin the user's claim must become a sub-claim, including a value, a change, a\nrecord, and a first-time assertion in the same sentence. Assertions that the\ntools cannot check must still become a sub-claim with claim_type other; the\nprogram will leave those unchecked. Use lookup_fact for a value,\ncompute_change for YoY or other period-to-period growth, history_rank for\nrecord/first-time assertions, and list_periods only to understand missing data.\nNever use memory for numbers. A quarter must have period_type=quarter and\nduration_days around 80-100, not period_type=ytd. If a result has derived=true,\nuse its derivation and components as evidence and do not calculate that fact\nagain. For compute_change, cite its own evidence ID; its two nested component\nfact IDs may also be cited and are ignored by the verifier.\n\nEach final sub_claim must contain exactly these model fields:\ntext, stated_text, claim_type (value, change_pct, change_abs, record_high,\nrecord_low, first_time_above, or other), comparator (eq, approx, gt, gte, lt,\nor lte), stated_value in base units (USD, USD/share, percentage points, or 1\nfor a record boolean), evidence_ids, interpretations, verdict, note, and\nmodel_found_value. interpretations is required and may be empty. Every non-empty\nitem must be an evidence id like E3 — never free text.\nCopy stated_text verbatim from the claim, including words such as \"about\",\n\"up\", or \"fell\" (for example, \"about $1.4 billion\", \"up 22%\", or\n\"fell 10%\"). For a change_pct, stated_value is 22 for 22%, not 0.22; the\nverifier applies the sign implied by direction words such as fell/down or\nrose/up. model_found_value is the number read from the cited evidence in the\nsame units, or null when it is missing.\n\nComparator wording is deterministic: a plain numeric statement with no hedge\nor inequality phrase is eq; about/around/roughly/approximately/nearly/almost,\nclose to, some, or ~ means approx; topped/exceeded/above/more than/over/\nsurpassed/beat means gt; at least/no less than means gte; below/under/less\nthan/short of means lt; at most/no more than/up to means lte. The program\nrecords and may correct the model comparator from these words. \"up\" and\n\"fell\" describe change direction, not approximation.\n\nFor a quarter claim at a non-calendar-fiscal issuer, use period_basis from\nthe tool results. If the claim says neither fiscal nor calendar, look up both\nthe calendar label (for example 2025Q4) and the fiscal label (for example\nFY2025Q4), cite both IDs in evidence_ids, and put those two IDs in\ninterpretations. Keep interpretations empty unless both fiscal and calendar\nreadings were looked up. If the claim says fiscal, cite only the fiscal\nreading; if it says calendar, cite only the calendar reading. When a lookup or\ncompute result has fiscal_equals_calendar=true, the issuer's fiscal year is the\ncalendar year: fiscal and calendar labels refer to the same underlying facts,\nso look up and cite only one reading even when the claim has no\nfiscal/calendar qualifier.\n\nExamples:\n1. \"Tesla net income was about $1.4 billion\": lookup_fact; stated_text\n   \"about $1.4 billion\", claim_type value, comparator approx, stated_value\n   1400000000.\n2. \"Alphabet revenue exceeded $100 billion\": lookup_fact; stated_text\n   \"exceeded $100 billion\", claim_type value, comparator gt, stated_value\n   100000000000.\n3. \"Meta revenue was up 22% YoY\": compute_change(META, revenue, 2025Q2,\n   null); stated_text \"up 22%\", claim_type change_pct, comparator eq,\n   stated_value 22, and cite the compute_change evidence ID.\n4. \"Tesla revenue fell 10% YoY\": compute_change(TSLA, revenue, 2025Q3,\n   null); stated_text \"fell 10%\", claim_type change_pct, comparator eq,\n   stated_value -10, and cite the compute_change evidence ID.\n5. \"Alphabet Q3 2025 revenue was a record high\": history_rank(GOOGL,\n   revenue, 2025Q3); claim_type record_high, comparator eq, stated_value 1,\n   and cite the history_rank evidence ID.\n6. \"Alphabet Q3 2025 revenue topped $100 billion for the first time\": create\n   two sub-claims: value gt 100000000000 and first_time_above with stated_value\n   100000000000, both citing the relevant evidence; the latter is supported\n   only when this period is above the threshold and no earlier comparable\n   period is above it.\n7. If a requested fact is unavailable, leave model_found_value null, cite any\n   relevant evidence, and set that sub-claim to insufficient_evidence. Say\n   insufficient_evidence when data is missing or evidence is ambiguous.",
+        "metadata": null,
+        "model": "muse-spark-1.3",
+        "object": "response",
+        "output": [
+          {
+            "id": "rs_6ae27bd2e26c5ca814cc4e6a:rs_8687e893-7509-476c-809a-1a2d9ebf1011",
+            "summary": [],
+            "type": "reasoning",
+            "content": null,
+            "encrypted_content": null,
+            "status": "completed"
+          },
+          {
+            "id": "rs_036295e2-7980-46cd-89ef-3f3f785f5e1d",
+            "content": [
+              {
+                "annotations": [],
+                "text": "Verifying UnitedHealth's Q2 adjusted EPS — checking SEC filings for the figure.",
+                "type": "output_text",
+                "logprobs": []
+              }
+            ],
+            "role": "assistant",
+            "status": "completed",
+            "type": "message",
+            "phase": "commentary"
+          },
+          {
+            "arguments": "{\"metric\":\"eps_diluted\",\"period\":\"2026Q2\",\"ticker\":\"UNH\"}",
+            "call_id": "call_c85ef6e3-ec05-4af9-8a50-27fc3f8360e9",
+            "name": "lookup_fact",
+            "type": "function_call",
+            "id": "fc_c85ef6e3-ec05-4af9-8a50-27fc3f8360e9",
+            "async_": null,
+            "caller": null,
+            "namespace": null,
+            "status": "completed"
+          }
+        ],
+        "parallel_tool_calls": true,
+        "temperature": 1.0,
+        "tool_choice": "auto",
+        "tools": [
+          {
+            "name": "lookup_fact",
+            "parameters": {
+              "properties": {
+                "metric": {
+                  "enum": [
+                    "revenue",
+                    "net_income",
+                    "operating_income",
+                    "eps_diluted",
+                    "gross_profit",
+                    "total_assets",
+                    "cash",
+                    "capex",
+                    "rd_expense",
+                    "shares_outstanding"
+                  ],
+                  "type": "string"
+                },
+                "period": {
+                  "pattern": "^(latest|FY\\d{4}(?:Q[1-4])?|\\d{4}Q[1-4])$",
+                  "type": "string"
+                },
+                "ticker": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "ticker",
+                "metric",
+                "period"
+              ],
+              "additionalProperties": false,
+              "type": "object"
+            },
+            "strict": true,
+            "type": "function",
+            "allowed_callers": null,
+            "async_": null,
+            "defer_loading": null,
+            "description": "Look up one SEC EDGAR XBRL fact for a ticker, metric, and calendar quarter, fiscal quarter (FY2025Q4), or fiscal year. Successful results include period (the normalized requested label, or the resolved label for latest), period_basis (calendar or fiscal), fiscal_equals_calendar, duration_days, and period_type (quarter, ytd, annual, or instant). Additive flows may return derived=true with derivation and components; never treat a ytd result as a quarter or recompute a derived result. When fiscal_equals_calendar is true, fiscal and calendar labels identify the same fact; do not look up both readings. Every fact includes compact provenance: L1 audited 10-K, L2 reviewed 10-Q, or L3 program-derived, with confirmations, restatement, amendment, and evidence strength.",
+            "output_schema": null
+          },
+          {
+            "name": "list_periods",
+            "parameters": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "metric": {
+                  "enum": [
+                    "revenue",
+                    "net_income",
+                    "operating_income",
+                    "eps_diluted",
+                    "gross_profit",
+                    "total_assets",
+                    "cash",
+                    "capex",
+                    "rd_expense",
+                    "shares_outstanding"
+                  ],
+                  "type": "string"
+                },
+                "ticker": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "ticker",
+                "metric"
+              ]
+            },
+            "strict": true,
+            "type": "function",
+            "allowed_callers": null,
+            "async_": null,
+            "defer_loading": null,
+            "description": "List the recent directly available SEC EDGAR quarter and fiscal-year periods for a ticker and metric.",
+            "output_schema": null
+          },
+          {
+            "name": "compute_change",
+            "parameters": {
+              "properties": {
+                "base_period": {
+                  "pattern": "^(FY\\d{4}(?:Q[1-4])?|\\d{4}Q[1-4])$",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "metric": {
+                  "enum": [
+                    "revenue",
+                    "net_income",
+                    "operating_income",
+                    "eps_diluted",
+                    "gross_profit",
+                    "total_assets",
+                    "cash",
+                    "capex",
+                    "rd_expense",
+                    "shares_outstanding"
+                  ],
+                  "type": "string"
+                },
+                "period": {
+                  "pattern": "^(latest|FY\\d{4}(?:Q[1-4])?|\\d{4}Q[1-4])$",
+                  "type": "string"
+                },
+                "ticker": {
+                  "type": "string"
+                }
+              },
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "ticker",
+                "metric",
+                "period",
+                "base_period"
+              ]
+            },
+            "strict": true,
+            "type": "function",
+            "allowed_callers": null,
+            "async_": null,
+            "defer_loading": null,
+            "description": "Compute the absolute and year-over-year change for one SEC EDGAR XBRL metric. The period and base_period must be the same kind of period; when base_period is omitted, null, empty, \"null\", or \"none\", use the same quarter or fiscal year one year earlier. The result includes both cited lookup facts, fiscal_equals_calendar, their fact-level provenance, and a percentage change in percent points.",
+            "output_schema": null
+          },
+          {
+            "name": "history_rank",
+            "parameters": {
+              "additionalProperties": false,
+              "required": [
+                "ticker",
+                "metric",
+                "period"
+              ],
+              "properties": {
+                "metric": {
+                  "enum": [
+                    "revenue",
+                    "net_income",
+                    "operating_income",
+                    "eps_diluted",
+                    "gross_profit",
+                    "total_assets",
+                    "cash",
+                    "capex",
+                    "rd_expense",
+                    "shares_outstanding"
+                  ],
+                  "type": "string"
+                },
+                "period": {
+                  "pattern": "^(latest|FY\\d{4}(?:Q[1-4])?|\\d{4}Q[1-4])$",
+                  "type": "string"
+                },
+                "ticker": {
+                  "type": "string"
+                }
+              },
+              "type": "object"
+            },
+            "strict": true,
+            "type": "function",
+            "allowed_callers": null,
+            "async_": null,
+            "defer_loading": null,
+            "description": "Compare one quarter or fiscal-year fact with every available comparable period of the same period_type. Quarters include derived Q4 values when available; annual periods are compared only with annual periods. Return the rank, record flags through the requested period, prior high/low, and the comparison window with period end dates. The requested period also includes compact fact provenance and evidence strength.",
+            "output_schema": null
+          }
+        ],
+        "top_p": 1.0,
+        "background": false,
+        "completed_at": 1793227730.0,
+        "conversation": null,
+        "max_output_tokens": 4000,
+        "max_tool_calls": null,
+        "moderation": null,
+        "previous_response_id": null,
+        "prompt": null,
+        "prompt_cache_diagnostics": null,
+        "prompt_cache_key": null,
+        "prompt_cache_options": null,
+        "prompt_cache_retention": null,
+        "reasoning": {
+          "context": null,
+          "effort": "high",
+          "generate_summary": null,
+          "mode": null,
+          "summary": null
+        },
+        "safety_identifier": null,
+        "service_tier": "auto",
+        "status": "completed",
+        "text": null,
+        "top_logprobs": 0,
+        "truncation": "disabled",
+        "usage": {
+          "input_tokens": 2570,
+          "input_tokens_details": {
+            "cache_write_tokens": null,
+            "cached_tokens": 2545
+          },
+          "output_tokens": 989,
+          "output_tokens_details": {
+            "reasoning_tokens": 879
+          },
+          "total_tokens": 3559
+        },
+        "user": null,
+        "store": true
+      },
+      "usage": {
+        "input_tokens": 2570,
+        "output_tokens": 989,
+        "input_tokens_details": {
+          "cached_tokens": 2545
+        },
+        "output_tokens_details": {
+          "reasoning_tokens": 879
+        }
+      },
+      "cost": 0.0046162500000000006,
+      "latency_ms": 5042.753,
+      "status": "completed"
+    },
+    {
+      "request": {
+        "model": "muse-spark-1.3",
+        "previous_response_id": "resp_6ae27bd2e26c5ca814cc4e6a",
+        "input": [
+          {
+            "type": "function_call_output",
+            "call_id": "call_c85ef6e3-ec05-4af9-8a50-27fc3f8360e9",
+            "output": "{\"ticker\":\"UNH\",\"cik\":\"0000731766\",\"entity\":\"UnitedHealth Group Incorporated\",\"metric\":\"eps_diluted\",\"concept\":\"EarningsPerShareDiluted\",\"unit\":\"USD/shares\",\"value\":6.04,\"start\":\"2026-04-01\",\"end\":\"2026-06-30\",\"form\":\"10-Q\",\"form_fallback\":false,\"accn\":\"0000731766-26-000197\",\"filed\":\"2026-08-10\",\"frame\":\"CY2026Q2\",\"fiscal_year\":2026,\"fiscal_period\":\"Q2\",\"duration_days\":91,\"period_type\":\"quarter\",\"fiscal_equals_calendar\":true,\"derived\":false,\"filing_url\":\"https://www.sec.gov/Archives/edgar/data/731766/000073176626000197/\",\"source_sha256\":\"6c9dff59732b7c597542b2d5eadaae0313ca0de03defdba2c00203e693632d76\",\"provenance\":{\"tier\":\"L2\",\"audited\":false,\"confirmations\":1,\"forms\":[\"10-Q\"],\"first_filed\":\"2026-08-10\",\"latest_filed\":\"2026-08-10\",\"restated\":false,\"amended\":false,\"strength\":\"medium\"},\"period\":\"2026Q2\",\"period_basis\":\"calendar\",\"evidence_id\":\"E1\"}"
+          }
+        ],
+        "tools": [
+          {
+            "type": "function",
+            "name": "lookup_fact",
+            "description": "Look up one SEC EDGAR XBRL fact for a ticker, metric, and calendar quarter, fiscal quarter (FY2025Q4), or fiscal year. Successful results include period (the normalized requested label, or the resolved label for latest), period_basis (calendar or fiscal), fiscal_equals_calendar, duration_days, and period_type (quarter, ytd, annual, or instant). Additive flows may return derived=true with derivation and components; never treat a ytd result as a quarter or recompute a derived result. When fiscal_equals_calendar is true, fiscal and calendar labels identify the same fact; do not look up both readings. Every fact includes compact provenance: L1 audited 10-K, L2 reviewed 10-Q, or L3 program-derived, with confirmations, restatement, amendment, and evidence strength.",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "ticker": {
+                  "type": "string"
+                },
+                "metric": {
+                  "type": "string",
+                  "enum": [
+                    "revenue",
+                    "net_income",
+                    "operating_income",
+                    "eps_diluted",
+                    "gross_profit",
+                    "total_assets",
+                    "cash",
+                    "capex",
+                    "rd_expense",
+                    "shares_outstanding"
+                  ]
+                },
+                "period": {
+                  "type": "string",
+                  "pattern": "^(latest|FY\\d{4}(?:Q[1-4])?|\\d{4}Q[1-4])$"
+                }
+              },
+              "required": [
+                "ticker",
+                "metric",
+                "period"
+              ],
+              "additionalProperties": false
+            },
+            "strict": true
+          },
+          {
+            "type": "function",
+            "name": "list_periods",
+            "description": "List the recent directly available SEC EDGAR quarter and fiscal-year periods for a ticker and metric.",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "ticker": {
+                  "type": "string"
+                },
+                "metric": {
+                  "type": "string",
+                  "enum": [
+                    "revenue",
+                    "net_income",
+                    "operating_income",
+                    "eps_diluted",
+                    "gross_profit",
+                    "total_assets",
+                    "cash",
+                    "capex",
+                    "rd_expense",
+                    "shares_outstanding"
+                  ]
+                }
+              },
+              "required": [
+                "ticker",
+                "metric"
+              ],
+              "additionalProperties": false
+            },
+            "strict": true
+          },
+          {
+            "type": "function",
+            "name": "compute_change",
+            "description": "Compute the absolute and year-over-year change for one SEC EDGAR XBRL metric. The period and base_period must be the same kind of period; when base_period is omitted, null, empty, \"null\", or \"none\", use the same quarter or fiscal year one year earlier. The result includes both cited lookup facts, fiscal_equals_calendar, their fact-level provenance, and a percentage change in percent points.",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "ticker": {
+                  "type": "string"
+                },
+                "metric": {
+                  "type": "string",
+                  "enum": [
+                    "revenue",
+                    "net_income",
+                    "operating_income",
+                    "eps_diluted",
+                    "gross_profit",
+                    "total_assets",
+                    "cash",
+                    "capex",
+                    "rd_expense",
+                    "shares_outstanding"
+                  ]
+                },
+                "period": {
+                  "type": "string",
+                  "pattern": "^(latest|FY\\d{4}(?:Q[1-4])?|\\d{4}Q[1-4])$"
+                },
+                "base_period": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "pattern": "^(FY\\d{4}(?:Q[1-4])?|\\d{4}Q[1-4])$"
+                }
+              },
+              "required": [
+                "ticker",
+                "metric",
+                "period",
+                "base_period"
+              ],
+              "additionalProperties": false
+            },
+            "strict": true
+          },
+          {
+            "type": "function",
+            "name": "history_rank",
+            "description": "Compare one quarter or fiscal-year fact with every available comparable period of the same period_type. Quarters include derived Q4 values when available; annual periods are compared only with annual periods. Return the rank, record flags through the requested period, prior high/low, and the comparison window with period end dates. The requested period also includes compact fact provenance and evidence strength.",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "ticker": {
+                  "type": "string"
+                },
+                "metric": {
+                  "type": "string",
+                  "enum": [
+                    "revenue",
+                    "net_income",
+                    "operating_income",
+                    "eps_diluted",
+                    "gross_profit",
+                    "total_assets",
+                    "cash",
+                    "capex",
+                    "rd_expense",
+                    "shares_outstanding"
+                  ]
+                },
+                "period": {
+                  "type": "string",
+                  "pattern": "^(latest|FY\\d{4}(?:Q[1-4])?|\\d{4}Q[1-4])$"
+                }
+              },
+              "required": [
+                "ticker",
+                "metric",
+                "period"
+              ],
+              "additionalProperties": false
+            },
+            "strict": true
+          }
+        ],
+        "parallel_tool_calls": true,
+        "max_output_tokens": 4000
+      },
+      "reservation": {
+        "reservation_id": "5c8c7e1ccca04601a1ed68c2c2f4b173",
+        "provider": "meta",
+        "model": "muse-spark-1.3",
+        "estimated_input_tokens": 1980,
+        "max_output_tokens": 4000,
+        "amount": 0.019475000000000003,
+        "payload_chars": 4799,
+        "context_chars": 1139
+      },
+      "raw_response": {
+        "id": "resp_6ae27bda2dd33947ba594da2",
+        "access_programs": null,
+        "created_at": 1793227738.0,
+        "error": null,
+        "incomplete_details": null,
+        "instructions": null,
+        "metadata": null,
+        "model": "muse-spark-1.3",
+        "object": "response",
+        "output": [
+          {
+            "id": "rs_6ae27bda2dd33947ba594da2:rs_8127ec40-c759-4f17-ab40-f160e544e5cf",
+            "summary": [],
+            "type": "reasoning",
+            "content": null,
+            "encrypted_content": null,
+            "status": "completed"
+          },
+          {
+            "id": "msg_ab59db50-a771-4f91-b23c-098afe8ebda6",
+            "content": [
+              {
+                "annotations": [],
+                "text": "Based on SEC EDGAR XBRL, I can't confirm $6.38 as **adjusted** EPS.\n\nWhat is directly available for UnitedHealth Group — UNH — for Q2 2026:\n\n* **GAAP diluted EPS (EarningsPerShareDiluted): $6.04**\n* Period: 2026-04-01 to 2026-06-30, 91 days, quarter\n* Form: 10-Q, filed 2026-08-10\n* fiscal_equals_calendar: true, so CY2026Q2 = FY2026Q2\n* Provenance: L2 - reviewed 10-Q, not audited, 1 confirmation, not restated/amended, strength: medium\n\n**Adjusted EPS** is a non-GAAP measure reported by the company in earnings materials — it is not captured as `eps_diluted` in XBRL.\n\nSo:\n* GAAP diluted EPS for 2026Q2 was **$6.04**, not $6.38.\n* The $6.38 figure, if reported, would be non-GAAP adjusted EPS and cannot be verified from the XBRL fact set.\n",
+                "type": "output_text",
+                "logprobs": []
+              }
+            ],
+            "role": "assistant",
+            "status": "completed",
+            "type": "message",
+            "phase": null
+          }
+        ],
+        "parallel_tool_calls": true,
+        "temperature": 1.0,
+        "tool_choice": "auto",
+        "tools": [
+          {
+            "name": "lookup_fact",
+            "parameters": {
+              "additionalProperties": false,
+              "required": [
+                "ticker",
+                "metric",
+                "period"
+              ],
+              "type": "object",
+              "properties": {
+                "metric": {
+                  "enum": [
+                    "revenue",
+                    "net_income",
+                    "operating_income",
+                    "eps_diluted",
+                    "gross_profit",
+                    "total_assets",
+                    "cash",
+                    "capex",
+                    "rd_expense",
+                    "shares_outstanding"
+                  ],
+                  "type": "string"
+                },
+                "period": {
+                  "pattern": "^(latest|FY\\d{4}(?:Q[1-4])?|\\d{4}Q[1-4])$",
+                  "type": "string"
+                },
+                "ticker": {
+                  "type": "string"
+                }
+              }
+            },
+            "strict": true,
+            "type": "function",
+            "allowed_callers": null,
+            "async_": null,
+            "defer_loading": null,
+            "description": "Look up one SEC EDGAR XBRL fact for a ticker, metric, and calendar quarter, fiscal quarter (FY2025Q4), or fiscal year. Successful results include period (the normalized requested label, or the resolved label for latest), period_basis (calendar or fiscal), fiscal_equals_calendar, duration_days, and period_type (quarter, ytd, annual, or instant). Additive flows may return derived=true with derivation and components; never treat a ytd result as a quarter or recompute a derived result. When fiscal_equals_calendar is true, fiscal and calendar labels identify the same fact; do not look up both readings. Every fact includes compact provenance: L1 audited 10-K, L2 reviewed 10-Q, or L3 program-derived, with confirmations, restatement, amendment, and evidence strength.",
+            "output_schema": null
+          },
+          {
+            "name": "list_periods",
+            "parameters": {
+              "required": [
+                "ticker",
+                "metric"
+              ],
+              "properties": {
+                "metric": {
+                  "enum": [
+                    "revenue",
+                    "net_income",
+                    "operating_income",
+                    "eps_diluted",
+                    "gross_profit",
+                    "total_assets",
+                    "cash",
+                    "capex",
+                    "rd_expense",
+                    "shares_outstanding"
+                  ],
+                  "type": "string"
+                },
+                "ticker": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": false,
+              "type": "object"
+            },
+            "strict": true,
+            "type": "function",
+            "allowed_callers": null,
+            "async_": null,
+            "defer_loading": null,
+            "description": "List the recent directly available SEC EDGAR quarter and fiscal-year periods for a ticker and metric.",
+            "output_schema": null
+          },
+          {
+            "name": "compute_change",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "base_period": {
+                  "pattern": "^(FY\\d{4}(?:Q[1-4])?|\\d{4}Q[1-4])$",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "metric": {
+                  "enum": [
+                    "revenue",
+                    "net_income",
+                    "operating_income",
+                    "eps_diluted",
+                    "gross_profit",
+                    "total_assets",
+                    "cash",
+                    "capex",
+                    "rd_expense",
+                    "shares_outstanding"
+                  ],
+                  "type": "string"
+                },
+                "period": {
+                  "pattern": "^(latest|FY\\d{4}(?:Q[1-4])?|\\d{4}Q[1-4])$",
+                  "type": "string"
+                },
+                "ticker": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "ticker",
+                "metric",
+                "period",
+                "base_period"
+              ]
+            },
+            "strict": true,
+            "type": "function",
+            "allowed_callers": null,
+            "async_": null,
+            "defer_loading": null,
+            "description": "Compute the absolute and year-over-year change for one SEC EDGAR XBRL metric. The period and base_period must be the same kind of period; when base_period is omitted, null, empty, \"null\", or \"none\", use the same quarter or fiscal year one year earlier. The result includes both cited lookup facts, fiscal_equals_calendar, their fact-level provenance, and a percentage change in percent points.",
+            "output_schema": null
+          },
+          {
+            "name": "history_rank",
+            "parameters": {
+              "additionalProperties": false,
+              "properties": {
+                "metric": {
+                  "enum": [
+                    "revenue",
+                    "net_income",
+                    "operating_income",
+                    "eps_diluted",
+                    "gross_profit",
+                    "total_assets",
+                    "cash",
+                    "capex",
+                    "rd_expense",
+                    "shares_outstanding"
+                  ],
+                  "type": "string"
+                },
+                "period": {
+                  "pattern": "^(latest|FY\\d{4}(?:Q[1-4])?|\\d{4}Q[1-4])$",
+                  "type": "string"
+                },
+                "ticker": {
+                  "type": "string"
+                }
+              },
+              "type": "object",
+              "required": [
+                "ticker",
+                "metric",
+                "period"
+              ]
+            },
+            "strict": true,
+            "type": "function",
+            "allowed_callers": null,
+            "async_": null,
+            "defer_loading": null,
+            "description": "Compare one quarter or fiscal-year fact with every available comparable period of the same period_type. Quarters include derived Q4 values when available; annual periods are compared only with annual periods. Return the rank, record flags through the requested period, prior high/low, and the comparison window with period end dates. The requested period also includes compact fact provenance and evidence strength.",
+            "output_schema": null
+          }
+        ],
+        "top_p": 1.0,
+        "background": false,
+        "completed_at": 1793227738.0,
+        "conversation": null,
+        "max_output_tokens": 4000,
+        "max_tool_calls": null,
+        "moderation": null,
+        "previous_response_id": "resp_6ae27bd2e26c5ca814cc4e6a",
+        "prompt": null,
+        "prompt_cache_diagnostics": null,
+        "prompt_cache_key": null,
+        "prompt_cache_options": null,
+        "prompt_cache_retention": null,
+        "reasoning": {
+          "context": null,
+          "effort": "high",
+          "generate_summary": null,
+          "mode": null,
+          "summary": null
+        },
+        "safety_identifier": null,
+        "service_tier": "auto",
+        "status": "completed",
+        "text": null,
+        "top_logprobs": 0,
+        "truncation": "disabled",
+        "usage": {
+          "input_tokens": 1872,
+          "input_tokens_details": {
+            "cache_write_tokens": null,
+            "cached_tokens": 1393
+          },
+          "output_tokens": 1150,
+          "output_tokens_details": {
+            "reasoning_tokens": 904
+          },
+          "total_tokens": 3022
+        },
+        "user": null,
+        "store": true
+      },
+      "usage": {
+        "input_tokens": 1872,
+        "output_tokens": 1150,
+        "input_tokens_details": {
+          "cached_tokens": 1393
+        },
+        "output_tokens_details": {
+          "reasoning_tokens": 904
+        }
+      },
+      "cost": 0.0056952,
+      "latency_ms": 11279.964,
+      "status": "completed"
+    },
+    {
+      "request": {
+        "model": "muse-spark-1.3",
+        "previous_response_id": "resp_6ae27bda2dd33947ba594da2",
+        "input": [
+          {
+            "role": "user",
+            "content": "Return the final structured verdict now. Include every atomic factual assertion as a sub-claim, including assertions that need claim_type other when the tools cannot check them. Copy stated_text verbatim from the claim; include claim_type, comparator, stated_value in base units, evidence_ids, interpretations (an array, possibly empty; non-empty items are evidence ids like E3, never free text), verdict, model_found_value, and a concise note."
+          }
+        ],
+        "text": {
+          "format": {
+            "type": "json_schema",
+            "name": "verdict",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "verdict": {
+                  "type": "string",
+                  "enum": [
+                    "supported",
+                    "contradicted",
+                    "insufficient_evidence"
+                  ]
+                },
+                "summary": {
+                  "type": "string"
+                },
+                "sub_claims": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "text": {
+                        "type": "string"
+                      },
+                      "stated_text": {
+                        "type": "string"
+                      },
+                      "claim_type": {
+                        "type": "string",
+                        "enum": [
+                          "value",
+                          "change_pct",
+                          "change_abs",
+                          "record_high",
+                          "record_low",
+                          "first_time_above",
+                          "other"
+                        ]
+                      },
+                      "comparator": {
+                        "type": "string",
+                        "enum": [
+                          "eq",
+                          "approx",
+                          "gt",
+                          "gte",
+                          "lt",
+                          "lte"
+                        ]
+                      },
+                      "stated_value": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "evidence_ids": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      },
+                      "interpretations": {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "description": "evidence id like E3 — never free text"
+                        }
+                      },
+                      "verdict": {
+                        "type": "string",
+                        "enum": [
+                          "supported",
+                          "contradicted",
+                          "insufficient_evidence"
+                        ]
+                      },
+                      "note": {
+                        "type": "string"
+                      },
+                      "model_found_value": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "text",
+                      "stated_text",
+                      "claim_type",
+                      "comparator",
+                      "stated_value",
+                      "evidence_ids",
+                      "interpretations",
+                      "verdict",
+                      "note",
+                      "model_found_value"
+                    ],
+                    "additionalProperties": false
+                  }
+                }
+              },
+              "required": [
+                "verdict",
+                "summary",
+                "sub_claims"
+              ],
+              "additionalProperties": false
+            },
+            "strict": true
+          }
+        },
+        "max_output_tokens": 3000
+      },
+      "reservation": {
+        "reservation_id": "51d421cd442348298582db11ce39be4a",
+        "provider": "meta",
+        "model": "muse-spark-1.3",
+        "estimated_input_tokens": 972,
+        "max_output_tokens": 3000,
+        "amount": 0.013965,
+        "payload_chars": 1775,
+        "context_chars": 1139
+      },
+      "raw_response": {
+        "id": "resp_6ae27beb8d993a93700447de",
+        "access_programs": null,
+        "created_at": 1793227755.0,
+        "error": null,
+        "incomplete_details": {
+          "reason": "max_output_tokens"
+        },
+        "instructions": null,
+        "metadata": null,
+        "model": "muse-spark-1.3",
+        "object": "response",
+        "output": [
+          {
+            "id": "rs_6ae27beb8d993a93700447de:rs_9fc7d723-2a20-4034-9fcc-f822e2eb5ccc",
+            "summary": [],
+            "type": "reasoning",
+            "content": null,
+            "encrypted_content": null,
+            "status": "completed"
+          },
+          {
+            "id": "msg_c1729229-332e-4731-a9ba-c4e31e1766e9",
+            "content": [
+              {
+                "annotations": [],
+                "text": "{\"sub_claims\": [{\"claim_type\": \"other\", \"comparator\": \"eq\", \"evidence_ids\": [\"E1\"], \"interpretations\": [], \"model_found_value\": null, \"note\": \"E1 provides GAAP diluted EPS of $6.04 for UNH CY2026Q2 (10-Q), not non-GAAP adjusted EPS; adjusted EPS cannot be checked via eps_diluted tool.\", \"stated_text\": \"UnitedHealth's adjusted EPS was $6.38 in the second quarter of 2026.\", \"stated_value\": 6.38, \"text\": \"UnitedHealth's adjusted EPS was $6.38 in Q2 2026\", \"verdict\": \"insufficient_evidence\"}], \"summary\": \"The claim asserts non-GAAP adjusted EPS of $6.38 for UNH Q2 2026. XBRL lookup only provides GAAP diluted EPS ($6.04 for CY2026Q2) and does not cover adjusted EPS, so",
+                "type": "output_text",
+                "logprobs": []
+              }
+            ],
+            "role": "assistant",
+            "status": "incomplete",
+            "type": "message",
+            "phase": null
+          }
+        ],
+        "parallel_tool_calls": true,
+        "temperature": 1.0,
+        "tool_choice": "auto",
+        "tools": [],
+        "top_p": 1.0,
+        "background": false,
+        "completed_at": null,
+        "conversation": null,
+        "max_output_tokens": 3000,
+        "max_tool_calls": null,
+        "moderation": null,
+        "previous_response_id": "resp_6ae27bda2dd33947ba594da2",
+        "prompt": null,
+        "prompt_cache_diagnostics": null,
+        "prompt_cache_key": null,
+        "prompt_cache_options": null,
+        "prompt_cache_retention": null,
+        "reasoning": {
+          "context": null,
+          "effort": "high",
+          "generate_summary": null,
+          "mode": null,
+          "summary": null
+        },
+        "safety_identifier": null,
+        "service_tier": "auto",
+        "status": "incomplete",
+        "text": {
+          "format": {
+            "name": "verdict",
+            "schema_": {
+              "additionalProperties": false,
+              "properties": {
+                "sub_claims": {
+                  "items": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "claim_type": {
+                        "enum": [
+                          "value",
+                          "change_pct",
+                          "change_abs",
+                          "record_high",
+                          "record_low",
+                          "first_time_above",
+                          "other"
+                        ],
+                        "type": "string"
+                      },
+                      "comparator": {
+                        "enum": [
+                          "eq",
+                          "approx",
+                          "gt",
+                          "gte",
+                          "lt",
+                          "lte"
+                        ],
+                        "type": "string"
+                      },
+                      "evidence_ids": {
+                        "items": {
+                          "type": "string"
+                        },
+                        "type": "array"
+                      },
+                      "interpretations": {
+                        "items": {
+                          "description": "evidence id like E3 — never free text",
+                          "type": "string"
+                        },
+                        "type": "array"
+                      },
+                      "model_found_value": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "note": {
+                        "type": "string"
+                      },
+                      "stated_text": {
+                        "type": "string"
+                      },
+                      "stated_value": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "text": {
+                        "type": "string"
+                      },
+                      "verdict": {
+                        "enum": [
+                          "supported",
+                          "contradicted",
+                          "insufficient_evidence"
+                        ],
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "text",
+                      "stated_text",
+                      "claim_type",
+                      "comparator",
+                      "stated_value",
+                      "evidence_ids",
+                      "interpretations",
+                      "verdict",
+                      "note",
+                      "model_found_value"
+                    ],
+                    "type": "object"
+                  },
+                  "type": "array"
+                },
+                "summary": {
+                  "type": "string"
+                },
+                "verdict": {
+                  "enum": [
+                    "supported",
+                    "contradicted",
+                    "insufficient_evidence"
+                  ],
+                  "type": "string"
+                }
+              },
+              "type": "object",
+              "required": [
+                "verdict",
+                "summary",
+                "sub_claims"
+              ]
+            },
+            "type": "json_schema",
+            "description": null,
+            "strict": true
+          },
+          "verbosity": null
+        },
+        "top_logprobs": 0,
+        "truncation": "disabled",
+        "usage": {
+          "input_tokens": 774,
+          "input_tokens_details": {
+            "cache_write_tokens": null,
+            "cached_tokens": 0
+          },
+          "output_tokens": 3000,
+          "output_tokens_details": {
+            "reasoning_tokens": 2788
+          },
+          "total_tokens": 3774
+        },
+        "user": null,
+        "store": true
+      },
+      "usage": {
+        "input_tokens": 774,
+        "output_tokens": 3000,
+        "input_tokens_details": {
+          "cached_tokens": 0
+        },
+        "output_tokens_details": {
+          "reasoning_tokens": 2788
+        }
+      },
+      "cost": 0.013717499999999999,
+      "latency_ms": 18964.067,
+      "status": "incomplete"
+    },
+    {
+      "request": {
+        "model": "muse-spark-1.3",
+        "previous_response_id": "resp_6ae27bda2dd33947ba594da2",
+        "input": [
+          {
+            "role": "user",
+            "content": "Return the final structured verdict now. Include every atomic factual assertion as a sub-claim, including assertions that need claim_type other when the tools cannot check them. Copy stated_text verbatim from the claim; include claim_type, comparator, stated_value in base units, evidence_ids, interpretations (an array, possibly empty; non-empty items are evidence ids like E3, never free text), verdict, model_found_value, and a concise note."
+          }
+        ],
+        "text": {
+          "format": {
+            "type": "json_schema",
+            "name": "verdict",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "verdict": {
+                  "type": "string",
+                  "enum": [
+                    "supported",
+                    "contradicted",
+                    "insufficient_evidence"
+                  ]
+                },
+                "summary": {
+                  "type": "string"
+                },
+                "sub_claims": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "text": {
+                        "type": "string"
+                      },
+                      "stated_text": {
+                        "type": "string"
+                      },
+                      "claim_type": {
+                        "type": "string",
+                        "enum": [
+                          "value",
+                          "change_pct",
+                          "change_abs",
+                          "record_high",
+                          "record_low",
+                          "first_time_above",
+                          "other"
+                        ]
+                      },
+                      "comparator": {
+                        "type": "string",
+                        "enum": [
+                          "eq",
+                          "approx",
+                          "gt",
+                          "gte",
+                          "lt",
+                          "lte"
+                        ]
+                      },
+                      "stated_value": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "evidence_ids": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      },
+                      "interpretations": {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "description": "evidence id like E3 — never free text"
+                        }
+                      },
+                      "verdict": {
+                        "type": "string",
+                        "enum": [
+                          "supported",
+                          "contradicted",
+                          "insufficient_evidence"
+                        ]
+                      },
+                      "note": {
+                        "type": "string"
+                      },
+                      "model_found_value": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "text",
+                      "stated_text",
+                      "claim_type",
+                      "comparator",
+                      "stated_value",
+                      "evidence_ids",
+                      "interpretations",
+                      "verdict",
+                      "note",
+                      "model_found_value"
+                    ],
+                    "additionalProperties": false
+                  }
+                }
+              },
+              "required": [
+                "verdict",
+                "summary",
+                "sub_claims"
+              ],
+              "additionalProperties": false
+            },
+            "strict": true
+          }
+        },
+        "max_output_tokens": 6000
+      },
+      "reservation": {
+        "reservation_id": "bee943f5f2df47d381b0ef2570b33d6e",
+        "provider": "meta",
+        "model": "muse-spark-1.3",
+        "estimated_input_tokens": 972,
+        "max_output_tokens": 6000,
+        "amount": 0.026715,
+        "payload_chars": 1775,
+        "context_chars": 1139
+      },
+      "raw_response": {
+        "id": "resp_6ae27bfbb608f2c028634a5c",
+        "access_programs": null,
+        "created_at": 1793227771.0,
+        "error": null,
+        "incomplete_details": null,
+        "instructions": null,
+        "metadata": null,
+        "model": "muse-spark-1.3",
+        "object": "response",
+        "output": [
+          {
+            "id": "rs_6ae27bfbb608f2c028634a5c:rs_535f9c37-ca81-4d7f-8d99-f1ca88b05d3b",
+            "summary": [],
+            "type": "reasoning",
+            "content": null,
+            "encrypted_content": null,
+            "status": "completed"
+          },
+          {
+            "id": "msg_31a560f2-9615-49cf-8b09-8d07136fa5ee",
+            "content": [
+              {
+                "annotations": [],
+                "text": "{\"sub_claims\": [{\"claim_type\": \"other\", \"comparator\": \"eq\", \"evidence_ids\": [], \"interpretations\": [], \"model_found_value\": null, \"note\": \"SEC XBRL provides only GAAP diluted EPS of $6.04 for 2026Q2 (E1); non-GAAP adjusted EPS cannot be checked with available tools.\", \"stated_text\": \"adjusted EPS was $6.38 in the second quarter of 2026\", \"stated_value\": 6.38, \"text\": \"UnitedHealth's adjusted EPS was $6.38 in the second quarter of 2026.\", \"verdict\": \"insufficient_evidence\"}], \"summary\": \"The claim concerns non-GAAP adjusted EPS, which cannot be verified from SEC XBRL GAAP diluted EPS data. No sufficient evidence to support or contradict $6.38.\", \"verdict\": \"insufficient_evidence\"}",
+                "type": "output_text",
+                "logprobs": []
+              }
+            ],
+            "role": "assistant",
+            "status": "completed",
+            "type": "message",
+            "phase": null
+          }
+        ],
+        "parallel_tool_calls": true,
+        "temperature": 1.0,
+        "tool_choice": "auto",
+        "tools": [],
+        "top_p": 1.0,
+        "background": false,
+        "completed_at": 1793227771.0,
+        "conversation": null,
+        "max_output_tokens": 6000,
+        "max_tool_calls": null,
+        "moderation": null,
+        "previous_response_id": "resp_6ae27bda2dd33947ba594da2",
+        "prompt": null,
+        "prompt_cache_diagnostics": null,
+        "prompt_cache_key": null,
+        "prompt_cache_options": null,
+        "prompt_cache_retention": null,
+        "reasoning": {
+          "context": null,
+          "effort": "high",
+          "generate_summary": null,
+          "mode": null,
+          "summary": null
+        },
+        "safety_identifier": null,
+        "service_tier": "auto",
+        "status": "completed",
+        "text": {
+          "format": {
+            "name": "verdict",
+            "schema_": {
+              "additionalProperties": false,
+              "properties": {
+                "sub_claims": {
+                  "items": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "claim_type": {
+                        "enum": [
+                          "value",
+                          "change_pct",
+                          "change_abs",
+                          "record_high",
+                          "record_low",
+                          "first_time_above",
+                          "other"
+                        ],
+                        "type": "string"
+                      },
+                      "comparator": {
+                        "enum": [
+                          "eq",
+                          "approx",
+                          "gt",
+                          "gte",
+                          "lt",
+                          "lte"
+                        ],
+                        "type": "string"
+                      },
+                      "evidence_ids": {
+                        "items": {
+                          "type": "string"
+                        },
+                        "type": "array"
+                      },
+                      "interpretations": {
+                        "items": {
+                          "description": "evidence id like E3 — never free text",
+                          "type": "string"
+                        },
+                        "type": "array"
+                      },
+                      "model_found_value": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "note": {
+                        "type": "string"
+                      },
+                      "stated_text": {
+                        "type": "string"
+                      },
+                      "stated_value": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "text": {
+                        "type": "string"
+                      },
+                      "verdict": {
+                        "enum": [
+                          "supported",
+                          "contradicted",
+                          "insufficient_evidence"
+                        ],
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "text",
+                      "stated_text",
+                      "claim_type",
+                      "comparator",
+                      "stated_value",
+                      "evidence_ids",
+                      "interpretations",
+                      "verdict",
+                      "note",
+                      "model_found_value"
+                    ],
+                    "type": "object"
+                  },
+                  "type": "array"
+                },
+                "summary": {
+                  "type": "string"
+                },
+                "verdict": {
+                  "enum": [
+                    "supported",
+                    "contradicted",
+                    "insufficient_evidence"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
+                "verdict",
+                "summary",
+                "sub_claims"
+              ],
+              "type": "object"
+            },
+            "type": "json_schema",
+            "description": null,
+            "strict": true
+          },
+          "verbosity": null
+        },
+        "top_logprobs": 0,
+        "truncation": "disabled",
+        "usage": {
+          "input_tokens": 774,
+          "input_tokens_details": {
+            "cache_write_tokens": null,
+            "cached_tokens": 0
+          },
+          "output_tokens": 1715,
+          "output_tokens_details": {
+            "reasoning_tokens": 1518
+          },
+          "total_tokens": 2489
+        },
+        "user": null,
+        "store": true
+      },
+      "usage": {
+        "input_tokens": 774,
+        "output_tokens": 1715,
+        "input_tokens_details": {
+          "cached_tokens": 0
+        },
+        "output_tokens_details": {
+          "reasoning_tokens": 1518
+        }
+      },
+      "cost": 0.00825625,
+      "latency_ms": 16228.421,
+      "status": "completed"
+    }
+  ],
+  "tool_calls": [
+    {
+      "name": "lookup_fact",
+      "arguments": {
+        "metric": "eps_diluted",
+        "period": "2026Q2",
+        "ticker": "UNH"
+      },
+      "call_id": "call_c85ef6e3-ec05-4af9-8a50-27fc3f8360e9",
+      "result": {
+        "ticker": "UNH",
+        "cik": "0000731766",
+        "entity": "UnitedHealth Group Incorporated",
+        "metric": "eps_diluted",
+        "concept": "EarningsPerShareDiluted",
+        "unit": "USD/shares",
+        "value": 6.04,
+        "start": "2026-04-01",
+        "end": "2026-06-30",
+        "form": "10-Q",
+        "form_fallback": false,
+        "accn": "0000731766-26-000197",
+        "filed": "2026-08-10",
+        "frame": "CY2026Q2",
+        "fiscal_year": 2026,
+        "fiscal_period": "Q2",
+        "duration_days": 91,
+        "period_type": "quarter",
+        "fiscal_equals_calendar": true,
+        "derived": false,
+        "filing_url": "https://www.sec.gov/Archives/edgar/data/731766/000073176626000197/",
+        "source_sha256": "6c9dff59732b7c597542b2d5eadaae0313ca0de03defdba2c00203e693632d76",
+        "provenance": {
+          "tier": "L2",
+          "audited": false,
+          "confirmations": 1,
+          "forms": [
+            "10-Q"
+          ],
+          "first_filed": "2026-08-10",
+          "latest_filed": "2026-08-10",
+          "restated": false,
+          "amended": false,
+          "strength": "medium"
+        },
+        "period": "2026Q2",
+        "period_basis": "calendar",
+        "evidence_id": "E1"
+      }
+    }
+  ],
+  "usage": [
+    {
+      "input_tokens": 2570,
+      "output_tokens": 989,
+      "input_tokens_details": {
+        "cached_tokens": 2545
+      },
+      "output_tokens_details": {
+        "reasoning_tokens": 879
+      }
+    },
+    {
+      "input_tokens": 1872,
+      "output_tokens": 1150,
+      "input_tokens_details": {
+        "cached_tokens": 1393
+      },
+      "output_tokens_details": {
+        "reasoning_tokens": 904
+      }
+    },
+    {
+      "input_tokens": 774,
+      "output_tokens": 3000,
+      "input_tokens_details": {
+        "cached_tokens": 0
+      },
+      "output_tokens_details": {
+        "reasoning_tokens": 2788
+      }
+    },
+    {
+      "input_tokens": 774,
+      "output_tokens": 1715,
+      "input_tokens_details": {
+        "cached_tokens": 0
+      },
+      "output_tokens_details": {
+        "reasoning_tokens": 1518
+      }
+    }
+  ],
+  "tokens": {
+    "input": 5990,
+    "cached": 3938,
+    "output": 6854,
+    "reasoning": 6089
+  },
+  "model_calls": 4,
+  "cost": 0.0322852,
+  "cost_usd": 0.0322852,
+  "latency_ms": 51515.205,
+  "tool_call_count": 1,
+  "incomplete_turns": [
+    {
+      "turn": 3,
+      "attempt": 1,
+      "phase": "final",
+      "status": "incomplete",
+      "reason": "max_output_tokens",
+      "max_output_tokens": 3000
+    }
+  ],
+  "previous_response_fallback": false,
+  "final_verdict": {
+    "verdict": "insufficient_evidence",
+    "summary": "The claim concerns non-GAAP adjusted EPS, which cannot be verified from SEC XBRL GAAP diluted EPS data. No sufficient evidence to support or contradict $6.38.",
+    "sub_claims": [
+      {
+        "text": "UnitedHealth's adjusted EPS was $6.38 in the second quarter of 2026.",
+        "stated_text": "adjusted EPS was $6.38 in the second quarter of 2026",
+        "claim_type": "other",
+        "comparator": "eq",
+        "stated_value": 6.38,
+        "verdict": "insufficient_evidence",
+        "evidence_ids": [],
+        "interpretations": [],
+        "model_found_value": null,
+        "note": "SEC XBRL provides only GAAP diluted EPS of $6.04 for 2026Q2 (E1); non-GAAP adjusted EPS cannot be checked with available tools.",
+        "evidence_valid": false,
+        "program_verdict": "unchecked",
+        "actual_value": null,
+        "tolerance": null,
+        "reason": "unchecked_other_claim",
+        "disagreement": false,
+        "precision": null,
+        "stated_value_used": 6.38,
+        "period_ambiguous": false,
+        "program_added_interpretation": false,
+        "program_evidence_ids": [],
+        "invalid_interpretations": false,
+        "deduplicated_evidence": [],
+        "stated_value_corrected": false,
+        "stated_text_unparsed": false,
+        "stated_sign_corrected": false,
+        "threshold_from_model": false,
+        "model_comparator": "eq",
+        "comparator_corrected": false,
+        "evidence_strength": "low",
+        "evidence_summary": "Evidence: unavailable",
+        "restated_evidence": false
+      }
+    ],
+    "model_verdict": "insufficient_evidence",
+    "program_checks": [
+      {
+        "text": "UnitedHealth's adjusted EPS was $6.38 in the second quarter of 2026.",
+        "stated_value": 6.38,
+        "evidence_ids": [],
+        "evidence_valid": false,
+        "program_verdict": "unchecked",
+        "actual_value": null,
+        "tolerance": null,
+        "reason": "unchecked_other_claim",
+        "disagreement": false,
+        "precision": null,
+        "stated_value_used": 6.38,
+        "comparator": "eq",
+        "interpretations": [],
+        "period_ambiguous": false,
+        "program_added_interpretation": false,
+        "program_evidence_ids": [],
+        "invalid_interpretations": false,
+        "deduplicated_evidence": [],
+        "stated_value_corrected": false,
+        "stated_text_unparsed": false,
+        "stated_sign_corrected": false,
+        "threshold_from_model": false,
+        "model_comparator": "eq",
+        "comparator_corrected": false,
+        "evidence_strength": "low",
+        "evidence_summary": "Evidence: unavailable",
+        "restated_evidence": false
+      }
+    ],
+    "evidence_strength": "low",
+    "evidence_summary": "Evidence: unavailable",
+    "model_program_disagreement": false
+  },
+  "program_checks": [
+    {
+      "text": "UnitedHealth's adjusted EPS was $6.38 in the second quarter of 2026.",
+      "stated_value": 6.38,
+      "evidence_ids": [],
+      "evidence_valid": false,
+      "program_verdict": "unchecked",
+      "actual_value": null,
+      "tolerance": null,
+      "reason": "unchecked_other_claim",
+      "disagreement": false,
+      "precision": null,
+      "stated_value_used": 6.38,
+      "comparator": "eq",
+      "interpretations": [],
+      "period_ambiguous": false,
+      "program_added_interpretation": false,
+      "program_evidence_ids": [],
+      "invalid_interpretations": false,
+      "deduplicated_evidence": [],
+      "stated_value_corrected": false,
+      "stated_text_unparsed": false,
+      "stated_sign_corrected": false,
+      "threshold_from_model": false,
+      "model_comparator": "eq",
+      "comparator_corrected": false,
+      "evidence_strength": "low",
+      "evidence_summary": "Evidence: unavailable",
+      "restated_evidence": false
+    }
+  ]
+}

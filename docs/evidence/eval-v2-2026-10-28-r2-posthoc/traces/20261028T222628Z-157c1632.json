@@ -1,0 +1,960 @@
+{
+  "claim": "Microsoft reports diluted EPS of $13.27 for the 2024 fiscal year",
+  "model": "accounts/fireworks/models/muse-spark-open",
+  "provider": "fireworks",
+  "requests": [
+    {
+      "request": {
+        "model": "accounts/fireworks/models/muse-spark-open",
+        "messages": [
+          {
+            "role": "system",
+            "content": "You verify financial claims against SEC EDGAR facts.\nDecompose the claim into every atomic factual assertion. Every factual assertion\nin the user's claim must become a sub-claim, including a value, a change, a\nrecord, and a first-time assertion in the same sentence. Assertions that the\ntools cannot check must still become a sub-claim with claim_type other; the\nprogram will leave those unchecked. Use lookup_fact for a value,\ncompute_change for YoY or other period-to-period growth, history_rank for\nrecord/first-time assertions, and list_periods only to understand missing data.\nNever use memory for numbers. A quarter must have period_type=quarter and\nduration_days around 80-100, not period_type=ytd. If a result has derived=true,\nuse its derivation and components as evidence and do not calculate that fact\nagain. For compute_change, cite its own evidence ID; its two nested component\nfact IDs may also be cited and are ignored by the verifier.\n\nEach final sub_claim must contain exactly these model fields:\ntext, stated_text, claim_type (value, change_pct, change_abs, record_high,\nrecord_low, first_time_above, or other), comparator (eq, approx, gt, gte, lt,\nor lte), stated_value in base units (USD, USD/share, percentage points, or 1\nfor a record boolean), evidence_ids, interpretations, verdict, note, and\nmodel_found_value. interpretations is required and may be empty. Every non-empty\nitem must be an evidence id like E3 — never free text.\nCopy stated_text verbatim from the claim, including words such as \"about\",\n\"up\", or \"fell\" (for example, \"about $1.4 billion\", \"up 22%\", or\n\"fell 10%\"). For a change_pct, stated_value is 22 for 22%, not 0.22; the\nverifier applies the sign implied by direction words such as fell/down or\nrose/up. model_found_value is the number read from the cited evidence in the\nsame units, or null when it is missing.\n\nComparator wording is deterministic: a plain numeric statement with no hedge\nor inequality phrase is eq; about/around/roughly/approximately/nearly/almost,\nclose to, some, or ~ means approx; topped/exceeded/above/more than/over/\nsurpassed/beat means gt; at least/no less than means gte; below/under/less\nthan/short of means lt; at most/no more than/up to means lte. The program\nrecords and may correct the model comparator from these words. \"up\" and\n\"fell\" describe change direction, not approximation.\n\nFor a quarter claim at a non-calendar-fiscal issuer, use period_basis from\nthe tool results. If the claim says neither fiscal nor calendar, look up both\nthe calendar label (for example 2025Q4) and the fiscal label (for example\nFY2025Q4), cite both IDs in evidence_ids, and put those two IDs in\ninterpretations. Keep interpretations empty unless both fiscal and calendar\nreadings were looked up. If the claim says fiscal, cite only the fiscal\nreading; if it says calendar, cite only the calendar reading. When a lookup or\ncompute result has fiscal_equals_calendar=true, the issuer's fiscal year is the\ncalendar year: fiscal and calendar labels refer to the same underlying facts,\nso look up and cite only one reading even when the claim has no\nfiscal/calendar qualifier.\n\nExamples:\n1. \"Tesla net income was about $1.4 billion\": lookup_fact; stated_text\n   \"about $1.4 billion\", claim_type value, comparator approx, stated_value\n   1400000000.\n2. \"Alphabet revenue exceeded $100 billion\": lookup_fact; stated_text\n   \"exceeded $100 billion\", claim_type value, comparator gt, stated_value\n   100000000000.\n3. \"Meta revenue was up 22% YoY\": compute_change(META, revenue, 2025Q2,\n   null); stated_text \"up 22%\", claim_type change_pct, comparator eq,\n   stated_value 22, and cite the compute_change evidence ID.\n4. \"Tesla revenue fell 10% YoY\": compute_change(TSLA, revenue, 2025Q3,\n   null); stated_text \"fell 10%\", claim_type change_pct, comparator eq,\n   stated_value -10, and cite the compute_change evidence ID.\n5. \"Alphabet Q3 2025 revenue was a record high\": history_rank(GOOGL,\n   revenue, 2025Q3); claim_type record_high, comparator eq, stated_value 1,\n   and cite the history_rank evidence ID.\n6. \"Alphabet Q3 2025 revenue topped $100 billion for the first time\": create\n   two sub-claims: value gt 100000000000 and first_time_above with stated_value\n   100000000000, both citing the relevant evidence; the latter is supported\n   only when this period is above the threshold and no earlier comparable\n   period is above it.\n7. If a requested fact is unavailable, leave model_found_value null, cite any\n   relevant evidence, and set that sub-claim to insufficient_evidence. Say\n   insufficient_evidence when data is missing or evidence is ambiguous."
+          },
+          {
+            "role": "user",
+            "content": "Microsoft reports diluted EPS of $13.27 for the 2024 fiscal year"
+          }
+        ],
+        "tools": [
+          {
+            "type": "function",
+            "function": {
+              "name": "lookup_fact",
+              "description": "Look up one SEC EDGAR XBRL fact for a ticker, metric, and calendar quarter, fiscal quarter (FY2025Q4), or fiscal year. Successful results include period (the normalized requested label, or the resolved label for latest), period_basis (calendar or fiscal), fiscal_equals_calendar, duration_days, and period_type (quarter, ytd, annual, or instant). Additive flows may return derived=true with derivation and components; never treat a ytd result as a quarter or recompute a derived result. When fiscal_equals_calendar is true, fiscal and calendar labels identify the same fact; do not look up both readings. Every fact includes compact provenance: L1 audited 10-K, L2 reviewed 10-Q, or L3 program-derived, with confirmations, restatement, amendment, and evidence strength.",
+              "parameters": {
+                "type": "object",
+                "properties": {
+                  "ticker": {
+                    "type": "string"
+                  },
+                  "metric": {
+                    "type": "string",
+                    "enum": [
+                      "revenue",
+                      "net_income",
+                      "operating_income",
+                      "eps_diluted",
+                      "gross_profit",
+                      "total_assets",
+                      "cash",
+                      "capex",
+                      "rd_expense",
+                      "shares_outstanding"
+                    ]
+                  },
+                  "period": {
+                    "type": "string",
+                    "pattern": "^(latest|FY\\d{4}(?:Q[1-4])?|\\d{4}Q[1-4])$"
+                  }
+                },
+                "required": [
+                  "ticker",
+                  "metric",
+                  "period"
+                ],
+                "additionalProperties": false
+              }
+            }
+          },
+          {
+            "type": "function",
+            "function": {
+              "name": "list_periods",
+              "description": "List the recent directly available SEC EDGAR quarter and fiscal-year periods for a ticker and metric.",
+              "parameters": {
+                "type": "object",
+                "properties": {
+                  "ticker": {
+                    "type": "string"
+                  },
+                  "metric": {
+                    "type": "string",
+                    "enum": [
+                      "revenue",
+                      "net_income",
+                      "operating_income",
+                      "eps_diluted",
+                      "gross_profit",
+                      "total_assets",
+                      "cash",
+                      "capex",
+                      "rd_expense",
+                      "shares_outstanding"
+                    ]
+                  }
+                },
+                "required": [
+                  "ticker",
+                  "metric"
+                ],
+                "additionalProperties": false
+              }
+            }
+          },
+          {
+            "type": "function",
+            "function": {
+              "name": "compute_change",
+              "description": "Compute the absolute and year-over-year change for one SEC EDGAR XBRL metric. The period and base_period must be the same kind of period; when base_period is omitted, null, empty, \"null\", or \"none\", use the same quarter or fiscal year one year earlier. The result includes both cited lookup facts, fiscal_equals_calendar, their fact-level provenance, and a percentage change in percent points.",
+              "parameters": {
+                "type": "object",
+                "properties": {
+                  "ticker": {
+                    "type": "string"
+                  },
+                  "metric": {
+                    "type": "string",
+                    "enum": [
+                      "revenue",
+                      "net_income",
+                      "operating_income",
+                      "eps_diluted",
+                      "gross_profit",
+                      "total_assets",
+                      "cash",
+                      "capex",
+                      "rd_expense",
+                      "shares_outstanding"
+                    ]
+                  },
+                  "period": {
+                    "type": "string",
+                    "pattern": "^(latest|FY\\d{4}(?:Q[1-4])?|\\d{4}Q[1-4])$"
+                  },
+                  "base_period": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "pattern": "^(FY\\d{4}(?:Q[1-4])?|\\d{4}Q[1-4])$"
+                  }
+                },
+                "required": [
+                  "ticker",
+                  "metric",
+                  "period",
+                  "base_period"
+                ],
+                "additionalProperties": false
+              }
+            }
+          },
+          {
+            "type": "function",
+            "function": {
+              "name": "history_rank",
+              "description": "Compare one quarter or fiscal-year fact with every available comparable period of the same period_type. Quarters include derived Q4 values when available; annual periods are compared only with annual periods. Return the rank, record flags through the requested period, prior high/low, and the comparison window with period end dates. The requested period also includes compact fact provenance and evidence strength.",
+              "parameters": {
+                "type": "object",
+                "properties": {
+                  "ticker": {
+                    "type": "string"
+                  },
+                  "metric": {
+                    "type": "string",
+                    "enum": [
+                      "revenue",
+                      "net_income",
+                      "operating_income",
+                      "eps_diluted",
+                      "gross_profit",
+                      "total_assets",
+                      "cash",
+                      "capex",
+                      "rd_expense",
+                      "shares_outstanding"
+                    ]
+                  },
+                  "period": {
+                    "type": "string",
+                    "pattern": "^(latest|FY\\d{4}(?:Q[1-4])?|\\d{4}Q[1-4])$"
+                  }
+                },
+                "required": [
+                  "ticker",
+                  "metric",
+                  "period"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        ],
+        "parallel_tool_calls": true,
+        "max_tokens": 4000
+      },
+      "reservation": {
+        "reservation_id": "f2bac968e5774dbdad8e22a737ba5bed",
+        "provider": "fireworks",
+        "model": "accounts/fireworks/models/muse-spark-open",
+        "estimated_input_tokens": 2844,
+        "max_output_tokens": 4000,
+        "amount": 0.020555,
+        "payload_chars": 8532,
+        "context_chars": 0
+      },
+      "raw_response": {
+        "id": "chatcmpl-d087e0092a3c457e8a10a121ae22caab",
+        "choices": [
+          {
+            "finish_reason": "tool_calls",
+            "index": 0,
+            "logprobs": null,
+            "message": {
+              "content": "I'll verify Microsoft's FY 2024 diluted EPS figure.",
+              "refusal": null,
+              "role": "assistant",
+              "annotations": null,
+              "audio": null,
+              "function_call": null,
+              "tool_calls": [
+                {
+                  "id": "chatcmpl-tool-a668ab462f0ad781",
+                  "function": {
+                    "arguments": "{\"ticker\": \"MSFT\", \"metric\": \"eps_diluted\", \"period\": \"FY2024\"}",
+                    "name": "lookup_fact"
+                  },
+                  "type": "function",
+                  "index": 0,
+                  "name": null
+                }
+              ],
+              "reasoning_content": "Need to verify Microsoft diluted EPS $13.27 for 2024 fiscal year.\n\nWe need to decompose claim. Microsoft ticker MSFT.\n\nClaim: \"Microsoft reports diluted EPS of $13.27 for the 2024 fiscal year\"\n\nWe need lookup fact. Use lookup_fact ticker MSFT metric eps_diluted period FY2024 . Also need to check ambiguity fiscal vs calendar. But claim says fiscal year explicitly. So only fiscal reading.\n\nPotentially also need to consider record? No.\n\nJust one atomic assertion: value $13.27.\n\nWe should call lookup_fact.\n\n",
+              "tools": null
+            }
+          }
+        ],
+        "created": 1793226356,
+        "model": "accounts/fireworks/models/muse-spark-open",
+        "object": "chat.completion",
+        "metadata": null,
+        "moderation": null,
+        "service_tier": null,
+        "system_fingerprint": null,
+        "usage": {
+          "completion_tokens": 221,
+          "prompt_tokens": 2692,
+          "total_tokens": 2913,
+          "completion_tokens_details": {
+            "accepted_prediction_tokens": null,
+            "audio_tokens": null,
+            "reasoning_tokens": 117,
+            "rejected_prediction_tokens": null,
+            "text_tokens": null
+          },
+          "prompt_tokens_details": {
+            "audio_tokens": null,
+            "cache_write_tokens": null,
+            "cached_tokens": 2624,
+            "image_tokens": null,
+            "text_tokens": null
+          },
+          "output_tokens_details": {
+            "reasoning_tokens": 117
+          }
+        }
+      },
+      "usage": {
+        "input": 2692,
+        "cached": 2624,
+        "output": 221,
+        "reasoning": 117
+      },
+      "cost": 0.00141785,
+      "latency_ms": 3669.098,
+      "status": "completed",
+      "raw_usage": {
+        "completion_tokens": 221,
+        "prompt_tokens": 2692,
+        "total_tokens": 2913,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 117,
+          "rejected_prediction_tokens": null,
+          "text_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cache_write_tokens": null,
+          "cached_tokens": 2624,
+          "image_tokens": null,
+          "text_tokens": null
+        },
+        "output_tokens_details": {
+          "reasoning_tokens": 117
+        }
+      },
+      "normalized_usage": {
+        "input": 2692,
+        "cached": 2624,
+        "output": 221,
+        "reasoning": 117
+      },
+      "finish_reason": "tool_calls",
+      "rate_limit_headers": {
+        "x-ratelimit-limit-tokens-cache-adjusted-prompt": "1800000",
+        "x-ratelimit-limit-tokens-generated": "72000",
+        "x-ratelimit-limit-tokens-prompt": "7200000",
+        "x-ratelimit-limit-tokens-uncached-prompt": "1800000",
+        "x-ratelimit-over-limit": "no",
+        "x-ratelimit-remaining-tokens-prompt": "7197308"
+      }
+    },
+    {
+      "request": {
+        "model": "accounts/fireworks/models/muse-spark-open",
+        "messages": [
+          {
+            "role": "system",
+            "content": "You verify financial claims against SEC EDGAR facts.\nDecompose the claim into every atomic factual assertion. Every factual assertion\nin the user's claim must become a sub-claim, including a value, a change, a\nrecord, and a first-time assertion in the same sentence. Assertions that the\ntools cannot check must still become a sub-claim with claim_type other; the\nprogram will leave those unchecked. Use lookup_fact for a value,\ncompute_change for YoY or other period-to-period growth, history_rank for\nrecord/first-time assertions, and list_periods only to understand missing data.\nNever use memory for numbers. A quarter must have period_type=quarter and\nduration_days around 80-100, not period_type=ytd. If a result has derived=true,\nuse its derivation and components as evidence and do not calculate that fact\nagain. For compute_change, cite its own evidence ID; its two nested component\nfact IDs may also be cited and are ignored by the verifier.\n\nEach final sub_claim must contain exactly these model fields:\ntext, stated_text, claim_type (value, change_pct, change_abs, record_high,\nrecord_low, first_time_above, or other), comparator (eq, approx, gt, gte, lt,\nor lte), stated_value in base units (USD, USD/share, percentage points, or 1\nfor a record boolean), evidence_ids, interpretations, verdict, note, and\nmodel_found_value. interpretations is required and may be empty. Every non-empty\nitem must be an evidence id like E3 — never free text.\nCopy stated_text verbatim from the claim, including words such as \"about\",\n\"up\", or \"fell\" (for example, \"about $1.4 billion\", \"up 22%\", or\n\"fell 10%\"). For a change_pct, stated_value is 22 for 22%, not 0.22; the\nverifier applies the sign implied by direction words such as fell/down or\nrose/up. model_found_value is the number read from the cited evidence in the\nsame units, or null when it is missing.\n\nComparator wording is deterministic: a plain numeric statement with no hedge\nor inequality phrase is eq; about/around/roughly/approximately/nearly/almost,\nclose to, some, or ~ means approx; topped/exceeded/above/more than/over/\nsurpassed/beat means gt; at least/no less than means gte; below/under/less\nthan/short of means lt; at most/no more than/up to means lte. The program\nrecords and may correct the model comparator from these words. \"up\" and\n\"fell\" describe change direction, not approximation.\n\nFor a quarter claim at a non-calendar-fiscal issuer, use period_basis from\nthe tool results. If the claim says neither fiscal nor calendar, look up both\nthe calendar label (for example 2025Q4) and the fiscal label (for example\nFY2025Q4), cite both IDs in evidence_ids, and put those two IDs in\ninterpretations. Keep interpretations empty unless both fiscal and calendar\nreadings were looked up. If the claim says fiscal, cite only the fiscal\nreading; if it says calendar, cite only the calendar reading. When a lookup or\ncompute result has fiscal_equals_calendar=true, the issuer's fiscal year is the\ncalendar year: fiscal and calendar labels refer to the same underlying facts,\nso look up and cite only one reading even when the claim has no\nfiscal/calendar qualifier.\n\nExamples:\n1. \"Tesla net income was about $1.4 billion\": lookup_fact; stated_text\n   \"about $1.4 billion\", claim_type value, comparator approx, stated_value\n   1400000000.\n2. \"Alphabet revenue exceeded $100 billion\": lookup_fact; stated_text\n   \"exceeded $100 billion\", claim_type value, comparator gt, stated_value\n   100000000000.\n3. \"Meta revenue was up 22% YoY\": compute_change(META, revenue, 2025Q2,\n   null); stated_text \"up 22%\", claim_type change_pct, comparator eq,\n   stated_value 22, and cite the compute_change evidence ID.\n4. \"Tesla revenue fell 10% YoY\": compute_change(TSLA, revenue, 2025Q3,\n   null); stated_text \"fell 10%\", claim_type change_pct, comparator eq,\n   stated_value -10, and cite the compute_change evidence ID.\n5. \"Alphabet Q3 2025 revenue was a record high\": history_rank(GOOGL,\n   revenue, 2025Q3); claim_type record_high, comparator eq, stated_value 1,\n   and cite the history_rank evidence ID.\n6. \"Alphabet Q3 2025 revenue topped $100 billion for the first time\": create\n   two sub-claims: value gt 100000000000 and first_time_above with stated_value\n   100000000000, both citing the relevant evidence; the latter is supported\n   only when this period is above the threshold and no earlier comparable\n   period is above it.\n7. If a requested fact is unavailable, leave model_found_value null, cite any\n   relevant evidence, and set that sub-claim to insufficient_evidence. Say\n   insufficient_evidence when data is missing or evidence is ambiguous."
+          },
+          {
+            "role": "user",
+            "content": "Microsoft reports diluted EPS of $13.27 for the 2024 fiscal year"
+          },
+          {
+            "role": "assistant",
+            "content": "I'll verify Microsoft's FY 2024 diluted EPS figure.",
+            "tool_calls": [
+              {
+                "id": "chatcmpl-tool-a668ab462f0ad781",
+                "type": "function",
+                "function": {
+                  "name": "lookup_fact",
+                  "arguments": "{\"ticker\": \"MSFT\", \"metric\": \"eps_diluted\", \"period\": \"FY2024\"}"
+                }
+              }
+            ]
+          },
+          {
+            "role": "tool",
+            "tool_call_id": "chatcmpl-tool-a668ab462f0ad781",
+            "content": "{\"ticker\":\"MSFT\",\"cik\":\"0000789019\",\"entity\":\"Microsoft Corporation\",\"metric\":\"eps_diluted\",\"concept\":\"EarningsPerShareDiluted\",\"unit\":\"USD/shares\",\"value\":11.8,\"start\":\"2023-07-01\",\"end\":\"2024-06-30\",\"form\":\"10-K\",\"form_fallback\":false,\"accn\":\"0001193125-26-323660\",\"filed\":\"2026-07-29\",\"frame\":\"CY2024\",\"fiscal_year\":2024,\"fiscal_period\":\"FY\",\"duration_days\":366,\"period_type\":\"annual\",\"fiscal_equals_calendar\":false,\"derived\":false,\"filing_url\":\"https://www.sec.gov/Archives/edgar/data/789019/000119312526323660/\",\"source_sha256\":\"dd0308149a8e96497989ed7c690b5a49a00bef9ceafbb24638bda41e8ae938dd\",\"provenance\":{\"tier\":\"L1\",\"audited\":true,\"confirmations\":4,\"forms\":[\"10-K\",\"8-K\"],\"first_filed\":\"2024-07-30\",\"latest_filed\":\"2026-07-29\",\"restated\":false,\"amended\":false,\"strength\":\"high\"},\"period\":\"FY2024\",\"period_basis\":\"fiscal\",\"evidence_id\":\"E1\"}"
+          }
+        ],
+        "tools": [
+          {
+            "type": "function",
+            "function": {
+              "name": "lookup_fact",
+              "description": "Look up one SEC EDGAR XBRL fact for a ticker, metric, and calendar quarter, fiscal quarter (FY2025Q4), or fiscal year. Successful results include period (the normalized requested label, or the resolved label for latest), period_basis (calendar or fiscal), fiscal_equals_calendar, duration_days, and period_type (quarter, ytd, annual, or instant). Additive flows may return derived=true with derivation and components; never treat a ytd result as a quarter or recompute a derived result. When fiscal_equals_calendar is true, fiscal and calendar labels identify the same fact; do not look up both readings. Every fact includes compact provenance: L1 audited 10-K, L2 reviewed 10-Q, or L3 program-derived, with confirmations, restatement, amendment, and evidence strength.",
+              "parameters": {
+                "type": "object",
+                "properties": {
+                  "ticker": {
+                    "type": "string"
+                  },
+                  "metric": {
+                    "type": "string",
+                    "enum": [
+                      "revenue",
+                      "net_income",
+                      "operating_income",
+                      "eps_diluted",
+                      "gross_profit",
+                      "total_assets",
+                      "cash",
+                      "capex",
+                      "rd_expense",
+                      "shares_outstanding"
+                    ]
+                  },
+                  "period": {
+                    "type": "string",
+                    "pattern": "^(latest|FY\\d{4}(?:Q[1-4])?|\\d{4}Q[1-4])$"
+                  }
+                },
+                "required": [
+                  "ticker",
+                  "metric",
+                  "period"
+                ],
+                "additionalProperties": false
+              }
+            }
+          },
+          {
+            "type": "function",
+            "function": {
+              "name": "list_periods",
+              "description": "List the recent directly available SEC EDGAR quarter and fiscal-year periods for a ticker and metric.",
+              "parameters": {
+                "type": "object",
+                "properties": {
+                  "ticker": {
+                    "type": "string"
+                  },
+                  "metric": {
+                    "type": "string",
+                    "enum": [
+                      "revenue",
+                      "net_income",
+                      "operating_income",
+                      "eps_diluted",
+                      "gross_profit",
+                      "total_assets",
+                      "cash",
+                      "capex",
+                      "rd_expense",
+                      "shares_outstanding"
+                    ]
+                  }
+                },
+                "required": [
+                  "ticker",
+                  "metric"
+                ],
+                "additionalProperties": false
+              }
+            }
+          },
+          {
+            "type": "function",
+            "function": {
+              "name": "compute_change",
+              "description": "Compute the absolute and year-over-year change for one SEC EDGAR XBRL metric. The period and base_period must be the same kind of period; when base_period is omitted, null, empty, \"null\", or \"none\", use the same quarter or fiscal year one year earlier. The result includes both cited lookup facts, fiscal_equals_calendar, their fact-level provenance, and a percentage change in percent points.",
+              "parameters": {
+                "type": "object",
+                "properties": {
+                  "ticker": {
+                    "type": "string"
+                  },
+                  "metric": {
+                    "type": "string",
+                    "enum": [
+                      "revenue",
+                      "net_income",
+                      "operating_income",
+                      "eps_diluted",
+                      "gross_profit",
+                      "total_assets",
+                      "cash",
+                      "capex",
+                      "rd_expense",
+                      "shares_outstanding"
+                    ]
+                  },
+                  "period": {
+                    "type": "string",
+                    "pattern": "^(latest|FY\\d{4}(?:Q[1-4])?|\\d{4}Q[1-4])$"
+                  },
+                  "base_period": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "pattern": "^(FY\\d{4}(?:Q[1-4])?|\\d{4}Q[1-4])$"
+                  }
+                },
+                "required": [
+                  "ticker",
+                  "metric",
+                  "period",
+                  "base_period"
+                ],
+                "additionalProperties": false
+              }
+            }
+          },
+          {
+            "type": "function",
+            "function": {
+              "name": "history_rank",
+              "description": "Compare one quarter or fiscal-year fact with every available comparable period of the same period_type. Quarters include derived Q4 values when available; annual periods are compared only with annual periods. Return the rank, record flags through the requested period, prior high/low, and the comparison window with period end dates. The requested period also includes compact fact provenance and evidence strength.",
+              "parameters": {
+                "type": "object",
+                "properties": {
+                  "ticker": {
+                    "type": "string"
+                  },
+                  "metric": {
+                    "type": "string",
+                    "enum": [
+                      "revenue",
+                      "net_income",
+                      "operating_income",
+                      "eps_diluted",
+                      "gross_profit",
+                      "total_assets",
+                      "cash",
+                      "capex",
+                      "rd_expense",
+                      "shares_outstanding"
+                    ]
+                  },
+                  "period": {
+                    "type": "string",
+                    "pattern": "^(latest|FY\\d{4}(?:Q[1-4])?|\\d{4}Q[1-4])$"
+                  }
+                },
+                "required": [
+                  "ticker",
+                  "metric",
+                  "period"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        ],
+        "parallel_tool_calls": true,
+        "max_tokens": 4000
+      },
+      "reservation": {
+        "reservation_id": "8f2a66fbcb59429bb9a4684f495df1c7",
+        "provider": "fireworks",
+        "model": "accounts/fireworks/models/muse-spark-open",
+        "estimated_input_tokens": 3287,
+        "max_output_tokens": 4000,
+        "amount": 0.021108750000000003,
+        "payload_chars": 9861,
+        "context_chars": 0
+      },
+      "raw_response": {
+        "id": "chatcmpl-251e4c6aed08436183dd32ca88323a23",
+        "choices": [
+          {
+            "finish_reason": "stop",
+            "index": 0,
+            "logprobs": null,
+            "message": {
+              "content": "[\n  {\n    \"text\": \"Microsoft diluted EPS was $13.27 for FY2024\",\n    \"stated_text\": \"$13.27\",\n    \"claim_type\": \"value\",\n    \"comparator\": \"eq\",\n    \"stated_value\": 13.27,\n    \"evidence_ids\": [\n      \"E1\"\n    ],\n    \"interpretations\": [],\n    \"verdict\": \"incorrect\",\n    \"note\": \"SEC filing shows FY2024 diluted EPS was $11.80, not $13.27 (FY2024 ends 2024-06-30, L1 audited 10-K).\",\n    \"model_found_value\": 11.8\n  }\n]",
+              "refusal": null,
+              "role": "assistant",
+              "annotations": null,
+              "audio": null,
+              "function_call": null,
+              "tool_calls": null,
+              "reasoning_content": "Claim: Microsoft reports diluted EPS of $13.27 for the 2024 fiscal year\n\nNeed to decompose.\n\nWe have lookup FY2024 eps_diluted = 11.8 not 13.27\n\nPossibly also need to consider other metrics? The claim is single assertion.\n\nWe need sub_claims: exactly these fields.\n\nWe have one sub-claim: value = 13.27\n\nWe should verify comparator: plain numeric statement with no hedge = eq\n\nstated_text verbatim from claim: \" $13.27\" ? Need to include exactly as in claim. Claim text: \"Microsoft reports diluted EPS of $13.27 for the 2024 fiscal year\"\n\nstated_text should be \"$13.27\" or \" $13.27\"? Example copy stated_text verbatim from claim, including words such as \"about\", \"up\", or \"fell\" . For value example, \"about $1.4 billion\". So we should include \"$13.27\"\n\nclaim_type value, comparator eq, stated_value 13.27\n\nevidence_ids: [\"E1\"]\n\ninterpretations empty (since claim says fiscal, cite only fiscal reading)\n\nverdict: evidence shows 11.80, so fail -> incorrect\n\nmodel_found_value: 11.8\n\nNeed to ensure all fields present.\n\nWe may also want to double-check if there is any other evidence? Could there be alternative FY2024? But FY2024 fiscal equals calendar false, so fiscal year ends June 30. That's correct. Value is 11.8\n\nWe should produce final sub_claim list.\n\nWe must ensure text field matches claim assertion. Provide detailed text.\n\nWe should also consider that claim says \"Microsoft reports diluted EPS of $13.27 for the 2024 fiscal year\" -> sub_claim text: \"Microsoft diluted EPS was $13.27 for FY2024\"\n\nWe need to output JSON-like structure? The instructions: Each final sub_claim must contain exactly these model fields: text, stated_text, claim_type, comparator, stated_value, evidence_ids, interpretations, verdict, note, model_found_value.\n\nWe need to produce final answer with these fields. Usually output is JSON array.\n\nWe should also ensure we state verdict as \"incorrect\" or \"fail\"? Instruction says final sub_claim must contain verdict field. Allowed values: In similar tasks, verdict is \"supported\", \"incorrect\", \"insufficient_evidence\" etc. Need to infer. The description says: Say insufficient_evidence when data is missing. We have evidence, and value mismatch, so verdict = incorrect? Or maybe \"fail\"? Let's check typical usage: In fact verification, verdict options: supported, refuted, incorrect, etc. The instruction says include verdict, note, model_found_value. Could use \"incorrect\" or \"fail\". Safer to use \"incorrect\" as it maps to fail.\n\nLet's craft final response.\n\nWe need to ensure evidence_ids interpretations correct.\n\nWe haven't looked up calendar reading because claim says fiscal, so only fiscal reading needed. That's satisfied.\n\nNo need for history_rank.\n\nProvide note explaining mismatch.\n\nMake sure units: USD/share, value 11.8\n\nProvide model_found_value: 11.8\n\nAdd provenance tier L1.\n\nEnsure all fields present.\n\nWe should output as JSON.\n\n",
+              "tools": null
+            }
+          }
+        ],
+        "created": 1793226359,
+        "model": "accounts/fireworks/models/muse-spark-open",
+        "object": "chat.completion",
+        "metadata": null,
+        "moderation": null,
+        "service_tier": null,
+        "system_fingerprint": null,
+        "usage": {
+          "completion_tokens": 827,
+          "prompt_tokens": 3094,
+          "total_tokens": 3921,
+          "completion_tokens_details": {
+            "accepted_prediction_tokens": null,
+            "audio_tokens": null,
+            "reasoning_tokens": 671,
+            "rejected_prediction_tokens": null,
+            "text_tokens": null
+          },
+          "prompt_tokens_details": {
+            "audio_tokens": null,
+            "cache_write_tokens": null,
+            "cached_tokens": 2688,
+            "image_tokens": null,
+            "text_tokens": null
+          },
+          "output_tokens_details": {
+            "reasoning_tokens": 671
+          }
+        }
+      },
+      "usage": {
+        "input": 3094,
+        "cached": 2688,
+        "output": 827,
+        "reasoning": 671
+      },
+      "cost": 0.00442545,
+      "latency_ms": 15063.778,
+      "status": "completed",
+      "raw_usage": {
+        "completion_tokens": 827,
+        "prompt_tokens": 3094,
+        "total_tokens": 3921,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 671,
+          "rejected_prediction_tokens": null,
+          "text_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cache_write_tokens": null,
+          "cached_tokens": 2688,
+          "image_tokens": null,
+          "text_tokens": null
+        },
+        "output_tokens_details": {
+          "reasoning_tokens": 671
+        }
+      },
+      "normalized_usage": {
+        "input": 3094,
+        "cached": 2688,
+        "output": 827,
+        "reasoning": 671
+      },
+      "finish_reason": "stop",
+      "rate_limit_headers": {
+        "x-ratelimit-limit-tokens-cache-adjusted-prompt": "1800000",
+        "x-ratelimit-limit-tokens-generated": "72000",
+        "x-ratelimit-limit-tokens-prompt": "7200000",
+        "x-ratelimit-limit-tokens-uncached-prompt": "1800000",
+        "x-ratelimit-over-limit": "no",
+        "x-ratelimit-remaining-tokens-prompt": "7196906"
+      }
+    },
+    {
+      "request": {
+        "model": "accounts/fireworks/models/muse-spark-open",
+        "messages": [
+          {
+            "role": "system",
+            "content": "You verify financial claims against SEC EDGAR facts.\nDecompose the claim into every atomic factual assertion. Every factual assertion\nin the user's claim must become a sub-claim, including a value, a change, a\nrecord, and a first-time assertion in the same sentence. Assertions that the\ntools cannot check must still become a sub-claim with claim_type other; the\nprogram will leave those unchecked. Use lookup_fact for a value,\ncompute_change for YoY or other period-to-period growth, history_rank for\nrecord/first-time assertions, and list_periods only to understand missing data.\nNever use memory for numbers. A quarter must have period_type=quarter and\nduration_days around 80-100, not period_type=ytd. If a result has derived=true,\nuse its derivation and components as evidence and do not calculate that fact\nagain. For compute_change, cite its own evidence ID; its two nested component\nfact IDs may also be cited and are ignored by the verifier.\n\nEach final sub_claim must contain exactly these model fields:\ntext, stated_text, claim_type (value, change_pct, change_abs, record_high,\nrecord_low, first_time_above, or other), comparator (eq, approx, gt, gte, lt,\nor lte), stated_value in base units (USD, USD/share, percentage points, or 1\nfor a record boolean), evidence_ids, interpretations, verdict, note, and\nmodel_found_value. interpretations is required and may be empty. Every non-empty\nitem must be an evidence id like E3 — never free text.\nCopy stated_text verbatim from the claim, including words such as \"about\",\n\"up\", or \"fell\" (for example, \"about $1.4 billion\", \"up 22%\", or\n\"fell 10%\"). For a change_pct, stated_value is 22 for 22%, not 0.22; the\nverifier applies the sign implied by direction words such as fell/down or\nrose/up. model_found_value is the number read from the cited evidence in the\nsame units, or null when it is missing.\n\nComparator wording is deterministic: a plain numeric statement with no hedge\nor inequality phrase is eq; about/around/roughly/approximately/nearly/almost,\nclose to, some, or ~ means approx; topped/exceeded/above/more than/over/\nsurpassed/beat means gt; at least/no less than means gte; below/under/less\nthan/short of means lt; at most/no more than/up to means lte. The program\nrecords and may correct the model comparator from these words. \"up\" and\n\"fell\" describe change direction, not approximation.\n\nFor a quarter claim at a non-calendar-fiscal issuer, use period_basis from\nthe tool results. If the claim says neither fiscal nor calendar, look up both\nthe calendar label (for example 2025Q4) and the fiscal label (for example\nFY2025Q4), cite both IDs in evidence_ids, and put those two IDs in\ninterpretations. Keep interpretations empty unless both fiscal and calendar\nreadings were looked up. If the claim says fiscal, cite only the fiscal\nreading; if it says calendar, cite only the calendar reading. When a lookup or\ncompute result has fiscal_equals_calendar=true, the issuer's fiscal year is the\ncalendar year: fiscal and calendar labels refer to the same underlying facts,\nso look up and cite only one reading even when the claim has no\nfiscal/calendar qualifier.\n\nExamples:\n1. \"Tesla net income was about $1.4 billion\": lookup_fact; stated_text\n   \"about $1.4 billion\", claim_type value, comparator approx, stated_value\n   1400000000.\n2. \"Alphabet revenue exceeded $100 billion\": lookup_fact; stated_text\n   \"exceeded $100 billion\", claim_type value, comparator gt, stated_value\n   100000000000.\n3. \"Meta revenue was up 22% YoY\": compute_change(META, revenue, 2025Q2,\n   null); stated_text \"up 22%\", claim_type change_pct, comparator eq,\n   stated_value 22, and cite the compute_change evidence ID.\n4. \"Tesla revenue fell 10% YoY\": compute_change(TSLA, revenue, 2025Q3,\n   null); stated_text \"fell 10%\", claim_type change_pct, comparator eq,\n   stated_value -10, and cite the compute_change evidence ID.\n5. \"Alphabet Q3 2025 revenue was a record high\": history_rank(GOOGL,\n   revenue, 2025Q3); claim_type record_high, comparator eq, stated_value 1,\n   and cite the history_rank evidence ID.\n6. \"Alphabet Q3 2025 revenue topped $100 billion for the first time\": create\n   two sub-claims: value gt 100000000000 and first_time_above with stated_value\n   100000000000, both citing the relevant evidence; the latter is supported\n   only when this period is above the threshold and no earlier comparable\n   period is above it.\n7. If a requested fact is unavailable, leave model_found_value null, cite any\n   relevant evidence, and set that sub-claim to insufficient_evidence. Say\n   insufficient_evidence when data is missing or evidence is ambiguous."
+          },
+          {
+            "role": "user",
+            "content": "Microsoft reports diluted EPS of $13.27 for the 2024 fiscal year"
+          },
+          {
+            "role": "assistant",
+            "content": "I'll verify Microsoft's FY 2024 diluted EPS figure.",
+            "tool_calls": [
+              {
+                "id": "chatcmpl-tool-a668ab462f0ad781",
+                "type": "function",
+                "function": {
+                  "name": "lookup_fact",
+                  "arguments": "{\"ticker\": \"MSFT\", \"metric\": \"eps_diluted\", \"period\": \"FY2024\"}"
+                }
+              }
+            ]
+          },
+          {
+            "role": "tool",
+            "tool_call_id": "chatcmpl-tool-a668ab462f0ad781",
+            "content": "{\"ticker\":\"MSFT\",\"cik\":\"0000789019\",\"entity\":\"Microsoft Corporation\",\"metric\":\"eps_diluted\",\"concept\":\"EarningsPerShareDiluted\",\"unit\":\"USD/shares\",\"value\":11.8,\"start\":\"2023-07-01\",\"end\":\"2024-06-30\",\"form\":\"10-K\",\"form_fallback\":false,\"accn\":\"0001193125-26-323660\",\"filed\":\"2026-07-29\",\"frame\":\"CY2024\",\"fiscal_year\":2024,\"fiscal_period\":\"FY\",\"duration_days\":366,\"period_type\":\"annual\",\"fiscal_equals_calendar\":false,\"derived\":false,\"filing_url\":\"https://www.sec.gov/Archives/edgar/data/789019/000119312526323660/\",\"source_sha256\":\"dd0308149a8e96497989ed7c690b5a49a00bef9ceafbb24638bda41e8ae938dd\",\"provenance\":{\"tier\":\"L1\",\"audited\":true,\"confirmations\":4,\"forms\":[\"10-K\",\"8-K\"],\"first_filed\":\"2024-07-30\",\"latest_filed\":\"2026-07-29\",\"restated\":false,\"amended\":false,\"strength\":\"high\"},\"period\":\"FY2024\",\"period_basis\":\"fiscal\",\"evidence_id\":\"E1\"}"
+          },
+          {
+            "role": "assistant",
+            "content": "[\n  {\n    \"text\": \"Microsoft diluted EPS was $13.27 for FY2024\",\n    \"stated_text\": \"$13.27\",\n    \"claim_type\": \"value\",\n    \"comparator\": \"eq\",\n    \"stated_value\": 13.27,\n    \"evidence_ids\": [\n      \"E1\"\n    ],\n    \"interpretations\": [],\n    \"verdict\": \"incorrect\",\n    \"note\": \"SEC filing shows FY2024 diluted EPS was $11.80, not $13.27 (FY2024 ends 2024-06-30, L1 audited 10-K).\",\n    \"model_found_value\": 11.8\n  }\n]"
+          },
+          {
+            "role": "user",
+            "content": "Return only one plain JSON object for the final verdict. Do not use Markdown fences or explanatory text. Include every atomic factual assertion as a sub-claim, including claim_type other when the tools cannot check it. Copy stated_text verbatim from the claim and include claim_type, comparator, stated_value in base units, evidence_ids, interpretations (evidence ids like E3 — never free text), verdict, model_found_value, and a concise note. The object must match this existing verdict schema: {\"type\":\"object\",\"properties\":{\"verdict\":{\"type\":\"string\",\"enum\":[\"supported\",\"contradicted\",\"insufficient_evidence\"]},\"summary\":{\"type\":\"string\"},\"sub_claims\":{\"type\":\"array\",\"items\":{\"type\":\"object\",\"properties\":{\"text\":{\"type\":\"string\"},\"stated_text\":{\"type\":\"string\"},\"claim_type\":{\"type\":\"string\",\"enum\":[\"value\",\"change_pct\",\"change_abs\",\"record_high\",\"record_low\",\"first_time_above\",\"other\"]},\"comparator\":{\"type\":\"string\",\"enum\":[\"eq\",\"approx\",\"gt\",\"gte\",\"lt\",\"lte\"]},\"stated_value\":{\"type\":[\"number\",\"null\"]},\"evidence_ids\":{\"type\":\"array\",\"items\":{\"type\":\"string\"}},\"interpretations\":{\"type\":\"array\",\"items\":{\"type\":\"string\",\"description\":\"evidence id like E3 — never free text\"}},\"verdict\":{\"type\":\"string\",\"enum\":[\"supported\",\"contradicted\",\"insufficient_evidence\"]},\"note\":{\"type\":\"string\"},\"model_found_value\":{\"type\":[\"number\",\"null\"]}},\"required\":[\"text\",\"stated_text\",\"claim_type\",\"comparator\",\"stated_value\",\"evidence_ids\",\"interpretations\",\"verdict\",\"note\",\"model_found_value\"],\"additionalProperties\":false}}},\"required\":[\"verdict\",\"summary\",\"sub_claims\"],\"additionalProperties\":false}"
+          }
+        ],
+        "max_tokens": 3000
+      },
+      "reservation": {
+        "reservation_id": "76bc656475004886a1949fe9e6644990",
+        "provider": "fireworks",
+        "model": "accounts/fireworks/models/muse-spark-open",
+        "estimated_input_tokens": 2860,
+        "max_output_tokens": 3000,
+        "amount": 0.016325,
+        "payload_chars": 8580,
+        "context_chars": 0
+      },
+      "raw_response": {
+        "id": "chatcmpl-4a0067d99fa94f8e908eb48c7df5ac9c",
+        "choices": [
+          {
+            "finish_reason": "stop",
+            "index": 0,
+            "logprobs": null,
+            "message": {
+              "content": "{\"verdict\":\"contradicted\",\"summary\":\"Microsoft FY2024 diluted EPS was $11.80 in the audited 10-K, contradicting the claimed $13.27.\",\"sub_claims\":[{\"text\":\"Microsoft reports diluted EPS of $13.27 for the 2024 fiscal year\",\"stated_text\":\"$13.27\",\"claim_type\":\"value\",\"comparator\":\"eq\",\"stated_value\":13.27,\"evidence_ids\":[\"E1\"],\"interpretations\":[],\"verdict\":\"contradicted\",\"note\":\"SEC filing shows FY2024 diluted EPS was $11.80 (period 2023-07-01 to 2024-06-30, L1 audited 10-K), not $13.27.\",\"model_found_value\":11.8}]}",
+              "refusal": null,
+              "role": "assistant",
+              "annotations": null,
+              "audio": null,
+              "function_call": null,
+              "tool_calls": null,
+              "reasoning_content": "We need to return only one plain JSON object for final verdict. Must include every atomic factual assertion as sub-claim. Claim: \"Microsoft reports diluted EPS of $13.27 for the 2024 fiscal year\"\n\nWe have tool result E1: value 11.8 for FY2024 fiscal basis.\n\nWe must produce JSON object matching schema: verdict, summary, sub_claims.\n\nWe have one sub_claim: Microsoft diluted EPS was $13.27 for FY2024.\n\nNeed to populate fields:\n\ntype object properties:\nverdict: supported/contradicted/insufficient_evidence\nsummary: string\nsub_claims: array items with text, stated_text, claim_type, comparator, stated_value, evidence_ids, interpretations, verdict, note, model_found_value\n\nWe did earlier sub_claim but need to format final verdict object.\n\nWe have evidence: E1 shows 11.8 vs 13.27 -> contradicted.\n\nWe should produce verdict: \"contradicted\" overall? Since one subclaim contradicted, overall verdict contradicted.\n\nsummary: concise summary.\n\nsub_claims: one entry.\n\nNeed to ensure all required fields present.\n\ntext: \"Microsoft diluted EPS was $13.27 for FY2024\" or original claim text.\nstated_text: \"$13.27\" verbatim from claim. Need copy verbatim including $ sign.\nclaim_type: \"value\"\ncomparator: \"eq\" (plain numeric statement)\nstated_value: 13.27\nevidence_ids: [\"E1\"]\ninterpretations: [] (fiscal vs calendar? Need consider fiscal_equals_calendar false. Claim says \"2024 fiscal year\" explicitly fiscal, so only fiscal reading needed. So interpretations empty. If we had looked up both, we'd need interpretations but we didn't. The claim says fiscal, so cite only fiscal reading. That's what we did. So interpretations empty)\nverdict: \"contradicted\"\nnote: explanation\nmodel_found_value: 11.8\n\nWe must ensure JSON object only, no markdown fences.\n\nProvide that.\n\nCheck schema requires verdict at top level enum supported/contradicted/insufficient_evidence. For single claim incorrect, verdict contradicted.\n\nsummary: e.g., \"Microsoft FY2024 diluted EPS was $11.80 per SEC filing, not $13.27 as claimed.\"\n\nNeed to ensure correct types.\n\nAdd all fields.\n\nShould we include evidence_ids interpretations as array of strings? Yes.\n\nMake sure to include model_found_value as number.\n\nReturn plain JSON.\n\nPotential nuance: fiscal year 2024 period 2023-07-01 to 2024-06-30. Provide note.\n\nWe must not add explanatory text outside JSON.\n\nDo we need to consider that claim says Microsoft reports diluted EPS of $13.27 for the 2024 fiscal year - that's one atomic assertion. So sub_claims length 1.\n\nOutput JSON.\n\n",
+              "tools": null
+            }
+          }
+        ],
+        "created": 1793226375,
+        "model": "accounts/fireworks/models/muse-spark-open",
+        "object": "chat.completion",
+        "metadata": null,
+        "moderation": null,
+        "service_tier": null,
+        "system_fingerprint": null,
+        "usage": {
+          "completion_tokens": 759,
+          "prompt_tokens": 2199,
+          "total_tokens": 2958,
+          "completion_tokens_details": {
+            "accepted_prediction_tokens": null,
+            "audio_tokens": null,
+            "reasoning_tokens": 590,
+            "rejected_prediction_tokens": null,
+            "text_tokens": null
+          },
+          "prompt_tokens_details": {
+            "audio_tokens": null,
+            "cache_write_tokens": null,
+            "cached_tokens": 1216,
+            "image_tokens": null,
+            "text_tokens": null
+          },
+          "output_tokens_details": {
+            "reasoning_tokens": 590
+          }
+        }
+      },
+      "usage": {
+        "input": 2199,
+        "cached": 1216,
+        "output": 759,
+        "reasoning": 590
+      },
+      "cost": 0.004636899999999999,
+      "latency_ms": 13846.604,
+      "status": "completed",
+      "raw_usage": {
+        "completion_tokens": 759,
+        "prompt_tokens": 2199,
+        "total_tokens": 2958,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 590,
+          "rejected_prediction_tokens": null,
+          "text_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cache_write_tokens": null,
+          "cached_tokens": 1216,
+          "image_tokens": null,
+          "text_tokens": null
+        },
+        "output_tokens_details": {
+          "reasoning_tokens": 590
+        }
+      },
+      "normalized_usage": {
+        "input": 2199,
+        "cached": 1216,
+        "output": 759,
+        "reasoning": 590
+      },
+      "finish_reason": "stop",
+      "rate_limit_headers": {
+        "x-ratelimit-limit-tokens-cache-adjusted-prompt": "1800000",
+        "x-ratelimit-limit-tokens-generated": "72000",
+        "x-ratelimit-limit-tokens-prompt": "7200000",
+        "x-ratelimit-limit-tokens-uncached-prompt": "1800000",
+        "x-ratelimit-over-limit": "no",
+        "x-ratelimit-remaining-tokens-generated": "63891",
+        "x-ratelimit-remaining-tokens-prompt": "7197801"
+      }
+    }
+  ],
+  "tool_calls": [
+    {
+      "name": "lookup_fact",
+      "arguments": {
+        "ticker": "MSFT",
+        "metric": "eps_diluted",
+        "period": "FY2024"
+      },
+      "call_id": "chatcmpl-tool-a668ab462f0ad781",
+      "result": {
+        "ticker": "MSFT",
+        "cik": "0000789019",
+        "entity": "Microsoft Corporation",
+        "metric": "eps_diluted",
+        "concept": "EarningsPerShareDiluted",
+        "unit": "USD/shares",
+        "value": 11.8,
+        "start": "2023-07-01",
+        "end": "2024-06-30",
+        "form": "10-K",
+        "form_fallback": false,
+        "accn": "0001193125-26-323660",
+        "filed": "2026-07-29",
+        "frame": "CY2024",
+        "fiscal_year": 2024,
+        "fiscal_period": "FY",
+        "duration_days": 366,
+        "period_type": "annual",
+        "fiscal_equals_calendar": false,
+        "derived": false,
+        "filing_url": "https://www.sec.gov/Archives/edgar/data/789019/000119312526323660/",
+        "source_sha256": "dd0308149a8e96497989ed7c690b5a49a00bef9ceafbb24638bda41e8ae938dd",
+        "provenance": {
+          "tier": "L1",
+          "audited": true,
+          "confirmations": 4,
+          "forms": [
+            "10-K",
+            "8-K"
+          ],
+          "first_filed": "2024-07-30",
+          "latest_filed": "2026-07-29",
+          "restated": false,
+          "amended": false,
+          "strength": "high"
+        },
+        "period": "FY2024",
+        "period_basis": "fiscal",
+        "evidence_id": "E1"
+      }
+    }
+  ],
+  "usage": [
+    {
+      "input": 2692,
+      "cached": 2624,
+      "output": 221,
+      "reasoning": 117
+    },
+    {
+      "input": 3094,
+      "cached": 2688,
+      "output": 827,
+      "reasoning": 671
+    },
+    {
+      "input": 2199,
+      "cached": 1216,
+      "output": 759,
+      "reasoning": 590
+    }
+  ],
+  "tokens": {
+    "input": 7985,
+    "cached": 6528,
+    "output": 1807,
+    "reasoning": 1378
+  },
+  "model_calls": 3,
+  "cost": 0.010480199999999999,
+  "cost_usd": 0.010480199999999999,
+  "latency_ms": 32579.48,
+  "tool_call_count": 1,
+  "incomplete_turns": [],
+  "previous_response_fallback": false,
+  "final_verdict": {
+    "verdict": "contradicted",
+    "summary": "Microsoft FY2024 diluted EPS was $11.80 in the audited 10-K, contradicting the claimed $13.27.",
+    "sub_claims": [
+      {
+        "text": "Microsoft reports diluted EPS of $13.27 for the 2024 fiscal year",
+        "stated_text": "$13.27",
+        "claim_type": "value",
+        "comparator": "eq",
+        "stated_value": 13.27,
+        "verdict": "contradicted",
+        "evidence_ids": [
+          "E1"
+        ],
+        "interpretations": [],
+        "model_found_value": 11.8,
+        "note": "SEC filing shows FY2024 diluted EPS was $11.80 (period 2023-07-01 to 2024-06-30, L1 audited 10-K), not $13.27.",
+        "evidence_valid": true,
+        "program_verdict": "contradicted",
+        "actual_value": 11.8,
+        "tolerance": 0.005,
+        "reason": "actual 11.8 is not consistent with stated 13.27 using eq tolerance 0.005",
+        "disagreement": false,
+        "precision": 0.005,
+        "stated_value_used": 13.27,
+        "period_ambiguous": false,
+        "program_added_interpretation": false,
+        "program_evidence_ids": [],
+        "invalid_interpretations": false,
+        "deduplicated_evidence": [],
+        "stated_value_corrected": false,
+        "stated_text_unparsed": false,
+        "stated_sign_corrected": false,
+        "threshold_from_model": false,
+        "model_comparator": "eq",
+        "comparator_corrected": false,
+        "evidence_strength": "high",
+        "evidence_summary": "Evidence: audited 10-K, confirmed in 4 filings, not restated",
+        "restated_evidence": false
+      }
+    ],
+    "model_verdict": "contradicted",
+    "program_checks": [
+      {
+        "text": "Microsoft reports diluted EPS of $13.27 for the 2024 fiscal year",
+        "stated_value": 13.27,
+        "evidence_ids": [
+          "E1"
+        ],
+        "evidence_valid": true,
+        "program_verdict": "contradicted",
+        "actual_value": 11.8,
+        "tolerance": 0.005,
+        "reason": "actual 11.8 is not consistent with stated 13.27 using eq tolerance 0.005",
+        "disagreement": false,
+        "precision": 0.005,
+        "stated_value_used": 13.27,
+        "comparator": "eq",
+        "interpretations": [],
+        "period_ambiguous": false,
+        "program_added_interpretation": false,
+        "program_evidence_ids": [],
+        "invalid_interpretations": false,
+        "deduplicated_evidence": [],
+        "stated_value_corrected": false,
+        "stated_text_unparsed": false,
+        "stated_sign_corrected": false,
+        "threshold_from_model": false,
+        "model_comparator": "eq",
+        "comparator_corrected": false,
+        "evidence_strength": "high",
+        "evidence_summary": "Evidence: audited 10-K, confirmed in 4 filings, not restated",
+        "restated_evidence": false
+      }
+    ],
+    "evidence_strength": "high",
+    "evidence_summary": "Evidence: audited 10-K, confirmed in 4 filings, not restated",
+    "model_program_disagreement": false
+  },
+  "program_checks": [
+    {
+      "text": "Microsoft reports diluted EPS of $13.27 for the 2024 fiscal year",
+      "stated_value": 13.27,
+      "evidence_ids": [
+        "E1"
+      ],
+      "evidence_valid": true,
+      "program_verdict": "contradicted",
+      "actual_value": 11.8,
+      "tolerance": 0.005,
+      "reason": "actual 11.8 is not consistent with stated 13.27 using eq tolerance 0.005",
+      "disagreement": false,
+      "precision": 0.005,
+      "stated_value_used": 13.27,
+      "comparator": "eq",
+      "interpretations": [],
+      "period_ambiguous": false,
+      "program_added_interpretation": false,
+      "program_evidence_ids": [],
+      "invalid_interpretations": false,
+      "deduplicated_evidence": [],
+      "stated_value_corrected": false,
+      "stated_text_unparsed": false,
+      "stated_sign_corrected": false,
+      "threshold_from_model": false,
+      "model_comparator": "eq",
+      "comparator_corrected": false,
+      "evidence_strength": "high",
+      "evidence_summary": "Evidence: audited 10-K, confirmed in 4 filings, not restated",
+      "restated_evidence": false
+    }
+  ]
+}

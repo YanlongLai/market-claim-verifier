@@ -1,0 +1,1291 @@
+{
+  "claim": "PepsiCo posted a 67% year-over-year decline in net income during Q4 2025.",
+  "model": "meta-models/muse-spark-open-1026",
+  "provider": "baseten",
+  "requests": [
+    {
+      "request": {
+        "model": "meta-models/muse-spark-open-1026",
+        "messages": [
+          {
+            "role": "system",
+            "content": "You verify financial claims against SEC EDGAR facts.\nDecompose the claim into every atomic factual assertion. Every factual assertion\nin the user's claim must become a sub-claim, including a value, a change, a\nrecord, and a first-time assertion in the same sentence. Assertions that the\ntools cannot check must still become a sub-claim with claim_type other; the\nprogram will leave those unchecked. Use lookup_fact for a value,\ncompute_change for YoY or other period-to-period growth, history_rank for\nrecord/first-time assertions, and list_periods only to understand missing data.\nNever use memory for numbers. A quarter must have period_type=quarter and\nduration_days around 80-100, not period_type=ytd. If a result has derived=true,\nuse its derivation and components as evidence and do not calculate that fact\nagain. For compute_change, cite its own evidence ID; its two nested component\nfact IDs may also be cited and are ignored by the verifier.\n\nEach final sub_claim must contain exactly these model fields:\ntext, stated_text, claim_type (value, change_pct, change_abs, record_high,\nrecord_low, first_time_above, or other), comparator (eq, approx, gt, gte, lt,\nor lte), stated_value in base units (USD, USD/share, percentage points, or 1\nfor a record boolean), evidence_ids, interpretations, verdict, note, and\nmodel_found_value. interpretations is required and may be empty. Every non-empty\nitem must be an evidence id like E3 — never free text.\nCopy stated_text verbatim from the claim, including words such as \"about\",\n\"up\", or \"fell\" (for example, \"about $1.4 billion\", \"up 22%\", or\n\"fell 10%\"). For a change_pct, stated_value is 22 for 22%, not 0.22; the\nverifier applies the sign implied by direction words such as fell/down or\nrose/up. model_found_value is the number read from the cited evidence in the\nsame units, or null when it is missing.\n\nComparator wording is deterministic: a plain numeric statement with no hedge\nor inequality phrase is eq; about/around/roughly/approximately/nearly/almost,\nclose to, some, or ~ means approx; topped/exceeded/above/more than/over/\nsurpassed/beat means gt; at least/no less than means gte; below/under/less\nthan/short of means lt; at most/no more than/up to means lte. The program\nrecords and may correct the model comparator from these words. \"up\" and\n\"fell\" describe change direction, not approximation.\n\nFor a quarter claim at a non-calendar-fiscal issuer, use period_basis from\nthe tool results. If the claim says neither fiscal nor calendar, look up both\nthe calendar label (for example 2025Q4) and the fiscal label (for example\nFY2025Q4), cite both IDs in evidence_ids, and put those two IDs in\ninterpretations. Keep interpretations empty unless both fiscal and calendar\nreadings were looked up. If the claim says fiscal, cite only the fiscal\nreading; if it says calendar, cite only the calendar reading. When a lookup or\ncompute result has fiscal_equals_calendar=true, the issuer's fiscal year is the\ncalendar year: fiscal and calendar labels refer to the same underlying facts,\nso look up and cite only one reading even when the claim has no\nfiscal/calendar qualifier.\n\nExamples:\n1. \"Tesla net income was about $1.4 billion\": lookup_fact; stated_text\n   \"about $1.4 billion\", claim_type value, comparator approx, stated_value\n   1400000000.\n2. \"Alphabet revenue exceeded $100 billion\": lookup_fact; stated_text\n   \"exceeded $100 billion\", claim_type value, comparator gt, stated_value\n   100000000000.\n3. \"Meta revenue was up 22% YoY\": compute_change(META, revenue, 2025Q2,\n   null); stated_text \"up 22%\", claim_type change_pct, comparator eq,\n   stated_value 22, and cite the compute_change evidence ID.\n4. \"Tesla revenue fell 10% YoY\": compute_change(TSLA, revenue, 2025Q3,\n   null); stated_text \"fell 10%\", claim_type change_pct, comparator eq,\n   stated_value -10, and cite the compute_change evidence ID.\n5. \"Alphabet Q3 2025 revenue was a record high\": history_rank(GOOGL,\n   revenue, 2025Q3); claim_type record_high, comparator eq, stated_value 1,\n   and cite the history_rank evidence ID.\n6. \"Alphabet Q3 2025 revenue topped $100 billion for the first time\": create\n   two sub-claims: value gt 100000000000 and first_time_above with stated_value\n   100000000000, both citing the relevant evidence; the latter is supported\n   only when this period is above the threshold and no earlier comparable\n   period is above it.\n7. If a requested fact is unavailable, leave model_found_value null, cite any\n   relevant evidence, and set that sub-claim to insufficient_evidence. Say\n   insufficient_evidence when data is missing or evidence is ambiguous."
+          },
+          {
+            "role": "user",
+            "content": "PepsiCo posted a 67% year-over-year decline in net income during Q4 2025."
+          }
+        ],
+        "tools": [
+          {
+            "type": "function",
+            "function": {
+              "name": "lookup_fact",
+              "description": "Look up one SEC EDGAR XBRL fact for a ticker, metric, and calendar quarter, fiscal quarter (FY2025Q4), or fiscal year. Successful results include period (the normalized requested label, or the resolved label for latest), period_basis (calendar or fiscal), fiscal_equals_calendar, duration_days, and period_type (quarter, ytd, annual, or instant). Additive flows may return derived=true with derivation and components; never treat a ytd result as a quarter or recompute a derived result. When fiscal_equals_calendar is true, fiscal and calendar labels identify the same fact; do not look up both readings. Every fact includes compact provenance: L1 audited 10-K, L2 reviewed 10-Q, or L3 program-derived, with confirmations, restatement, amendment, and evidence strength.",
+              "parameters": {
+                "type": "object",
+                "properties": {
+                  "ticker": {
+                    "type": "string"
+                  },
+                  "metric": {
+                    "type": "string",
+                    "enum": [
+                      "revenue",
+                      "net_income",
+                      "operating_income",
+                      "eps_diluted",
+                      "gross_profit",
+                      "total_assets",
+                      "cash",
+                      "capex",
+                      "rd_expense",
+                      "shares_outstanding"
+                    ]
+                  },
+                  "period": {
+                    "type": "string",
+                    "pattern": "^(latest|FY\\d{4}(?:Q[1-4])?|\\d{4}Q[1-4])$"
+                  }
+                },
+                "required": [
+                  "ticker",
+                  "metric",
+                  "period"
+                ],
+                "additionalProperties": false
+              }
+            }
+          },
+          {
+            "type": "function",
+            "function": {
+              "name": "list_periods",
+              "description": "List the recent directly available SEC EDGAR quarter and fiscal-year periods for a ticker and metric.",
+              "parameters": {
+                "type": "object",
+                "properties": {
+                  "ticker": {
+                    "type": "string"
+                  },
+                  "metric": {
+                    "type": "string",
+                    "enum": [
+                      "revenue",
+                      "net_income",
+                      "operating_income",
+                      "eps_diluted",
+                      "gross_profit",
+                      "total_assets",
+                      "cash",
+                      "capex",
+                      "rd_expense",
+                      "shares_outstanding"
+                    ]
+                  }
+                },
+                "required": [
+                  "ticker",
+                  "metric"
+                ],
+                "additionalProperties": false
+              }
+            }
+          },
+          {
+            "type": "function",
+            "function": {
+              "name": "compute_change",
+              "description": "Compute the absolute and year-over-year change for one SEC EDGAR XBRL metric. The period and base_period must be the same kind of period; when base_period is omitted, null, empty, \"null\", or \"none\", use the same quarter or fiscal year one year earlier. The result includes both cited lookup facts, fiscal_equals_calendar, their fact-level provenance, and a percentage change in percent points.",
+              "parameters": {
+                "type": "object",
+                "properties": {
+                  "ticker": {
+                    "type": "string"
+                  },
+                  "metric": {
+                    "type": "string",
+                    "enum": [
+                      "revenue",
+                      "net_income",
+                      "operating_income",
+                      "eps_diluted",
+                      "gross_profit",
+                      "total_assets",
+                      "cash",
+                      "capex",
+                      "rd_expense",
+                      "shares_outstanding"
+                    ]
+                  },
+                  "period": {
+                    "type": "string",
+                    "pattern": "^(latest|FY\\d{4}(?:Q[1-4])?|\\d{4}Q[1-4])$"
+                  },
+                  "base_period": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "pattern": "^(FY\\d{4}(?:Q[1-4])?|\\d{4}Q[1-4])$"
+                  }
+                },
+                "required": [
+                  "ticker",
+                  "metric",
+                  "period",
+                  "base_period"
+                ],
+                "additionalProperties": false
+              }
+            }
+          },
+          {
+            "type": "function",
+            "function": {
+              "name": "history_rank",
+              "description": "Compare one quarter or fiscal-year fact with every available comparable period of the same period_type. Quarters include derived Q4 values when available; annual periods are compared only with annual periods. Return the rank, record flags through the requested period, prior high/low, and the comparison window with period end dates. The requested period also includes compact fact provenance and evidence strength.",
+              "parameters": {
+                "type": "object",
+                "properties": {
+                  "ticker": {
+                    "type": "string"
+                  },
+                  "metric": {
+                    "type": "string",
+                    "enum": [
+                      "revenue",
+                      "net_income",
+                      "operating_income",
+                      "eps_diluted",
+                      "gross_profit",
+                      "total_assets",
+                      "cash",
+                      "capex",
+                      "rd_expense",
+                      "shares_outstanding"
+                    ]
+                  },
+                  "period": {
+                    "type": "string",
+                    "pattern": "^(latest|FY\\d{4}(?:Q[1-4])?|\\d{4}Q[1-4])$"
+                  }
+                },
+                "required": [
+                  "ticker",
+                  "metric",
+                  "period"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        ],
+        "parallel_tool_calls": true,
+        "max_tokens": 4000
+      },
+      "reservation": {
+        "reservation_id": "6c214c60c0314d28a9bdeb3f2f1aa7f9",
+        "provider": "baseten",
+        "model": "meta-models/muse-spark-open-1026",
+        "estimated_input_tokens": 2844,
+        "max_output_tokens": 4000,
+        "amount": 0.020555,
+        "payload_chars": 8532,
+        "context_chars": 0
+      },
+      "raw_response": {
+        "id": "chatcmpl-5c574358bc154c469338a75f847ac96c",
+        "choices": [
+          {
+            "finish_reason": "tool_calls",
+            "index": 0,
+            "logprobs": null,
+            "message": {
+              "content": null,
+              "refusal": null,
+              "role": "assistant",
+              "annotations": null,
+              "audio": null,
+              "function_call": null,
+              "tool_calls": [
+                {
+                  "id": "chatcmpl-tool-786491d7ee994929bd5a9def36dee88d",
+                  "function": {
+                    "arguments": "{\"ticker\": \"PEP\", \"metric\": \"net_income\", \"period\": \"2025Q4\", \"base_period\": \"2024Q4\"}",
+                    "name": "compute_change"
+                  },
+                  "type": "function"
+                }
+              ],
+              "reasoning_content": "We need to verify claim: PepsiCo posted a 67% YoY decline in net income during Q4 2025.\n\nWe need decompose claim into atomic assertions. The claim: \"PepsiCo posted a 67% year-over-year decline in net income during Q4 2025.\"\n\nWe need to lookup net_income for Q4 2025 and compute change.\n\nTicker for PepsiCo is PEP.\n\nWe need to do lookup_fact and compute_change.\n\nWe need to handle calendar vs fiscal. PepsiCo fiscal year equals calendar? Let's check. Need to do lookups. The instruction says: For a quarter claim at a non-calendar-fiscal issuer, use period_basis from tool results. If claim says neither fiscal nor calendar, look up both calendar label (2025Q4) and fiscal label (FY2025Q4), cite both IDs, put those two IDs in interpretations. Keep interpretations empty unless both fiscal and calendar readings were looked up. If fiscal_equals_calendar true, fiscal and calendar labels refer to same underlying facts, so look up and cite only one reading even when claim has no fiscal/calendar qualifier.\n\nSo we need to check fiscal_equals_calendar. We need to call compute_change for both? But if fiscal_equals_calendar true, only one.\n\nWe should first try lookup_fact for 2025Q4 and FY2025Q4 to see.\n\nWe need to use tools.\n\nWe have to decompose claim: Every factual assertion must become sub-claim, including value, change, record, first-time assertion in same sentence.\n\nHere we have a change_pct assertion: 67% YoY decline in net income during Q4 2025.\n\nWe need to create sub-claim: stated_text \"67% year-over-year decline\" or \"67% year-over-year decline\" ... claim_type change_pct, comparator eq, stated_value -67 (since decline). Or 67% decline implies -67. Example: Tesla revenue fell 10% YoY: stated_text \"fell 10%\", claim_type change_pct, comparator eq, stated_value -10. So here we have \"67% year-over-year decline\" => comparator eq, stated_value -67.\n\nWe need evidence_ids from compute_change.\n\nWe also might need to check if ticker PEP.\n\nWe need to call compute_change for PEP net_income period 2025Q4.\n\nLet's do that."
+            }
+          }
+        ],
+        "created": 1793222804,
+        "model": "meta-models/muse-spark-open-1026",
+        "object": "chat.completion",
+        "metadata": null,
+        "moderation": null,
+        "service_tier": null,
+        "system_fingerprint": null,
+        "usage": {
+          "completion_tokens": 614,
+          "prompt_tokens": 2677,
+          "total_tokens": 3291,
+          "completion_tokens_details": {
+            "accepted_prediction_tokens": 424,
+            "audio_tokens": 0,
+            "reasoning_tokens": 482,
+            "rejected_prediction_tokens": 899,
+            "text_tokens": null
+          },
+          "prompt_tokens_details": {
+            "audio_tokens": 0,
+            "cache_write_tokens": null,
+            "cached_tokens": 2560,
+            "image_tokens": null,
+            "text_tokens": null
+          }
+        }
+      },
+      "usage": {
+        "input": 2677,
+        "cached": 2560,
+        "output": 614,
+        "reasoning": 482
+      },
+      "cost": 0.0031397499999999997,
+      "latency_ms": 2536.433,
+      "status": "completed",
+      "raw_usage": {
+        "completion_tokens": 614,
+        "prompt_tokens": 2677,
+        "total_tokens": 3291,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": 424,
+          "audio_tokens": 0,
+          "reasoning_tokens": 482,
+          "rejected_prediction_tokens": 899,
+          "text_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": 0,
+          "cache_write_tokens": null,
+          "cached_tokens": 2560,
+          "image_tokens": null,
+          "text_tokens": null
+        }
+      },
+      "normalized_usage": {
+        "input": 2677,
+        "cached": 2560,
+        "output": 614,
+        "reasoning": 482
+      },
+      "finish_reason": "tool_calls",
+      "rate_limit_headers": {
+        "x-ratelimit-limit-requests": "100",
+        "x-ratelimit-limit-tokens": "2000000",
+        "x-ratelimit-remaining-requests": "50",
+        "x-ratelimit-remaining-tokens": "2000000"
+      }
+    },
+    {
+      "request": {
+        "model": "meta-models/muse-spark-open-1026",
+        "messages": [
+          {
+            "role": "system",
+            "content": "You verify financial claims against SEC EDGAR facts.\nDecompose the claim into every atomic factual assertion. Every factual assertion\nin the user's claim must become a sub-claim, including a value, a change, a\nrecord, and a first-time assertion in the same sentence. Assertions that the\ntools cannot check must still become a sub-claim with claim_type other; the\nprogram will leave those unchecked. Use lookup_fact for a value,\ncompute_change for YoY or other period-to-period growth, history_rank for\nrecord/first-time assertions, and list_periods only to understand missing data.\nNever use memory for numbers. A quarter must have period_type=quarter and\nduration_days around 80-100, not period_type=ytd. If a result has derived=true,\nuse its derivation and components as evidence and do not calculate that fact\nagain. For compute_change, cite its own evidence ID; its two nested component\nfact IDs may also be cited and are ignored by the verifier.\n\nEach final sub_claim must contain exactly these model fields:\ntext, stated_text, claim_type (value, change_pct, change_abs, record_high,\nrecord_low, first_time_above, or other), comparator (eq, approx, gt, gte, lt,\nor lte), stated_value in base units (USD, USD/share, percentage points, or 1\nfor a record boolean), evidence_ids, interpretations, verdict, note, and\nmodel_found_value. interpretations is required and may be empty. Every non-empty\nitem must be an evidence id like E3 — never free text.\nCopy stated_text verbatim from the claim, including words such as \"about\",\n\"up\", or \"fell\" (for example, \"about $1.4 billion\", \"up 22%\", or\n\"fell 10%\"). For a change_pct, stated_value is 22 for 22%, not 0.22; the\nverifier applies the sign implied by direction words such as fell/down or\nrose/up. model_found_value is the number read from the cited evidence in the\nsame units, or null when it is missing.\n\nComparator wording is deterministic: a plain numeric statement with no hedge\nor inequality phrase is eq; about/around/roughly/approximately/nearly/almost,\nclose to, some, or ~ means approx; topped/exceeded/above/more than/over/\nsurpassed/beat means gt; at least/no less than means gte; below/under/less\nthan/short of means lt; at most/no more than/up to means lte. The program\nrecords and may correct the model comparator from these words. \"up\" and\n\"fell\" describe change direction, not approximation.\n\nFor a quarter claim at a non-calendar-fiscal issuer, use period_basis from\nthe tool results. If the claim says neither fiscal nor calendar, look up both\nthe calendar label (for example 2025Q4) and the fiscal label (for example\nFY2025Q4), cite both IDs in evidence_ids, and put those two IDs in\ninterpretations. Keep interpretations empty unless both fiscal and calendar\nreadings were looked up. If the claim says fiscal, cite only the fiscal\nreading; if it says calendar, cite only the calendar reading. When a lookup or\ncompute result has fiscal_equals_calendar=true, the issuer's fiscal year is the\ncalendar year: fiscal and calendar labels refer to the same underlying facts,\nso look up and cite only one reading even when the claim has no\nfiscal/calendar qualifier.\n\nExamples:\n1. \"Tesla net income was about $1.4 billion\": lookup_fact; stated_text\n   \"about $1.4 billion\", claim_type value, comparator approx, stated_value\n   1400000000.\n2. \"Alphabet revenue exceeded $100 billion\": lookup_fact; stated_text\n   \"exceeded $100 billion\", claim_type value, comparator gt, stated_value\n   100000000000.\n3. \"Meta revenue was up 22% YoY\": compute_change(META, revenue, 2025Q2,\n   null); stated_text \"up 22%\", claim_type change_pct, comparator eq,\n   stated_value 22, and cite the compute_change evidence ID.\n4. \"Tesla revenue fell 10% YoY\": compute_change(TSLA, revenue, 2025Q3,\n   null); stated_text \"fell 10%\", claim_type change_pct, comparator eq,\n   stated_value -10, and cite the compute_change evidence ID.\n5. \"Alphabet Q3 2025 revenue was a record high\": history_rank(GOOGL,\n   revenue, 2025Q3); claim_type record_high, comparator eq, stated_value 1,\n   and cite the history_rank evidence ID.\n6. \"Alphabet Q3 2025 revenue topped $100 billion for the first time\": create\n   two sub-claims: value gt 100000000000 and first_time_above with stated_value\n   100000000000, both citing the relevant evidence; the latter is supported\n   only when this period is above the threshold and no earlier comparable\n   period is above it.\n7. If a requested fact is unavailable, leave model_found_value null, cite any\n   relevant evidence, and set that sub-claim to insufficient_evidence. Say\n   insufficient_evidence when data is missing or evidence is ambiguous."
+          },
+          {
+            "role": "user",
+            "content": "PepsiCo posted a 67% year-over-year decline in net income during Q4 2025."
+          },
+          {
+            "role": "assistant",
+            "content": null,
+            "tool_calls": [
+              {
+                "id": "chatcmpl-tool-786491d7ee994929bd5a9def36dee88d",
+                "type": "function",
+                "function": {
+                  "name": "compute_change",
+                  "arguments": "{\"ticker\": \"PEP\", \"metric\": \"net_income\", \"period\": \"2025Q4\", \"base_period\": \"2024Q4\"}"
+                }
+              }
+            ]
+          },
+          {
+            "role": "tool",
+            "tool_call_id": "chatcmpl-tool-786491d7ee994929bd5a9def36dee88d",
+            "content": "{\"ticker\":\"PEP\",\"metric\":\"net_income\",\"period\":\"2025Q4\",\"base_period\":\"2024Q4\",\"period_basis\":\"calendar\",\"current_fact\":{\"ticker\":\"PEP\",\"cik\":\"0000077476\",\"entity\":\"PEPSICO INC\",\"metric\":\"net_income\",\"concept\":\"NetIncomeLoss\",\"unit\":\"USD\",\"value\":2540000000,\"start\":\"2025-09-07\",\"end\":\"2025-12-27\",\"form\":\"derived\",\"form_fallback\":false,\"accn\":null,\"filed\":\"2026-10-08\",\"frame\":null,\"fiscal_year\":2025,\"fiscal_period\":\"FY\",\"duration_days\":112,\"period_type\":\"quarter\",\"fiscal_equals_calendar\":true,\"derived\":true,\"derivation\":\"FY2025 - 9M YTD\",\"components\":[{\"value\":8240000000,\"start\":\"2024-12-29\",\"end\":\"2025-12-27\",\"accn\":\"0000077476-26-000007\",\"form\":\"10-K\",\"filed\":\"2026-02-03\",\"duration_days\":364,\"period_type\":\"annual\",\"provenance\":{\"tier\":\"L1\",\"audited\":true,\"confirmations\":1,\"forms\":[\"10-K\"],\"first_filed\":\"2026-02-03\",\"latest_filed\":\"2026-02-03\",\"restated\":false,\"amended\":false,\"strength\":\"medium\"}},{\"value\":5700000000,\"start\":\"2024-12-29\",\"end\":\"2025-09-06\",\"accn\":\"0000077476-26-000048\",\"form\":\"10-Q\",\"filed\":\"2026-10-08\",\"duration_days\":252,\"period_type\":\"ytd\",\"provenance\":{\"tier\":\"L2\",\"audited\":false,\"confirmations\":2,\"forms\":[\"10-Q\"],\"first_filed\":\"2025-10-09\",\"latest_filed\":\"2026-10-08\",\"restated\":false,\"amended\":false,\"strength\":\"medium\"}}],\"filing_url\":null,\"source_sha256\":\"4a734cc934f3cf9f129fc15657589d4c6c82138f1bd889023c11170d97990d8d\",\"provenance\":{\"tier\":\"L3\",\"component_tiers\":[\"L1\",\"L2\"],\"component_strengths\":[\"medium\",\"medium\"],\"audited\":false,\"confirmations\":0,\"forms\":[\"derived\"],\"first_filed\":\"2025-10-09\",\"latest_filed\":\"2026-10-08\",\"restated\":false,\"amended\":false,\"strength\":\"medium\"},\"period\":\"2025Q4\",\"period_basis\":\"calendar\",\"evidence_id\":\"E1\"},\"base_fact\":{\"ticker\":\"PEP\",\"cik\":\"0000077476\",\"entity\":\"PEPSICO INC\",\"metric\":\"net_income\",\"concept\":\"NetIncomeLoss\",\"unit\":\"USD\",\"value\":1523000000,\"start\":\"2024-09-08\",\"end\":\"2024-12-28\",\"form\":\"derived\",\"form_fallback\":false,\"accn\":null,\"filed\":\"2026-02-03\",\"frame\":null,\"fiscal_year\":2024,\"fiscal_period\":\"FY\",\"duration_days\":112,\"period_type\":\"quarter\",\"fiscal_equals_calendar\":true,\"derived\":true,\"derivation\":\"FY2024 - 9M YTD\",\"components\":[{\"value\":9578000000,\"start\":\"2023-12-31\",\"end\":\"2024-12-28\",\"accn\":\"0000077476-26-000007\",\"form\":\"10-K\",\"filed\":\"2026-02-03\",\"duration_days\":364,\"period_type\":\"annual\",\"provenance\":{\"tier\":\"L1\",\"audited\":true,\"confirmations\":3,\"forms\":[\"10-K\",\"8-K\"],\"first_filed\":\"2025-02-04\",\"latest_filed\":\"2026-02-03\",\"restated\":false,\"amended\":false,\"strength\":\"high\"}},{\"value\":8055000000,\"start\":\"2023-12-31\",\"end\":\"2024-09-07\",\"accn\":\"0000077476-25-000053\",\"form\":\"10-Q\",\"filed\":\"2025-10-09\",\"duration_days\":252,\"period_type\":\"ytd\",\"provenance\":{\"tier\":\"L2\",\"audited\":false,\"confirmations\":2,\"forms\":[\"10-Q\"],\"first_filed\":\"2024-10-08\",\"latest_filed\":\"2025-10-09\",\"restated\":false,\"amended\":false,\"strength\":\"medium\"}}],\"filing_url\":null,\"source_sha256\":\"4a734cc934f3cf9f129fc15657589d4c6c82138f1bd889023c11170d97990d8d\",\"provenance\":{\"tier\":\"L3\",\"component_tiers\":[\"L1\",\"L2\"],\"component_strengths\":[\"high\",\"medium\"],\"audited\":false,\"confirmations\":0,\"forms\":[\"derived\"],\"first_filed\":\"2024-10-08\",\"latest_filed\":\"2026-02-03\",\"restated\":false,\"amended\":false,\"strength\":\"medium\"},\"period\":\"2024Q4\",\"period_basis\":\"calendar\",\"evidence_id\":\"E2\"},\"current\":{\"ticker\":\"PEP\",\"cik\":\"0000077476\",\"entity\":\"PEPSICO INC\",\"metric\":\"net_income\",\"concept\":\"NetIncomeLoss\",\"unit\":\"USD\",\"value\":2540000000,\"start\":\"2025-09-07\",\"end\":\"2025-12-27\",\"form\":\"derived\",\"form_fallback\":false,\"accn\":null,\"filed\":\"2026-10-08\",\"frame\":null,\"fiscal_year\":2025,\"fiscal_period\":\"FY\",\"duration_days\":112,\"period_type\":\"quarter\",\"fiscal_equals_calendar\":true,\"derived\":true,\"derivation\":\"FY2025 - 9M YTD\",\"components\":[{\"value\":8240000000,\"start\":\"2024-12-29\",\"end\":\"2025-12-27\",\"accn\":\"0000077476-26-000007\",\"form\":\"10-K\",\"filed\":\"2026-02-03\",\"duration_days\":364,\"period_type\":\"annual\",\"provenance\":{\"tier\":\"L1\",\"audited\":true,\"confirmations\":1,\"forms\":[\"10-K\"],\"first_filed\":\"2026-02-03\",\"latest_filed\":\"2026-02-03\",\"restated\":false,\"amended\":false,\"strength\":\"medium\"}},{\"value\":5700000000,\"start\":\"2024-12-29\",\"end\":\"2025-09-06\",\"accn\":\"0000077476-26-000048\",\"form\":\"10-Q\",\"filed\":\"2026-10-08\",\"duration_days\":252,\"period_type\":\"ytd\",\"provenance\":{\"tier\":\"L2\",\"audited\":false,\"confirmations\":2,\"forms\":[\"10-Q\"],\"first_filed\":\"2025-10-09\",\"latest_filed\":\"2026-10-08\",\"restated\":false,\"amended\":false,\"strength\":\"medium\"}}],\"filing_url\":null,\"source_sha256\":\"4a734cc934f3cf9f129fc15657589d4c6c82138f1bd889023c11170d97990d8d\",\"provenance\":{\"tier\":\"L3\",\"component_tiers\":[\"L1\",\"L2\"],\"component_strengths\":[\"medium\",\"medium\"],\"audited\":false,\"confirmations\":0,\"forms\":[\"derived\"],\"first_filed\":\"2025-10-09\",\"latest_filed\":\"2026-10-08\",\"restated\":false,\"amended\":false,\"strength\":\"medium\"},\"period\":\"2025Q4\",\"period_basis\":\"calendar\",\"evidence_id\":\"E1\"},\"base\":{\"ticker\":\"PEP\",\"cik\":\"0000077476\",\"entity\":\"PEPSICO INC\",\"metric\":\"net_income\",\"concept\":\"NetIncomeLoss\",\"unit\":\"USD\",\"value\":1523000000,\"start\":\"2024-09-08\",\"end\":\"2024-12-28\",\"form\":\"derived\",\"form_fallback\":false,\"accn\":null,\"filed\":\"2026-02-03\",\"frame\":null,\"fiscal_year\":2024,\"fiscal_period\":\"FY\",\"duration_days\":112,\"period_type\":\"quarter\",\"fiscal_equals_calendar\":true,\"derived\":true,\"derivation\":\"FY2024 - 9M YTD\",\"components\":[{\"value\":9578000000,\"start\":\"2023-12-31\",\"end\":\"2024-12-28\",\"accn\":\"0000077476-26-000007\",\"form\":\"10-K\",\"filed\":\"2026-02-03\",\"duration_days\":364,\"period_type\":\"annual\",\"provenance\":{\"tier\":\"L1\",\"audited\":true,\"confirmations\":3,\"forms\":[\"10-K\",\"8-K\"],\"first_filed\":\"2025-02-04\",\"latest_filed\":\"2026-02-03\",\"restated\":false,\"amended\":false,\"strength\":\"high\"}},{\"value\":8055000000,\"start\":\"2023-12-31\",\"end\":\"2024-09-07\",\"accn\":\"0000077476-25-000053\",\"form\":\"10-Q\",\"filed\":\"2025-10-09\",\"duration_days\":252,\"period_type\":\"ytd\",\"provenance\":{\"tier\":\"L2\",\"audited\":false,\"confirmations\":2,\"forms\":[\"10-Q\"],\"first_filed\":\"2024-10-08\",\"latest_filed\":\"2025-10-09\",\"restated\":false,\"amended\":false,\"strength\":\"medium\"}}],\"filing_url\":null,\"source_sha256\":\"4a734cc934f3cf9f129fc15657589d4c6c82138f1bd889023c11170d97990d8d\",\"provenance\":{\"tier\":\"L3\",\"component_tiers\":[\"L1\",\"L2\"],\"component_strengths\":[\"high\",\"medium\"],\"audited\":false,\"confirmations\":0,\"forms\":[\"derived\"],\"first_filed\":\"2024-10-08\",\"latest_filed\":\"2026-02-03\",\"restated\":false,\"amended\":false,\"strength\":\"medium\"},\"period\":\"2024Q4\",\"period_basis\":\"calendar\",\"evidence_id\":\"E2\"},\"abs_change\":1017000000,\"pct_change\":66.77609980302034,\"fiscal_equals_calendar\":true,\"evidence_id\":\"E3\"}"
+          }
+        ],
+        "tools": [
+          {
+            "type": "function",
+            "function": {
+              "name": "lookup_fact",
+              "description": "Look up one SEC EDGAR XBRL fact for a ticker, metric, and calendar quarter, fiscal quarter (FY2025Q4), or fiscal year. Successful results include period (the normalized requested label, or the resolved label for latest), period_basis (calendar or fiscal), fiscal_equals_calendar, duration_days, and period_type (quarter, ytd, annual, or instant). Additive flows may return derived=true with derivation and components; never treat a ytd result as a quarter or recompute a derived result. When fiscal_equals_calendar is true, fiscal and calendar labels identify the same fact; do not look up both readings. Every fact includes compact provenance: L1 audited 10-K, L2 reviewed 10-Q, or L3 program-derived, with confirmations, restatement, amendment, and evidence strength.",
+              "parameters": {
+                "type": "object",
+                "properties": {
+                  "ticker": {
+                    "type": "string"
+                  },
+                  "metric": {
+                    "type": "string",
+                    "enum": [
+                      "revenue",
+                      "net_income",
+                      "operating_income",
+                      "eps_diluted",
+                      "gross_profit",
+                      "total_assets",
+                      "cash",
+                      "capex",
+                      "rd_expense",
+                      "shares_outstanding"
+                    ]
+                  },
+                  "period": {
+                    "type": "string",
+                    "pattern": "^(latest|FY\\d{4}(?:Q[1-4])?|\\d{4}Q[1-4])$"
+                  }
+                },
+                "required": [
+                  "ticker",
+                  "metric",
+                  "period"
+                ],
+                "additionalProperties": false
+              }
+            }
+          },
+          {
+            "type": "function",
+            "function": {
+              "name": "list_periods",
+              "description": "List the recent directly available SEC EDGAR quarter and fiscal-year periods for a ticker and metric.",
+              "parameters": {
+                "type": "object",
+                "properties": {
+                  "ticker": {
+                    "type": "string"
+                  },
+                  "metric": {
+                    "type": "string",
+                    "enum": [
+                      "revenue",
+                      "net_income",
+                      "operating_income",
+                      "eps_diluted",
+                      "gross_profit",
+                      "total_assets",
+                      "cash",
+                      "capex",
+                      "rd_expense",
+                      "shares_outstanding"
+                    ]
+                  }
+                },
+                "required": [
+                  "ticker",
+                  "metric"
+                ],
+                "additionalProperties": false
+              }
+            }
+          },
+          {
+            "type": "function",
+            "function": {
+              "name": "compute_change",
+              "description": "Compute the absolute and year-over-year change for one SEC EDGAR XBRL metric. The period and base_period must be the same kind of period; when base_period is omitted, null, empty, \"null\", or \"none\", use the same quarter or fiscal year one year earlier. The result includes both cited lookup facts, fiscal_equals_calendar, their fact-level provenance, and a percentage change in percent points.",
+              "parameters": {
+                "type": "object",
+                "properties": {
+                  "ticker": {
+                    "type": "string"
+                  },
+                  "metric": {
+                    "type": "string",
+                    "enum": [
+                      "revenue",
+                      "net_income",
+                      "operating_income",
+                      "eps_diluted",
+                      "gross_profit",
+                      "total_assets",
+                      "cash",
+                      "capex",
+                      "rd_expense",
+                      "shares_outstanding"
+                    ]
+                  },
+                  "period": {
+                    "type": "string",
+                    "pattern": "^(latest|FY\\d{4}(?:Q[1-4])?|\\d{4}Q[1-4])$"
+                  },
+                  "base_period": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "pattern": "^(FY\\d{4}(?:Q[1-4])?|\\d{4}Q[1-4])$"
+                  }
+                },
+                "required": [
+                  "ticker",
+                  "metric",
+                  "period",
+                  "base_period"
+                ],
+                "additionalProperties": false
+              }
+            }
+          },
+          {
+            "type": "function",
+            "function": {
+              "name": "history_rank",
+              "description": "Compare one quarter or fiscal-year fact with every available comparable period of the same period_type. Quarters include derived Q4 values when available; annual periods are compared only with annual periods. Return the rank, record flags through the requested period, prior high/low, and the comparison window with period end dates. The requested period also includes compact fact provenance and evidence strength.",
+              "parameters": {
+                "type": "object",
+                "properties": {
+                  "ticker": {
+                    "type": "string"
+                  },
+                  "metric": {
+                    "type": "string",
+                    "enum": [
+                      "revenue",
+                      "net_income",
+                      "operating_income",
+                      "eps_diluted",
+                      "gross_profit",
+                      "total_assets",
+                      "cash",
+                      "capex",
+                      "rd_expense",
+                      "shares_outstanding"
+                    ]
+                  },
+                  "period": {
+                    "type": "string",
+                    "pattern": "^(latest|FY\\d{4}(?:Q[1-4])?|\\d{4}Q[1-4])$"
+                  }
+                },
+                "required": [
+                  "ticker",
+                  "metric",
+                  "period"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        ],
+        "parallel_tool_calls": true,
+        "max_tokens": 4000
+      },
+      "reservation": {
+        "reservation_id": "a747eeedbaf249649d908a3aeaccfd4e",
+        "provider": "baseten",
+        "model": "meta-models/muse-spark-open-1026",
+        "estimated_input_tokens": 5489,
+        "max_output_tokens": 4000,
+        "amount": 0.02386125,
+        "payload_chars": 16467,
+        "context_chars": 0
+      },
+      "raw_response": {
+        "id": "chatcmpl-bcea19ed9b9a48ae82abbda2b280909b",
+        "choices": [
+          {
+            "finish_reason": "stop",
+            "index": 0,
+            "logprobs": null,
+            "message": {
+              "content": "{\"sub_claims\": [{\"text\": \"PepsiCo net income declined 67% year-over-year in Q4 2025\", \"stated_text\": \"67% year-over-year decline\", \"claim_type\": \"change_pct\", \"comparator\": \"eq\", \"stated_value\": -67, \"evidence_ids\": [\"E3\"], \"interpretations\": [], \"verdict\": \"refuted\", \"note\": \"SEC EDGAR derived Q4 net income rose from $1,523,000,000 in 2024Q4 to $2,540,000,000 in 2025Q4, a +66.78% YoY increase, not a 67% decline; fiscal_equals_calendar=true so single calendar basis applies.\", \"model_found_value\": 66.77609980302034}]}",
+              "refusal": null,
+              "role": "assistant",
+              "annotations": null,
+              "audio": null,
+              "function_call": null,
+              "tool_calls": null,
+              "reasoning_content": "Claim: PepsiCo posted a 67% year-over-year decline in net income during Q4 2025.\n\nWe have compute_change result: pct_change = +66.776% increase, not decline. Current value 2.54B vs base 1.523B. So it's an increase, not decline.\n\nThe claim says 67% YoY decline. The actual is about 66.8% increase.\n\nWe need to decompose claim into atomic factual assertions. Claim: \"PepsiCo posted a 67% year-over-year decline in net income during Q4 2025.\"\n\nAtomic assertions:\n- PepsiCo net income declined YoY in Q4 2025 -> that's a change_pct negative\n- Magnitude 67% decline -> change_pct = -67 ?\n\nBut we should represent as change_pct with stated_value -67? The direction word \"decline\" implies negative. The example: \"Tesla revenue fell 10% YoY\": compute_change; stated_text \"fell 10%\", claim_type change_pct, comparator eq, stated_value -10. So for decline 67%, stated_value -67.\n\nWe should provide subclaims.\n\nNeed to handle verdict: The compute_change shows +66.78% increase, so decline claim is false.\n\nWe must fill all fields.\n\nWe have evidence_ids: E3 is the compute_change. Also E1 and E2 are component facts.\n\nFor sub_claim we need text, stated_text, claim_type, comparator, stated_value, evidence_ids, interpretations, verdict, note, model_found_value.\n\nWe should create one sub-claim for the decline.\n\nPotentially also need to consider Q4 2025 ambiguous fiscal vs calendar? fiscal_equals_calendar true, so only one reading needed. The guidance: If result has fiscal_equals_calendar=true, cite only one reading even when claim has no qualifier. We have that.\n\nWe have evidence E3 shows pct_change 66.776... So model_found_value should be 66.776... but for decline claim, model_found_value is +66.776, stated is -67.\n\nWe need to provide interpretations empty.\n\nComparator eq? The claim says \"67% year-over-year decline\" - that's eq with value -67. Could be approx? No hedge word about, so eq.\n\nWe should produce final JSON.\n\nNeed to ensure stated_text verbatim from claim: \"67% year-over-year decline\" including that phrase.\n\nPotentially also need to handle two subclaims? The instruction: Decompose the claim into every atomic factual assertion. Every factual assertion in the user's claim must become a sub-claim, including a value, a change, a record, and a first-time assertion in the same sentence.\n\nHere we have one change assertion. Could also argue there is implicit assertion that net income was reported for Q4 2025. But main is change.\n\nWe should provide one subclaim.\n\nWe must provide verdict: refuted or insufficient_evidence or supported. Clearly refuted, as it's an increase not decline.\n\nCompute note: explain.\n\nmodel_found_value: 66.77609980302034 (the pct_change). Could also round? Use exact from tool.\n\nEvidence_ids: [\"E3\"] . Or include E1, E2? For compute_change, cite its own evidence ID; its two nested component fact IDs may also be cited and are ignored. So E3 is required. Could add E1,E2 optionally.\n\nProvide claim_type change_pct.\n\nCheck comparator: eq.\n\nstated_value: -67 (since decline). Alternatively -67. The verifier applies sign implied by direction words. We have decline => negative.\n\nMake sure to also include text field: what is text? The sub_claim text - description of claim. Could be \"PepsiCo net income declined 67% year-over-year in Q4 2025\"\n\nProvide all fields.\n\nWe must output final JSON via user recipient? The prompt says we verify financial claims. Need to produce final sub_claims list.\n\nWe should produce output in expected format.\n\nProbably need to produce something like:\n\n{\n  \"sub_claims\": [\n    {\n      \"text\": \"...\",\n      \"stated_text\": \"67% year-over-year decline\",\n      \"claim_type\": \"change_pct\",\n      \"comparator\": \"eq\",\n      \"stated_value\": -67,\n      ...\n    }\n  ]\n}\n\nEnsure fields: text, stated_text, claim_type, comparator, stated_value, evidence_ids, interpretations, verdict, note, model_found_value.\n\nWe have interpretations empty array.\n\nEvidence_ids: [\"E3\"]\n\nVerdict: \"refuted\"\n\nNote: e.g., \"Actual YoY change was +66.8% increase (from $1.523B to $2.54B), not a decline\"\n\nModel_found_value: 66.77609980302034\n\nMake sure units: percentage points.\n\nWe should also note fiscal_equals_calendar true.\n\nPotential nuance: The claim says 67% decline, actual is 67% increase, so maybe magnitude matches but direction opposite. Could still be considered approx? But verdict refuted.\n\nWe should ensure we follow comparator deterministic: plain numeric statement with no hedge is eq. So eq correct.\n\nWe have not looked up both fiscal/calendar because fiscal_equals_calendar true. Good.\n\nWe should output final answer.\n\n"
+            }
+          }
+        ],
+        "created": 1793222807,
+        "model": "meta-models/muse-spark-open-1026",
+        "object": "chat.completion",
+        "metadata": null,
+        "moderation": null,
+        "service_tier": null,
+        "system_fingerprint": null,
+        "usage": {
+          "completion_tokens": 1267,
+          "prompt_tokens": 4970,
+          "total_tokens": 6237,
+          "completion_tokens_details": {
+            "accepted_prediction_tokens": 886,
+            "audio_tokens": 0,
+            "reasoning_tokens": 1086,
+            "rejected_prediction_tokens": 1774,
+            "text_tokens": null
+          },
+          "prompt_tokens_details": {
+            "audio_tokens": 0,
+            "cache_write_tokens": null,
+            "cached_tokens": 2560,
+            "image_tokens": null,
+            "text_tokens": null
+          }
+        }
+      },
+      "usage": {
+        "input": 4970,
+        "cached": 2560,
+        "output": 1267,
+        "reasoning": 1086
+      },
+      "cost": 0.00878125,
+      "latency_ms": 7107.47,
+      "status": "completed",
+      "raw_usage": {
+        "completion_tokens": 1267,
+        "prompt_tokens": 4970,
+        "total_tokens": 6237,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": 886,
+          "audio_tokens": 0,
+          "reasoning_tokens": 1086,
+          "rejected_prediction_tokens": 1774,
+          "text_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": 0,
+          "cache_write_tokens": null,
+          "cached_tokens": 2560,
+          "image_tokens": null,
+          "text_tokens": null
+        }
+      },
+      "normalized_usage": {
+        "input": 4970,
+        "cached": 2560,
+        "output": 1267,
+        "reasoning": 1086
+      },
+      "finish_reason": "stop",
+      "rate_limit_headers": {
+        "x-ratelimit-limit-requests": "100",
+        "x-ratelimit-limit-tokens": "2000000",
+        "x-ratelimit-remaining-requests": "50",
+        "x-ratelimit-remaining-tokens": "2000000"
+      }
+    },
+    {
+      "request": {
+        "model": "meta-models/muse-spark-open-1026",
+        "messages": [
+          {
+            "role": "system",
+            "content": "You verify financial claims against SEC EDGAR facts.\nDecompose the claim into every atomic factual assertion. Every factual assertion\nin the user's claim must become a sub-claim, including a value, a change, a\nrecord, and a first-time assertion in the same sentence. Assertions that the\ntools cannot check must still become a sub-claim with claim_type other; the\nprogram will leave those unchecked. Use lookup_fact for a value,\ncompute_change for YoY or other period-to-period growth, history_rank for\nrecord/first-time assertions, and list_periods only to understand missing data.\nNever use memory for numbers. A quarter must have period_type=quarter and\nduration_days around 80-100, not period_type=ytd. If a result has derived=true,\nuse its derivation and components as evidence and do not calculate that fact\nagain. For compute_change, cite its own evidence ID; its two nested component\nfact IDs may also be cited and are ignored by the verifier.\n\nEach final sub_claim must contain exactly these model fields:\ntext, stated_text, claim_type (value, change_pct, change_abs, record_high,\nrecord_low, first_time_above, or other), comparator (eq, approx, gt, gte, lt,\nor lte), stated_value in base units (USD, USD/share, percentage points, or 1\nfor a record boolean), evidence_ids, interpretations, verdict, note, and\nmodel_found_value. interpretations is required and may be empty. Every non-empty\nitem must be an evidence id like E3 — never free text.\nCopy stated_text verbatim from the claim, including words such as \"about\",\n\"up\", or \"fell\" (for example, \"about $1.4 billion\", \"up 22%\", or\n\"fell 10%\"). For a change_pct, stated_value is 22 for 22%, not 0.22; the\nverifier applies the sign implied by direction words such as fell/down or\nrose/up. model_found_value is the number read from the cited evidence in the\nsame units, or null when it is missing.\n\nComparator wording is deterministic: a plain numeric statement with no hedge\nor inequality phrase is eq; about/around/roughly/approximately/nearly/almost,\nclose to, some, or ~ means approx; topped/exceeded/above/more than/over/\nsurpassed/beat means gt; at least/no less than means gte; below/under/less\nthan/short of means lt; at most/no more than/up to means lte. The program\nrecords and may correct the model comparator from these words. \"up\" and\n\"fell\" describe change direction, not approximation.\n\nFor a quarter claim at a non-calendar-fiscal issuer, use period_basis from\nthe tool results. If the claim says neither fiscal nor calendar, look up both\nthe calendar label (for example 2025Q4) and the fiscal label (for example\nFY2025Q4), cite both IDs in evidence_ids, and put those two IDs in\ninterpretations. Keep interpretations empty unless both fiscal and calendar\nreadings were looked up. If the claim says fiscal, cite only the fiscal\nreading; if it says calendar, cite only the calendar reading. When a lookup or\ncompute result has fiscal_equals_calendar=true, the issuer's fiscal year is the\ncalendar year: fiscal and calendar labels refer to the same underlying facts,\nso look up and cite only one reading even when the claim has no\nfiscal/calendar qualifier.\n\nExamples:\n1. \"Tesla net income was about $1.4 billion\": lookup_fact; stated_text\n   \"about $1.4 billion\", claim_type value, comparator approx, stated_value\n   1400000000.\n2. \"Alphabet revenue exceeded $100 billion\": lookup_fact; stated_text\n   \"exceeded $100 billion\", claim_type value, comparator gt, stated_value\n   100000000000.\n3. \"Meta revenue was up 22% YoY\": compute_change(META, revenue, 2025Q2,\n   null); stated_text \"up 22%\", claim_type change_pct, comparator eq,\n   stated_value 22, and cite the compute_change evidence ID.\n4. \"Tesla revenue fell 10% YoY\": compute_change(TSLA, revenue, 2025Q3,\n   null); stated_text \"fell 10%\", claim_type change_pct, comparator eq,\n   stated_value -10, and cite the compute_change evidence ID.\n5. \"Alphabet Q3 2025 revenue was a record high\": history_rank(GOOGL,\n   revenue, 2025Q3); claim_type record_high, comparator eq, stated_value 1,\n   and cite the history_rank evidence ID.\n6. \"Alphabet Q3 2025 revenue topped $100 billion for the first time\": create\n   two sub-claims: value gt 100000000000 and first_time_above with stated_value\n   100000000000, both citing the relevant evidence; the latter is supported\n   only when this period is above the threshold and no earlier comparable\n   period is above it.\n7. If a requested fact is unavailable, leave model_found_value null, cite any\n   relevant evidence, and set that sub-claim to insufficient_evidence. Say\n   insufficient_evidence when data is missing or evidence is ambiguous."
+          },
+          {
+            "role": "user",
+            "content": "PepsiCo posted a 67% year-over-year decline in net income during Q4 2025."
+          },
+          {
+            "role": "assistant",
+            "content": null,
+            "tool_calls": [
+              {
+                "id": "chatcmpl-tool-786491d7ee994929bd5a9def36dee88d",
+                "type": "function",
+                "function": {
+                  "name": "compute_change",
+                  "arguments": "{\"ticker\": \"PEP\", \"metric\": \"net_income\", \"period\": \"2025Q4\", \"base_period\": \"2024Q4\"}"
+                }
+              }
+            ]
+          },
+          {
+            "role": "tool",
+            "tool_call_id": "chatcmpl-tool-786491d7ee994929bd5a9def36dee88d",
+            "content": "{\"ticker\":\"PEP\",\"metric\":\"net_income\",\"period\":\"2025Q4\",\"base_period\":\"2024Q4\",\"period_basis\":\"calendar\",\"current_fact\":{\"ticker\":\"PEP\",\"cik\":\"0000077476\",\"entity\":\"PEPSICO INC\",\"metric\":\"net_income\",\"concept\":\"NetIncomeLoss\",\"unit\":\"USD\",\"value\":2540000000,\"start\":\"2025-09-07\",\"end\":\"2025-12-27\",\"form\":\"derived\",\"form_fallback\":false,\"accn\":null,\"filed\":\"2026-10-08\",\"frame\":null,\"fiscal_year\":2025,\"fiscal_period\":\"FY\",\"duration_days\":112,\"period_type\":\"quarter\",\"fiscal_equals_calendar\":true,\"derived\":true,\"derivation\":\"FY2025 - 9M YTD\",\"components\":[{\"value\":8240000000,\"start\":\"2024-12-29\",\"end\":\"2025-12-27\",\"accn\":\"0000077476-26-000007\",\"form\":\"10-K\",\"filed\":\"2026-02-03\",\"duration_days\":364,\"period_type\":\"annual\",\"provenance\":{\"tier\":\"L1\",\"audited\":true,\"confirmations\":1,\"forms\":[\"10-K\"],\"first_filed\":\"2026-02-03\",\"latest_filed\":\"2026-02-03\",\"restated\":false,\"amended\":false,\"strength\":\"medium\"}},{\"value\":5700000000,\"start\":\"2024-12-29\",\"end\":\"2025-09-06\",\"accn\":\"0000077476-26-000048\",\"form\":\"10-Q\",\"filed\":\"2026-10-08\",\"duration_days\":252,\"period_type\":\"ytd\",\"provenance\":{\"tier\":\"L2\",\"audited\":false,\"confirmations\":2,\"forms\":[\"10-Q\"],\"first_filed\":\"2025-10-09\",\"latest_filed\":\"2026-10-08\",\"restated\":false,\"amended\":false,\"strength\":\"medium\"}}],\"filing_url\":null,\"source_sha256\":\"4a734cc934f3cf9f129fc15657589d4c6c82138f1bd889023c11170d97990d8d\",\"provenance\":{\"tier\":\"L3\",\"component_tiers\":[\"L1\",\"L2\"],\"component_strengths\":[\"medium\",\"medium\"],\"audited\":false,\"confirmations\":0,\"forms\":[\"derived\"],\"first_filed\":\"2025-10-09\",\"latest_filed\":\"2026-10-08\",\"restated\":false,\"amended\":false,\"strength\":\"medium\"},\"period\":\"2025Q4\",\"period_basis\":\"calendar\",\"evidence_id\":\"E1\"},\"base_fact\":{\"ticker\":\"PEP\",\"cik\":\"0000077476\",\"entity\":\"PEPSICO INC\",\"metric\":\"net_income\",\"concept\":\"NetIncomeLoss\",\"unit\":\"USD\",\"value\":1523000000,\"start\":\"2024-09-08\",\"end\":\"2024-12-28\",\"form\":\"derived\",\"form_fallback\":false,\"accn\":null,\"filed\":\"2026-02-03\",\"frame\":null,\"fiscal_year\":2024,\"fiscal_period\":\"FY\",\"duration_days\":112,\"period_type\":\"quarter\",\"fiscal_equals_calendar\":true,\"derived\":true,\"derivation\":\"FY2024 - 9M YTD\",\"components\":[{\"value\":9578000000,\"start\":\"2023-12-31\",\"end\":\"2024-12-28\",\"accn\":\"0000077476-26-000007\",\"form\":\"10-K\",\"filed\":\"2026-02-03\",\"duration_days\":364,\"period_type\":\"annual\",\"provenance\":{\"tier\":\"L1\",\"audited\":true,\"confirmations\":3,\"forms\":[\"10-K\",\"8-K\"],\"first_filed\":\"2025-02-04\",\"latest_filed\":\"2026-02-03\",\"restated\":false,\"amended\":false,\"strength\":\"high\"}},{\"value\":8055000000,\"start\":\"2023-12-31\",\"end\":\"2024-09-07\",\"accn\":\"0000077476-25-000053\",\"form\":\"10-Q\",\"filed\":\"2025-10-09\",\"duration_days\":252,\"period_type\":\"ytd\",\"provenance\":{\"tier\":\"L2\",\"audited\":false,\"confirmations\":2,\"forms\":[\"10-Q\"],\"first_filed\":\"2024-10-08\",\"latest_filed\":\"2025-10-09\",\"restated\":false,\"amended\":false,\"strength\":\"medium\"}}],\"filing_url\":null,\"source_sha256\":\"4a734cc934f3cf9f129fc15657589d4c6c82138f1bd889023c11170d97990d8d\",\"provenance\":{\"tier\":\"L3\",\"component_tiers\":[\"L1\",\"L2\"],\"component_strengths\":[\"high\",\"medium\"],\"audited\":false,\"confirmations\":0,\"forms\":[\"derived\"],\"first_filed\":\"2024-10-08\",\"latest_filed\":\"2026-02-03\",\"restated\":false,\"amended\":false,\"strength\":\"medium\"},\"period\":\"2024Q4\",\"period_basis\":\"calendar\",\"evidence_id\":\"E2\"},\"current\":{\"ticker\":\"PEP\",\"cik\":\"0000077476\",\"entity\":\"PEPSICO INC\",\"metric\":\"net_income\",\"concept\":\"NetIncomeLoss\",\"unit\":\"USD\",\"value\":2540000000,\"start\":\"2025-09-07\",\"end\":\"2025-12-27\",\"form\":\"derived\",\"form_fallback\":false,\"accn\":null,\"filed\":\"2026-10-08\",\"frame\":null,\"fiscal_year\":2025,\"fiscal_period\":\"FY\",\"duration_days\":112,\"period_type\":\"quarter\",\"fiscal_equals_calendar\":true,\"derived\":true,\"derivation\":\"FY2025 - 9M YTD\",\"components\":[{\"value\":8240000000,\"start\":\"2024-12-29\",\"end\":\"2025-12-27\",\"accn\":\"0000077476-26-000007\",\"form\":\"10-K\",\"filed\":\"2026-02-03\",\"duration_days\":364,\"period_type\":\"annual\",\"provenance\":{\"tier\":\"L1\",\"audited\":true,\"confirmations\":1,\"forms\":[\"10-K\"],\"first_filed\":\"2026-02-03\",\"latest_filed\":\"2026-02-03\",\"restated\":false,\"amended\":false,\"strength\":\"medium\"}},{\"value\":5700000000,\"start\":\"2024-12-29\",\"end\":\"2025-09-06\",\"accn\":\"0000077476-26-000048\",\"form\":\"10-Q\",\"filed\":\"2026-10-08\",\"duration_days\":252,\"period_type\":\"ytd\",\"provenance\":{\"tier\":\"L2\",\"audited\":false,\"confirmations\":2,\"forms\":[\"10-Q\"],\"first_filed\":\"2025-10-09\",\"latest_filed\":\"2026-10-08\",\"restated\":false,\"amended\":false,\"strength\":\"medium\"}}],\"filing_url\":null,\"source_sha256\":\"4a734cc934f3cf9f129fc15657589d4c6c82138f1bd889023c11170d97990d8d\",\"provenance\":{\"tier\":\"L3\",\"component_tiers\":[\"L1\",\"L2\"],\"component_strengths\":[\"medium\",\"medium\"],\"audited\":false,\"confirmations\":0,\"forms\":[\"derived\"],\"first_filed\":\"2025-10-09\",\"latest_filed\":\"2026-10-08\",\"restated\":false,\"amended\":false,\"strength\":\"medium\"},\"period\":\"2025Q4\",\"period_basis\":\"calendar\",\"evidence_id\":\"E1\"},\"base\":{\"ticker\":\"PEP\",\"cik\":\"0000077476\",\"entity\":\"PEPSICO INC\",\"metric\":\"net_income\",\"concept\":\"NetIncomeLoss\",\"unit\":\"USD\",\"value\":1523000000,\"start\":\"2024-09-08\",\"end\":\"2024-12-28\",\"form\":\"derived\",\"form_fallback\":false,\"accn\":null,\"filed\":\"2026-02-03\",\"frame\":null,\"fiscal_year\":2024,\"fiscal_period\":\"FY\",\"duration_days\":112,\"period_type\":\"quarter\",\"fiscal_equals_calendar\":true,\"derived\":true,\"derivation\":\"FY2024 - 9M YTD\",\"components\":[{\"value\":9578000000,\"start\":\"2023-12-31\",\"end\":\"2024-12-28\",\"accn\":\"0000077476-26-000007\",\"form\":\"10-K\",\"filed\":\"2026-02-03\",\"duration_days\":364,\"period_type\":\"annual\",\"provenance\":{\"tier\":\"L1\",\"audited\":true,\"confirmations\":3,\"forms\":[\"10-K\",\"8-K\"],\"first_filed\":\"2025-02-04\",\"latest_filed\":\"2026-02-03\",\"restated\":false,\"amended\":false,\"strength\":\"high\"}},{\"value\":8055000000,\"start\":\"2023-12-31\",\"end\":\"2024-09-07\",\"accn\":\"0000077476-25-000053\",\"form\":\"10-Q\",\"filed\":\"2025-10-09\",\"duration_days\":252,\"period_type\":\"ytd\",\"provenance\":{\"tier\":\"L2\",\"audited\":false,\"confirmations\":2,\"forms\":[\"10-Q\"],\"first_filed\":\"2024-10-08\",\"latest_filed\":\"2025-10-09\",\"restated\":false,\"amended\":false,\"strength\":\"medium\"}}],\"filing_url\":null,\"source_sha256\":\"4a734cc934f3cf9f129fc15657589d4c6c82138f1bd889023c11170d97990d8d\",\"provenance\":{\"tier\":\"L3\",\"component_tiers\":[\"L1\",\"L2\"],\"component_strengths\":[\"high\",\"medium\"],\"audited\":false,\"confirmations\":0,\"forms\":[\"derived\"],\"first_filed\":\"2024-10-08\",\"latest_filed\":\"2026-02-03\",\"restated\":false,\"amended\":false,\"strength\":\"medium\"},\"period\":\"2024Q4\",\"period_basis\":\"calendar\",\"evidence_id\":\"E2\"},\"abs_change\":1017000000,\"pct_change\":66.77609980302034,\"fiscal_equals_calendar\":true,\"evidence_id\":\"E3\"}"
+          },
+          {
+            "role": "assistant",
+            "content": "{\"sub_claims\": [{\"text\": \"PepsiCo net income declined 67% year-over-year in Q4 2025\", \"stated_text\": \"67% year-over-year decline\", \"claim_type\": \"change_pct\", \"comparator\": \"eq\", \"stated_value\": -67, \"evidence_ids\": [\"E3\"], \"interpretations\": [], \"verdict\": \"refuted\", \"note\": \"SEC EDGAR derived Q4 net income rose from $1,523,000,000 in 2024Q4 to $2,540,000,000 in 2025Q4, a +66.78% YoY increase, not a 67% decline; fiscal_equals_calendar=true so single calendar basis applies.\", \"model_found_value\": 66.77609980302034}]}"
+          },
+          {
+            "role": "user",
+            "content": "Return only one plain JSON object for the final verdict. Do not use Markdown fences or explanatory text. Include every atomic factual assertion as a sub-claim, including claim_type other when the tools cannot check it. Copy stated_text verbatim from the claim and include claim_type, comparator, stated_value in base units, evidence_ids, interpretations (evidence ids like E3 — never free text), verdict, model_found_value, and a concise note. The object must match this existing verdict schema: {\"type\":\"object\",\"properties\":{\"verdict\":{\"type\":\"string\",\"enum\":[\"supported\",\"contradicted\",\"insufficient_evidence\"]},\"summary\":{\"type\":\"string\"},\"sub_claims\":{\"type\":\"array\",\"items\":{\"type\":\"object\",\"properties\":{\"text\":{\"type\":\"string\"},\"stated_text\":{\"type\":\"string\"},\"claim_type\":{\"type\":\"string\",\"enum\":[\"value\",\"change_pct\",\"change_abs\",\"record_high\",\"record_low\",\"first_time_above\",\"other\"]},\"comparator\":{\"type\":\"string\",\"enum\":[\"eq\",\"approx\",\"gt\",\"gte\",\"lt\",\"lte\"]},\"stated_value\":{\"type\":[\"number\",\"null\"]},\"evidence_ids\":{\"type\":\"array\",\"items\":{\"type\":\"string\"}},\"interpretations\":{\"type\":\"array\",\"items\":{\"type\":\"string\",\"description\":\"evidence id like E3 — never free text\"}},\"verdict\":{\"type\":\"string\",\"enum\":[\"supported\",\"contradicted\",\"insufficient_evidence\"]},\"note\":{\"type\":\"string\"},\"model_found_value\":{\"type\":[\"number\",\"null\"]}},\"required\":[\"text\",\"stated_text\",\"claim_type\",\"comparator\",\"stated_value\",\"evidence_ids\",\"interpretations\",\"verdict\",\"note\",\"model_found_value\"],\"additionalProperties\":false}}},\"required\":[\"verdict\",\"summary\",\"sub_claims\"],\"additionalProperties\":false}"
+          }
+        ],
+        "max_tokens": 3000
+      },
+      "reservation": {
+        "reservation_id": "17a88c1cb00e484bb2ed86e0eb8defdd",
+        "provider": "baseten",
+        "model": "meta-models/muse-spark-open-1026",
+        "estimated_input_tokens": 5092,
+        "max_output_tokens": 3000,
+        "amount": 0.019115,
+        "payload_chars": 15276,
+        "context_chars": 0
+      },
+      "raw_response": {
+        "id": "chatcmpl-2fbeea1677aa4ffbb443d92eefcd8e94",
+        "choices": [
+          {
+            "finish_reason": "stop",
+            "index": 0,
+            "logprobs": null,
+            "message": {
+              "content": "{\"verdict\":\"contradicted\",\"summary\":\"SEC EDGAR derived Q4 net income was $2,540,000,000 in 2025Q4 vs $1,523,000,000 in 2024Q4, a +66.78% YoY increase, contradicting the claimed 67% YoY decline.\",\"sub_claims\":[{\"text\":\"PepsiCo net income declined 67% year-over-year in Q4 2025\",\"stated_text\":\"67% year-over-year decline\",\"claim_type\":\"change_pct\",\"comparator\":\"eq\",\"stated_value\":-67,\"evidence_ids\":[\"E3\"],\"interpretations\":[],\"verdict\":\"contradicted\",\"note\":\"Derived Q4 net income rose from $1,523,000,000 to $2,540,000,000 (+66.78%), not a 67% decline; fiscal_equals_calendar=true.\",\"model_found_value\":66.77609980302034}]}",
+              "refusal": null,
+              "role": "assistant",
+              "annotations": null,
+              "audio": null,
+              "function_call": null,
+              "tool_calls": null,
+              "reasoning_content": "Need to return only one plain JSON object for final verdict, no markdown fences, matching schema.\n\nWe need to include every atomic factual assertion as sub-claim. The claim: \"PepsiCo posted a 67% year-over-year decline in net income during Q4 2025.\"\n\nWe have computed change: pct_change 66.776... increase, not decline. So claim is contradicted.\n\nWe need to produce verdict object: overall verdict contradicted, summary, sub_claims.\n\nWe need to consider interpretation: fiscal_equals_calendar true, so only one reading. But we need to include sub-claim for the change_pct.\n\nWe already have evidence id E3. Need to produce JSON with fields.\n\nWe need to set text, stated_text, claim_type, comparator, stated_value, evidence_ids, interpretations, verdict, note, model_found_value.\n\nFor this claim: text: \"PepsiCo net income declined 67% year-over-year in Q4 2025\" maybe. stated_text \"67% year-over-year decline\" — we need verbatim from claim. The claim phrase is \"67% year-over-year decline\". So stated_text should be exactly that substring.\n\nclaim_type change_pct, comparator eq, stated_value -67 (since decline implies negative). Evidence_ids [\"E3\"], interpretations [], verdict contradicted, note explaining derived values, model_found_value 66.77609980302034\n\nOverall verdict contradicted.\n\nWe also must consider if need other sub_claims? The claim includes \"PepsiCo posted ... in net income during Q4 2025\" — that's the same assertion. Possibly also need to capture period assertion but that's part of change.\n\nThe system requires every atomic factual assertion as sub-claim, including claim_type other when tools cannot check it. But here we have one measurable assertion. Should we also include \"PepsiCo posted ... net income during Q4 2025\" as other? Probably not needed; the change_pct captures it. But to be safe, include just one sub-claim.\n\nWe must ensure JSON matches schema: verdict can be \"supported\",\"contradicted\",\"insufficient_evidence\" — but the sub-claim verdict also same enum. In earlier assistant output, used \"refuted\" but schema expects \"contradicted\". So we must use \"contradicted\".\n\nOverall verdict: contradicted.\n\nProvide summary.\n\nWe need to include interpretations array with evidence ids never free text. Empty is okay.\n\nWe must provide stated_value in base units. For change_pct, -67.\n\nComparator eq.\n\nWe must not use markdown fences.\n\nWe should also ensure we cite evidence correctly: E3 is compute_change.\n\nPotentially also need to include model_found_value as the pct_change value. That's 66.776...\n\nMake JSON exactly.\n\nWe should also note fiscal_equals_calendar.\n\nWe need to produce final JSON object only.\n\nEnsure no explanatory text outside JSON.\n\nWe should double-check numbers: current 2,540,000,000 vs base 1,523,000,000 increase 66.77%. So claim of decline 67% is wrong sign and direction.\n\nThus verdict contradicted.\n\nWe need to provide summary string.\n\nMake sure to follow required fields: type object properties verdict summary sub_claims.\n\nSub_claims items require all fields.\n\nProvide note concise.\n\nLet's output:\n\n{\n  \"verdict\": \"contradicted\",\n  \"summary\": \"SEC EDGAR derived Q4 net income rose 66.8% YoY (from $1.523B to $2.54B), contradicting claimed 67% decline.\",\n  \"sub_claims\": [...]\n}\n\nEnsure correct JSON syntax, numbers not quoted.\n\nInclude stated_value -67, model_found_value 66.77609980302034\n\nWe might want to round? Keep as in tool.\n\nAdd evidence_ids [\"E3\"].\n\nWe should ensure interpretations is [].\n\nLet's produce final answer.\n\nAlso need to consider that the user wants to return only one plain JSON object for final verdict. So we should not include anything else.\n\nWe must ensure we use double quotes.\n\nWe should include text field: perhaps \"PepsiCo net income declined 67% year-over-year in Q4 2025\"\n\nstated_text verbatim: \"67% year-over-year decline\"\n\nThat matches.\n\nProvide claim_type change_pct, comparator eq, stated_value -67, evidence_ids [\"E3\"], interpretations [], verdict contradicted, note ..., model_found_value 66.77609980302034\n\nMake note mention that fiscal_equals_calendar true.\n\nWe should ensure we don't add extra sub_claims for other.\n\nPotentially need to handle that the claim says decline, so comparator eq with -67 is correct.\n\nWe should output now.\n\n"
+            }
+          }
+        ],
+        "created": 1793222813,
+        "model": "meta-models/muse-spark-open-1026",
+        "object": "chat.completion",
+        "metadata": null,
+        "moderation": null,
+        "service_tier": null,
+        "system_fingerprint": null,
+        "usage": {
+          "completion_tokens": 1173,
+          "prompt_tokens": 4122,
+          "total_tokens": 5295,
+          "completion_tokens_details": {
+            "accepted_prediction_tokens": 866,
+            "audio_tokens": 0,
+            "reasoning_tokens": 968,
+            "rejected_prediction_tokens": 1290,
+            "text_tokens": null
+          },
+          "prompt_tokens_details": {
+            "audio_tokens": 0,
+            "cache_write_tokens": null,
+            "cached_tokens": 1152,
+            "image_tokens": null,
+            "text_tokens": null
+          }
+        }
+      },
+      "usage": {
+        "input": 4122,
+        "cached": 1152,
+        "output": 1173,
+        "reasoning": 968
+      },
+      "cost": 0.00887055,
+      "latency_ms": 3931.872,
+      "status": "completed",
+      "raw_usage": {
+        "completion_tokens": 1173,
+        "prompt_tokens": 4122,
+        "total_tokens": 5295,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": 866,
+          "audio_tokens": 0,
+          "reasoning_tokens": 968,
+          "rejected_prediction_tokens": 1290,
+          "text_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": 0,
+          "cache_write_tokens": null,
+          "cached_tokens": 1152,
+          "image_tokens": null,
+          "text_tokens": null
+        }
+      },
+      "normalized_usage": {
+        "input": 4122,
+        "cached": 1152,
+        "output": 1173,
+        "reasoning": 968
+      },
+      "finish_reason": "stop",
+      "rate_limit_headers": {
+        "x-ratelimit-limit-requests": "100",
+        "x-ratelimit-limit-tokens": "2000000",
+        "x-ratelimit-remaining-requests": "50",
+        "x-ratelimit-remaining-tokens": "2000000"
+      }
+    }
+  ],
+  "tool_calls": [
+    {
+      "name": "compute_change",
+      "arguments": {
+        "ticker": "PEP",
+        "metric": "net_income",
+        "period": "2025Q4",
+        "base_period": "2024Q4"
+      },
+      "call_id": "chatcmpl-tool-786491d7ee994929bd5a9def36dee88d",
+      "result": {
+        "ticker": "PEP",
+        "metric": "net_income",
+        "period": "2025Q4",
+        "base_period": "2024Q4",
+        "period_basis": "calendar",
+        "current_fact": {
+          "ticker": "PEP",
+          "cik": "0000077476",
+          "entity": "PEPSICO INC",
+          "metric": "net_income",
+          "concept": "NetIncomeLoss",
+          "unit": "USD",
+          "value": 2540000000,
+          "start": "2025-09-07",
+          "end": "2025-12-27",
+          "form": "derived",
+          "form_fallback": false,
+          "accn": null,
+          "filed": "2026-10-08",
+          "frame": null,
+          "fiscal_year": 2025,
+          "fiscal_period": "FY",
+          "duration_days": 112,
+          "period_type": "quarter",
+          "fiscal_equals_calendar": true,
+          "derived": true,
+          "derivation": "FY2025 - 9M YTD",
+          "components": [
+            {
+              "value": 8240000000,
+              "start": "2024-12-29",
+              "end": "2025-12-27",
+              "accn": "0000077476-26-000007",
+              "form": "10-K",
+              "filed": "2026-02-03",
+              "duration_days": 364,
+              "period_type": "annual",
+              "provenance": {
+                "tier": "L1",
+                "audited": true,
+                "confirmations": 1,
+                "forms": [
+                  "10-K"
+                ],
+                "first_filed": "2026-02-03",
+                "latest_filed": "2026-02-03",
+                "restated": false,
+                "amended": false,
+                "strength": "medium"
+              }
+            },
+            {
+              "value": 5700000000,
+              "start": "2024-12-29",
+              "end": "2025-09-06",
+              "accn": "0000077476-26-000048",
+              "form": "10-Q",
+              "filed": "2026-10-08",
+              "duration_days": 252,
+              "period_type": "ytd",
+              "provenance": {
+                "tier": "L2",
+                "audited": false,
+                "confirmations": 2,
+                "forms": [
+                  "10-Q"
+                ],
+                "first_filed": "2025-10-09",
+                "latest_filed": "2026-10-08",
+                "restated": false,
+                "amended": false,
+                "strength": "medium"
+              }
+            }
+          ],
+          "filing_url": null,
+          "source_sha256": "4a734cc934f3cf9f129fc15657589d4c6c82138f1bd889023c11170d97990d8d",
+          "provenance": {
+            "tier": "L3",
+            "component_tiers": [
+              "L1",
+              "L2"
+            ],
+            "component_strengths": [
+              "medium",
+              "medium"
+            ],
+            "audited": false,
+            "confirmations": 0,
+            "forms": [
+              "derived"
+            ],
+            "first_filed": "2025-10-09",
+            "latest_filed": "2026-10-08",
+            "restated": false,
+            "amended": false,
+            "strength": "medium"
+          },
+          "period": "2025Q4",
+          "period_basis": "calendar",
+          "evidence_id": "E1"
+        },
+        "base_fact": {
+          "ticker": "PEP",
+          "cik": "0000077476",
+          "entity": "PEPSICO INC",
+          "metric": "net_income",
+          "concept": "NetIncomeLoss",
+          "unit": "USD",
+          "value": 1523000000,
+          "start": "2024-09-08",
+          "end": "2024-12-28",
+          "form": "derived",
+          "form_fallback": false,
+          "accn": null,
+          "filed": "2026-02-03",
+          "frame": null,
+          "fiscal_year": 2024,
+          "fiscal_period": "FY",
+          "duration_days": 112,
+          "period_type": "quarter",
+          "fiscal_equals_calendar": true,
+          "derived": true,
+          "derivation": "FY2024 - 9M YTD",
+          "components": [
+            {
+              "value": 9578000000,
+              "start": "2023-12-31",
+              "end": "2024-12-28",
+              "accn": "0000077476-26-000007",
+              "form": "10-K",
+              "filed": "2026-02-03",
+              "duration_days": 364,
+              "period_type": "annual",
+              "provenance": {
+                "tier": "L1",
+                "audited": true,
+                "confirmations": 3,
+                "forms": [
+                  "10-K",
+                  "8-K"
+                ],
+                "first_filed": "2025-02-04",
+                "latest_filed": "2026-02-03",
+                "restated": false,
+                "amended": false,
+                "strength": "high"
+              }
+            },
+            {
+              "value": 8055000000,
+              "start": "2023-12-31",
+              "end": "2024-09-07",
+              "accn": "0000077476-25-000053",
+              "form": "10-Q",
+              "filed": "2025-10-09",
+              "duration_days": 252,
+              "period_type": "ytd",
+              "provenance": {
+                "tier": "L2",
+                "audited": false,
+                "confirmations": 2,
+                "forms": [
+                  "10-Q"
+                ],
+                "first_filed": "2024-10-08",
+                "latest_filed": "2025-10-09",
+                "restated": false,
+                "amended": false,
+                "strength": "medium"
+              }
+            }
+          ],
+          "filing_url": null,
+          "source_sha256": "4a734cc934f3cf9f129fc15657589d4c6c82138f1bd889023c11170d97990d8d",
+          "provenance": {
+            "tier": "L3",
+            "component_tiers": [
+              "L1",
+              "L2"
+            ],
+            "component_strengths": [
+              "high",
+              "medium"
+            ],
+            "audited": false,
+            "confirmations": 0,
+            "forms": [
+              "derived"
+            ],
+            "first_filed": "2024-10-08",
+            "latest_filed": "2026-02-03",
+            "restated": false,
+            "amended": false,
+            "strength": "medium"
+          },
+          "period": "2024Q4",
+          "period_basis": "calendar",
+          "evidence_id": "E2"
+        },
+        "current": {
+          "ticker": "PEP",
+          "cik": "0000077476",
+          "entity": "PEPSICO INC",
+          "metric": "net_income",
+          "concept": "NetIncomeLoss",
+          "unit": "USD",
+          "value": 2540000000,
+          "start": "2025-09-07",
+          "end": "2025-12-27",
+          "form": "derived",
+          "form_fallback": false,
+          "accn": null,
+          "filed": "2026-10-08",
+          "frame": null,
+          "fiscal_year": 2025,
+          "fiscal_period": "FY",
+          "duration_days": 112,
+          "period_type": "quarter",
+          "fiscal_equals_calendar": true,
+          "derived": true,
+          "derivation": "FY2025 - 9M YTD",
+          "components": [
+            {
+              "value": 8240000000,
+              "start": "2024-12-29",
+              "end": "2025-12-27",
+              "accn": "0000077476-26-000007",
+              "form": "10-K",
+              "filed": "2026-02-03",
+              "duration_days": 364,
+              "period_type": "annual",
+              "provenance": {
+                "tier": "L1",
+                "audited": true,
+                "confirmations": 1,
+                "forms": [
+                  "10-K"
+                ],
+                "first_filed": "2026-02-03",
+                "latest_filed": "2026-02-03",
+                "restated": false,
+                "amended": false,
+                "strength": "medium"
+              }
+            },
+            {
+              "value": 5700000000,
+              "start": "2024-12-29",
+              "end": "2025-09-06",
+              "accn": "0000077476-26-000048",
+              "form": "10-Q",
+              "filed": "2026-10-08",
+              "duration_days": 252,
+              "period_type": "ytd",
+              "provenance": {
+                "tier": "L2",
+                "audited": false,
+                "confirmations": 2,
+                "forms": [
+                  "10-Q"
+                ],
+                "first_filed": "2025-10-09",
+                "latest_filed": "2026-10-08",
+                "restated": false,
+                "amended": false,
+                "strength": "medium"
+              }
+            }
+          ],
+          "filing_url": null,
+          "source_sha256": "4a734cc934f3cf9f129fc15657589d4c6c82138f1bd889023c11170d97990d8d",
+          "provenance": {
+            "tier": "L3",
+            "component_tiers": [
+              "L1",
+              "L2"
+            ],
+            "component_strengths": [
+              "medium",
+              "medium"
+            ],
+            "audited": false,
+            "confirmations": 0,
+            "forms": [
+              "derived"
+            ],
+            "first_filed": "2025-10-09",
+            "latest_filed": "2026-10-08",
+            "restated": false,
+            "amended": false,
+            "strength": "medium"
+          },
+          "period": "2025Q4",
+          "period_basis": "calendar",
+          "evidence_id": "E1"
+        },
+        "base": {
+          "ticker": "PEP",
+          "cik": "0000077476",
+          "entity": "PEPSICO INC",
+          "metric": "net_income",
+          "concept": "NetIncomeLoss",
+          "unit": "USD",
+          "value": 1523000000,
+          "start": "2024-09-08",
+          "end": "2024-12-28",
+          "form": "derived",
+          "form_fallback": false,
+          "accn": null,
+          "filed": "2026-02-03",
+          "frame": null,
+          "fiscal_year": 2024,
+          "fiscal_period": "FY",
+          "duration_days": 112,
+          "period_type": "quarter",
+          "fiscal_equals_calendar": true,
+          "derived": true,
+          "derivation": "FY2024 - 9M YTD",
+          "components": [
+            {
+              "value": 9578000000,
+              "start": "2023-12-31",
+              "end": "2024-12-28",
+              "accn": "0000077476-26-000007",
+              "form": "10-K",
+              "filed": "2026-02-03",
+              "duration_days": 364,
+              "period_type": "annual",
+              "provenance": {
+                "tier": "L1",
+                "audited": true,
+                "confirmations": 3,
+                "forms": [
+                  "10-K",
+                  "8-K"
+                ],
+                "first_filed": "2025-02-04",
+                "latest_filed": "2026-02-03",
+                "restated": false,
+                "amended": false,
+                "strength": "high"
+              }
+            },
+            {
+              "value": 8055000000,
+              "start": "2023-12-31",
+              "end": "2024-09-07",
+              "accn": "0000077476-25-000053",
+              "form": "10-Q",
+              "filed": "2025-10-09",
+              "duration_days": 252,
+              "period_type": "ytd",
+              "provenance": {
+                "tier": "L2",
+                "audited": false,
+                "confirmations": 2,
+                "forms": [
+                  "10-Q"
+                ],
+                "first_filed": "2024-10-08",
+                "latest_filed": "2025-10-09",
+                "restated": false,
+                "amended": false,
+                "strength": "medium"
+              }
+            }
+          ],
+          "filing_url": null,
+          "source_sha256": "4a734cc934f3cf9f129fc15657589d4c6c82138f1bd889023c11170d97990d8d",
+          "provenance": {
+            "tier": "L3",
+            "component_tiers": [
+              "L1",
+              "L2"
+            ],
+            "component_strengths": [
+              "high",
+              "medium"
+            ],
+            "audited": false,
+            "confirmations": 0,
+            "forms": [
+              "derived"
+            ],
+            "first_filed": "2024-10-08",
+            "latest_filed": "2026-02-03",
+            "restated": false,
+            "amended": false,
+            "strength": "medium"
+          },
+          "period": "2024Q4",
+          "period_basis": "calendar",
+          "evidence_id": "E2"
+        },
+        "abs_change": 1017000000,
+        "pct_change": 66.77609980302034,
+        "fiscal_equals_calendar": true,
+        "evidence_id": "E3"
+      }
+    }
+  ],
+  "usage": [
+    {
+      "input": 2677,
+      "cached": 2560,
+      "output": 614,
+      "reasoning": 482
+    },
+    {
+      "input": 4970,
+      "cached": 2560,
+      "output": 1267,
+      "reasoning": 1086
+    },
+    {
+      "input": 4122,
+      "cached": 1152,
+      "output": 1173,
+      "reasoning": 968
+    }
+  ],
+  "tokens": {
+    "input": 11769,
+    "cached": 6272,
+    "output": 3054,
+    "reasoning": 2536
+  },
+  "model_calls": 3,
+  "cost": 0.02079155,
+  "cost_usd": 0.02079155,
+  "latency_ms": 13575.775,
+  "tool_call_count": 1,
+  "incomplete_turns": [],
+  "previous_response_fallback": false,
+  "final_verdict": {
+    "verdict": "contradicted",
+    "summary": "SEC EDGAR derived Q4 net income was $2,540,000,000 in 2025Q4 vs $1,523,000,000 in 2024Q4, a +66.78% YoY increase, contradicting the claimed 67% YoY decline.",
+    "sub_claims": [
+      {
+        "text": "PepsiCo net income declined 67% year-over-year in Q4 2025",
+        "stated_text": "67% year-over-year decline",
+        "claim_type": "change_pct",
+        "comparator": "eq",
+        "stated_value": -67.0,
+        "verdict": "contradicted",
+        "evidence_ids": [
+          "E3"
+        ],
+        "interpretations": [],
+        "model_found_value": 66.77609980302034,
+        "note": "Derived Q4 net income rose from $1,523,000,000 to $2,540,000,000 (+66.78%), not a 67% decline; fiscal_equals_calendar=true.",
+        "evidence_valid": true,
+        "program_verdict": "contradicted",
+        "actual_value": 66.77609980302034,
+        "tolerance": 0.5,
+        "reason": "actual 66.7761 is not consistent with stated -67 using eq tolerance 0.5",
+        "disagreement": false,
+        "precision": 0.5,
+        "stated_value_used": -67.0,
+        "period_ambiguous": false,
+        "program_added_interpretation": false,
+        "program_evidence_ids": [],
+        "invalid_interpretations": false,
+        "deduplicated_evidence": [],
+        "stated_value_corrected": false,
+        "stated_text_unparsed": false,
+        "stated_sign_corrected": false,
+        "threshold_from_model": false,
+        "model_comparator": "eq",
+        "comparator_corrected": false,
+        "evidence_strength": "medium",
+        "evidence_summary": "Evidence: derived L3 (L1/L2 components), not restated",
+        "restated_evidence": false
+      }
+    ],
+    "model_verdict": "contradicted",
+    "program_checks": [
+      {
+        "text": "PepsiCo net income declined 67% year-over-year in Q4 2025",
+        "stated_value": -67.0,
+        "evidence_ids": [
+          "E3"
+        ],
+        "evidence_valid": true,
+        "program_verdict": "contradicted",
+        "actual_value": 66.77609980302034,
+        "tolerance": 0.5,
+        "reason": "actual 66.7761 is not consistent with stated -67 using eq tolerance 0.5",
+        "disagreement": false,
+        "precision": 0.5,
+        "stated_value_used": -67.0,
+        "comparator": "eq",
+        "interpretations": [],
+        "period_ambiguous": false,
+        "program_added_interpretation": false,
+        "program_evidence_ids": [],
+        "invalid_interpretations": false,
+        "deduplicated_evidence": [],
+        "stated_value_corrected": false,
+        "stated_text_unparsed": false,
+        "stated_sign_corrected": false,
+        "threshold_from_model": false,
+        "model_comparator": "eq",
+        "comparator_corrected": false,
+        "evidence_strength": "medium",
+        "evidence_summary": "Evidence: derived L3 (L1/L2 components), not restated",
+        "restated_evidence": false
+      }
+    ],
+    "evidence_strength": "medium",
+    "evidence_summary": "Evidence: derived L3 (L1/L2 components), not restated",
+    "model_program_disagreement": false
+  },
+  "program_checks": [
+    {
+      "text": "PepsiCo net income declined 67% year-over-year in Q4 2025",
+      "stated_value": -67.0,
+      "evidence_ids": [
+        "E3"
+      ],
+      "evidence_valid": true,
+      "program_verdict": "contradicted",
+      "actual_value": 66.77609980302034,
+      "tolerance": 0.5,
+      "reason": "actual 66.7761 is not consistent with stated -67 using eq tolerance 0.5",
+      "disagreement": false,
+      "precision": 0.5,
+      "stated_value_used": -67.0,
+      "comparator": "eq",
+      "interpretations": [],
+      "period_ambiguous": false,
+      "program_added_interpretation": false,
+      "program_evidence_ids": [],
+      "invalid_interpretations": false,
+      "deduplicated_evidence": [],
+      "stated_value_corrected": false,
+      "stated_text_unparsed": false,
+      "stated_sign_corrected": false,
+      "threshold_from_model": false,
+      "model_comparator": "eq",
+      "comparator_corrected": false,
+      "evidence_strength": "medium",
+      "evidence_summary": "Evidence: derived L3 (L1/L2 components), not restated",
+      "restated_evidence": false
+    }
+  ]
+}

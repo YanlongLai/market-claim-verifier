@@ -1,0 +1,1257 @@
+{
+  "claim": "In full-year 2025, Johnson & Johnson reported gross profit of $63.9 billion and revenue of $105.6 billion.",
+  "model": "accounts/fireworks/models/muse-spark-open",
+  "provider": "fireworks",
+  "requests": [
+    {
+      "request": {
+        "model": "accounts/fireworks/models/muse-spark-open",
+        "messages": [
+          {
+            "role": "system",
+            "content": "You verify financial claims against SEC EDGAR facts.\nDecompose the claim into every atomic factual assertion. Every factual assertion\nin the user's claim must become a sub-claim, including a value, a change, a\nrecord, and a first-time assertion in the same sentence. Assertions that the\ntools cannot check must still become a sub-claim with claim_type other; the\nprogram will leave those unchecked. Use lookup_fact for a value,\ncompute_change for YoY or other period-to-period growth, history_rank for\nrecord/first-time assertions, and list_periods only to understand missing data.\nNever use memory for numbers. A quarter must have period_type=quarter and\nduration_days around 80-100, not period_type=ytd. If a result has derived=true,\nuse its derivation and components as evidence and do not calculate that fact\nagain. For compute_change, cite its own evidence ID; its two nested component\nfact IDs may also be cited and are ignored by the verifier.\n\nEach final sub_claim must contain exactly these model fields:\ntext, stated_text, claim_type (value, change_pct, change_abs, record_high,\nrecord_low, first_time_above, or other), comparator (eq, approx, gt, gte, lt,\nor lte), stated_value in base units (USD, USD/share, percentage points, or 1\nfor a record boolean), evidence_ids, interpretations, verdict, note, and\nmodel_found_value. interpretations is required and may be empty. Every non-empty\nitem must be an evidence id like E3 — never free text.\nCopy stated_text verbatim from the claim, including words such as \"about\",\n\"up\", or \"fell\" (for example, \"about $1.4 billion\", \"up 22%\", or\n\"fell 10%\"). For a change_pct, stated_value is 22 for 22%, not 0.22; the\nverifier applies the sign implied by direction words such as fell/down or\nrose/up. model_found_value is the number read from the cited evidence in the\nsame units, or null when it is missing.\n\nComparator wording is deterministic: a plain numeric statement with no hedge\nor inequality phrase is eq; about/around/roughly/approximately/nearly/almost,\nclose to, some, or ~ means approx; topped/exceeded/above/more than/over/\nsurpassed/beat means gt; at least/no less than means gte; below/under/less\nthan/short of means lt; at most/no more than/up to means lte. The program\nrecords and may correct the model comparator from these words. \"up\" and\n\"fell\" describe change direction, not approximation.\n\nFor a quarter claim at a non-calendar-fiscal issuer, use period_basis from\nthe tool results. If the claim says neither fiscal nor calendar, look up both\nthe calendar label (for example 2025Q4) and the fiscal label (for example\nFY2025Q4), cite both IDs in evidence_ids, and put those two IDs in\ninterpretations. Keep interpretations empty unless both fiscal and calendar\nreadings were looked up. If the claim says fiscal, cite only the fiscal\nreading; if it says calendar, cite only the calendar reading. When a lookup or\ncompute result has fiscal_equals_calendar=true, the issuer's fiscal year is the\ncalendar year: fiscal and calendar labels refer to the same underlying facts,\nso look up and cite only one reading even when the claim has no\nfiscal/calendar qualifier.\n\nExamples:\n1. \"Tesla net income was about $1.4 billion\": lookup_fact; stated_text\n   \"about $1.4 billion\", claim_type value, comparator approx, stated_value\n   1400000000.\n2. \"Alphabet revenue exceeded $100 billion\": lookup_fact; stated_text\n   \"exceeded $100 billion\", claim_type value, comparator gt, stated_value\n   100000000000.\n3. \"Meta revenue was up 22% YoY\": compute_change(META, revenue, 2025Q2,\n   null); stated_text \"up 22%\", claim_type change_pct, comparator eq,\n   stated_value 22, and cite the compute_change evidence ID.\n4. \"Tesla revenue fell 10% YoY\": compute_change(TSLA, revenue, 2025Q3,\n   null); stated_text \"fell 10%\", claim_type change_pct, comparator eq,\n   stated_value -10, and cite the compute_change evidence ID.\n5. \"Alphabet Q3 2025 revenue was a record high\": history_rank(GOOGL,\n   revenue, 2025Q3); claim_type record_high, comparator eq, stated_value 1,\n   and cite the history_rank evidence ID.\n6. \"Alphabet Q3 2025 revenue topped $100 billion for the first time\": create\n   two sub-claims: value gt 100000000000 and first_time_above with stated_value\n   100000000000, both citing the relevant evidence; the latter is supported\n   only when this period is above the threshold and no earlier comparable\n   period is above it.\n7. If a requested fact is unavailable, leave model_found_value null, cite any\n   relevant evidence, and set that sub-claim to insufficient_evidence. Say\n   insufficient_evidence when data is missing or evidence is ambiguous."
+          },
+          {
+            "role": "user",
+            "content": "In full-year 2025, Johnson & Johnson reported gross profit of $63.9 billion and revenue of $105.6 billion."
+          }
+        ],
+        "tools": [
+          {
+            "type": "function",
+            "function": {
+              "name": "lookup_fact",
+              "description": "Look up one SEC EDGAR XBRL fact for a ticker, metric, and calendar quarter, fiscal quarter (FY2025Q4), or fiscal year. Successful results include period (the normalized requested label, or the resolved label for latest), period_basis (calendar or fiscal), fiscal_equals_calendar, duration_days, and period_type (quarter, ytd, annual, or instant). Additive flows may return derived=true with derivation and components; never treat a ytd result as a quarter or recompute a derived result. When fiscal_equals_calendar is true, fiscal and calendar labels identify the same fact; do not look up both readings. Every fact includes compact provenance: L1 audited 10-K, L2 reviewed 10-Q, or L3 program-derived, with confirmations, restatement, amendment, and evidence strength.",
+              "parameters": {
+                "type": "object",
+                "properties": {
+                  "ticker": {
+                    "type": "string"
+                  },
+                  "metric": {
+                    "type": "string",
+                    "enum": [
+                      "revenue",
+                      "net_income",
+                      "operating_income",
+                      "eps_diluted",
+                      "gross_profit",
+                      "total_assets",
+                      "cash",
+                      "capex",
+                      "rd_expense",
+                      "shares_outstanding"
+                    ]
+                  },
+                  "period": {
+                    "type": "string",
+                    "pattern": "^(latest|FY\\d{4}(?:Q[1-4])?|\\d{4}Q[1-4])$"
+                  }
+                },
+                "required": [
+                  "ticker",
+                  "metric",
+                  "period"
+                ],
+                "additionalProperties": false
+              }
+            }
+          },
+          {
+            "type": "function",
+            "function": {
+              "name": "list_periods",
+              "description": "List the recent directly available SEC EDGAR quarter and fiscal-year periods for a ticker and metric.",
+              "parameters": {
+                "type": "object",
+                "properties": {
+                  "ticker": {
+                    "type": "string"
+                  },
+                  "metric": {
+                    "type": "string",
+                    "enum": [
+                      "revenue",
+                      "net_income",
+                      "operating_income",
+                      "eps_diluted",
+                      "gross_profit",
+                      "total_assets",
+                      "cash",
+                      "capex",
+                      "rd_expense",
+                      "shares_outstanding"
+                    ]
+                  }
+                },
+                "required": [
+                  "ticker",
+                  "metric"
+                ],
+                "additionalProperties": false
+              }
+            }
+          },
+          {
+            "type": "function",
+            "function": {
+              "name": "compute_change",
+              "description": "Compute the absolute and year-over-year change for one SEC EDGAR XBRL metric. The period and base_period must be the same kind of period; when base_period is omitted, null, empty, \"null\", or \"none\", use the same quarter or fiscal year one year earlier. The result includes both cited lookup facts, fiscal_equals_calendar, their fact-level provenance, and a percentage change in percent points.",
+              "parameters": {
+                "type": "object",
+                "properties": {
+                  "ticker": {
+                    "type": "string"
+                  },
+                  "metric": {
+                    "type": "string",
+                    "enum": [
+                      "revenue",
+                      "net_income",
+                      "operating_income",
+                      "eps_diluted",
+                      "gross_profit",
+                      "total_assets",
+                      "cash",
+                      "capex",
+                      "rd_expense",
+                      "shares_outstanding"
+                    ]
+                  },
+                  "period": {
+                    "type": "string",
+                    "pattern": "^(latest|FY\\d{4}(?:Q[1-4])?|\\d{4}Q[1-4])$"
+                  },
+                  "base_period": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "pattern": "^(FY\\d{4}(?:Q[1-4])?|\\d{4}Q[1-4])$"
+                  }
+                },
+                "required": [
+                  "ticker",
+                  "metric",
+                  "period",
+                  "base_period"
+                ],
+                "additionalProperties": false
+              }
+            }
+          },
+          {
+            "type": "function",
+            "function": {
+              "name": "history_rank",
+              "description": "Compare one quarter or fiscal-year fact with every available comparable period of the same period_type. Quarters include derived Q4 values when available; annual periods are compared only with annual periods. Return the rank, record flags through the requested period, prior high/low, and the comparison window with period end dates. The requested period also includes compact fact provenance and evidence strength.",
+              "parameters": {
+                "type": "object",
+                "properties": {
+                  "ticker": {
+                    "type": "string"
+                  },
+                  "metric": {
+                    "type": "string",
+                    "enum": [
+                      "revenue",
+                      "net_income",
+                      "operating_income",
+                      "eps_diluted",
+                      "gross_profit",
+                      "total_assets",
+                      "cash",
+                      "capex",
+                      "rd_expense",
+                      "shares_outstanding"
+                    ]
+                  },
+                  "period": {
+                    "type": "string",
+                    "pattern": "^(latest|FY\\d{4}(?:Q[1-4])?|\\d{4}Q[1-4])$"
+                  }
+                },
+                "required": [
+                  "ticker",
+                  "metric",
+                  "period"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        ],
+        "parallel_tool_calls": true,
+        "max_tokens": 4000
+      },
+      "reservation": {
+        "reservation_id": "8b3c5e4ab9644ef7a5f91541078b94ee",
+        "provider": "fireworks",
+        "model": "accounts/fireworks/models/muse-spark-open",
+        "estimated_input_tokens": 2858,
+        "max_output_tokens": 4000,
+        "amount": 0.0205725,
+        "payload_chars": 8574,
+        "context_chars": 0
+      },
+      "raw_response": {
+        "id": "chatcmpl-0e5a6d789bed49e09ce70cfbb336f2b0",
+        "choices": [
+          {
+            "finish_reason": "tool_calls",
+            "index": 0,
+            "logprobs": null,
+            "message": {
+              "content": "I'll pull Johnson & Johnson's 2025 full-year results to verify the reported figures.",
+              "refusal": null,
+              "role": "assistant",
+              "annotations": null,
+              "audio": null,
+              "function_call": null,
+              "tool_calls": [
+                {
+                  "id": "chatcmpl-tool-8a05bc5b42587131",
+                  "function": {
+                    "arguments": "{\"ticker\": \"JNJ\", \"metric\": \"revenue\", \"period\": \"FY2025\"}",
+                    "name": "lookup_fact"
+                  },
+                  "type": "function",
+                  "index": 0,
+                  "name": null
+                },
+                {
+                  "id": "chatcmpl-tool-90b423d4b9ea3fa9",
+                  "function": {
+                    "arguments": "{\"ticker\": \"JNJ\", \"metric\": \"gross_profit\", \"period\": \"FY2025\"}",
+                    "name": "lookup_fact"
+                  },
+                  "type": "function",
+                  "index": 1,
+                  "name": null
+                },
+                {
+                  "id": "chatcmpl-tool-b41b5fed53a76be2",
+                  "function": {
+                    "arguments": "{\"ticker\": \"JNJ\", \"metric\": \"revenue\"}",
+                    "name": "list_periods"
+                  },
+                  "type": "function",
+                  "index": 2,
+                  "name": null
+                },
+                {
+                  "id": "chatcmpl-tool-86db2947f70dad35",
+                  "function": {
+                    "arguments": "{\"ticker\": \"JNJ\", \"metric\": \"gross_profit\"}",
+                    "name": "list_periods"
+                  },
+                  "type": "function",
+                  "index": 3,
+                  "name": null
+                }
+              ],
+              "reasoning_content": "We need to verify two claims: gross profit $63.9B and revenue $105.6B for full-year 2025. Need to decompose.\n\nWe need to use lookup_fact for JNJ ticker? Johnson & Johnson ticker is JNJ.\n\nWe need to lookup gross_profit and revenue for FY2025? The claim says \"full-year 2025\". Need to determine period. Likely FY2025. But need to check both fiscal and calendar? If fiscal_equals_calendar true, then just one. Let's check.\n\nWe need to call lookup_fact for JNJ revenue 2025 FY2025, and gross_profit FY2025. Also check calendar? We need to call tools.\n\nAlso need to handle possible ambiguity: The instruction says for quarter claims at non-calendar-fiscal issuer, use period_basis etc. For annual, similar? \"For a quarter claim at a non-calendar-fiscal issuer, use period_basis... If claim says neither fiscal nor calendar, look up both...\" So for full-year 2025, we should also check fiscal vs calendar? The tool description says lookup_fact period can be FY2025 or 2025... But 2025? pattern allows FY2025 or FY2024Q? Or \"2025Q4\" etc. But not FY? Actually annual period is FY2025. Could also be 2025? Wait pattern: ^(latest|FY\\d{4}(?:Q[1-4])?|\\d{4}Q[1-4])$ So annual must be FY prefix. There is no plain year. So full-year 2025 => FY2025.\n\nBut should we also lookup calendar year? However fiscal_equals_calendar flag will tell us. For JNJ, fiscal year ends around calendar year? Likely fiscal equals calendar. Need to check.\n\nWe need to decompose into two subclaims:\n\n- gross profit $63.9B\n- revenue $105.6B\n\nBoth are value claims with comparator eq? No hedge words. So comparator eq, stated_value in base units.\n\nWe must use lookup_fact.\n\nWe also need to handle model_found_value.\n\nLet's call lookup_fact for both.\n\nAlso we might want to list_periods to ensure availability.\n\nProcedure: call lookup_fact for JNJ revenue FY2025, gross_profit FY2025.\n\nWe also should check history maybe not needed, but for verification.\n\nLet's invoke tools.",
+              "tools": null
+            }
+          }
+        ],
+        "created": 1793224342,
+        "model": "accounts/fireworks/models/muse-spark-open",
+        "object": "chat.completion",
+        "metadata": null,
+        "moderation": null,
+        "service_tier": null,
+        "system_fingerprint": null,
+        "usage": {
+          "completion_tokens": 805,
+          "prompt_tokens": 2704,
+          "total_tokens": 3509,
+          "completion_tokens_details": {
+            "accepted_prediction_tokens": null,
+            "audio_tokens": null,
+            "reasoning_tokens": 491,
+            "rejected_prediction_tokens": null,
+            "text_tokens": null
+          },
+          "prompt_tokens_details": {
+            "audio_tokens": null,
+            "cache_write_tokens": null,
+            "cached_tokens": 2624,
+            "image_tokens": null,
+            "text_tokens": null
+          },
+          "output_tokens_details": {
+            "reasoning_tokens": 491
+          }
+        }
+      },
+      "usage": {
+        "input": 2704,
+        "cached": 2624,
+        "output": 805,
+        "reasoning": 491
+      },
+      "cost": 0.00391485,
+      "latency_ms": 16407.715,
+      "status": "completed",
+      "raw_usage": {
+        "completion_tokens": 805,
+        "prompt_tokens": 2704,
+        "total_tokens": 3509,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 491,
+          "rejected_prediction_tokens": null,
+          "text_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cache_write_tokens": null,
+          "cached_tokens": 2624,
+          "image_tokens": null,
+          "text_tokens": null
+        },
+        "output_tokens_details": {
+          "reasoning_tokens": 491
+        }
+      },
+      "normalized_usage": {
+        "input": 2704,
+        "cached": 2624,
+        "output": 805,
+        "reasoning": 491
+      },
+      "finish_reason": "tool_calls",
+      "rate_limit_headers": {
+        "x-ratelimit-limit-tokens-cache-adjusted-prompt": "1800000",
+        "x-ratelimit-limit-tokens-generated": "72000",
+        "x-ratelimit-limit-tokens-prompt": "7200000",
+        "x-ratelimit-limit-tokens-uncached-prompt": "1800000",
+        "x-ratelimit-over-limit": "no",
+        "x-ratelimit-remaining-tokens-generated": "60512",
+        "x-ratelimit-remaining-tokens-prompt": "7197296"
+      }
+    },
+    {
+      "request": {
+        "model": "accounts/fireworks/models/muse-spark-open",
+        "messages": [
+          {
+            "role": "system",
+            "content": "You verify financial claims against SEC EDGAR facts.\nDecompose the claim into every atomic factual assertion. Every factual assertion\nin the user's claim must become a sub-claim, including a value, a change, a\nrecord, and a first-time assertion in the same sentence. Assertions that the\ntools cannot check must still become a sub-claim with claim_type other; the\nprogram will leave those unchecked. Use lookup_fact for a value,\ncompute_change for YoY or other period-to-period growth, history_rank for\nrecord/first-time assertions, and list_periods only to understand missing data.\nNever use memory for numbers. A quarter must have period_type=quarter and\nduration_days around 80-100, not period_type=ytd. If a result has derived=true,\nuse its derivation and components as evidence and do not calculate that fact\nagain. For compute_change, cite its own evidence ID; its two nested component\nfact IDs may also be cited and are ignored by the verifier.\n\nEach final sub_claim must contain exactly these model fields:\ntext, stated_text, claim_type (value, change_pct, change_abs, record_high,\nrecord_low, first_time_above, or other), comparator (eq, approx, gt, gte, lt,\nor lte), stated_value in base units (USD, USD/share, percentage points, or 1\nfor a record boolean), evidence_ids, interpretations, verdict, note, and\nmodel_found_value. interpretations is required and may be empty. Every non-empty\nitem must be an evidence id like E3 — never free text.\nCopy stated_text verbatim from the claim, including words such as \"about\",\n\"up\", or \"fell\" (for example, \"about $1.4 billion\", \"up 22%\", or\n\"fell 10%\"). For a change_pct, stated_value is 22 for 22%, not 0.22; the\nverifier applies the sign implied by direction words such as fell/down or\nrose/up. model_found_value is the number read from the cited evidence in the\nsame units, or null when it is missing.\n\nComparator wording is deterministic: a plain numeric statement with no hedge\nor inequality phrase is eq; about/around/roughly/approximately/nearly/almost,\nclose to, some, or ~ means approx; topped/exceeded/above/more than/over/\nsurpassed/beat means gt; at least/no less than means gte; below/under/less\nthan/short of means lt; at most/no more than/up to means lte. The program\nrecords and may correct the model comparator from these words. \"up\" and\n\"fell\" describe change direction, not approximation.\n\nFor a quarter claim at a non-calendar-fiscal issuer, use period_basis from\nthe tool results. If the claim says neither fiscal nor calendar, look up both\nthe calendar label (for example 2025Q4) and the fiscal label (for example\nFY2025Q4), cite both IDs in evidence_ids, and put those two IDs in\ninterpretations. Keep interpretations empty unless both fiscal and calendar\nreadings were looked up. If the claim says fiscal, cite only the fiscal\nreading; if it says calendar, cite only the calendar reading. When a lookup or\ncompute result has fiscal_equals_calendar=true, the issuer's fiscal year is the\ncalendar year: fiscal and calendar labels refer to the same underlying facts,\nso look up and cite only one reading even when the claim has no\nfiscal/calendar qualifier.\n\nExamples:\n1. \"Tesla net income was about $1.4 billion\": lookup_fact; stated_text\n   \"about $1.4 billion\", claim_type value, comparator approx, stated_value\n   1400000000.\n2. \"Alphabet revenue exceeded $100 billion\": lookup_fact; stated_text\n   \"exceeded $100 billion\", claim_type value, comparator gt, stated_value\n   100000000000.\n3. \"Meta revenue was up 22% YoY\": compute_change(META, revenue, 2025Q2,\n   null); stated_text \"up 22%\", claim_type change_pct, comparator eq,\n   stated_value 22, and cite the compute_change evidence ID.\n4. \"Tesla revenue fell 10% YoY\": compute_change(TSLA, revenue, 2025Q3,\n   null); stated_text \"fell 10%\", claim_type change_pct, comparator eq,\n   stated_value -10, and cite the compute_change evidence ID.\n5. \"Alphabet Q3 2025 revenue was a record high\": history_rank(GOOGL,\n   revenue, 2025Q3); claim_type record_high, comparator eq, stated_value 1,\n   and cite the history_rank evidence ID.\n6. \"Alphabet Q3 2025 revenue topped $100 billion for the first time\": create\n   two sub-claims: value gt 100000000000 and first_time_above with stated_value\n   100000000000, both citing the relevant evidence; the latter is supported\n   only when this period is above the threshold and no earlier comparable\n   period is above it.\n7. If a requested fact is unavailable, leave model_found_value null, cite any\n   relevant evidence, and set that sub-claim to insufficient_evidence. Say\n   insufficient_evidence when data is missing or evidence is ambiguous."
+          },
+          {
+            "role": "user",
+            "content": "In full-year 2025, Johnson & Johnson reported gross profit of $63.9 billion and revenue of $105.6 billion."
+          },
+          {
+            "role": "assistant",
+            "content": "I'll pull Johnson & Johnson's 2025 full-year results to verify the reported figures.",
+            "tool_calls": [
+              {
+                "id": "chatcmpl-tool-8a05bc5b42587131",
+                "type": "function",
+                "function": {
+                  "name": "lookup_fact",
+                  "arguments": "{\"ticker\": \"JNJ\", \"metric\": \"revenue\", \"period\": \"FY2025\"}"
+                }
+              },
+              {
+                "id": "chatcmpl-tool-90b423d4b9ea3fa9",
+                "type": "function",
+                "function": {
+                  "name": "lookup_fact",
+                  "arguments": "{\"ticker\": \"JNJ\", \"metric\": \"gross_profit\", \"period\": \"FY2025\"}"
+                }
+              },
+              {
+                "id": "chatcmpl-tool-b41b5fed53a76be2",
+                "type": "function",
+                "function": {
+                  "name": "list_periods",
+                  "arguments": "{\"ticker\": \"JNJ\", \"metric\": \"revenue\"}"
+                }
+              },
+              {
+                "id": "chatcmpl-tool-86db2947f70dad35",
+                "type": "function",
+                "function": {
+                  "name": "list_periods",
+                  "arguments": "{\"ticker\": \"JNJ\", \"metric\": \"gross_profit\"}"
+                }
+              }
+            ]
+          },
+          {
+            "role": "tool",
+            "tool_call_id": "chatcmpl-tool-8a05bc5b42587131",
+            "content": "{\"ticker\":\"JNJ\",\"cik\":\"0000200406\",\"entity\":\"Johnson & Johnson\",\"metric\":\"revenue\",\"concept\":\"RevenueFromContractWithCustomerExcludingAssessedTax\",\"unit\":\"USD\",\"value\":94193000000,\"start\":\"2024-12-30\",\"end\":\"2025-12-28\",\"form\":\"10-K\",\"form_fallback\":false,\"accn\":\"0000200406-26-000016\",\"filed\":\"2026-02-11\",\"frame\":\"CY2025\",\"fiscal_year\":2025,\"fiscal_period\":\"FY\",\"duration_days\":364,\"period_type\":\"annual\",\"fiscal_equals_calendar\":true,\"derived\":false,\"filing_url\":\"https://www.sec.gov/Archives/edgar/data/200406/000020040626000016/\",\"source_sha256\":\"9ce98e50414e9a6704eaf485e1868c2298c6ae36acc85a82c0a3737485303be7\",\"provenance\":{\"tier\":\"L1\",\"audited\":true,\"confirmations\":1,\"forms\":[\"10-K\"],\"first_filed\":\"2026-02-11\",\"latest_filed\":\"2026-02-11\",\"restated\":false,\"amended\":false,\"strength\":\"medium\"},\"period\":\"FY2025\",\"period_basis\":\"fiscal\",\"evidence_id\":\"E1\"}"
+          },
+          {
+            "role": "tool",
+            "tool_call_id": "chatcmpl-tool-90b423d4b9ea3fa9",
+            "content": "{\"ticker\":\"JNJ\",\"cik\":\"0000200406\",\"entity\":\"Johnson & Johnson\",\"metric\":\"gross_profit\",\"concept\":\"GrossProfit\",\"unit\":\"USD\",\"value\":63937000000,\"start\":\"2024-12-30\",\"end\":\"2025-12-28\",\"form\":\"10-K\",\"form_fallback\":false,\"accn\":\"0000200406-26-000016\",\"filed\":\"2026-02-11\",\"frame\":\"CY2025\",\"fiscal_year\":2025,\"fiscal_period\":\"FY\",\"duration_days\":364,\"period_type\":\"annual\",\"fiscal_equals_calendar\":true,\"derived\":false,\"filing_url\":\"https://www.sec.gov/Archives/edgar/data/200406/000020040626000016/\",\"source_sha256\":\"9ce98e50414e9a6704eaf485e1868c2298c6ae36acc85a82c0a3737485303be7\",\"provenance\":{\"tier\":\"L1\",\"audited\":true,\"confirmations\":1,\"forms\":[\"10-K\"],\"first_filed\":\"2026-02-11\",\"latest_filed\":\"2026-02-11\",\"restated\":false,\"amended\":false,\"strength\":\"medium\"},\"period\":\"FY2025\",\"period_basis\":\"fiscal\",\"evidence_id\":\"E2\"}"
+          },
+          {
+            "role": "tool",
+            "tool_call_id": "chatcmpl-tool-b41b5fed53a76be2",
+            "content": "{\"value\":[\"FY2026Q3\",\"2026Q3\",\"FY2026Q2\",\"2026Q2\",\"FY2026Q1\",\"2026Q1\",\"FY2025Q4\",\"FY2025\"],\"evidence_id\":\"E3\"}"
+          },
+          {
+            "role": "tool",
+            "tool_call_id": "chatcmpl-tool-86db2947f70dad35",
+            "content": "{\"value\":[\"FY2026Q3\",\"2026Q3\",\"FY2026Q2\",\"2026Q2\",\"FY2026Q1\",\"2026Q1\",\"FY2025Q4\",\"FY2025\"],\"evidence_id\":\"E4\"}"
+          }
+        ],
+        "tools": [
+          {
+            "type": "function",
+            "function": {
+              "name": "lookup_fact",
+              "description": "Look up one SEC EDGAR XBRL fact for a ticker, metric, and calendar quarter, fiscal quarter (FY2025Q4), or fiscal year. Successful results include period (the normalized requested label, or the resolved label for latest), period_basis (calendar or fiscal), fiscal_equals_calendar, duration_days, and period_type (quarter, ytd, annual, or instant). Additive flows may return derived=true with derivation and components; never treat a ytd result as a quarter or recompute a derived result. When fiscal_equals_calendar is true, fiscal and calendar labels identify the same fact; do not look up both readings. Every fact includes compact provenance: L1 audited 10-K, L2 reviewed 10-Q, or L3 program-derived, with confirmations, restatement, amendment, and evidence strength.",
+              "parameters": {
+                "type": "object",
+                "properties": {
+                  "ticker": {
+                    "type": "string"
+                  },
+                  "metric": {
+                    "type": "string",
+                    "enum": [
+                      "revenue",
+                      "net_income",
+                      "operating_income",
+                      "eps_diluted",
+                      "gross_profit",
+                      "total_assets",
+                      "cash",
+                      "capex",
+                      "rd_expense",
+                      "shares_outstanding"
+                    ]
+                  },
+                  "period": {
+                    "type": "string",
+                    "pattern": "^(latest|FY\\d{4}(?:Q[1-4])?|\\d{4}Q[1-4])$"
+                  }
+                },
+                "required": [
+                  "ticker",
+                  "metric",
+                  "period"
+                ],
+                "additionalProperties": false
+              }
+            }
+          },
+          {
+            "type": "function",
+            "function": {
+              "name": "list_periods",
+              "description": "List the recent directly available SEC EDGAR quarter and fiscal-year periods for a ticker and metric.",
+              "parameters": {
+                "type": "object",
+                "properties": {
+                  "ticker": {
+                    "type": "string"
+                  },
+                  "metric": {
+                    "type": "string",
+                    "enum": [
+                      "revenue",
+                      "net_income",
+                      "operating_income",
+                      "eps_diluted",
+                      "gross_profit",
+                      "total_assets",
+                      "cash",
+                      "capex",
+                      "rd_expense",
+                      "shares_outstanding"
+                    ]
+                  }
+                },
+                "required": [
+                  "ticker",
+                  "metric"
+                ],
+                "additionalProperties": false
+              }
+            }
+          },
+          {
+            "type": "function",
+            "function": {
+              "name": "compute_change",
+              "description": "Compute the absolute and year-over-year change for one SEC EDGAR XBRL metric. The period and base_period must be the same kind of period; when base_period is omitted, null, empty, \"null\", or \"none\", use the same quarter or fiscal year one year earlier. The result includes both cited lookup facts, fiscal_equals_calendar, their fact-level provenance, and a percentage change in percent points.",
+              "parameters": {
+                "type": "object",
+                "properties": {
+                  "ticker": {
+                    "type": "string"
+                  },
+                  "metric": {
+                    "type": "string",
+                    "enum": [
+                      "revenue",
+                      "net_income",
+                      "operating_income",
+                      "eps_diluted",
+                      "gross_profit",
+                      "total_assets",
+                      "cash",
+                      "capex",
+                      "rd_expense",
+                      "shares_outstanding"
+                    ]
+                  },
+                  "period": {
+                    "type": "string",
+                    "pattern": "^(latest|FY\\d{4}(?:Q[1-4])?|\\d{4}Q[1-4])$"
+                  },
+                  "base_period": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "pattern": "^(FY\\d{4}(?:Q[1-4])?|\\d{4}Q[1-4])$"
+                  }
+                },
+                "required": [
+                  "ticker",
+                  "metric",
+                  "period",
+                  "base_period"
+                ],
+                "additionalProperties": false
+              }
+            }
+          },
+          {
+            "type": "function",
+            "function": {
+              "name": "history_rank",
+              "description": "Compare one quarter or fiscal-year fact with every available comparable period of the same period_type. Quarters include derived Q4 values when available; annual periods are compared only with annual periods. Return the rank, record flags through the requested period, prior high/low, and the comparison window with period end dates. The requested period also includes compact fact provenance and evidence strength.",
+              "parameters": {
+                "type": "object",
+                "properties": {
+                  "ticker": {
+                    "type": "string"
+                  },
+                  "metric": {
+                    "type": "string",
+                    "enum": [
+                      "revenue",
+                      "net_income",
+                      "operating_income",
+                      "eps_diluted",
+                      "gross_profit",
+                      "total_assets",
+                      "cash",
+                      "capex",
+                      "rd_expense",
+                      "shares_outstanding"
+                    ]
+                  },
+                  "period": {
+                    "type": "string",
+                    "pattern": "^(latest|FY\\d{4}(?:Q[1-4])?|\\d{4}Q[1-4])$"
+                  }
+                },
+                "required": [
+                  "ticker",
+                  "metric",
+                  "period"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        ],
+        "parallel_tool_calls": true,
+        "max_tokens": 4000
+      },
+      "reservation": {
+        "reservation_id": "a860d6bb5f2141feb0b6932dfd622a32",
+        "provider": "fireworks",
+        "model": "accounts/fireworks/models/muse-spark-open",
+        "estimated_input_tokens": 3960,
+        "max_output_tokens": 4000,
+        "amount": 0.02195,
+        "payload_chars": 11880,
+        "context_chars": 0
+      },
+      "raw_response": {
+        "id": "chatcmpl-1770a3098d984700ae8682b8a440a341",
+        "choices": [
+          {
+            "finish_reason": "stop",
+            "index": 0,
+            "logprobs": null,
+            "message": {
+              "content": "[\n  {\n    \"text\": \"Johnson & Johnson full-year 2025 gross profit was $63.9 billion\",\n    \"stated_text\": \"$63.9 billion\",\n    \"claim_type\": \"value\",\n    \"comparator\": \"eq\",\n    \"stated_value\": 63900000000,\n    \"evidence_ids\": [\n      \"E2\"\n    ],\n    \"interpretations\": [],\n    \"verdict\": \"supported\",\n    \"note\": \"FY2025 GrossProfit = $63,937,000,000 from L1 audited 10-K (FY2025, fiscal_equals_calendar=true, filed 2026-02-11). Rounds to $63.9B at 0.1B precision, consistent with stated value.\",\n    \"model_found_value\": 63937000000\n  },\n  {\n    \"text\": \"Johnson & Johnson full-year 2025 revenue was $105.6 billion\",\n    \"stated_text\": \"$105.6 billion\",\n    \"claim_type\": \"value\",\n    \"comparator\": \"eq\",\n    \"stated_value\": 105600000000,\n    \"evidence_ids\": [\n      \"E1\"\n    ],\n    \"interpretations\": [],\n    \"verdict\": \"contradicted\",\n    \"note\": \"FY2025 revenue (RevenueFromContractWithCustomerExcludingAssessedTax) = $94,193,000,000 per L1 audited 10-K, fiscal_equals_calendar=true. Stated $105.6B overstated by ~$11.4B (~12%).\",\n    \"model_found_value\": 94193000000\n  }\n]",
+              "refusal": null,
+              "role": "assistant",
+              "annotations": null,
+              "audio": null,
+              "function_call": null,
+              "tool_calls": null,
+              "reasoning_content": "We have claim: In full-year 2025, Johnson & Johnson reported gross profit of $63.9B and revenue of $105.6B.\n\nWe looked up FY2025:\n\n- revenue FY2025 = 94,193,000,000 (94.193B) not 105.6B\n- gross_profit FY2025 = 63,937,000,000 (63.937B) ~ 63.9B correct.\n\nSo revenue claim is false.\n\nNeed to decompose into atomic factual assertions. Every factual assertion including value.\n\nClaim has two values: gross profit 63.9B, revenue 105.6B. Need two sub-claims.\n\nBoth are value type.\n\nFor gross profit: stated_text \" $63.9 billion\" comparator? The claim says \"reported gross profit of $63.9 billion\" -> plain numeric statement, no hedge, so eq. But need to consider approximation? It's $63.9B vs actual 63.937B. That's approx? But text says \"of $63.9 billion\" -> comparator eq per instructions: plain numeric statement with no hedge is eq. So comparator eq, stated_value 63900000000. Evidence E2. model_found_value 63937000000.\n\nShould evaluate verdict. For value claim eq, what's tolerance? Need to infer verification rules. Probably uses exact equality but allows rounding. The stated 63.9B = 63900000000, found 63937000000 difference 370M = 0.58% off. If strict eq, would be false, but likely verifier allows rounding to stated precision. Usually for eq they check within rounding tolerance. So should be considered correct? Let's see instructions: stated_value in base units. Comparator eq. But we need to decide verdict. The task: we as model provide verdict field. We should evaluate whether claim matches evidence.\n\nGross profit 63.9B vs 63.937B: That's pretty close, likely considered correct with eq if tolerance for rounding to 0.1B = 50M? Actually 63.9B rounding to nearest 0.1B implies range 63.85 to 63.95. 63.937 is within that. So passes.\n\nRevenue 105.6B vs 94.193B: huge miss, false.\n\nWe need to provide sub_claims JSON with fields: text, stated_text, claim_type, comparator, stated_value, evidence_ids, interpretations, verdict, note, model_found_value.\n\nWe need to use lookup_fact for value.\n\nAlso need to handle fiscal_equals_calendar = true. So we cited only one reading even though claim has no fiscal/calendar qualifier. Interpretations empty.\n\nNeed to produce final answer with those sub-claims.\n\nWe should ensure evidence_ids citations.\n\nPotentially also need to note filing dates etc.\n\nMake two sub-claims:\n\n1. Text: \"Johnson & Johnson FY2025 gross profit was $63.9 billion\" etc. But need to choose text field: full assertion text. Provide text as paraphrase.\n\n2. Similarly revenue.\n\nProvide interpretations empty array.\n\nWe must include model_found_value.\n\nFor revenue, verdict false (contradicted). For gross profit, verdict true (supported).\n\nCheck comparator wording deterministic: plain numeric statement with no hedge is eq. So both eq.\n\nNeed to ensure stated_text verbatim from claim, including words such as \"about\" etc. Claim says \"gross profit of $63.9 billion\" and \"revenue of $105.6 billion\". So stated_text should be \"$63.9 billion\" and \"$105.6 billion\". Include dollar sign? Example says \"about $1.4 billion\" includes about. So we should include exactly as in claim: \"$63.9 billion\". The claim text: \"reported gross profit of $63.9 billion and revenue of $105.6 billion.\" So stated_text for first is \"$63.9 billion\", second \"$105.6 billion\".\n\nProvide evidence_ids: [\"E2\"] and [\"E1\"] respectively.\n\nProvide interpretations: [].\n\nWe also have list_periods evidence E3/E4 showing FY2025 available, but not needed for value.\n\nMake sure to include note briefly.\n\nWe should output JSON? The final sub_claim must contain exactly those model fields. The system expects us to output sub_claims in specific format? Probably need to provide JSON list.\n\nWe need to produce final answer with verdicts.\n\nAlso ensure we don't hallucinate.\n\nCheck if need change_pct? No.\n\nMake final response.\n\nPotential nuance: FY2025 period matches full-year 2025. Since fiscal_equals_calendar true, it's calendar year.\n\nWe should mention that evidence shows fiscal_equals_calendar true.\n\nProvide model_found_value as numbers.\n\nFor gross profit: 63937000000\n\nFor revenue: 94193000000\n\nMake sure stated_value: 63900000000 and 105600000000\n\nAdd note about rounding.\n\nWe should ensure comparator eq for both.\n\nAdd verdict: supported / contradicted? The spec says verdict values: maybe \"supported\", \"contradicted\", \"insufficient_evidence\"? But description says final sub_claim must contain verdict. Example not shown. Probably use \"supported\" and \"contradicted\" or \"true\"/\"false\"? The instructions say Say insufficient_evidence when data missing. So verdict options likely supported / contradicted / insufficient_evidence. Might also be true/false. Better use supported vs contradicted.\n\nWe'll provide verdict: \"supported\" for gross profit, \"contradicted\" for revenue.\n\nCheck instructions: \"Each final sub_claim must contain exactly these model fields: text, stated_text, claim_type (value, change_pct, change_abs, record_high, record_low, first_time_above, or other), comparator (eq, approx, gt, gte, lt, or lte), stated_value in base units (USD, USD/share, percentage points, or 1 for a record boolean), evidence_ids, interpretations, verdict, note, and model_found_value.\"\n\nSo verdict field presumably expects something like \"supported\", \"contradicted\", \"insufficient_evidence\". Use those.\n\nProvide note.\n\nMake answer.\n\n",
+              "tools": null
+            }
+          }
+        ],
+        "created": 1793224359,
+        "model": "accounts/fireworks/models/muse-spark-open",
+        "object": "chat.completion",
+        "metadata": null,
+        "moderation": null,
+        "service_tier": null,
+        "system_fingerprint": null,
+        "usage": {
+          "completion_tokens": 1633,
+          "prompt_tokens": 3759,
+          "total_tokens": 5392,
+          "completion_tokens_details": {
+            "accepted_prediction_tokens": null,
+            "audio_tokens": null,
+            "reasoning_tokens": 1277,
+            "rejected_prediction_tokens": null,
+            "text_tokens": null
+          },
+          "prompt_tokens_details": {
+            "audio_tokens": null,
+            "cache_write_tokens": null,
+            "cached_tokens": 2688,
+            "image_tokens": null,
+            "text_tokens": null
+          },
+          "output_tokens_details": {
+            "reasoning_tokens": 1277
+          }
+        }
+      },
+      "usage": {
+        "input": 3759,
+        "cached": 2688,
+        "output": 1633,
+        "reasoning": 1277
+      },
+      "cost": 0.008682200000000001,
+      "latency_ms": 30519.008,
+      "status": "completed",
+      "raw_usage": {
+        "completion_tokens": 1633,
+        "prompt_tokens": 3759,
+        "total_tokens": 5392,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 1277,
+          "rejected_prediction_tokens": null,
+          "text_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cache_write_tokens": null,
+          "cached_tokens": 2688,
+          "image_tokens": null,
+          "text_tokens": null
+        },
+        "output_tokens_details": {
+          "reasoning_tokens": 1277
+        }
+      },
+      "normalized_usage": {
+        "input": 3759,
+        "cached": 2688,
+        "output": 1633,
+        "reasoning": 1277
+      },
+      "finish_reason": "stop",
+      "rate_limit_headers": {
+        "x-ratelimit-limit-tokens-cache-adjusted-prompt": "1800000",
+        "x-ratelimit-limit-tokens-generated": "72000",
+        "x-ratelimit-limit-tokens-prompt": "7200000",
+        "x-ratelimit-limit-tokens-uncached-prompt": "1800000",
+        "x-ratelimit-over-limit": "no",
+        "x-ratelimit-remaining-tokens-prompt": "7196241"
+      }
+    },
+    {
+      "request": {
+        "model": "accounts/fireworks/models/muse-spark-open",
+        "messages": [
+          {
+            "role": "system",
+            "content": "You verify financial claims against SEC EDGAR facts.\nDecompose the claim into every atomic factual assertion. Every factual assertion\nin the user's claim must become a sub-claim, including a value, a change, a\nrecord, and a first-time assertion in the same sentence. Assertions that the\ntools cannot check must still become a sub-claim with claim_type other; the\nprogram will leave those unchecked. Use lookup_fact for a value,\ncompute_change for YoY or other period-to-period growth, history_rank for\nrecord/first-time assertions, and list_periods only to understand missing data.\nNever use memory for numbers. A quarter must have period_type=quarter and\nduration_days around 80-100, not period_type=ytd. If a result has derived=true,\nuse its derivation and components as evidence and do not calculate that fact\nagain. For compute_change, cite its own evidence ID; its two nested component\nfact IDs may also be cited and are ignored by the verifier.\n\nEach final sub_claim must contain exactly these model fields:\ntext, stated_text, claim_type (value, change_pct, change_abs, record_high,\nrecord_low, first_time_above, or other), comparator (eq, approx, gt, gte, lt,\nor lte), stated_value in base units (USD, USD/share, percentage points, or 1\nfor a record boolean), evidence_ids, interpretations, verdict, note, and\nmodel_found_value. interpretations is required and may be empty. Every non-empty\nitem must be an evidence id like E3 — never free text.\nCopy stated_text verbatim from the claim, including words such as \"about\",\n\"up\", or \"fell\" (for example, \"about $1.4 billion\", \"up 22%\", or\n\"fell 10%\"). For a change_pct, stated_value is 22 for 22%, not 0.22; the\nverifier applies the sign implied by direction words such as fell/down or\nrose/up. model_found_value is the number read from the cited evidence in the\nsame units, or null when it is missing.\n\nComparator wording is deterministic: a plain numeric statement with no hedge\nor inequality phrase is eq; about/around/roughly/approximately/nearly/almost,\nclose to, some, or ~ means approx; topped/exceeded/above/more than/over/\nsurpassed/beat means gt; at least/no less than means gte; below/under/less\nthan/short of means lt; at most/no more than/up to means lte. The program\nrecords and may correct the model comparator from these words. \"up\" and\n\"fell\" describe change direction, not approximation.\n\nFor a quarter claim at a non-calendar-fiscal issuer, use period_basis from\nthe tool results. If the claim says neither fiscal nor calendar, look up both\nthe calendar label (for example 2025Q4) and the fiscal label (for example\nFY2025Q4), cite both IDs in evidence_ids, and put those two IDs in\ninterpretations. Keep interpretations empty unless both fiscal and calendar\nreadings were looked up. If the claim says fiscal, cite only the fiscal\nreading; if it says calendar, cite only the calendar reading. When a lookup or\ncompute result has fiscal_equals_calendar=true, the issuer's fiscal year is the\ncalendar year: fiscal and calendar labels refer to the same underlying facts,\nso look up and cite only one reading even when the claim has no\nfiscal/calendar qualifier.\n\nExamples:\n1. \"Tesla net income was about $1.4 billion\": lookup_fact; stated_text\n   \"about $1.4 billion\", claim_type value, comparator approx, stated_value\n   1400000000.\n2. \"Alphabet revenue exceeded $100 billion\": lookup_fact; stated_text\n   \"exceeded $100 billion\", claim_type value, comparator gt, stated_value\n   100000000000.\n3. \"Meta revenue was up 22% YoY\": compute_change(META, revenue, 2025Q2,\n   null); stated_text \"up 22%\", claim_type change_pct, comparator eq,\n   stated_value 22, and cite the compute_change evidence ID.\n4. \"Tesla revenue fell 10% YoY\": compute_change(TSLA, revenue, 2025Q3,\n   null); stated_text \"fell 10%\", claim_type change_pct, comparator eq,\n   stated_value -10, and cite the compute_change evidence ID.\n5. \"Alphabet Q3 2025 revenue was a record high\": history_rank(GOOGL,\n   revenue, 2025Q3); claim_type record_high, comparator eq, stated_value 1,\n   and cite the history_rank evidence ID.\n6. \"Alphabet Q3 2025 revenue topped $100 billion for the first time\": create\n   two sub-claims: value gt 100000000000 and first_time_above with stated_value\n   100000000000, both citing the relevant evidence; the latter is supported\n   only when this period is above the threshold and no earlier comparable\n   period is above it.\n7. If a requested fact is unavailable, leave model_found_value null, cite any\n   relevant evidence, and set that sub-claim to insufficient_evidence. Say\n   insufficient_evidence when data is missing or evidence is ambiguous."
+          },
+          {
+            "role": "user",
+            "content": "In full-year 2025, Johnson & Johnson reported gross profit of $63.9 billion and revenue of $105.6 billion."
+          },
+          {
+            "role": "assistant",
+            "content": "I'll pull Johnson & Johnson's 2025 full-year results to verify the reported figures.",
+            "tool_calls": [
+              {
+                "id": "chatcmpl-tool-8a05bc5b42587131",
+                "type": "function",
+                "function": {
+                  "name": "lookup_fact",
+                  "arguments": "{\"ticker\": \"JNJ\", \"metric\": \"revenue\", \"period\": \"FY2025\"}"
+                }
+              },
+              {
+                "id": "chatcmpl-tool-90b423d4b9ea3fa9",
+                "type": "function",
+                "function": {
+                  "name": "lookup_fact",
+                  "arguments": "{\"ticker\": \"JNJ\", \"metric\": \"gross_profit\", \"period\": \"FY2025\"}"
+                }
+              },
+              {
+                "id": "chatcmpl-tool-b41b5fed53a76be2",
+                "type": "function",
+                "function": {
+                  "name": "list_periods",
+                  "arguments": "{\"ticker\": \"JNJ\", \"metric\": \"revenue\"}"
+                }
+              },
+              {
+                "id": "chatcmpl-tool-86db2947f70dad35",
+                "type": "function",
+                "function": {
+                  "name": "list_periods",
+                  "arguments": "{\"ticker\": \"JNJ\", \"metric\": \"gross_profit\"}"
+                }
+              }
+            ]
+          },
+          {
+            "role": "tool",
+            "tool_call_id": "chatcmpl-tool-8a05bc5b42587131",
+            "content": "{\"ticker\":\"JNJ\",\"cik\":\"0000200406\",\"entity\":\"Johnson & Johnson\",\"metric\":\"revenue\",\"concept\":\"RevenueFromContractWithCustomerExcludingAssessedTax\",\"unit\":\"USD\",\"value\":94193000000,\"start\":\"2024-12-30\",\"end\":\"2025-12-28\",\"form\":\"10-K\",\"form_fallback\":false,\"accn\":\"0000200406-26-000016\",\"filed\":\"2026-02-11\",\"frame\":\"CY2025\",\"fiscal_year\":2025,\"fiscal_period\":\"FY\",\"duration_days\":364,\"period_type\":\"annual\",\"fiscal_equals_calendar\":true,\"derived\":false,\"filing_url\":\"https://www.sec.gov/Archives/edgar/data/200406/000020040626000016/\",\"source_sha256\":\"9ce98e50414e9a6704eaf485e1868c2298c6ae36acc85a82c0a3737485303be7\",\"provenance\":{\"tier\":\"L1\",\"audited\":true,\"confirmations\":1,\"forms\":[\"10-K\"],\"first_filed\":\"2026-02-11\",\"latest_filed\":\"2026-02-11\",\"restated\":false,\"amended\":false,\"strength\":\"medium\"},\"period\":\"FY2025\",\"period_basis\":\"fiscal\",\"evidence_id\":\"E1\"}"
+          },
+          {
+            "role": "tool",
+            "tool_call_id": "chatcmpl-tool-90b423d4b9ea3fa9",
+            "content": "{\"ticker\":\"JNJ\",\"cik\":\"0000200406\",\"entity\":\"Johnson & Johnson\",\"metric\":\"gross_profit\",\"concept\":\"GrossProfit\",\"unit\":\"USD\",\"value\":63937000000,\"start\":\"2024-12-30\",\"end\":\"2025-12-28\",\"form\":\"10-K\",\"form_fallback\":false,\"accn\":\"0000200406-26-000016\",\"filed\":\"2026-02-11\",\"frame\":\"CY2025\",\"fiscal_year\":2025,\"fiscal_period\":\"FY\",\"duration_days\":364,\"period_type\":\"annual\",\"fiscal_equals_calendar\":true,\"derived\":false,\"filing_url\":\"https://www.sec.gov/Archives/edgar/data/200406/000020040626000016/\",\"source_sha256\":\"9ce98e50414e9a6704eaf485e1868c2298c6ae36acc85a82c0a3737485303be7\",\"provenance\":{\"tier\":\"L1\",\"audited\":true,\"confirmations\":1,\"forms\":[\"10-K\"],\"first_filed\":\"2026-02-11\",\"latest_filed\":\"2026-02-11\",\"restated\":false,\"amended\":false,\"strength\":\"medium\"},\"period\":\"FY2025\",\"period_basis\":\"fiscal\",\"evidence_id\":\"E2\"}"
+          },
+          {
+            "role": "tool",
+            "tool_call_id": "chatcmpl-tool-b41b5fed53a76be2",
+            "content": "{\"value\":[\"FY2026Q3\",\"2026Q3\",\"FY2026Q2\",\"2026Q2\",\"FY2026Q1\",\"2026Q1\",\"FY2025Q4\",\"FY2025\"],\"evidence_id\":\"E3\"}"
+          },
+          {
+            "role": "tool",
+            "tool_call_id": "chatcmpl-tool-86db2947f70dad35",
+            "content": "{\"value\":[\"FY2026Q3\",\"2026Q3\",\"FY2026Q2\",\"2026Q2\",\"FY2026Q1\",\"2026Q1\",\"FY2025Q4\",\"FY2025\"],\"evidence_id\":\"E4\"}"
+          },
+          {
+            "role": "assistant",
+            "content": "[\n  {\n    \"text\": \"Johnson & Johnson full-year 2025 gross profit was $63.9 billion\",\n    \"stated_text\": \"$63.9 billion\",\n    \"claim_type\": \"value\",\n    \"comparator\": \"eq\",\n    \"stated_value\": 63900000000,\n    \"evidence_ids\": [\n      \"E2\"\n    ],\n    \"interpretations\": [],\n    \"verdict\": \"supported\",\n    \"note\": \"FY2025 GrossProfit = $63,937,000,000 from L1 audited 10-K (FY2025, fiscal_equals_calendar=true, filed 2026-02-11). Rounds to $63.9B at 0.1B precision, consistent with stated value.\",\n    \"model_found_value\": 63937000000\n  },\n  {\n    \"text\": \"Johnson & Johnson full-year 2025 revenue was $105.6 billion\",\n    \"stated_text\": \"$105.6 billion\",\n    \"claim_type\": \"value\",\n    \"comparator\": \"eq\",\n    \"stated_value\": 105600000000,\n    \"evidence_ids\": [\n      \"E1\"\n    ],\n    \"interpretations\": [],\n    \"verdict\": \"contradicted\",\n    \"note\": \"FY2025 revenue (RevenueFromContractWithCustomerExcludingAssessedTax) = $94,193,000,000 per L1 audited 10-K, fiscal_equals_calendar=true. Stated $105.6B overstated by ~$11.4B (~12%).\",\n    \"model_found_value\": 94193000000\n  }\n]"
+          },
+          {
+            "role": "user",
+            "content": "Return only one plain JSON object for the final verdict. Do not use Markdown fences or explanatory text. Include every atomic factual assertion as a sub-claim, including claim_type other when the tools cannot check it. Copy stated_text verbatim from the claim and include claim_type, comparator, stated_value in base units, evidence_ids, interpretations (evidence ids like E3 — never free text), verdict, model_found_value, and a concise note. The object must match this existing verdict schema: {\"type\":\"object\",\"properties\":{\"verdict\":{\"type\":\"string\",\"enum\":[\"supported\",\"contradicted\",\"insufficient_evidence\"]},\"summary\":{\"type\":\"string\"},\"sub_claims\":{\"type\":\"array\",\"items\":{\"type\":\"object\",\"properties\":{\"text\":{\"type\":\"string\"},\"stated_text\":{\"type\":\"string\"},\"claim_type\":{\"type\":\"string\",\"enum\":[\"value\",\"change_pct\",\"change_abs\",\"record_high\",\"record_low\",\"first_time_above\",\"other\"]},\"comparator\":{\"type\":\"string\",\"enum\":[\"eq\",\"approx\",\"gt\",\"gte\",\"lt\",\"lte\"]},\"stated_value\":{\"type\":[\"number\",\"null\"]},\"evidence_ids\":{\"type\":\"array\",\"items\":{\"type\":\"string\"}},\"interpretations\":{\"type\":\"array\",\"items\":{\"type\":\"string\",\"description\":\"evidence id like E3 — never free text\"}},\"verdict\":{\"type\":\"string\",\"enum\":[\"supported\",\"contradicted\",\"insufficient_evidence\"]},\"note\":{\"type\":\"string\"},\"model_found_value\":{\"type\":[\"number\",\"null\"]}},\"required\":[\"text\",\"stated_text\",\"claim_type\",\"comparator\",\"stated_value\",\"evidence_ids\",\"interpretations\",\"verdict\",\"note\",\"model_found_value\"],\"additionalProperties\":false}}},\"required\":[\"verdict\",\"summary\",\"sub_claims\"],\"additionalProperties\":false}"
+          }
+        ],
+        "max_tokens": 3000
+      },
+      "reservation": {
+        "reservation_id": "1653f986fa6b40b88da0c1ac74275a10",
+        "provider": "fireworks",
+        "model": "accounts/fireworks/models/muse-spark-open",
+        "estimated_input_tokens": 3768,
+        "max_output_tokens": 3000,
+        "amount": 0.01746,
+        "payload_chars": 11304,
+        "context_chars": 0
+      },
+      "raw_response": {
+        "id": "chatcmpl-ec5960a58eb74bf6bed81986a4591c78",
+        "choices": [
+          {
+            "finish_reason": "stop",
+            "index": 0,
+            "logprobs": null,
+            "message": {
+              "content": "{\"verdict\":\"contradicted\",\"summary\":\"FY2025 gross profit $63.9B supported ($63.937B reported), but FY2025 revenue $105.6B contradicted by audited 10-K reporting $94.193B.\",\"sub_claims\":[{\"text\":\"Johnson & Johnson full-year 2025 gross profit was $63.9 billion\",\"stated_text\":\"$63.9 billion\",\"claim_type\":\"value\",\"comparator\":\"eq\",\"stated_value\":63900000000,\"evidence_ids\":[\"E2\"],\"interpretations\":[],\"verdict\":\"supported\",\"note\":\"FY2025 GrossProfit = $63,937,000,000 per L1 audited 10-K (FY2025, fiscal_equals_calendar=true, filed 2026-02-11); rounds to $63.9B.\",\"model_found_value\":63937000000},{\"text\":\"Johnson & Johnson full-year 2025 revenue was $105.6 billion\",\"stated_text\":\"$105.6 billion\",\"claim_type\":\"value\",\"comparator\":\"eq\",\"stated_value\":105600000000,\"evidence_ids\":[\"E1\"],\"interpretations\":[],\"verdict\":\"contradicted\",\"note\":\"FY2025 revenue (RevenueFromContractWithCustomerExcludingAssessedTax) = $94,193,000,000 per L1 audited 10-K; stated $105.6B overstated by ~$11.4B.\",\"model_found_value\":94193000000}]}",
+              "refusal": null,
+              "role": "assistant",
+              "annotations": null,
+              "audio": null,
+              "function_call": null,
+              "tool_calls": null,
+              "reasoning_content": "We need to respond with single plain JSON object matching schema. Must include every atomic factual assertion as sub-claim.\n\nClaim: \"In full-year 2025, Johnson & Johnson reported gross profit of $63.9 billion and revenue of $105.6 billion.\"\n\nWe have evidence:\n\nE1: revenue FY2025 = 94,193,000,000\nE2: gross_profit FY2025 = 63,937,000,000\n\nWe need to produce sub_claims array with two items.\n\nEach needs fields: text, stated_text, claim_type, comparator, stated_value, evidence_ids, interpretations, verdict, note, model_found_value.\n\nWe should reuse previous values but ensure interpretations empty.\n\nFirst claim: gross profit $63.9 billion -> supported. comparator eq, stated_value 63900000000, evidence_ids [\"E2\"], verdict supported, model_found_value 63937000000\n\nSecond claim: revenue $105.6 billion -> contradicted, stated_value 105600000000, evidence_ids [\"E1\"], verdict contradicted, model_found_value 94193000000\n\nWe need overall verdict: Since one contradicted, overall verdict contradicted. Summary string.\n\nNeed to provide summary concise.\n\nMake sure JSON valid.\n\nfiscal_equals_calendar true, so we cite only fiscal. interpretations empty.\n\nProvide note concise.\n\nWe must ensure we include all required fields exactly.\n\nSchema requires verdict top-level enum, summary string, sub_claims array.\n\nMake sure stated_text verbatim from claim: \"$63.9 billion\" and \"$105.6 billion\" – need to copy exactly. In claim text: \"gross profit of $63.9 billion\" and \"revenue of $105.6 billion.\" So stated_text should be \"$63.9 billion\" and \"$105.6 billion\" respectively.\n\ntext field: maybe \"Johnson & Johnson full-year 2025 gross profit was $63.9 billion\" etc.\n\nProvide comparator eq.\n\nProvide model_found_value as numbers.\n\nEnsure evidence_ids valid: E1, E2.\n\nWe should maybe include E3/E4? List_periods not needed but we have E1,E2 sufficient. Provide those.\n\nMake final JSON object only, no markdown.\n\nWe must choose overall verdict: contradicted because revenue contradicted.\n\nEnsure summary describes.\n\nPossibly overall verdict contradicted due to revenue mismatch.\n\nProvide precise JSON.",
+              "tools": null
+            }
+          }
+        ],
+        "created": 1793224389,
+        "model": "accounts/fireworks/models/muse-spark-open",
+        "object": "chat.completion",
+        "metadata": null,
+        "moderation": null,
+        "service_tier": null,
+        "system_fingerprint": null,
+        "usage": {
+          "completion_tokens": 802,
+          "prompt_tokens": 3064,
+          "total_tokens": 3866,
+          "completion_tokens_details": {
+            "accepted_prediction_tokens": null,
+            "audio_tokens": null,
+            "reasoning_tokens": 488,
+            "rejected_prediction_tokens": null,
+            "text_tokens": null
+          },
+          "prompt_tokens_details": {
+            "audio_tokens": null,
+            "cache_write_tokens": null,
+            "cached_tokens": 1216,
+            "image_tokens": null,
+            "text_tokens": null
+          },
+          "output_tokens_details": {
+            "reasoning_tokens": 488
+          }
+        }
+      },
+      "usage": {
+        "input": 3064,
+        "cached": 1216,
+        "output": 802,
+        "reasoning": 488
+      },
+      "cost": 0.005900900000000001,
+      "latency_ms": 13896.077,
+      "status": "completed",
+      "raw_usage": {
+        "completion_tokens": 802,
+        "prompt_tokens": 3064,
+        "total_tokens": 3866,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 488,
+          "rejected_prediction_tokens": null,
+          "text_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cache_write_tokens": null,
+          "cached_tokens": 1216,
+          "image_tokens": null,
+          "text_tokens": null
+        },
+        "output_tokens_details": {
+          "reasoning_tokens": 488
+        }
+      },
+      "normalized_usage": {
+        "input": 3064,
+        "cached": 1216,
+        "output": 802,
+        "reasoning": 488
+      },
+      "finish_reason": "stop",
+      "rate_limit_headers": {
+        "x-ratelimit-limit-tokens-cache-adjusted-prompt": "1800000",
+        "x-ratelimit-limit-tokens-generated": "72000",
+        "x-ratelimit-limit-tokens-prompt": "7200000",
+        "x-ratelimit-limit-tokens-uncached-prompt": "1800000",
+        "x-ratelimit-over-limit": "no",
+        "x-ratelimit-remaining-tokens-generated": "62752",
+        "x-ratelimit-remaining-tokens-prompt": "7196936"
+      }
+    }
+  ],
+  "tool_calls": [
+    {
+      "name": "lookup_fact",
+      "arguments": {
+        "ticker": "JNJ",
+        "metric": "revenue",
+        "period": "FY2025"
+      },
+      "call_id": "chatcmpl-tool-8a05bc5b42587131",
+      "result": {
+        "ticker": "JNJ",
+        "cik": "0000200406",
+        "entity": "Johnson & Johnson",
+        "metric": "revenue",
+        "concept": "RevenueFromContractWithCustomerExcludingAssessedTax",
+        "unit": "USD",
+        "value": 94193000000,
+        "start": "2024-12-30",
+        "end": "2025-12-28",
+        "form": "10-K",
+        "form_fallback": false,
+        "accn": "0000200406-26-000016",
+        "filed": "2026-02-11",
+        "frame": "CY2025",
+        "fiscal_year": 2025,
+        "fiscal_period": "FY",
+        "duration_days": 364,
+        "period_type": "annual",
+        "fiscal_equals_calendar": true,
+        "derived": false,
+        "filing_url": "https://www.sec.gov/Archives/edgar/data/200406/000020040626000016/",
+        "source_sha256": "9ce98e50414e9a6704eaf485e1868c2298c6ae36acc85a82c0a3737485303be7",
+        "provenance": {
+          "tier": "L1",
+          "audited": true,
+          "confirmations": 1,
+          "forms": [
+            "10-K"
+          ],
+          "first_filed": "2026-02-11",
+          "latest_filed": "2026-02-11",
+          "restated": false,
+          "amended": false,
+          "strength": "medium"
+        },
+        "period": "FY2025",
+        "period_basis": "fiscal",
+        "evidence_id": "E1"
+      }
+    },
+    {
+      "name": "lookup_fact",
+      "arguments": {
+        "ticker": "JNJ",
+        "metric": "gross_profit",
+        "period": "FY2025"
+      },
+      "call_id": "chatcmpl-tool-90b423d4b9ea3fa9",
+      "result": {
+        "ticker": "JNJ",
+        "cik": "0000200406",
+        "entity": "Johnson & Johnson",
+        "metric": "gross_profit",
+        "concept": "GrossProfit",
+        "unit": "USD",
+        "value": 63937000000,
+        "start": "2024-12-30",
+        "end": "2025-12-28",
+        "form": "10-K",
+        "form_fallback": false,
+        "accn": "0000200406-26-000016",
+        "filed": "2026-02-11",
+        "frame": "CY2025",
+        "fiscal_year": 2025,
+        "fiscal_period": "FY",
+        "duration_days": 364,
+        "period_type": "annual",
+        "fiscal_equals_calendar": true,
+        "derived": false,
+        "filing_url": "https://www.sec.gov/Archives/edgar/data/200406/000020040626000016/",
+        "source_sha256": "9ce98e50414e9a6704eaf485e1868c2298c6ae36acc85a82c0a3737485303be7",
+        "provenance": {
+          "tier": "L1",
+          "audited": true,
+          "confirmations": 1,
+          "forms": [
+            "10-K"
+          ],
+          "first_filed": "2026-02-11",
+          "latest_filed": "2026-02-11",
+          "restated": false,
+          "amended": false,
+          "strength": "medium"
+        },
+        "period": "FY2025",
+        "period_basis": "fiscal",
+        "evidence_id": "E2"
+      }
+    },
+    {
+      "name": "list_periods",
+      "arguments": {
+        "ticker": "JNJ",
+        "metric": "revenue"
+      },
+      "call_id": "chatcmpl-tool-b41b5fed53a76be2",
+      "result": {
+        "value": [
+          "FY2026Q3",
+          "2026Q3",
+          "FY2026Q2",
+          "2026Q2",
+          "FY2026Q1",
+          "2026Q1",
+          "FY2025Q4",
+          "FY2025"
+        ],
+        "evidence_id": "E3"
+      }
+    },
+    {
+      "name": "list_periods",
+      "arguments": {
+        "ticker": "JNJ",
+        "metric": "gross_profit"
+      },
+      "call_id": "chatcmpl-tool-86db2947f70dad35",
+      "result": {
+        "value": [
+          "FY2026Q3",
+          "2026Q3",
+          "FY2026Q2",
+          "2026Q2",
+          "FY2026Q1",
+          "2026Q1",
+          "FY2025Q4",
+          "FY2025"
+        ],
+        "evidence_id": "E4"
+      }
+    }
+  ],
+  "usage": [
+    {
+      "input": 2704,
+      "cached": 2624,
+      "output": 805,
+      "reasoning": 491
+    },
+    {
+      "input": 3759,
+      "cached": 2688,
+      "output": 1633,
+      "reasoning": 1277
+    },
+    {
+      "input": 3064,
+      "cached": 1216,
+      "output": 802,
+      "reasoning": 488
+    }
+  ],
+  "tokens": {
+    "input": 9527,
+    "cached": 6528,
+    "output": 3240,
+    "reasoning": 2256
+  },
+  "model_calls": 3,
+  "cost": 0.018497950000000003,
+  "cost_usd": 0.018497950000000003,
+  "latency_ms": 60822.8,
+  "tool_call_count": 4,
+  "incomplete_turns": [],
+  "previous_response_fallback": false,
+  "final_verdict": {
+    "verdict": "contradicted",
+    "summary": "FY2025 gross profit $63.9B supported ($63.937B reported), but FY2025 revenue $105.6B contradicted by audited 10-K reporting $94.193B.",
+    "sub_claims": [
+      {
+        "text": "Johnson & Johnson full-year 2025 gross profit was $63.9 billion",
+        "stated_text": "$63.9 billion",
+        "claim_type": "value",
+        "comparator": "eq",
+        "stated_value": 63900000000.0,
+        "verdict": "supported",
+        "evidence_ids": [
+          "E2"
+        ],
+        "interpretations": [],
+        "model_found_value": 63937000000,
+        "note": "FY2025 GrossProfit = $63,937,000,000 per L1 audited 10-K (FY2025, fiscal_equals_calendar=true, filed 2026-02-11); rounds to $63.9B.",
+        "evidence_valid": true,
+        "program_verdict": "supported",
+        "actual_value": 63937000000.0,
+        "tolerance": 50000000.0,
+        "reason": "actual 6.3937e+10 is consistent with stated 6.39e+10 using eq tolerance 5e+07",
+        "disagreement": false,
+        "precision": 50000000.0,
+        "stated_value_used": 63900000000.0,
+        "period_ambiguous": false,
+        "program_added_interpretation": false,
+        "program_evidence_ids": [],
+        "invalid_interpretations": false,
+        "deduplicated_evidence": [],
+        "stated_value_corrected": false,
+        "stated_text_unparsed": false,
+        "stated_sign_corrected": false,
+        "threshold_from_model": false,
+        "model_comparator": "eq",
+        "comparator_corrected": false,
+        "evidence_strength": "medium",
+        "evidence_summary": "Evidence: audited 10-K, confirmed in 1 filing, not restated",
+        "restated_evidence": false
+      },
+      {
+        "text": "Johnson & Johnson full-year 2025 revenue was $105.6 billion",
+        "stated_text": "$105.6 billion",
+        "claim_type": "value",
+        "comparator": "eq",
+        "stated_value": 105600000000.0,
+        "verdict": "contradicted",
+        "evidence_ids": [
+          "E1"
+        ],
+        "interpretations": [],
+        "model_found_value": 94193000000,
+        "note": "FY2025 revenue (RevenueFromContractWithCustomerExcludingAssessedTax) = $94,193,000,000 per L1 audited 10-K; stated $105.6B overstated by ~$11.4B.",
+        "evidence_valid": true,
+        "program_verdict": "contradicted",
+        "actual_value": 94193000000.0,
+        "tolerance": 50000000.0,
+        "reason": "actual 9.4193e+10 is not consistent with stated 1.056e+11 using eq tolerance 5e+07",
+        "disagreement": false,
+        "precision": 50000000.0,
+        "stated_value_used": 105600000000.0,
+        "period_ambiguous": false,
+        "program_added_interpretation": false,
+        "program_evidence_ids": [],
+        "invalid_interpretations": false,
+        "deduplicated_evidence": [],
+        "stated_value_corrected": false,
+        "stated_text_unparsed": false,
+        "stated_sign_corrected": false,
+        "threshold_from_model": false,
+        "model_comparator": "eq",
+        "comparator_corrected": false,
+        "evidence_strength": "medium",
+        "evidence_summary": "Evidence: audited 10-K, confirmed in 1 filing, not restated",
+        "restated_evidence": false
+      }
+    ],
+    "model_verdict": "contradicted",
+    "program_checks": [
+      {
+        "text": "Johnson & Johnson full-year 2025 gross profit was $63.9 billion",
+        "stated_value": 63900000000.0,
+        "evidence_ids": [
+          "E2"
+        ],
+        "evidence_valid": true,
+        "program_verdict": "supported",
+        "actual_value": 63937000000.0,
+        "tolerance": 50000000.0,
+        "reason": "actual 6.3937e+10 is consistent with stated 6.39e+10 using eq tolerance 5e+07",
+        "disagreement": false,
+        "precision": 50000000.0,
+        "stated_value_used": 63900000000.0,
+        "comparator": "eq",
+        "interpretations": [],
+        "period_ambiguous": false,
+        "program_added_interpretation": false,
+        "program_evidence_ids": [],
+        "invalid_interpretations": false,
+        "deduplicated_evidence": [],
+        "stated_value_corrected": false,
+        "stated_text_unparsed": false,
+        "stated_sign_corrected": false,
+        "threshold_from_model": false,
+        "model_comparator": "eq",
+        "comparator_corrected": false,
+        "evidence_strength": "medium",
+        "evidence_summary": "Evidence: audited 10-K, confirmed in 1 filing, not restated",
+        "restated_evidence": false
+      },
+      {
+        "text": "Johnson & Johnson full-year 2025 revenue was $105.6 billion",
+        "stated_value": 105600000000.0,
+        "evidence_ids": [
+          "E1"
+        ],
+        "evidence_valid": true,
+        "program_verdict": "contradicted",
+        "actual_value": 94193000000.0,
+        "tolerance": 50000000.0,
+        "reason": "actual 9.4193e+10 is not consistent with stated 1.056e+11 using eq tolerance 5e+07",
+        "disagreement": false,
+        "precision": 50000000.0,
+        "stated_value_used": 105600000000.0,
+        "comparator": "eq",
+        "interpretations": [],
+        "period_ambiguous": false,
+        "program_added_interpretation": false,
+        "program_evidence_ids": [],
+        "invalid_interpretations": false,
+        "deduplicated_evidence": [],
+        "stated_value_corrected": false,
+        "stated_text_unparsed": false,
+        "stated_sign_corrected": false,
+        "threshold_from_model": false,
+        "model_comparator": "eq",
+        "comparator_corrected": false,
+        "evidence_strength": "medium",
+        "evidence_summary": "Evidence: audited 10-K, confirmed in 1 filing, not restated",
+        "restated_evidence": false
+      }
+    ],
+    "evidence_strength": "medium",
+    "evidence_summary": "Evidence: audited 10-K, confirmed in 1 filing, not restated",
+    "model_program_disagreement": false
+  },
+  "program_checks": [
+    {
+      "text": "Johnson & Johnson full-year 2025 gross profit was $63.9 billion",
+      "stated_value": 63900000000.0,
+      "evidence_ids": [
+        "E2"
+      ],
+      "evidence_valid": true,
+      "program_verdict": "supported",
+      "actual_value": 63937000000.0,
+      "tolerance": 50000000.0,
+      "reason": "actual 6.3937e+10 is consistent with stated 6.39e+10 using eq tolerance 5e+07",
+      "disagreement": false,
+      "precision": 50000000.0,
+      "stated_value_used": 63900000000.0,
+      "comparator": "eq",
+      "interpretations": [],
+      "period_ambiguous": false,
+      "program_added_interpretation": false,
+      "program_evidence_ids": [],
+      "invalid_interpretations": false,
+      "deduplicated_evidence": [],
+      "stated_value_corrected": false,
+      "stated_text_unparsed": false,
+      "stated_sign_corrected": false,
+      "threshold_from_model": false,
+      "model_comparator": "eq",
+      "comparator_corrected": false,
+      "evidence_strength": "medium",
+      "evidence_summary": "Evidence: audited 10-K, confirmed in 1 filing, not restated",
+      "restated_evidence": false
+    },
+    {
+      "text": "Johnson & Johnson full-year 2025 revenue was $105.6 billion",
+      "stated_value": 105600000000.0,
+      "evidence_ids": [
+        "E1"
+      ],
+      "evidence_valid": true,
+      "program_verdict": "contradicted",
+      "actual_value": 94193000000.0,
+      "tolerance": 50000000.0,
+      "reason": "actual 9.4193e+10 is not consistent with stated 1.056e+11 using eq tolerance 5e+07",
+      "disagreement": false,
+      "precision": 50000000.0,
+      "stated_value_used": 105600000000.0,
+      "comparator": "eq",
+      "interpretations": [],
+      "period_ambiguous": false,
+      "program_added_interpretation": false,
+      "program_evidence_ids": [],
+      "invalid_interpretations": false,
+      "deduplicated_evidence": [],
+      "stated_value_corrected": false,
+      "stated_text_unparsed": false,
+      "stated_sign_corrected": false,
+      "threshold_from_model": false,
+      "model_comparator": "eq",
+      "comparator_corrected": false,
+      "evidence_strength": "medium",
+      "evidence_summary": "Evidence: audited 10-K, confirmed in 1 filing, not restated",
+      "restated_evidence": false
+    }
+  ]
+}
