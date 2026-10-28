@@ -1,283 +1,526 @@
 (() => {
   "use strict";
 
-  document.documentElement.classList.add("has-js");
+  const $ = (selector) => document.querySelector(selector);
+  const $$ = (selector) => Array.from(document.querySelectorAll(selector));
+  const LANGUAGE_KEY = "market-claim-verifier-language";
 
-  // The page can still explain itself when GitHub Pages has not served data/site.json yet.
-  // Keep this snapshot aligned with the checked-in data produced by build_site.py.
-  const FALLBACK_DATA = {
-    eval: { claim_count: 357, result_count: 2142, generated_at: "2026-10-28T06:27:01.922840Z" },
-    systems: [
-      { id: "agent@baseten", mode: "agent", provider: "Baseten", short: "Agent · Baseten", n: 357, correct: 323, accuracy: 0.9047619047619048, accuracy_ci: { lower: 0.8698604594051126, upper: 0.931045292790084 }, false_supported: 1, false_supported_denominator: 186, cost_mean: 0.020380065826330528, latency_mean_s: 11.678653828003732 },
-      { id: "agent@fireworks", mode: "agent", provider: "Fireworks", short: "Agent · Fireworks", n: 357, correct: 323, accuracy: 0.9047619047619048, accuracy_ci: { lower: 0.8698604594051126, upper: 0.931045292790084 }, false_supported: 1, false_supported_denominator: 186, cost_mean: 0.020295625910364143, latency_mean_s: 66.98953745167681 },
-      { id: "agent@meta", mode: "agent", provider: "Meta API", short: "Agent · Meta API", n: 357, correct: 297, accuracy: 0.8319327731092437, accuracy_ci: { lower: 0.7896564008489223, upper: 0.867141741954751 }, false_supported: 4, false_supported_denominator: 186, cost_mean: 0.026363472829131655, latency_mean_s: 39.28851581497394 },
-      { id: "single_shot@meta", mode: "single-shot", provider: "Meta API", short: "Single-shot · Meta API", n: 357, correct: 158, accuracy: 0.4425770308123249, accuracy_ci: { lower: 0.39193672156972204, upper: 0.49443997102542314 }, false_supported: 9, false_supported_denominator: 186, cost_mean: 0.019421636974789908, latency_mean_s: 20.0266540428889 },
-      { id: "single_shot@baseten", mode: "single-shot", provider: "Baseten", short: "Single-shot · Baseten", n: 357, correct: 74, accuracy: 0.20728291316526612, accuracy_ci: { lower: 0.1684587037125242, upper: 0.2523395585407768 }, false_supported: 1, false_supported_denominator: 186, cost_mean: 0.01161584761904761, latency_mean_s: 8.679807027268057 },
-      { id: "single_shot@fireworks", mode: "single-shot", provider: "Fireworks", short: "Single-shot · Fireworks", n: 357, correct: 71, accuracy: 0.19887955182072828, accuracy_ci: { lower: 0.16077615372431311, upper: 0.24339430744535054 }, false_supported: 0, false_supported_denominator: 186, cost_mean: 0.01150906918767507, latency_mean_s: 50.89797223893096 }
-    ],
-    paired: {
-      meta: { points: 38, mcnemar_exact_p: 3.571991065704909e-30, n: 352 },
-      baseten: { points: 70, mcnemar_exact_p: 6.039282377631001e-69, n: 355 },
-      fireworks: { points: 70, mcnemar_exact_p: 1.1349374541135807e-66, n: 355 }
-    },
-    families: [
-      { id: "record_first", systems: { "agent@meta": { correct: 16, n: 31 }, "agent@baseten": { correct: 18, n: 31 }, "agent@fireworks": { correct: 18, n: 31 } } },
-      { id: "yoy", systems: { "agent@meta": { correct: 29, n: 48 }, "agent@baseten": { correct: 45, n: 48 }, "agent@fireworks": { correct: 45, n: 48 } } },
-      { id: "period_trap", systems: { "agent@meta": { correct: 23, n: 30 }, "agent@baseten": { correct: 24, n: 30 }, "agent@fireworks": { correct: 24, n: 30 } } }
-    ],
-    examples: [
-      { id: "G0144", family: "unit_trap", claim: "For full-year 2025, the net income figure was $4.3B at AMD.", gold: "supported", single_shot_verdict: "insufficient_evidence", agent_verdict: "supported", evidence_summary: "Evidence: audited 10-K, confirmed in 1 filing, not restated", evidence: [{ ticker: "AMD", value: 4335000000, unit: "USD", form: "10-K", period: "FY2025", period_basis: "fiscal", tier: "L1", strength: "medium" }] },
-      { id: "G0235", family: "ambiguous_period", claim: "NVIDIA's Q2 2024 revenue was $13.5 billion.", gold: "insufficient_evidence", single_shot_verdict: "supported", agent_verdict: "insufficient_evidence", period_ambiguous: true, evidence_summary: "Evidence: reviewed 10-Q, confirmed in 2 filings, not restated", evidence: [{ ticker: "NVDA", value: 30040000000, unit: "USD", form: "10-Q", period: "2024Q2", period_basis: "calendar", tier: "L2", strength: "medium" }, { ticker: "NVDA", value: 13507000000, unit: "USD", form: "10-Q", period: "FY2024Q2", period_basis: "fiscal", tier: "L2", strength: "medium" }] },
-      { id: "G0193", family: "record_first", claim: "Johnson & Johnson's fiscal Q2 2025 revenue was its highest ever, at $25.6 billion.", gold: "contradicted", single_shot_verdict: "insufficient_evidence", agent_verdict: "contradicted", evidence_summary: "Evidence: reviewed 10-Q, confirmed in 2 filings, not restated", evidence: [{ ticker: "JNJ", value: 23743000000, unit: "USD", form: "10-Q", period: "FY2025Q2", period_basis: "fiscal", tier: "L2", strength: "medium" }] }
-    ]
-  };
-
-  const $ = (selector, root = document) => root.querySelector(selector);
-  const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
-  let currentData = FALLBACK_DATA;
-  let currentFilter = "all";
-
-  const formatPercent = (value) => `${(value * 100).toFixed(1)}%`;
-  const formatCI = (ci) => `${formatPercent(ci.lower)}–${formatPercent(ci.upper)}`;
-  const formatCost = (value) => `$${value.toFixed(3)}`;
-  const formatLatency = (value) => `${Math.round(value)} s`;
-  const formatVerdict = (value) => value === "insufficient_evidence" ? "insufficient evidence" : value;
-  const formatNumber = (value) => {
-    if (value === null || value === undefined || Number.isNaN(Number(value))) return "—";
-    const number = Number(value);
-    if (Math.abs(number) >= 1e9) return `$${(number / 1e9).toFixed(3).replace(/0+$/, "").replace(/\.$/, "")}B`;
-    if (Math.abs(number) >= 1e6) return `$${(number / 1e6).toFixed(1).replace(/\.0$/, "")}M`;
-    if (Math.abs(number) >= 1e3) return `$${(number / 1e3).toFixed(1).replace(/\.0$/, "")}K`;
-    if (String(value).includes(".")) return `$${number.toFixed(2)}`;
-    return `$${number}`;
-  };
-
-  function evidenceLabel(item) {
-    const period = item.period_basis === "fiscal" ? `fiscal ${item.period}` : `calendar ${item.period}`;
-    const tier = item.tier ? ` · ${item.tier}` : "";
-    return `${period} · ${item.form || "evidence"}${tier}`;
-  }
-
-  function renderHero(data) {
-    const baseten = data.systems.find((system) => system.id === "agent@baseten") || FALLBACK_DATA.systems[0];
-    const single = data.systems.find((system) => system.id === "single_shot@meta") || FALLBACK_DATA.systems[3];
-    $("#hero-agent-score").textContent = formatPercent(baseten.accuracy);
-    $("#hero-single-score").textContent = formatPercent(single.accuracy);
-    $("#hero-claim-count").textContent = `n = ${data.eval.claim_count}`;
-    $("#hero-agent-ci").textContent = formatCI(baseten.accuracy_ci);
-    const heroNote = $(".hero-metric-note");
-    heroNote.setAttribute("title", `The strongest single-shot comparison is ${formatPercent(single.accuracy)} on the Meta API.`);
-  }
-
-  function verdictColor(verdict) {
-    if (verdict === "supported") return "forest";
-    if (verdict === "contradicted") return "coral";
-    return "amber";
-  }
-
-  function renderExamples(data) {
-    const container = $("#claim-examples");
-    container.replaceChildren();
-    data.examples.forEach((example) => {
-      const article = document.createElement("article");
-      article.className = "claim-example reveal";
-      article.dataset.verdict = example.agent_verdict;
-
-      const copy = document.createElement("div");
-      copy.className = "claim-copy";
-      const quote = document.createElement("blockquote");
-      quote.textContent = example.claim;
-      const id = document.createElement("span");
-      id.className = "claim-id";
-      id.textContent = `${example.id} · single-shot: ${formatVerdict(example.single_shot_verdict)}`;
-      copy.append(quote, id);
-
-      const evidence = document.createElement("div");
-      evidence.className = "claim-evidence";
-      const uniqueEvidence = example.evidence.filter((item, index, all) => index === all.findIndex((other) => other.value === item.value && other.period === item.period && other.period_basis === item.period_basis));
-      uniqueEvidence.forEach((item) => {
-        const actual = document.createElement("strong");
-        actual.textContent = `${item.ticker} actual ${formatNumber(item.value)}`;
-        const details = document.createElement("span");
-        details.textContent = `${evidenceLabel(item)} · ${item.strength || "recorded"} strength`;
-        evidence.append(actual, details);
-      });
-      if (example.period_ambiguous) {
-        const note = document.createElement("span");
-        note.textContent = "Two period readings disagree.";
-        evidence.append(note);
+  const COPY = {
+    en: {
+      metaTitle: "Market claim verifier",
+      metaDescription: "Paste a finance post and check its numbers against SEC filings.",
+      a11y: {
+        skip: "Skip to content",
+        home: "Market claim verifier home",
+        nav: "Primary navigation",
+        language: "Language",
+        exampleLanguage: "Example language",
+        chart: "Accuracy comparison chart"
+      },
+      nav: { how: "How it works", results: "Results", trust: "Trust" },
+      hero: {
+        titleLine1: "Paste a finance post.",
+        titleLine2: "See what's true.",
+        lede: "Every checked number links to the SEC filing that proves it."
+      },
+      example: {
+        title: "A real post, checked.",
+        english: "English post",
+        chinese: "中文貼文",
+        postLabel: "Post",
+        loading: "Loading the report...",
+        unavailable: "The report is not available in this view.",
+        claimCount: (count) => `${count} claims found`
+      },
+      verdict: { true: "True", false: "False", unknown: "Can't check" },
+      claimKind: { reported_fact: "Money claim", forecast: "Forecast", opinion: "Opinion" },
+      claimSource: {
+        sec: "SEC says",
+        filed: "filed",
+        see: "See filing",
+        derived: "SEC check",
+        notChecked: "Forecasts and opinions are not checked.",
+        noSource: "No filing value returned."
+      },
+      how: {
+        title: "How it works",
+        lede: "A short path from a social post to a source you can open.",
+        step1: {
+          title: "Find every money claim",
+          body: "The AI uses Meta's Muse Spark models to find each number, period, and comparison in the post."
+        },
+        step2: {
+          title: "Open the official filing",
+          body: "It looks up the company's SEC filing for the same company, number, and time period."
+        },
+        step3: {
+          title: "Let code decide",
+          body: "Code, not the AI, compares the numbers and gives the final True, False, or Can't check verdict."
+        }
+      },
+      results: {
+        title: "Does it work?",
+        lede: "Adding an SEC lookup and simple checks raises accuracy for all three ways to run Muse.",
+        caption: (count) => count ? `Tested on ${count} claims with known answers.` : "Tested on the evaluation claims with known answers.",
+        without: "Without tools",
+        withChecks: "With SEC lookup + checks",
+        change: (points) => `+${points} points`
+      },
+      research: {
+        summary: "For researchers",
+        ci: "95% intervals",
+        paired: "Paired tests",
+        costLatency: "Average cost and time per claim",
+        weakSpots: "Per-type weak spots",
+        familyLabels: {
+          record_first: "First-time record claims",
+          yoy: "Year-over-year claims",
+          period_trap: "Fiscal and calendar periods"
+        },
+        goldCorrections: [
+          "Amazon's 12-month 10-Q value was trailing-twelve-month data, not a fiscal year.",
+          "Apple's 52/53-week quarter ending 2023-07-01 belongs to calendar Q2, not Q3."
+        ]
+      },
+      trust: {
+        title: "Why you can trust it",
+        lede: "The source and the rules stay visible.",
+        item1: "Every answer links to the filing.",
+        item2: "The AI cannot change the numbers it quotes. If the quote changes, it is rejected.",
+        item3: "We publish our own mistakes in"
+      },
+      footer: {
+        title: "Run the check yourself.",
+        lede: "Read the results, open the source, or run the same command on your own post.",
+        explorer: "Results explorer ↗",
+        github: "GitHub repo ↗",
+        run: "Run it yourself",
+        hackathon: "Built for the Meta Global AI Developer Hackathon 2026.",
+        top: "Back to top ↑"
       }
+    },
+    zh: {
+      metaTitle: "Market claim verifier｜財經說法查核",
+      metaDescription: "貼上財經貼文，將其中的數字與 SEC 申報文件比對。",
+      a11y: {
+        skip: "跳到主要內容",
+        home: "財經說法查核首頁",
+        nav: "主要導覽",
+        language: "語言",
+        exampleLanguage: "範例語言",
+        chart: "準確率比較圖"
+      },
+      nav: { how: "運作方式", results: "結果", trust: "為什麼可信" },
+      hero: {
+        titleLine1: "貼上一則財經貼文。",
+        titleLine2: "看看哪些數字是真的。",
+        lede: "每個查過的數字，都連到證明它的 SEC 申報文件。"
+      },
+      example: {
+        title: "看一則真的貼文。",
+        english: "英文貼文",
+        chinese: "中文貼文",
+        postLabel: "貼文",
+        loading: "正在載入報告⋯",
+        unavailable: "目前無法顯示報告。",
+        claimCount: (count) => `找出 ${count} 個說法`
+      },
+      verdict: { true: "正確", false: "錯誤", unknown: "無法查核" },
+      claimKind: { reported_fact: "財務說法", forecast: "預測", opinion: "看法" },
+      claimSource: {
+        sec: "SEC 顯示",
+        filed: "申報日期",
+        see: "查看申報文件",
+        derived: "SEC 查核",
+        notChecked: "預測和看法不在查核範圍內。",
+        noSource: "報告沒有回傳申報數字。"
+      },
+      how: {
+        title: "怎麼運作",
+        lede: "從社群貼文走到可打開的來源，只有三步。",
+        step1: {
+          title: "找出每個財務說法",
+          body: "AI 使用 Meta 的 Muse Spark 模型，找出貼文裡每個數字、期間和比較。"
+        },
+        step2: {
+          title: "打開官方申報文件",
+          body: "它查找同一家公司、數字和期間的 SEC 申報文件。"
+        },
+        step3: {
+          title: "讓程式做決定",
+          body: "由程式，不是 AI，比對數字，最後給出正確、錯誤或無法查核。"
+        }
+      },
+      results: {
+        title: "有效嗎？",
+        lede: "加上 SEC 查找和簡單檢查後，Muse 的三種執行方式都更準。",
+        caption: (count) => count ? `以 ${count} 個有已知答案的說法測試。` : "以有已知答案的評估說法測試。",
+        without: "不查文件",
+        withChecks: "查 SEC + 檢查",
+        change: (points) => `增加 ${points} 個百分點`
+      },
+      research: {
+        summary: "研究者資料",
+        ci: "95% 區間",
+        paired: "配對測試",
+        costLatency: "每個說法的平均成本與時間",
+        weakSpots: "各類型較弱的地方",
+        familyLabels: {
+          record_first: "首次創高說法",
+          yoy: "年增減說法",
+          period_trap: "財年與曆年期間"
+        },
+        goldCorrections: [
+          "Amazon 的 12 個月 10-Q 數字是過去 12 個月資料，不是財年資料。",
+          "Apple 截至 2023-07-01 的 52／53 週季度，屬於曆年第二季，不是第三季。"
+        ]
+      },
+      trust: {
+        title: "為什麼可信",
+        lede: "來源和規則都看得到。",
+        item1: "每個答案都連到申報文件。",
+        item2: "AI 不能改動它引用的數字。引用一變，系統就拒絕。",
+        item3: "我們公開自己的錯誤，放在"
+      },
+      footer: {
+        title: "自己跑一次查核。",
+        lede: "查看結果、打開來源，或對自己的貼文執行同一個指令。",
+        explorer: "結果瀏覽器 ↗",
+        github: "GitHub 程式庫 ↗",
+        run: "自己執行",
+        hackathon: "為 Meta Global AI Developer Hackathon 2026 打造。",
+        top: "回到頂端 ↑"
+      }
+    }
+  };
 
-      const verdict = document.createElement("div");
-      verdict.className = "claim-verdict";
-      verdict.dataset.verdict = example.agent_verdict;
-      const verdictWord = document.createElement("span");
-      verdictWord.className = "verdict-word";
-      verdictWord.textContent = formatVerdict(example.agent_verdict);
-      const verdictNote = document.createElement("span");
-      verdictNote.className = "verdict-note";
-      verdictNote.textContent = example.evidence_summary || "Program-owned verdict";
-      verdict.append(verdictWord, verdictNote);
+  let pageLanguage = readLanguage();
+  let exampleLanguage = pageLanguage;
+  let siteData = null;
 
-      article.append(copy, evidence, verdict);
-      container.append(article);
+  function readLanguage() {
+    try {
+      return localStorage.getItem(LANGUAGE_KEY) === "zh" ? "zh" : "en";
+    } catch (_error) {
+      return "en";
+    }
+  }
+
+  function saveLanguage(language) {
+    try {
+      localStorage.setItem(LANGUAGE_KEY, language);
+    } catch (_error) {
+      // Private browsing and locked-down embeds can reject storage.
+    }
+  }
+
+  function getCopy(path) {
+    return path.split(".").reduce((value, key) => value && value[key], COPY[pageLanguage]);
+  }
+
+  function applyCopy() {
+    const copy = COPY[pageLanguage];
+    document.documentElement.lang = pageLanguage === "zh" ? "zh-Hant" : "en";
+    document.title = copy.metaTitle;
+    const description = document.querySelector('meta[name="description"]');
+    if (description) description.setAttribute("content", copy.metaDescription);
+
+    $$('[data-i18n]').forEach((element) => {
+      const value = getCopy(element.dataset.i18n);
+      if (typeof value === "string") element.textContent = value;
+      if (typeof value === "function") {
+        const count = siteData && siteData.eval ? siteData.eval.claim_count : null;
+        element.textContent = value(count);
+      }
     });
-  }
 
-  function svgElement(name, attributes = {}, text = "") {
-    const element = document.createElementNS("http://www.w3.org/2000/svg", name);
-    Object.entries(attributes).forEach(([key, value]) => element.setAttribute(key, value));
-    if (text) element.textContent = text;
-    return element;
-  }
-
-  function cssColor(name) {
-    return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
-  }
-
-  function renderChart(data, filter = "all") {
-    const svg = $("#accuracy-chart");
-    const systems = data.systems.filter((system) => filter === "all" || system.mode === filter);
-    const colors = {
-      ink: cssColor("--deep-ink"),
-      muted: cssColor("--deep-muted"),
-      panel: cssColor("--deep-panel"),
-      forest: cssColor("--forest"),
-      slate: cssColor("--slate"),
-      amber: cssColor("--amber")
-    };
-    svg.replaceChildren();
-    svg.append(
-      svgElement("title", { id: "chart-title" }, "Accuracy with 95 percent Wilson intervals"),
-      svgElement("desc", { id: "chart-desc" }, "Six evaluation systems shown on a zero to one hundred percent scale with their Wilson confidence intervals.")
-    );
-
-    const left = 266;
-    const top = 52;
-    const plotWidth = 430;
-    const rowHeight = 56;
-    const axisY = top + systems.length * rowHeight + 10;
-    [0, 50, 100].forEach((tick) => {
-      const x = left + plotWidth * (tick / 100);
-      svg.append(svgElement("line", { x1: x, y1: top - 25, x2: x, y2: axisY - 15, stroke: colors.panel, "stroke-width": 3 }));
-      svg.append(svgElement("text", { x, y: axisY + 10, fill: colors.muted, "font-size": 12, "text-anchor": tick === 0 ? "start" : tick === 100 ? "end" : "middle" }, `${tick}%`));
+    $$('[data-i18n-aria]').forEach((element) => {
+      const value = getCopy(element.dataset.i18nAria);
+      if (typeof value === "string") element.setAttribute("aria-label", value);
     });
 
-    systems.forEach((system, index) => {
-      const y = top + index * rowHeight;
-      const barY = y - 10;
-      const accuracyX = left + plotWidth * system.accuracy;
-      const lowX = left + plotWidth * system.accuracy_ci.lower;
-      const highX = left + plotWidth * system.accuracy_ci.upper;
-      const fill = system.mode === "agent" ? colors.forest : colors.slate;
-      svg.append(svgElement("text", { x: 8, y: y - 3, fill: colors.ink, "font-size": 14, "font-weight": 700 }, system.short));
-      svg.append(svgElement("text", { x: 8, y: y + 15, fill: colors.muted, "font-size": 11 }, `${system.correct}/${system.n} correct`));
-      svg.append(svgElement("rect", { x: left, y: barY, width: plotWidth, height: 20, fill: colors.panel }));
-      svg.append(svgElement("rect", { x: left, y: barY, width: plotWidth * system.accuracy, height: 20, fill }));
-      svg.append(svgElement("line", { x1: lowX, y1: y, x2: highX, y2: y, stroke: colors.ink, "stroke-width": 4 }));
-      svg.append(svgElement("line", { x1: lowX, y1: y - 7, x2: lowX, y2: y + 7, stroke: colors.ink, "stroke-width": 4 }));
-      svg.append(svgElement("line", { x1: highX, y1: y - 7, x2: highX, y2: y + 7, stroke: colors.ink, "stroke-width": 4 }));
-      svg.append(svgElement("circle", { cx: accuracyX, cy: y, r: 6, fill: colors.ink }));
-      svg.append(svgElement("text", { x: 735, y: y + 5, fill: colors.ink, "font-size": 14, "font-weight": 700, "text-anchor": "end" }, formatPercent(system.accuracy)));
+    $$('[data-language]').forEach((button) => {
+      const active = button.dataset.language === pageLanguage;
+      button.classList.toggle("is-active", active);
+      button.setAttribute("aria-pressed", String(active));
     });
-    svg.setAttribute("viewBox", `0 0 760 ${axisY + 34}`);
-    $("#chart-status").textContent = `Showing ${filter === "all" ? "all six systems" : filter === "agent" ? "agent paths" : "single-shot paths"} · n = ${data.eval.claim_count} claims`;
+
+    $$('[data-example]').forEach((button) => {
+      const active = button.dataset.example === exampleLanguage;
+      button.classList.toggle("is-active", active);
+      button.setAttribute("aria-selected", String(active));
+    });
+
+    if (siteData) {
+      renderExample(siteData.examples[exampleLanguage]);
+      renderChart(siteData);
+      renderResearch(siteData);
+    }
   }
 
-  function renderTable(data) {
-    const body = $("#results-table-body");
-    body.replaceChildren();
-    data.systems.forEach((system) => {
-      const row = document.createElement("tr");
-      const values = [
-        system.short,
-        formatPercent(system.accuracy),
-        formatCI(system.accuracy_ci),
-        formatCost(system.cost_mean),
-        formatLatency(system.latency_mean_s),
-        `${system.false_supported} / ${system.false_supported_denominator}`
-      ];
-      values.forEach((value) => {
-        const cell = document.createElement("td");
-        cell.textContent = value;
-        row.append(cell);
-      });
-      body.append(row);
-    });
+  function verdictClass(claim) {
+    if (claim.verdict === "supported") return "is-true";
+    if (claim.verdict === "contradicted") return "is-false";
+    return "is-unknown";
   }
 
-  function renderPaired(data) {
-    ["meta", "baseten", "fireworks"].forEach((provider) => {
-      const comparison = data.paired[provider];
-      $(`#delta-${provider}`).textContent = `+${comparison.points} pts`;
-    });
-    const allSmall = ["meta", "baseten", "fireworks"].every((provider) => data.paired[provider].mcnemar_exact_p < 0.0001);
-    $("#mcnemar-note").textContent = allSmall ? "p < 0.0001" : "exact p values in the snapshot";
+  function verdictCopy(claim) {
+    if (claim.verdict === "supported") return getCopy("verdict.true");
+    if (claim.verdict === "contradicted") return getCopy("verdict.false");
+    return getCopy("verdict.unknown");
   }
 
-  function renderWeakSpots(data) {
-    const labels = {
-      record_first: (family) => `Record / first-time claims: ${family.systems["agent@meta"].correct}–${family.systems["agent@baseten"].correct} of ${family.systems["agent@meta"].n} right.`,
-      yoy: (family) => `Year-over-year claims: Meta API ${family.systems["agent@meta"].correct} of ${family.systems["agent@meta"].n} right; Baseten and Fireworks ${family.systems["agent@baseten"].correct} of ${family.systems["agent@baseten"].n}.`,
-      period_trap: (family) => `Fiscal/calendar traps: ${family.systems["agent@meta"].correct}–${family.systems["agent@baseten"].correct} of ${family.systems["agent@meta"].n} right.`
-    };
-    const list = $("#weak-spot-list");
-    list.replaceChildren();
-    data.families.forEach((family) => {
-      const item = document.createElement("li");
-      item.textContent = labels[family.id] ? labels[family.id](family) : family.id;
-      list.append(item);
-    });
+  function claimKindCopy(claim) {
+    return getCopy(`claimKind.${claim.kind}`) || getCopy("claimKind.reported_fact");
   }
 
-  function observeReveals() {
-    const revealItems = $$(".reveal:not(.is-visible)");
-    if (!("IntersectionObserver" in window)) {
-      revealItems.forEach((item) => item.classList.add("is-visible"));
+  function pythonOffsetToJavaScript(text, offset) {
+    return Array.from(text).slice(0, offset).join("").length;
+  }
+
+  function renderPost(example) {
+    const post = $("#post-text");
+    if (!post || !example) return;
+    const fragment = document.createDocumentFragment();
+    const text = example.post || "";
+    const claims = [...(example.claims || [])].sort((left, right) => left.span[0] - right.span[0]);
+    let cursor = 0;
+
+    claims.forEach((claim) => {
+      if (!Array.isArray(claim.span) || claim.span.length !== 2) return;
+      const start = pythonOffsetToJavaScript(text, claim.span[0]);
+      const end = pythonOffsetToJavaScript(text, claim.span[1]);
+      if (start < cursor || end <= start || start > text.length) return;
+      fragment.append(document.createTextNode(text.slice(cursor, start)));
+      const mark = document.createElement("mark");
+      mark.className = verdictClass(claim);
+      mark.dataset.claimIndex = String(claim.index);
+      mark.title = `${verdictCopy(claim)}: ${claim.quote}`;
+      mark.textContent = text.slice(start, end);
+      fragment.append(mark);
+      cursor = end;
+    });
+
+    fragment.append(document.createTextNode(text.slice(cursor)));
+    post.replaceChildren(fragment);
+  }
+
+  function appendSource(card, claim) {
+    const sourceLine = document.createElement("p");
+    sourceLine.className = "claim-source";
+    const source = claim.source;
+
+    if (!source) {
+      sourceLine.textContent = getCopy("claimSource.notChecked");
+      card.append(sourceLine);
       return;
     }
-    const observer = new IntersectionObserver((entries, instance) => {
-      entries.forEach((entry) => {
-        if (entry.isIntersecting) {
-          entry.target.classList.add("is-visible");
-          instance.unobserve(entry.target);
-        }
-      });
-    }, { rootMargin: "0px 0px -8% 0px", threshold: 0.08 });
-    revealItems.forEach((item) => observer.observe(item));
+
+    if (source.kind === "direct") {
+      const form = source.form ? ` (${source.form}` : "";
+      const filed = source.filed ? `${getCopy("claimSource.filed")} ${source.filed}` : "";
+      const closing = form ? ")" : "";
+      sourceLine.append(document.createTextNode(`${getCopy("claimSource.sec")}: ${source.display_value || ""}${form}${filed ? `${form ? ", " : " ("}${filed}` : ""}${closing}`));
+    } else {
+      const summary = (source.summary || claim.summary || "").split(". ")[0];
+      sourceLine.append(document.createTextNode(`${getCopy("claimSource.derived")}: ${summary}${summary && !summary.endsWith(".") ? "." : ""}`));
+    }
+
+    if (source.filing_url) {
+      const link = document.createElement("a");
+      link.href = source.filing_url;
+      link.target = "_blank";
+      link.rel = "noreferrer";
+      link.textContent = getCopy("claimSource.see");
+      sourceLine.append(link);
+    }
+    card.append(sourceLine);
   }
 
-  function setupFilters() {
-    $$(".chart-filter").forEach((button) => {
+  function renderClaimCards(example) {
+    const list = $("#claim-list");
+    if (!list || !example) return;
+    list.replaceChildren();
+
+    (example.claims || []).forEach((claim) => {
+      const card = document.createElement("article");
+      card.className = `claim-card ${verdictClass(claim)}`;
+
+      const top = document.createElement("div");
+      top.className = "claim-card-top";
+      const verdict = document.createElement("span");
+      verdict.className = "claim-verdict";
+      verdict.textContent = verdictCopy(claim);
+      const kind = document.createElement("span");
+      kind.className = "claim-kind";
+      kind.textContent = claimKindCopy(claim);
+      top.append(verdict, kind);
+
+      const quote = document.createElement("p");
+      quote.className = "claim-text";
+      quote.textContent = claim.quote || claim.claim || "";
+
+      card.append(top, quote);
+      appendSource(card, claim);
+      list.append(card);
+    });
+  }
+
+  function renderExample(example) {
+    if (!example) return;
+    renderPost(example);
+    renderClaimCards(example);
+    const count = $("#post-count");
+    if (count) count.textContent = getCopy("example.claimCount")(example.claims.length);
+  }
+
+  function percent(value, decimals = 0) {
+    return `${(Number(value) * 100).toFixed(decimals)}%`;
+  }
+
+  function range(values) {
+    return `${percent(values.lower, 1)}–${percent(values.upper, 1)}`;
+  }
+
+  function cost(value) {
+    return `$${Number(value).toFixed(3)}`;
+  }
+
+  function seconds(value) {
+    return `${Number(value).toFixed(1)}s`;
+  }
+
+  function providerName(provider) {
+    const names = { meta: "Meta API", baseten: "Baseten", fireworks: "Fireworks" };
+    return names[provider] || provider;
+  }
+
+  function createBarLine(label, value, className) {
+    const line = document.createElement("div");
+    line.className = "chart-bar-line";
+    line.setAttribute("aria-label", `${label}: ${value}%`);
+
+    const barLabel = document.createElement("span");
+    barLabel.className = "bar-label";
+    barLabel.textContent = label;
+    const track = document.createElement("span");
+    track.className = "bar-track";
+    const fill = document.createElement("span");
+    fill.className = `bar-fill ${className}`;
+    fill.style.setProperty("--bar-width", `${value}%`);
+    track.append(fill);
+    const barValue = document.createElement("strong");
+    barValue.className = "bar-value";
+    barValue.textContent = `${value}%`;
+    line.append(barLabel, track, barValue);
+    return line;
+  }
+
+  function renderChart(data) {
+    const chart = $("#chart");
+    if (!chart || !data.chart) return;
+    const caption = $(".chart-caption");
+    if (caption) caption.textContent = getCopy("results.caption")(data.eval.claim_count);
+    chart.replaceChildren();
+    data.chart.forEach((item) => {
+      const row = document.createElement("div");
+      row.className = "chart-row";
+      const provider = document.createElement("strong");
+      provider.className = "chart-provider";
+      provider.textContent = item.provider;
+      row.append(provider);
+      row.append(createBarLine(getCopy("results.without"), item.without.percent, "is-without"));
+      row.append(createBarLine(getCopy("results.withChecks"), item.with_checks.percent, "is-with-checks"));
+      chart.append(row);
+    });
+  }
+
+  function addResearchItem(list, text) {
+    const item = document.createElement("li");
+    item.textContent = text;
+    list.append(item);
+  }
+
+  function renderResearch(data) {
+    const list = $("#research-list");
+    if (!list || !data.research) return;
+    list.replaceChildren();
+    const research = data.research;
+
+    const ciText = Object.entries(research.confidence_intervals)
+      .map(([provider, values]) => `${providerName(provider)} ${getCopy("results.without")} ${range(values.without)}, ${getCopy("results.withChecks")} ${range(values.with_checks)}`)
+      .join("; ");
+    addResearchItem(list, `${getCopy("research.ci")}: ${ciText}.`);
+
+    const pairedText = Object.entries(research.paired)
+      .map(([provider, values]) => `${providerName(provider)} +${values.points} points, p ${values.mcnemar_exact_p < 0.0001 ? "< 0.0001" : `= ${values.mcnemar_exact_p.toFixed(4)}`}`)
+      .join("; ");
+    addResearchItem(list, `${getCopy("research.paired")}: ${pairedText}.`);
+
+    const costText = Object.entries(research.cost_latency)
+      .map(([provider, values]) => `${providerName(provider)} ${getCopy("results.withChecks")} ${cost(values.with_checks.cost_mean)}, ${seconds(values.with_checks.latency_mean_s)}`)
+      .join("; ");
+    addResearchItem(list, `${getCopy("research.costLatency")}: ${costText}.`);
+
+    const weakText = research.families
+      .map((family) => {
+        const label = getCopy("research.familyLabels")[family.id] || family.id;
+        const meta = family.systems["agent@meta"];
+        const baseten = family.systems["agent@baseten"];
+        const fireworks = family.systems["agent@fireworks"];
+        return `${label}: Meta ${meta.correct}/${meta.n}, Baseten ${baseten.correct}/${baseten.n}, Fireworks ${fireworks.correct}/${fireworks.n}`;
+      })
+      .join("; ");
+    addResearchItem(list, `${getCopy("research.weakSpots")}: ${weakText}.`);
+
+    const corrections = pageLanguage === "zh" ? getCopy("research.goldCorrections") : research.gold_corrections;
+    corrections.forEach((correction) => addResearchItem(list, correction));
+  }
+
+  function setupControls() {
+    $$('[data-language]').forEach((button) => {
       button.addEventListener("click", () => {
-        currentFilter = button.dataset.filter;
-        $$(".chart-filter").forEach((other) => other.classList.toggle("is-selected", other === button));
-        renderChart(currentData, currentFilter);
+        pageLanguage = button.dataset.language === "zh" ? "zh" : "en";
+        exampleLanguage = pageLanguage;
+        saveLanguage(pageLanguage);
+        applyCopy();
+      });
+    });
+
+    $$('[data-example]').forEach((button) => {
+      button.addEventListener("click", () => {
+        exampleLanguage = button.dataset.example === "zh" ? "zh" : "en";
+        $$('[data-example]').forEach((other) => {
+          const active = other === button;
+          other.classList.toggle("is-active", active);
+          other.setAttribute("aria-selected", String(active));
+        });
+        if (siteData) renderExample(siteData.examples[exampleLanguage]);
       });
     });
   }
 
   async function loadData() {
-    let fromFallback = false;
     try {
       const response = await fetch("data/site.json", { cache: "no-store" });
       if (!response.ok) throw new Error("site data unavailable");
-      currentData = await response.json();
+      siteData = await response.json();
+      renderExample(siteData.examples[exampleLanguage] || siteData.examples.en);
+      renderChart(siteData);
+      renderResearch(siteData);
     } catch (_error) {
-      fromFallback = true;
-      currentData = FALLBACK_DATA;
+      const list = $("#claim-list");
+      if (list) {
+        list.replaceChildren();
+        const message = document.createElement("p");
+        message.className = "data-loading";
+        message.textContent = getCopy("example.unavailable");
+        list.append(message);
+      }
     }
-
-    renderHero(currentData);
-    renderExamples(currentData);
-    renderChart(currentData, currentFilter);
-    renderTable(currentData);
-    renderPaired(currentData);
-    renderWeakSpots(currentData);
-    setupFilters();
-    observeReveals();
-    if (fromFallback) $("#chart-status").textContent += " · showing the checked fallback snapshot";
   }
 
+  setupControls();
+  applyCopy();
   loadData();
 })();
