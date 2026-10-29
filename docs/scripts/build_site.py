@@ -667,7 +667,10 @@ def media_stamp_card(run_id: str, fetcher: SECFilingFetcher, cached_site: dict) 
         "ticker": claim["ticker"], "company": evidence[0]["entity"], "kind": claim["kind"],
         "quote": claim["quote"], "text": {"en": claim["claim"], "zh": "Apple 2025 財年第 3 季稀釋每股盈餘為 $1.67。"},
         "status": claim["status"], "verdict": claim["verdict"], "summary": claim["summary"],
-        "persona": {**stamp_persona("demo-thread-baseten"), "name": {"en": "Example Investor", "zh": "範例投資人"}},
+        # The screenshot names its fictional author; the audio card keeps the thread persona unchanged.
+        "persona": stamp_persona("demo-thread-baseten") if is_audio else {
+            **stamp_persona("demo-thread-baseten"), "name": {"en": "Example Investor", "zh": "範例投資人"},
+            "byline": {"en": "Fictional author in the test image", "zh": "測試圖片中的虛構作者"}},
         "post_date": "2026-10-29", "date_basis": basis, "period": stamp_period(evidence[0]["period"]),
         "source_kind": "social", "input_kind": "audio" if is_audio else "screenshot", "input_media": media,
         "thread_index": None, "filing_url": excerpt["primary_url"], "evidence_label": "SEC 10-Q · L2",
