@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Build the small data snapshot used by the reader-facing site.
 
-The landing page only needs a few evaluation values and two real post reports.
+The landing page only needs a few evaluation values and three real post reports.
 Keeping the extraction here means the page never has to copy a claim, span,
 verdict, filing value, or URL by hand.
 Use --offline to reuse matching filing excerpts from the existing site snapshot.
@@ -39,6 +39,20 @@ EXAMPLE_IDS = {
     "en": "bigtech-thread-baseten",
     "zh": "tw-social-post-meta",
 }
+
+# Compact, faithful display copy. Identity, verdicts and links are read from the
+# reports below, rather than copied into the animation or its translations.
+STAMP_SELECTIONS = (
+    ("demo-thread-baseten", 1, "Q3 2023 revenue: $143.1B.", "2023 年第 3 季營收 1,431 億美元。"),
+    ("demo-thread-baseten", 3, "Fiscal Q4 2025 alone: $416.2B revenue.", "僅 2025 財年第 4 季，營收就達 4,162 億美元。"),
+    ("demo-thread-baseten", 4, "At 30x sales, NVDA is still cheap.", "NVDA 股價是營收的 30 倍，仍然便宜。"),
+    ("demo-thread-baseten", 2, "FY2024 revenue: $60.9B, more than double.", "2024 財年營收 609 億美元，是前一年的兩倍多。"),
+    ("bigtech-thread-baseten", 3, "Full-year 2025 revenue grew 3%.", "2025 全年營收成長 3%。"),
+    ("tw-social-post-meta", 1, "FY2024 revenue: $245.1B, up 16%.", None),
+    ("bigtech-thread-baseten", 5, "Revenue will cross $500B by 2027.", "到 2027 年，營收將突破 5,000 億美元。"),
+    ("bigtech-thread-baseten", 4, "Fiscal 2024 revenue: $391.0B.", "2024 財年營收 3,910 億美元。"),
+    ("tw-social-post-meta", 3, "2024 revenue exceeded $50B.", None),
+)
 
 SYSTEM_ORDER = [
     "agent@baseten",
@@ -174,6 +188,36 @@ def first_url(evidence: list[dict[str, Any]]) -> str | None:
         if item.get("filing_url"):
             return item["filing_url"]
     return None
+
+
+def stamp_cards() -> list[dict[str, Any]]:
+    """Select real claims in a mixed order, including across the loop boundary."""
+    reports = {}
+    cards = []
+    for report_id, index, english, chinese in STAMP_SELECTIONS:
+        report_path = Path("docs/evidence/posts-2026-10-28") / report_id / "report.json"
+        if report_id not in reports:
+            reports[report_id] = read_json(ROOT / report_path)
+        claim = next(item for item in reports[report_id]["claims"] if item["index"] == index)
+        evidence = claim.get("evidence") or []
+        checkable = claim.get("status") == "verified" and claim.get("verdict") in ("supported", "contradicted")
+        forms = list(dict.fromkeys(item["form"] for item in evidence if item.get("form") in ("10-Q", "10-K")))
+        cards.append({
+            "id": f"{report_id}-{index}",
+            "source_report": report_path.as_posix(),
+            "claim_index": claim["index"],
+            "ticker": claim["ticker"],
+            "quote": claim["quote"],
+            "kind": claim["kind"],
+            "status": claim["status"],
+            "verdict": claim.get("verdict"),
+            "summary": claim.get("summary"),
+            "text": {"en": english, "zh": chinese if chinese is not None else claim["quote"]},
+            "source_kind": "social" if report_id == "tw-social-post-meta" else "thread",
+            "filing_url": first_url(evidence),
+            "evidence_label": f"SEC {' / '.join(forms) if forms else '10-Q / 10-K'}" if checkable and evidence else None,
+        })
+    return cards
 
 
 def source_snapshot(claim: dict[str, Any]) -> dict[str, Any] | None:
@@ -477,6 +521,7 @@ def main() -> None:
         "families": families,
         "research": research_snapshot(systems, paired, families),
         "examples": examples,
+        "stamp_cards": stamp_cards(),
         "filing_excerpts": {
             "cache_dir": ".cache/filings",
             "examples": {language: example["filing_excerpt_summary"] for language, example in examples.items()},

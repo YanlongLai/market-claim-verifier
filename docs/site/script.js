@@ -23,6 +23,18 @@
         titleLine2: "See what's true.",
         lede: "Every checked number links to the SEC filing that proves it."
       },
+      stamps: {
+        region: "Real finance claims pass through the checker and receive True, False, or Can't check stamps.",
+        gate: "Muse Spark agent + SEC check",
+        claims: "Claims and report verdicts",
+        thread: "Thread",
+        social: "Social post",
+        pause: "Pause animation",
+        play: "Play animation",
+        true: "TRUE",
+        false: "FALSE",
+        unknown: "CAN'T CHECK"
+      },
       example: {
         title: "A real post, checked.",
         english: "English post",
@@ -156,6 +168,18 @@
         titleLine2: "看看哪些數字是真的。",
         lede: "每個查過的數字，都連到證明它的 SEC 申報文件。"
       },
+      stamps: {
+        region: "真實財經說法通過查核，蓋上正確、錯誤或無法查核的印章。",
+        gate: "Muse Spark 代理 + SEC 查核",
+        claims: "說法與報告判定",
+        thread: "討論串",
+        social: "社群貼文",
+        pause: "暫停動畫",
+        play: "播放動畫",
+        true: "正確",
+        false: "錯誤",
+        unknown: "無法查核"
+      },
       example: {
         title: "看一則真的貼文。",
         english: "英文貼文",
@@ -277,6 +301,7 @@
   let pageLanguage = readLanguage();
   let exampleLanguage = pageLanguage;
   let siteData = null;
+  let stampConveyor = null;
   let activeFilingClaim = null;
   let filingReturnFocus = null;
 
@@ -337,6 +362,7 @@
     if (closeButton) closeButton.setAttribute("aria-label", getCopy("filing.close"));
 
     if (siteData) {
+      renderStampScene();
       renderExample(siteData.examples[exampleLanguage]);
       renderChart(siteData);
       renderPosthocRerun(siteData);
@@ -344,6 +370,258 @@
       const dialog = $("#filing-dialog");
       if (activeFilingClaim && dialog && dialog.open) renderFilingDialog(activeFilingClaim);
     }
+  }
+
+  function renderStampScene() {
+    if (!siteData.stamp_cards || !siteData.stamp_cards.length) return;
+    if (!stampConveyor) stampConveyor = createStampConveyor(siteData.stamp_cards);
+    stampConveyor.localize();
+  }
+
+  function createStampConveyor(cards) {
+    const scene = $("#stamp-scene");
+    const track = $("#stamp-track");
+    const list = $("#stamp-static-list");
+    const pause = $("#stamp-pause");
+    const gateBeam = scene.querySelector(".stamp-gate-beam");
+    const gateLabel = scene.querySelector(".stamp-gate-label");
+    const motion = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const narrowViewport = window.matchMedia("(max-width: 639px)");
+    const TRAVEL = 6000;
+    const DESKTOP_INTERVAL = 2000;
+    const NARROW_INTERVAL = 2500;
+    const CROSSING = TRAVEL / 2;
+    const clamp = (value) => Math.max(0, Math.min(1, value));
+    const easeOut = (value) => 1 - Math.pow(1 - clamp(value), 3);
+    let elapsed = CROSSING;
+    let interval = DESKTOP_INTERVAL;
+    let loop = cards.length * interval;
+    let lastFrame = null;
+    let frame = null;
+    let inView = false;
+    let userPaused = false;
+    let width = 0;
+    let cardWidth = 0;
+
+    function refreshTiming() {
+      interval = narrowViewport.matches ? NARROW_INTERVAL : DESKTOP_INTERVAL;
+      loop = cards.length * interval;
+    }
+
+    function makeCard(card, index, isStatic) {
+      const body = document.createElement(isStatic ? "a" : "article");
+      body.className = `stamp-card ${verdictClass(card)}`;
+      body.dataset.cardId = card.id;
+      // Stable per-claim variation, including when the list loops or language changes.
+      const hash = Array.from(card.id).reduce((value, character) => (value * 31 + character.charCodeAt(0)) >>> 0, 0);
+      const angle = (hash % 21) - 12;
+      body.style.setProperty("--stamp-angle", `${angle}deg`);
+      // GitHub Pages publishes docs/ as its root; this also works in the checkout.
+      if (isStatic) body.href = card.filing_url || card.source_report.replace(/^docs\//, "../");
+
+      const header = document.createElement("div");
+      header.className = "stamp-card-header";
+      const ticker = document.createElement("span");
+      ticker.className = "stamp-ticker";
+      ticker.textContent = `$${card.ticker}`;
+      const source = document.createElement("span");
+      source.className = "stamp-source";
+      header.append(ticker, source);
+      const claim = document.createElement("p");
+      claim.className = "stamp-claim";
+
+      const mark = document.createElement("span");
+      mark.className = "stamp-mark";
+      const impression = document.createElement("span");
+      impression.className = "stamp-impression";
+      mark.append(impression);
+      let bleed = null;
+      let scan = null;
+      if (!isStatic) {
+        bleed = document.createElement("span");
+        bleed.className = "stamp-bleed";
+        bleed.setAttribute("aria-hidden", "true");
+        mark.append(bleed);
+        const scanClip = document.createElement("span");
+        scanClip.className = "stamp-scan";
+        scan = document.createElement("span");
+        scan.className = "stamp-scan-light";
+        scanClip.append(scan);
+        body.append(scanClip);
+      }
+
+      body.append(header, claim, mark);
+      let evidence = null;
+      if (card.evidence_label) {
+        evidence = document.createElement("span");
+        evidence.className = "stamp-evidence";
+        evidence.textContent = card.evidence_label;
+        body.append(evidence);
+      }
+
+      const carrier = document.createElement(isStatic ? "li" : "div");
+      carrier.className = isStatic ? "stamp-static-item" : "stamp-carrier";
+      carrier.append(body);
+      (isStatic ? list : track).append(carrier);
+      return { card, index, angle, body, source, claim, mark, impression, bleed, evidence, scan, carrier };
+    }
+
+    const moving = cards.map((card, index) => makeCard(card, index, false));
+    const still = cards.map((card, index) => makeCard(card, index, true));
+
+    function localize() {
+      [...moving, ...still].forEach((item) => {
+        item.claim.textContent = item.card.text[pageLanguage];
+        item.source.textContent = getCopy(`stamps.${item.card.source_kind}`);
+        const verdict = item.card.verdict === "supported" ? "true" : item.card.verdict === "contradicted" ? "false" : "unknown";
+        item.impression.textContent = getCopy(`stamps.${verdict}`);
+        if (item.bleed) item.bleed.textContent = item.impression.textContent;
+      });
+      pause.textContent = getCopy(userPaused ? "stamps.play" : "stamps.pause");
+      // A language switch changes the card's intrinsic text width. Repaint the
+      // current frame now so a later console seek cannot inherit a stale layout.
+      measure();
+    }
+
+    function measure() {
+      refreshTiming();
+      width = scene.clientWidth;
+      // The accessible list also has measurable card widths in reduced-motion mode.
+      cardWidth = still[0].body.getBoundingClientRect().width;
+      // Cards must never overlap: on narrow screens the fixed interval gives a pitch smaller than the card.
+      if (width + cardWidth > 0) {
+        interval = Math.max(interval, Math.ceil(TRAVEL * (cardWidth + 24) / (width + cardWidth)));
+        loop = cards.length * interval;
+      }
+      paint();
+    }
+
+    function paint() {
+      let gatePulse = 0;
+      moving.forEach((item) => {
+        const age = ((elapsed - item.index * interval) % loop + loop) % loop;
+        const visible = age < TRAVEL;
+        if (item.carrier.hidden !== !visible) item.carrier.hidden = !visible;
+        if (!visible) return;
+        const progress = age / TRAVEL;
+        item.carrier.style.transform = `translate3d(${-cardWidth + (width + cardWidth) * progress}px, 0, 0)`;
+        item.carrier.style.opacity = String(Math.min(clamp(progress / 0.08), clamp((1 - progress) / 0.12)));
+        // Outgoing cards must stay above incoming cards until they leave the track.
+        // Demoting them one second after the gate hid stamps on overlapping cards.
+        // Only change stacking at discrete stages; animate transform/opacity only.
+        const layer = 1 + Math.floor(age / interval);
+        if (item.layer !== layer) {
+          item.carrier.style.zIndex = String(layer);
+          item.layer = layer;
+        }
+
+        // Start 400 ms early so the stamp lands with the card centred on the gate, not past it.
+        const sinceGate = age - (CROSSING - 400);
+        const sweep = clamp(sinceGate / 300);
+        item.scan.style.transform = `translate3d(${(cardWidth + 48) * sweep - 48}px, 0, 0)`;
+        item.scan.style.opacity = String(sinceGate >= 0 && sinceGate < 300 ? Math.sin(sweep * Math.PI) * 0.28 : 0);
+        if (item.evidence) {
+          const pop = easeOut((sinceGate - 300) / 100);
+          item.evidence.style.opacity = String(pop);
+          item.evidence.style.transform = `translateY(${6 * (1 - pop)}px) scale(${0.9 + pop * 0.1})`;
+        }
+
+        // 300ms sweep → 100ms evidence pop → 300ms impact/ink settle (700ms total).
+        const impact = sinceGate - 400;
+        const phase = impact >= 0 ? "stamped" : sinceGate >= 300 ? "evidence" : sinceGate >= 0 ? "scanning" : "incoming";
+        if (item.body.dataset.phase !== phase) item.body.dataset.phase = phase;
+        let scale = 1;
+        if (impact < 0) scale = 1.8;
+        else if (impact < 105) scale = 1.8 - 0.86 * easeOut(impact / 105);
+        else if (impact < 160) scale = 0.94 + 0.10 * easeOut((impact - 105) / 55);
+        else if (impact < 200) scale = 1.04 - 0.04 * easeOut((impact - 160) / 40);
+        item.mark.style.transform = `rotate(${item.angle}deg) scale(${scale})`;
+        item.mark.style.opacity = String(clamp(impact / 45));
+        // The permanent impression and a little ink bleed survive the impact.
+        // Reset only when this card is recycled to the incoming side of the loop.
+        item.bleed.style.opacity = String(impact >= 0 ? 0.12 + 0.88 * (1 - clamp((impact - 150) / 150)) : 0);
+        const shakeAge = impact - 105;
+        const shake = shakeAge >= 0 && shakeAge < 150 ? Math.sin(shakeAge / 13) * 3 * (1 - shakeAge / 150) : 0;
+        item.body.style.transform = `translate3d(${shake}px, ${shake * 0.5}px, 0)`;
+        gatePulse = Math.max(gatePulse, clamp(1 - Math.abs(impact - 105) / 180));
+      });
+      gateBeam.style.transform = `scaleY(${0.7 + Math.sin(elapsed / interval * Math.PI * 2) * 0.15})`;
+      gateBeam.style.opacity = String(0.4 + Math.sin(elapsed / interval * Math.PI * 2) * 0.15);
+      // Reduced motion keeps the pill completely still, including when seeking.
+      if (motion.matches) gatePulse = 0;
+      gateLabel.style.transform = `translateX(-50%) scale(${1 + gatePulse * 0.06})`;
+      gateLabel.style.opacity = String(0.88 + gatePulse * 0.12);
+    }
+
+    function tick(now) {
+      if (lastFrame !== null) elapsed = (elapsed + now - lastFrame) % loop;
+      lastFrame = now;
+      paint();
+      frame = requestAnimationFrame(tick);
+    }
+
+    function updatePlayback() {
+      if (frame !== null) cancelAnimationFrame(frame);
+      frame = null;
+      lastFrame = null; // Resuming must not jump through time spent off-screen/hidden.
+      const animated = !motion.matches;
+      scene.dataset.animated = String(animated);
+      list.classList.toggle("is-sr-only", animated);
+      still.forEach((item) => { item.body.tabIndex = animated ? -1 : 0; });
+      const running = animated && inView && !document.hidden && !userPaused;
+      scene.dataset.running = String(running);
+      pause.setAttribute("aria-pressed", String(userPaused));
+      localize();
+      if (running) frame = requestAnimationFrame(tick);
+    }
+
+    function seek(seconds) {
+      if (typeof seconds !== "number" || !Number.isFinite(seconds) || seconds < 0) {
+        throw new RangeError("Stamp scene time must be a finite, non-negative number of seconds.");
+      }
+      measure(); // Normalize against the measured spacing, including the narrow-screen minimum gap.
+      // Keep console seeks on the same millisecond grid as animation frames so
+      // exact boundary states do not drift through floating-point remainders.
+      elapsed = Math.round((seconds % (loop / 1000)) * 1000);
+      userPaused = true;
+      updatePlayback();
+      measure();
+      return elapsed / 1000;
+    }
+
+    window.__stampScene = Object.freeze({ seek });
+
+    // A failed mask image must never erase the permanent stamp. Enable the grain
+    // only after the existing local asset loads; otherwise leave solid ink.
+    const ink = document.createElement("img");
+    ink.addEventListener("load", () => { scene.classList.toggle("has-stamp-ink", ink.naturalWidth > 0); });
+    ink.addEventListener("error", () => { scene.classList.toggle("has-stamp-ink", false); });
+    ink.src = "img/stamp-ink.webp";
+
+    pause.addEventListener("click", () => {
+      userPaused = !userPaused;
+      updatePlayback();
+    });
+    document.addEventListener("visibilitychange", updatePlayback);
+    motion.addEventListener("change", () => { updatePlayback(); measure(); });
+    narrowViewport.addEventListener("change", measure);
+    scene.hidden = false;
+    if ("IntersectionObserver" in window) {
+      const observer = new IntersectionObserver(([entry]) => {
+        inView = entry.isIntersecting;
+        updatePlayback();
+      });
+      observer.observe(scene);
+    } else {
+      inView = true;
+    }
+    if ("ResizeObserver" in window) new ResizeObserver(measure).observe(scene);
+    else window.addEventListener("resize", measure);
+    const requestedTime = new URLSearchParams(window.location.search).get("stamp-t");
+    const seconds = requestedTime === null || requestedTime.trim() === "" ? NaN : Number(requestedTime);
+    if (Number.isFinite(seconds) && seconds >= 0) seek(seconds);
+    else { updatePlayback(); measure(); }
+    return { localize };
   }
 
   function verdictClass(claim) {
@@ -1141,6 +1419,7 @@
       const response = await fetch("data/site.json", { cache: "no-store" });
       if (!response.ok) throw new Error("site data unavailable");
       siteData = await response.json();
+      renderStampScene();
       renderExample(siteData.examples[exampleLanguage] || siteData.examples.en);
       renderChart(siteData);
       renderPosthocRerun(siteData);
