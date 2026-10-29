@@ -140,7 +140,7 @@ comfort, content and order.
 |---|---|---|---|
 | ≥ 1024 | panel 1fr · robot 190 px · panel 1fr, max 1180 px | ≤ 400 px | 190 × 260 |
 | 640–1023 | panel 1fr · robot 120 px · panel 1fr | ≤ 420 px | 120 × 165 |
-| < 640 | stacked: strip, post panel, robot band (72 px, right), filing panel | ≤ 600 px | 72 × 100 |
+| < 640 | stacked: strip, post panel, robot band (92 px), filing panel | ≤ 640 px | 88 × 88 |
 
 - Panels are fixed boxes; content swaps per card. The filing panel is never a floating sheet any more.
 - The hero headline shrinks (one or two lines, ≤ 64 px) so header + headline + whole stage fit in 768 px at
