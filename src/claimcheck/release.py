@@ -22,7 +22,7 @@ METRIC_PATTERNS = {
     "eps_diluted": r"\b(?:diluted\s+(?:eps|(?:net\s+income|earnings)\s+per\s+share)|(?:earnings|net\s+income)\s+per\s+diluted\s+share|eps)\b",
 }
 METRICS = tuple(METRIC_PATTERNS)
-_OUTLOOK = re.compile(r"\b(?:outlook|guidance|expects?|expected|forecast(?:ing)?|targets?|guides?)\b", re.I)
+_OUTLOOK = re.compile(r"\b(?:outlook|guidance|expects?|expected|forecast(?:ing)?|targets|targeting|guides?)\b|\b(?:revenue|earnings|eps|financial)\s+target\b", re.I)
 _NON_GAAP = re.compile(r"\b(?:non[ -]gaap|adjusted)\b", re.I)
 
 

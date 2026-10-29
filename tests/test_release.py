@@ -14,7 +14,7 @@ from claimcheck.budget import Ledger
 from claimcheck.checks import evaluate_sub_claim
 from claimcheck.edgar import EdgarClient
 from claimcheck.post import _evidence_rows, screen_claims
-from claimcheck.release import extract_candidates
+from claimcheck.release import _scope, extract_candidates, requires_release
 from claimcheck.release_fetch import ReleaseClient, ReleaseError
 from claimcheck.release_report import render_release_quote
 from claimcheck.release_text import parse_html
@@ -112,6 +112,18 @@ def test_model_cannot_relabel_guidance_or_non_gaap_as_a_gaap_value(claim):
     fact = runner.dispatch("lookup_fact", {"ticker": "AAPL", "metric": "revenue", "period": "FY2025Q3"})
     sub = {"text": claim, "original_claim": claim, "stated_text": claim, "claim_type": "value", "evidence_ids": [fact["evidence_id"]], "verdict": "supported"}
     assert evaluate_sub_claim(sub, runner)["program_verdict"] == "insufficient_evidence"
+
+
+def test_target_issuer_name_does_not_route_reported_gaap_results_to_guidance():
+    claim = "Target reported revenue of $1.0 billion for FY2025Q2."
+    assert not requires_release(claim)
+    assert requires_release("Target expects revenue of $1.0 billion for FY2025Q3.")
+    assert requires_release("AAPL has a revenue target of $1 billion for FY2025Q4.")
+    assert _scope(parse_html("<h1>Target Reports First Quarter Fiscal 2025 Results</h1>"))[0] == "FY2025Q1"
+    runner = ToolRunner(RecordedEdgar())
+    fact = runner._number_result({"value": 1e9, "unit": "USD", "ticker": "TGT", "metric": "revenue", "period": "FY2025Q2"}, "lookup_fact")
+    sub = {"text": claim, "original_claim": claim, "stated_text": "$1.0 billion", "claim_type": "value", "comparator": "eq", "evidence_ids": [fact["evidence_id"]], "verdict": "supported"}
+    assert evaluate_sub_claim(sub, runner)["program_verdict"] == "supported"
 
 
 @pytest.mark.parametrize("change", ["ticker", "period", "metric", "unit"])
