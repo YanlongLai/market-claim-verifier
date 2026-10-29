@@ -251,7 +251,7 @@ def test_prepared_subtitles_cover_unchanged_narration_with_unchanged_voice_keys(
     run=read_json(DEMO/'runs/20261029T034926032314Z-v002.json')
     document=read_json(DEMO/'motion/cues.json')
     cues=motion_build.narration_subtitles(story['scenes'],timing,document)
-    assert to_srt(cues)==(DEMO/'out/review-v4/subtitles.srt').read_text()
+    assert to_srt(cues)==(DEMO/'tests/fixtures/review-v4-subtitles.srt').read_text()
     for scene,shot,previous in zip(story['scenes'],timing['shots'],run['scenes']):
         assert shot['start']==previous['start_s']
         assert timing['voice_keys'][shot['id']]==previous['cache_keys']['voice']
@@ -279,7 +279,7 @@ def test_every_motion_cue_is_inside_the_exported_srt_entry_containing_its_phrase
     import motion_media
     from build import DEMO
     document=read_json(DEMO/'motion/cues.json')
-    subtitles=parse_srt((DEMO/'out/review-v4/subtitles.srt').read_text())
+    subtitles=parse_srt((DEMO/'tests/fixtures/review-v4-subtitles.srt').read_text())
     checked=0
     for shot,events in document['_events'].items():
         for event in events:
@@ -300,7 +300,7 @@ def test_review_regression_phrases_are_active_at_their_exact_onsets(phrase):
     import motion_media
     from build import DEMO
     event=next(e for e in read_json(DEMO/'motion/cues.json')['_events']['m05-verdicts'] if e['cue']==phrase)
-    subtitles=parse_srt((DEMO/'out/review-v4/subtitles.srt').read_text())
+    subtitles=parse_srt((DEMO/'tests/fixtures/review-v4-subtitles.srt').read_text())
     assert phrase in ' '.join(motion_media.caption_at(subtitles,event['cue_start']).split())
 
 
@@ -308,7 +308,7 @@ def test_chinese_subtitle_survives_the_late_beat_and_300ms_review_sample():
     import motion_media
     from build import DEMO
     event=next(e for e in read_json(DEMO/'motion/cues.json')['_events']['m09-chinese'] if e['cue']=='too')
-    subtitles=parse_srt((DEMO/'out/review-v4/subtitles.srt').read_text())
+    subtitles=parse_srt((DEMO/'tests/fixtures/review-v4-subtitles.srt').read_text())
     assert motion_media.caption_at(subtitles,event['t']+.3)=='It works in Chinese too.'
 
 

@@ -1,6 +1,6 @@
 **Overall: FAIL.** Two-line subtitles violate the 64 px bottom edge margin.
 
-Viewed all **143 PNGs**: 49 raw frames, 49 captioned frames and 45 subtitle panels. Inspected representative frames at 375 px wide. No files edited; no builds run. Frame references below are in [review-v4](/Users/yan/git/market-claim-verifier-demo/demo/out/review-v4). Cue judgments use `index.json` and the supplied SRT.
+Viewed all **143 PNGs**: 49 raw frames, 49 captioned frames and 45 subtitle panels. Inspected representative frames at 375 px wide. No files edited; no builds run. Frame references below were local outputs in `out/review-v4`, not included in a clean clone; see the committed [build record](BUILD_LOG.md). Cue judgments use `index.json` and the supplied SRT.
 
 | 1. Product name + UI by 3 s | Verdict | Evidence |
 |---|---|---|
@@ -8,7 +8,7 @@ Viewed all **143 PNGs**: 49 raw frames, 49 captioned frames and 45 subtitle pane
 
 | 2. Phone readability and edge margins | Verdict | Evidence |
 |---|---|---|
-| `m02-spread` — [keyframe-03-11p691s.png](/Users/yan/git/market-claim-verifier-demo/demo/out/review-v4/captioned/keyframe-03-11p691s.png); affected frames **03–16, 27–29, 34–37, 39–45** | **FAIL** | In all 28 affected frames, subtitle glyphs extend through **y=1034**, leaving only **45 px** below them. The required clearance is 64 px. |
+| `m02-spread` — `captioned/keyframe-03-11p691s.png`; affected frames **03–16, 27–29, 34–37, 39–45** | **FAIL** | In all 28 affected frames, subtitle glyphs extend through **y=1034**, leaving only **45 px** below them. The required clearance is 64 px. |
 | `m06-proof` — `keyframe-26-83p940s.png`, frames 27–28 | PASS | **143,083** and **158,877** occupy separate columns. The highlighted number remains complete and readable at phone width. |
 | Remaining important content across all shots | PASS | No additional small-text, low-contrast, crowding or edge-margin failure observed at the stated readability bar. |
 

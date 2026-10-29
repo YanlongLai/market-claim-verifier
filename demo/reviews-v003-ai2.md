@@ -1,6 +1,6 @@
 **Overall: FAIL.** Viewed all **142 PNGs**: 49 raw frames, 49 captioned frames and 44 subtitle panels. No files edited; no builds run.
 
-Files below are in [review-v3](/Users/yan/git/market-claim-verifier-demo/demo/out/review-v3). Frame ranges include every indexed frame in that range. Caption timing is judged against `index.json` cues.
+Files below were local outputs in `out/review-v3`, not included in a clean clone. See the committed [build record](BUILD_LOG.md). Frame ranges include every indexed frame in that range. Caption timing is judged against `index.json` cues.
 
 **1. Product name + UI visible by 3 s — PASS**
 
@@ -14,7 +14,7 @@ Applied the stated 56 px text / 96 px number bar visually and inspected represen
 
 | Result | Shot / frame | Evidence |
 |---|---|---|
-| FAIL | `m06-proof` — [keyframe-26-83p940s.png](/Users/yan/git/market-claim-verifier-demo/demo/out/review-v3/captioned/keyframe-26-83p940s.png), frames 27–28 | **143,083 / 158,877 / 404,824 / 450,167** collide across column boundaries. The final digit of the highlighted value meets the next value. At phone width, the row resembles one continuous number string. Large type has not produced readable cells. |
+| FAIL | `m06-proof` — `captioned/keyframe-26-83p940s.png`, frames 27–28 | **143,083 / 158,877 / 404,824 / 450,167** collide across column boundaries. The final digit of the highlighted value meets the next value. At phone width, the row resembles one continuous number string. Large type has not produced readable cells. |
 | PASS | Frames 01–25 and 29–49 | No additional phone-readability failure observed at the brief’s minimum. Examples: frame 17 separates Apple’s quarter/year amounts; frame 38 separates providers and percentages; frame 49 keeps the URL and attribution readable. |
 | PASS | All 49 full-frame pairs | The top, left and right 64 px bands contain only background. No important content enters those edge margins. |
 

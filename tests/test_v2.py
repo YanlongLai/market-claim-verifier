@@ -19,6 +19,7 @@ from claimcheck.evaluate import (
 
 
 ROOT = Path(__file__).parents[1]
+OFFLINE_CACHE = ROOT / "tests" / "fixtures" / "sec-offline"
 
 
 def load_module(name: str, path: Path) -> Any:
@@ -34,8 +35,8 @@ def test_generator_same_seed_is_byte_stable(tmp_path: Path) -> None:
     generator = load_module("v2_generator_test", ROOT / "eval/v2/generate.py")
     first = tmp_path / "first.jsonl"
     second = tmp_path / "second.jsonl"
-    generator.generate_claims(seed=7, target=160, output=first, log_path=tmp_path / "first.log")
-    generator.generate_claims(seed=7, target=160, output=second, log_path=tmp_path / "second.log")
+    generator.generate_claims(seed=7, target=160, cache_dir=OFFLINE_CACHE, output=first, log_path=tmp_path / "first.log")
+    generator.generate_claims(seed=7, target=160, cache_dir=OFFLINE_CACHE, output=second, log_path=tmp_path / "second.log")
     assert first.read_bytes() == second.read_bytes()
     rows = [json.loads(line) for line in first.read_text().splitlines()]
     assert len(rows) == 160
@@ -54,7 +55,7 @@ def _spec_parts(spec: dict[str, Any]) -> list[dict[str, Any]]:
 def test_v2_period_and_metric_constraints(tmp_path: Path) -> None:
     generator = load_module("v2_generator_constraints_test", ROOT / "eval/v2/generate.py")
     output = tmp_path / "claims.jsonl"
-    generator.generate_claims(seed=11, target=160, output=output, log_path=tmp_path / "generate.log")
+    generator.generate_claims(seed=11, target=160, cache_dir=OFFLINE_CACHE, output=output, log_path=tmp_path / "generate.log")
     rows = [json.loads(line) for line in output.read_text().splitlines()]
     non_calendar = {"MSFT", "AAPL", "NVDA", "ORCL", "NKE", "CSCO", "ADBE", "COST", "WMT", "V", "CRM"}
     month = r"\b(?:january|february|march|april|may|june|july|august|september|october|november|december)\b"
@@ -91,7 +92,7 @@ def test_v2_period_and_metric_constraints(tmp_path: Path) -> None:
 
 def test_ambiguous_period_gold_checks_both_readings() -> None:
     gold = load_module("v2_gold_ambiguity_test", ROOT / "eval/build_gold.py")
-    cache = ROOT / ".cache"
+    cache = OFFLINE_CACHE
     ticker_map = gold._load_ticker_map(cache)
     snapshots = {
         ticker: gold.load_snapshot(cache, ticker, ticker_map)

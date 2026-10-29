@@ -256,9 +256,10 @@ before saving any frame; `render.json` includes the layout results. The index is
 frame's time, shot and image validate. SRT and burn-in share `cues.json` sentence timings; long sentences
 use character offsets, and wrapping never separates a motion cue phrase into different subtitle entries.
 
-The original v002 already has subtitle evidence: [full SRT](out/demo-v002.srt) and
-[45 actual captioned frames](out/review-v2-captioned/index.json), extracted from its MP4 rather than rebuilt
-picture. These are historical v002 evidence. `review-v4/plan.json` is the current picture review request.
+The original v002 already has subtitle evidence in ignored local outputs: full SRT (`out/demo-v002.srt`) and
+45 actual captioned frames (`out/review-v2-captioned/index.json`), extracted from its MP4 rather than rebuilt
+picture. These historical v002 outputs are not included in a clean clone; see the committed
+[build record](BUILD_LOG.md). `review-v4/plan.json` is the current picture review request.
 
 After the host reviews the revised frames, its motion-test/full-render commands remain:
 

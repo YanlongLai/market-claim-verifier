@@ -56,6 +56,7 @@ def test_real_h264_aac_1080p_crossfades_burned_captions_and_ducked_music(tmp_pat
     assert media.duration(tmp_path/'voice-only.wav') == pytest.approx(total,abs=.001)
 
 
+@pytest.mark.skipif(not media.FFPROBE.exists(), reason='Homebrew ffprobe is required for probing the synthetic WAV')
 def test_zero_length_say_output_is_rejected(tmp_path):
     empty = tmp_path/'empty.wav'
     with wave.open(str(empty),'wb') as stream:

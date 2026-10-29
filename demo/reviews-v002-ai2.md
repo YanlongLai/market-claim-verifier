@@ -1,6 +1,6 @@
 **Overall: FAIL on the supplied evidence.** Viewed all 45 PNGs. Shot-level findings below apply to every supplied frame in that shot unless a specific frame is identified.
 
-All frame files are in [review-v2](/Users/yan/git/market-claim-verifier-demo/demo/out/review-v2).
+All frame files were local outputs in `out/review-v2`, not included in a clean clone. See the committed [build record](BUILD_LOG.md).
 
 **1. Product name + UI visible by 3 seconds — PASS**
 
