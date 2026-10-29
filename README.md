@@ -14,7 +14,7 @@ Check financial sentences against SEC filings with Meta Muse Spark and auditable
 
 ## Try it
 
-[Website / saved demo](https://hackathon.dappgo.com/site/) · [Results explorer](https://hackathon.dappgo.com/explorer/) · **Demo video: publication link pending** ([records and opening disclosure](demo/JUDGE_INTRO.md)). The [site source](docs/site/index.html) and [explorer data](docs/explorer/data.json) are included here.
+[Website / saved demo](https://hackathon.dappgo.com/) · [Results explorer](https://hackathon.dappgo.com/explorer/) · **Demo video: publication link pending** ([records and opening disclosure](demo/JUDGE_INTRO.md)). The [site source](docs/site/index.html) and [explorer data](docs/explorer/data.json) are included here.
 
 ```sh
 sh scripts/verify.sh
