@@ -4,7 +4,7 @@ Dates below are **America/Los_Angeles** calendar days counted from the hackathon
 
 Commit IDs below identify the Git history; `git show <id>` reads each locally. [AGENTS.md](AGENTS.md#verify-the-build-window) gives commands to inspect dates. No future work is recorded as completed; plans are in [ROADMAP.md](ROADMAP.md).
 
-## Day 1 — 2026-10-27
+## Days 1–2 — 2026-10-27
 
 The first/root commit is **`7c5670b84e6052db9fa67fd86606fb2ee11ee42c`**, authored **2026-10-27T14:20:17-07:00**, “Day 1: EDGAR fact tool, budget ledger, Meta Responses tool-call loop.” No repository code pre-existed ([build disclosure](BUILD_LOG.md#build-log)).
 
@@ -16,7 +16,7 @@ The first/root commit is **`7c5670b84e6052db9fa67fd86606fb2ee11ee42c`**, authore
 - Added L1–L3 provenance, restatement/confirmation strength, source registry and quality reports; corrected fiscal labels and excluded annual-as-quarter tags (`8c352e2`, `efc08f6`, `564d863`); [source policy](docs/DATA_SOURCES.md), [quality findings](docs/DATA_QUALITY.md).
 - Froze the 357-claim v2 set before execution, recorded six-system results, and retained gold corrections/lookup fixes (`5d90b3b`, `61cbdc6`); [frozen manifest](eval/v2/MANIFEST.json), [original-gold report](docs/evidence/eval-v2-2026-10-27/REPORT-registered-gold.md), [corrected-gold report](docs/evidence/eval-v2-2026-10-27/REPORT.md), [run account](BUILD_LOG.md#eval-v2-run-357-claims--6-systems--2026-10-27-tue-night-utc-2026-10-28-03090627).
 
-## Day 2 — 2026-10-28
+## Day 3 — 2026-10-28
 
 - Added the per-claim results explorer and bilingual project site (`95267d3`, `d5e7bbc`, `5b94526`, `aefcc2d`); [explorer](docs/explorer/index.html), [site](docs/site/index.html), [data builder](docs/scripts/build_site.py).
 - Added whole-post claim extraction, exact-quote/number screening, English/Chinese examples, unit/multiplier fixes and both YoY source facts (`6190c17`, `f4a1533`); [post checker](src/claimcheck/post.py), [saved reports](docs/evidence/posts-2026-10-28/), [build-log account](BUILD_LOG.md#day-3--2026-10-28-wed).
@@ -26,9 +26,10 @@ The first/root commit is **`7c5670b84e6052db9fa67fd86606fb2ee11ee42c`**, authore
 - Recorded media tooling/process and built the demo storyboard/motion/voice/caption pipeline (`28a95f5`, `40f199c`, `d286602`); [process](docs/PROCESS-media.md), [playbook](docs/playbooks/media/README.md), [demo tests](demo/tests/).
 - Recorded the narration license, media-loss incident, byte-identical v005/v006 rebuild and final Owner approval (`811e80b`, `e4e2215`, `f06ac10`); [demo build log](demo/BUILD_LOG.md), [media/license record](docs/PROCESS-media.md#demo-video).
 
-## Day 3 — 2026-10-29
+## Day 4 — 2026-10-29
 
 - Added [JUDGES.md](JUDGES.md), [llms.txt](llms.txt), [AGENTS.md](AGENTS.md), README skimmer navigation, [credits](CREDITS.md), this dated history and a [planned-only roadmap](ROADMAP.md).
 - Added [one-command offline verification](scripts/verify.sh), [push/PR CI](.github/workflows/verify.yml), [Markdown file/anchor checking](scripts/check_links.py) and the [verification receipt](docs/VERIFICATION.md). Refreshed stale figure-input metadata and repaired local-output Markdown links; product code, recorded results and chart values are unchanged.
 - Removed test dependencies on ignored SEC caches, Git metadata, narrator audio and local subtitle exports using [committed SEC fixtures](tests/fixtures/sec-offline/README.md), [metadata injection](tests/test_eval_recording.py), [synthetic test references](demo/tests/test_motion.py) and [frozen subtitle text](demo/tests/fixtures/README.md). Added [narrow secret-scan exceptions](.gitleaks.toml) for recorded SHA-256 media cache identifiers.
 - Added the required [pre-existing-work opening disclosure](demo/JUDGE_INTRO.md) for presentation/publication. The video publication link remains pending; no upload is recorded.
+- Added L4 evidence: SEC 8-K Item 2.02 earnings releases (Ex 99.1, HTML Ex 99.2) for guidance and non-GAAP claims, with program-verified quote offsets and XBRL precedence; froze a 32-claim gold set before the run; Baseten agent scored 31/32 with 0/19 false-supported for $0.7157 ([analysis](docs/evidence/eval-l4-2026-10-29/ANALYSIS.md), [release checks](src/claimcheck/release_checks.py)).
