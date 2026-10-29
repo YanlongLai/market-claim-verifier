@@ -2,6 +2,10 @@
 
 These three illustrations were generated on 2026-10-28 with the built-in `image_gen.imagegen` tool. The exact prompts are in [`hero.md`](hero.md), [`model-program.md`](model-program.md), and [`evidence.md`](evidence.md). The final optimized PNGs live in `docs/site/img/` and are kept below 400 KB.
 
+The hero conveyor's two material textures have their exact prompts, generation
+notes and reuse instructions in [`stamps.md`](stamps.md). Those optimized WebP
+assets each stay below the stamp brief's stricter 150 KB limit.
+
 To regenerate or make a variant:
 
 1. Use the built-in image-generation tool with the exact prompt from the relevant file.
