@@ -79,6 +79,16 @@ def _parser() -> argparse.ArgumentParser:
     post.add_argument("--reasoning-effort")
     post.add_argument("--out", type=Path, help="output directory (default runs/posts/<UTC time>)")
 
+    ingest = subparsers.add_parser("ingest", help="decode text, screenshot, audio or video and check its claims")
+    ingest.add_argument("file", type=Path)
+    ingest.add_argument("--provider", choices=PROVIDERS)
+    ingest.add_argument("--model")
+    ingest.add_argument("--budget", type=float)
+    ingest.add_argument("--max-claims", type=_positive_int, default=8)
+    ingest.add_argument("--max-output-tokens", type=_positive_int)
+    ingest.add_argument("--reasoning-effort")
+    ingest.add_argument("--out", type=Path, help="output directory (default runs/ingest/<UTC time>)")
+
     evaluation = subparsers.add_parser("eval", help="run or report the labeled evaluation")
     evaluation_subparsers = evaluation.add_subparsers(dest="eval_action", required=True)
 
@@ -147,7 +157,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         # EDGAR, evaluation reports, and dry runs do not need to inspect a key file.
         reads_key = (
-            args.command in {"verify", "post"} and not getattr(args, "dry_run", False)
+            args.command in {"verify", "post", "ingest"} and not getattr(args, "dry_run", False)
         ) or (
             args.command == "eval"
             and args.eval_action == "run"
@@ -307,6 +317,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.command == "post":
         return _run_post(args, settings)
 
+    if args.command == "ingest":
+        return _run_ingest(args, settings)
+
     model = args.model or settings.model
     provider = settings.provider
     budget = settings.budget_usd if args.budget is None else args.budget
@@ -442,3 +455,38 @@ def _run_post(args: argparse.Namespace, settings: object) -> int:
         ],
     })
     return 0
+
+
+def _run_ingest(args: argparse.Namespace, settings: object) -> int:
+    import math
+    import httpx
+    from .ingest import ingest_file
+    from .ingest_media import IngestError
+
+    budget = settings.budget_usd if args.budget is None else args.budget
+    if not math.isfinite(budget) or budget < 0:
+        print("Ingest budget must be finite and non-negative", file=sys.stderr)
+        return 2
+    out = args.out or settings.runs_dir / "ingest" / datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
+    meta = settings if settings.provider == "meta" else load_settings(provider="meta")
+    # One total cap, partitioned for mixed-provider runs. Both model families are Meta.
+    budgets = {"meta": budget} if settings.provider == "meta" else {"meta": budget / 2, settings.provider: budget / 2}
+    ledger = Ledger(settings.runs_dir / "ingest-ledger.jsonl", budget_usd=budget,
+                    provider=settings.provider, provider_budgets=budgets)
+    client = create_client(settings.provider, settings.model_api_key).with_options(max_retries=0) if settings.model_api_key else None
+    vision = client if settings.provider == "meta" else create_client("meta", meta.model_api_key).with_options(max_retries=0) if meta.model_api_key else None
+    secrets = [key for key in (settings.model_api_key, meta.model_api_key) if key]
+    try:
+        with httpx.Client(timeout=120) as http:
+            report = ingest_file(args.file, client=client, vision_client=vision, asr_http=http,
+                meta_api_key=meta.model_api_key, edgar=EdgarClient(cache_dir=settings.cache_dir, user_agent=settings.sec_user_agent),
+                ledger=ledger, model=args.model or settings.model, provider=settings.provider, out_dir=out,
+                max_claims=args.max_claims, secrets=secrets,
+                max_output_tokens=args.max_output_tokens or settings.max_output_tokens,
+                reasoning_effort=args.reasoning_effort or settings.reasoning_effort)
+    except (IngestError, BudgetExceeded, UnknownModel) as exc:
+        print(f"Ingest refused: {exc}", file=sys.stderr)
+        return 2
+    _print_json({"out": str(out), "report": str(out / "ingest.html"), "status": report["status"],
+                 "stages": report["stages"], "cost_usd": report["cost_usd"], "wall_clock_s": report["wall_clock_s"]})
+    return 0 if report["status"] == "completed" else 1

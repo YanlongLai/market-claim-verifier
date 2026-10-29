@@ -14,13 +14,13 @@ import json
 import re
 import time
 from pathlib import Path
-from typing import Any, Mapping, Sequence
+from typing import Any, Callable, Mapping, Sequence
 
 from .agent import verify_claim
 from .budget import Ledger
 from .edgar import EdgarClient
 from .providers import get_provider
-from .trace import TraceRecorder, write_trace
+from .trace import TraceRecorder, redact, write_trace
 from .release_report import render_release_quote
 
 EXTRACTION_PROMPT = """You extract financial claims from a social media post or article so they can be checked against SEC filings.
@@ -210,10 +210,12 @@ def extract_claims(
     model: str,
     provider: str,
     recorder: TraceRecorder,
+    max_output_tokens: int = MAX_EXTRACTION_TOKENS,
 ) -> list[dict[str, Any]]:
     adapter = get_provider(provider)
     request = _extraction_payload(adapter, post, model)
-    reservation = ledger.reserve(request, model=model, max_output_tokens=MAX_EXTRACTION_TOKENS, provider=provider)
+    request["max_tokens" if adapter.chat_completions else "max_output_tokens"] = max_output_tokens
+    reservation = ledger.reserve(request, model=model, max_output_tokens=max_output_tokens, provider=provider)
     started = time.perf_counter()
     response = adapter.call(client, request)
     latency_ms = (time.perf_counter() - started) * 1000
@@ -302,6 +304,9 @@ def check_post(
     secrets: Sequence[str] = (),
     max_output_tokens: int | None = None,
     reasoning_effort: str | None = None,
+    release_client: Any = None,
+    on_progress: Callable[[list[dict[str, Any]]], None] | None = None,
+    extraction_max_output_tokens: int = MAX_EXTRACTION_TOKENS,
 ) -> dict[str, Any]:
     if len(post) > MAX_POST_CHARS:
         raise PostError(f"post is longer than {MAX_POST_CHARS} characters; paste one article section at a time")
@@ -309,9 +314,14 @@ def check_post(
     traces = out_dir / "traces"
     started = time.perf_counter()
     extraction_trace = TraceRecorder("[extraction] " + post[:200], model, provider=provider, secrets=secrets)
-    proposed = extract_claims(post, client=client, ledger=ledger, model=model, provider=provider, recorder=extraction_trace)
-    extraction_path = write_trace(traces, extraction_trace)
+    try:
+        proposed = extract_claims(post, client=client, ledger=ledger, model=model, provider=provider,
+                                  recorder=extraction_trace, max_output_tokens=extraction_max_output_tokens)
+    finally:
+        extraction_path = write_trace(traces, extraction_trace)
     claims = screen_claims(post, proposed)
+    if on_progress:
+        on_progress(claims)
     verified = 0
     for item in claims:
         if item["status"] != "to_verify":
@@ -321,11 +331,17 @@ def check_post(
             continue
         verified += 1
         recorder = TraceRecorder(item["claim"], model, provider=provider, secrets=secrets)
-        result = verify_claim(
-            item["claim"], client, edgar, ledger, model, trace=recorder, provider=provider,
-            max_output_tokens=max_output_tokens, reasoning_effort=reasoning_effort,
-        )
-        trace_path = write_trace(traces, recorder)
+        try:
+            result = verify_claim(
+                item["claim"], client, edgar, ledger, model, trace=recorder, provider=provider,
+                max_output_tokens=max_output_tokens, reasoning_effort=reasoning_effort,
+                release_client=release_client,
+            )
+        finally:
+            trace_path = write_trace(traces, recorder)
+            item["trace_path"] = str(trace_path.relative_to(out_dir))
+            if on_progress:
+                on_progress(claims)
         trace_dict = recorder.as_dict()
         cited = {ev for check in result.get("program_checks") or [] for ev in check.get("evidence_ids") or []}
         summary = recorder.summary()
@@ -341,6 +357,8 @@ def check_post(
             latency_ms=summary.get("latency_ms"),
             trace_path=str(trace_path.relative_to(out_dir)),
         )
+        if on_progress:
+            on_progress(claims)
     extraction_cost = extraction_trace.summary().get("cost_usd") or 0.0
     total_cost = extraction_cost + sum(float(item.get("cost_usd") or 0) for item in claims)
     report = {
@@ -362,6 +380,7 @@ def check_post(
         "cost_usd": round(total_cost, 6),
         "wall_clock_s": round(time.perf_counter() - started, 1),
     }
+    report = redact(report, secrets)
     (out_dir / "report.json").write_text(json.dumps(report, indent=2, ensure_ascii=False, default=str) + "\n", encoding="utf-8")
     (out_dir / "report.html").write_text(render_html(report), encoding="utf-8")
     return report

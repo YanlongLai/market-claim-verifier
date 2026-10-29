@@ -291,6 +291,25 @@ class Ledger:
             )
         return reservation
 
+    def reserve_audio(self, duration_s: float) -> Reservation:
+        """Reserve Meta ASR's rounded-second charge before upload (no retries).
+
+        File ASR has no token usage. Keep this fixed reservation on failure as
+        a conservative charge bound; successful requests cost the same amount.
+        """
+        if not math.isfinite(duration_s) or not 0 < duration_s <= 600:
+            raise ValueError("ASR duration must be greater than zero and at most 600 seconds")
+        seconds = math.ceil(duration_s)
+        reservation = Reservation(uuid.uuid4().hex, "meta", "muse-voice-transcribe-1.0",
+                                  0, 0, seconds * .18 / 3600, 0, 0)
+        with self._file_lock():
+            spent = self._spent_for_provider_unlocked("meta")
+            if spent + reservation.amount > self.budget_for_provider("meta"):
+                raise BudgetExceeded("Meta budget would be exceeded by audio reservation")
+            self._append_unlocked({"event": "reserve", "timestamp": _now(), **reservation.as_dict(),
+                                   "billing_unit": "audio_second", "billable_units": seconds})
+        return reservation
+
     def _append(self, event: dict[str, Any]) -> None:
         if not self.persist:
             return

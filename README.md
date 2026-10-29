@@ -56,6 +56,20 @@ The [source and comparison rules](docs/DATA_SOURCES.md#l4-parsing-and-decision-r
 
 The [registered L4 run](docs/evidence/eval-l4-2026-10-29/ANALYSIS.md) scored **31/32 (96.9%; Wilson 95% CI 84.3–99.4%)**, with **0/19 false-supported** results, for **$0.7157**. This is a fixture-based regression benchmark; the one routing miss and post-run changes are retained and explained.
 
+## Other inputs
+
+```sh
+python -m claimcheck ingest tests/fixtures/multimodal/example-post.png --budget 1 --out runs/example-input
+```
+
+`ingest <file>` accepts UTF-8 text, PNG/JPEG/WebP screenshots, audio and video. In a linked worktree using the shared `.venv`, run `PYTHONPATH=src .venv/bin/python -m claimcheck ingest ...` to use this checkout. Outputs are `ingest.json` and `ingest.html`, with six stage outcomes, source quotes/offsets, cost, latency and links to the existing post-check reports. An existing ingest output is never overwritten.
+
+Meta's API **accepted images** in the [13-run probe](docs/evidence/multimodal-2026-10-29/REPORT.md). Muse Spark reads screenshots; `muse-voice-transcribe-1.0` supplies whole-turn timestamps and unverified speaker labels, with an English language bias. Video uses ffmpeg/ffprobe to extract mono PCM audio and three sampled frames; speech and frames are checked separately. Numbers remain **heard/read input values** until Python normalizes them, and financial verdicts still require SEC L1–L4 evidence. `--provider baseten` uses Meta Muse Spark Open for text checks and Meta's API for OCR/ASR. Budget is cumulative in `runs/ingest-ledger.jsonl`; mixed-provider runs split it equally between Meta and Baseten.
+
+**What worked:** text and both screenshot sizes recovered the two financial numbers and contradicted the deliberate EPS error. A two-voice audio sample and captioned video reached all applicable stages. **What did not:** provider errors stopped some runs; table/date rewrites were rejected; one transcript claim lost its period and produced a known false contradiction. ASR merged two synthetic voices into label A and misspelled a name. Stage completion does not establish correctness, complete claim recall or named-person attribution.
+
+Limits: 32 MiB input, ten minutes of audio/video, 6,000 decoded characters and eight checked claims per channel by default. ffmpeg/ffprobe are required for media decoding. No word timestamps, verified CFO identity, long-call chunking or exhaustive video coverage. Test media is self-made; sandboxed macOS `say` produced empty audio, so the probe explicitly used an [offline formant-synthesis fallback](tests/fixtures/multimodal/generation.json). No real earnings-call media was downloaded.
+
 ## What it does
 
 <!-- diagram:how-a-claim-is-checked:start -->
