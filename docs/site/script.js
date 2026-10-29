@@ -17,7 +17,7 @@
         exampleLanguage: "Example language",
         chart: "Accuracy comparison chart"
       },
-      nav: { how: "How it works", results: "Results", trust: "Trust" },
+      nav: { how: "How it works", example: "Example", results: "Results", trust: "Trust" },
       hero: {
         titleLine1: "Paste a finance post.",
         titleLine2: "See what's true.",
@@ -27,13 +27,30 @@
         region: "Real finance claims pass through the checker and receive True, False, or Can't check stamps.",
         gate: "Muse Spark agent + SEC check",
         claims: "Claims and report verdicts",
+        postPanel: "① Post under review", filingPanel: "② SEC filing", progress: "Review progress",
+        waiting: "Waiting for filing", noNumber: "No SEC number to check", claim: "Claim",
+        noNumberExplanation: "Filings report results, not opinions or forecasts.",
+        revenue: "revenue",
+        caption: { read: "Reading the post…", reach: (form) => `Opening the ${form}…`,
+          find: (value) => `Found it: ${value}`, compare: (filed, posted) => `${filed} filed vs ${posted} posted`, fullYear: "That's the full year",
+          uncheckable: (kind) => `${kind} — not in any filing` },
+        noClaim: "Opinion / forecast — no filed number", stamp: "Stamp", next: "Next:",
         thread: "Thread",
         social: "Social post",
-        pause: "Pause animation",
-        play: "Play animation",
+        repost: "Repost", article: "Article", example: "Example post", repostedFrom: "Reposted from",
+        input: { text: "Text", screenshot: "Screenshot", audio: "Audio", video: "Video" },
+        activity: { label: "Example activity", reply: "Replies", repost: "Reposts", like: "Likes", views: "Views" },
+        audience: "Public", transcript: "Transcript", by: "By",
+        exampleDetail: "Fictional author and example follower count. Claims and verdicts come from real program checks.",
+        pause: "Pause",
+        play: "Play",
         true: "TRUE",
         false: "FALSE",
-        unknown: "CAN'T CHECK"
+        unknown: "CAN'T CHECK",
+        filed: "Filed", accuracy: "Accuracy score", within: "Within tolerance", off: "off", short: "short",
+        direction: "Direction wrong", millions: "USD in millions", filingUnits: "As reported in the filing",
+        stated: "Post says", growth: "growth", accession: "Accession", nineMonths: "Nine months", quarter: "Q4 (derived)",
+        severity: { exact: "Exact", minor: "Minor", moderate: "Moderate", major: "Major", severe: "Severe" }
       },
       example: {
         title: "A real post, checked.",
@@ -89,15 +106,15 @@
         title: "How it works",
         lede: "A short path from a social post to a source you can open.",
         step1: {
-          title: "Find every money claim",
+          title: "Find the claim",
           body: "The AI uses Meta's Muse Spark models to find each number, period, and comparison in the post."
         },
         step2: {
-          title: "Open the official filing",
+          title: "Open the filing",
           body: "It looks up the company's SEC filing for the same company, number, and time period."
         },
         step3: {
-          title: "Let code decide",
+          title: "Code decides",
           body: "Code, not the AI, compares the numbers and gives the final True, False, or Can't check verdict."
         }
       },
@@ -162,7 +179,7 @@
         exampleLanguage: "範例語言",
         chart: "準確率比較圖"
       },
-      nav: { how: "運作方式", results: "結果", trust: "為什麼可信" },
+      nav: { how: "運作方式", example: "實際查核", results: "結果", trust: "為什麼可信" },
       hero: {
         titleLine1: "貼上一則財經貼文。",
         titleLine2: "看看哪些數字是真的。",
@@ -172,13 +189,30 @@
         region: "真實財經說法通過查核，蓋上正確、錯誤或無法查核的印章。",
         gate: "Muse Spark 代理 + SEC 查核",
         claims: "說法與報告判定",
+        postPanel: "① 待查核貼文", filingPanel: "② SEC 財報", progress: "查核進度",
+        waiting: "等待財報", noNumber: "沒有可查核的 SEC 數字", claim: "說法",
+        noNumberExplanation: "財報記錄已發生的結果，不包含看法或預測。",
+        revenue: "營收",
+        caption: { read: "正在讀貼文⋯", reach: (form) => `正在打開 ${form}⋯`,
+          find: (value) => `找到了：${value}`, compare: (filed, posted) => `財報 ${filed} vs 貼文 ${posted}`, fullYear: "那是全年數字",
+          uncheckable: (kind) => `${kind} — 不在任何財報中` },
+        noClaim: "看法／預測 — 沒有財報數字", stamp: "蓋章", next: "接下來：",
         thread: "討論串",
         social: "社群貼文",
-        pause: "暫停動畫",
-        play: "播放動畫",
+        repost: "轉貼", article: "新聞報導", example: "示範貼文", repostedFrom: "轉貼自",
+        input: { text: "文字", screenshot: "截圖", audio: "音訊", video: "影片" },
+        activity: { label: "示範互動", reply: "回覆", repost: "轉貼", like: "喜歡", views: "瀏覽" },
+        audience: "公開", transcript: "逐字稿", by: "作者",
+        exampleDetail: "作者與追蹤人數為虛構示範；說法與判定來自真實程式查核。",
+        pause: "暫停",
+        play: "播放",
         true: "正確",
         false: "錯誤",
-        unknown: "無法查核"
+        unknown: "無法查核",
+        filed: "財報", accuracy: "準確分數", within: "在容許誤差內", off: "偏差", short: "未達門檻",
+        direction: "方向錯誤", millions: "單位：百萬美元", filingUnits: "依財報原始單位",
+        stated: "貼文說", growth: "成長率", accession: "申報編號", nineMonths: "前九個月", quarter: "第 4 季（推算）",
+        severity: { exact: "吻合", minor: "輕微", moderate: "中度", major: "重大", severe: "嚴重" }
       },
       example: {
         title: "看一則真的貼文。",
@@ -234,15 +268,15 @@
         title: "怎麼運作",
         lede: "從社群貼文走到可打開的來源，只有三步。",
         step1: {
-          title: "找出每個財務說法",
+          title: "找出說法",
           body: "AI 使用 Meta 的 Muse Spark 模型，找出貼文裡每個數字、期間和比較。"
         },
         step2: {
-          title: "打開官方申報文件",
+          title: "打開財報",
           body: "它查找同一家公司、數字和期間的 SEC 申報文件。"
         },
         step3: {
-          title: "讓程式做決定",
+          title: "程式判定",
           body: "由程式，不是 AI，比對數字，最後給出正確、錯誤或無法查核。"
         }
       },
@@ -380,90 +414,576 @@
 
   function createStampConveyor(cards) {
     const scene = $("#stamp-scene");
+    const stage = scene.querySelector(".stamp-stage");
     const track = $("#stamp-track");
+    const filingContent = $("#stamp-filing-content");
+    const filingState = scene.querySelector(".stamp-filing-state");
+    const filingBox = scene.querySelector(".stamp-filing-box");
+    const filingTitle = scene.querySelector(".stamp-filing-state-title");
+    const filingExplanation = scene.querySelector(".stamp-filing-state-explanation");
+    const filingKind = scene.querySelector(".stamp-filing-state-kind");
+    const caption = scene.querySelector(".stamp-caption-beat");
+    const captionVerdict = scene.querySelector(".stamp-caption-verdict");
+    const pauseIcon = scene.querySelector(".stamp-pause-icon");
+    const pauseLabel = scene.querySelector(".stamp-pause-label");
+    const spotlight = scene.querySelector(".stamp-spotlight");
+    const stageDim = spotlight.querySelector(".stamp-stage-dim");
+    const paperDim = spotlight.querySelector(".stamp-paper-dim");
+    const paperHole = spotlight.querySelector(".stamp-stage-hole-paper");
+    const filingDim = spotlight.querySelector(".stamp-filing-dim");
+    const filingVignette = spotlight.querySelector("#stamp-filing-vignette");
+    const flash = spotlight.querySelector(".stamp-impact-flash");
+    const letterbox = spotlight.querySelector(".stamp-letterbox");
+    const bars = [spotlight.querySelector(".stamp-letterbox-top"), spotlight.querySelector(".stamp-letterbox-bottom")];
+    const lights = Object.fromEntries(["post", "filing", "year"].map((name) => {
+      const group = spotlight.querySelector(`.stamp-beam-${name}`);
+      return [name, { group, cone: group.querySelector(".stamp-beam-cone"), haze: group.querySelector(".stamp-beam-haze"),
+        gradient: spotlight.querySelector(`#stamp-light-${name}`) }];
+    }));
+    const pools = Object.fromEntries(["post", "row", "compare", "year"].map((name) => [name, spotlight.querySelector(`.stamp-pool-${name}`)]));
+    const holes = Object.fromEntries(["post", "row", "compare", "year"].map((name) => [name,
+      [spotlight.querySelector(`.stamp-dim-hole-${name}`), spotlight.querySelector(`.stamp-ink-hole-${name}`)]]));
+    const dust = Array.from(spotlight.querySelectorAll(".stamp-dust"));
+    const progress = Array.from(scene.querySelectorAll(".stamp-progress li"));
+    const next = scene.querySelector(".stamp-ticker-list");
     const list = $("#stamp-static-list");
     const pause = $("#stamp-pause");
-    const gateBeam = scene.querySelector(".stamp-gate-beam");
-    const gateLabel = scene.querySelector(".stamp-gate-label");
+    const robot = scene.querySelector(".stamp-robot");
+    const robotBand = scene.querySelector(".stamp-robot-band");
+    const floorShadow = scene.querySelector(".stamp-floor-shadow");
     const motion = window.matchMedia("(prefers-reduced-motion: reduce)");
-    const narrowViewport = window.matchMedia("(max-width: 639px)");
-    const TRAVEL = 6000;
-    const DESKTOP_INTERVAL = 2000;
-    const NARROW_INTERVAL = 2500;
-    const CROSSING = TRAVEL / 2;
+    const phone = window.matchMedia("(max-width: 639px)");
+    // One deterministic clock drives every beat and both layouts. Short reviews
+    // have their own slots; cumulative starts keep seeking exact through the loop.
+    const CHECKABLE = 8000;
+    const UNCHECKABLE = 5400;
+    const READ = 700;
+    const REACH = 1500;
+    const FIND = 2300;
+    const COMPARE = 3700;
+    const WINDUP = 4500;
+    const STRIKE = 4800;
+    const REACT = 5300;
+    const EXIT = 6400;
+    const REST = 7200;
+    const UNKNOWN_STRIKE = 3000;
+    const UNKNOWN_EXIT = 4600;
+    const FADE = 120;
+    const LEDGER_STAGGER = 200;
+    const FIND_SWEEP = 600;
+    const FIND_LOCK = FIND + FIND_SWEEP;
+    const BLOOM = 180;
+    const AMBER_SWEEP = 660;
+    const LETTERBOX = 12;
+    const LETTERBOX_EASE = 250;
+    const FLASH = 80;
+    const BURST = 400;
+    const DIM_LIFT = 250;
+    const POOL_PAD = 6;
+    const VISOR_RADIUS = 2;
+    const DUST_PERIOD = 2100;
+    const FLOAT_PERIOD = 1600;
+    const THRUSTER_FRAME = 80;
+    const THRUSTER_BURST = 250;
+    const DIP_DOWN = 60;
+    const DIP_RECOVER = 160;
+    // Image-pixel anchors from H/manifest.json, before CSS mirroring. Every
+    // body uses one scale and a shared nozzle baseline; effects stay separate.
+    const POSE_CANVAS = [704, 744];
+    const POSE_ANCHORS = Object.freeze({
+      idle: { visor: [415, 270], nozzle: [352, 520] }, inspect: { visor: [414, 304], nozzle: [352, 520] },
+      reach: { visor: [415, 300], nozzle: [352, 520] }, present: { visor: [404, 285], nozzle: [352, 520] },
+      point: { visor: [421, 280], nozzle: [352, 520] }, think: { visor: [416, 270], nozzle: [352, 520] },
+      stamp: { visor: [412, 300], nozzle: [352, 520] }, "stamp-down": { visor: [417, 335], nozzle: [352, 520] },
+      approve: { visor: [412, 276], nozzle: [352, 520] }, concern: { visor: [412, 286], nozzle: [352, 520] },
+      shrug: { visor: [391, 280], nozzle: [352, 520] }
+    });
+    const POSE_VISORS = Object.fromEntries(Object.entries(POSE_ANCHORS).map(([name, anchors]) =>
+      [name, anchors.visor.map((value, axis) => value / POSE_CANVAS[axis])]));
+    const checkable = (card) => card.score !== null && card.score !== undefined;
+    const durations = cards.map((card) => checkable(card) ? CHECKABLE : UNCHECKABLE);
+    const starts = durations.reduce((times, duration) => [...times, times[times.length - 1] + duration], [0]);
+    const loop = starts.pop();
+    const floatCycles = Math.round(loop / FLOAT_PERIOD);
     const clamp = (value) => Math.max(0, Math.min(1, value));
     const easeOut = (value) => 1 - Math.pow(1 - clamp(value), 3);
-    let elapsed = CROSSING;
-    let interval = DESKTOP_INTERVAL;
-    let loop = cards.length * interval;
-    let lastFrame = null;
+    const fadeIn = (age, at) => clamp((age - at) / FADE);
+    const compact = (value) => (value || "").replace(/-?\d+\.\d+/, (number) => Number(number).toFixed(1));
+    const poseFallbacks = { reach: "present", point: "present", think: "inspect", "stamp-down": "stamp",
+      approve: "idle", concern: "idle", shrug: "idle" };
+    const facing = { idle: "front", inspect: "post", present: "filing", reach: "filing", point: "filing",
+      think: "front", stamp: "post", "stamp-down": "post", approve: "front", concern: "front", shrug: "front" };
+    let elapsed = 0;
     let frame = null;
+    let lastFrame = null;
     let inView = false;
     let userPaused = false;
-    let width = 0;
+    let assetsLoaded = false;
     let cardWidth = 0;
+    let queuedIndex = -1;
+    let sizeKey = "";
+    let geometryKey = "";
+    let geometry = null;
 
-    function refreshTiming() {
-      interval = narrowViewport.matches ? NARROW_INTERVAL : DESKTOP_INTERVAL;
-      loop = cards.length * interval;
+    function element(tag, className, text) {
+      const node = document.createElement(tag);
+      node.className = className;
+      if (text !== undefined) node.textContent = text;
+      return node;
     }
 
+    function setText(node, text) {
+      if (node.textContent !== text) node.textContent = text;
+    }
+
+    function svg(tag, attributes = {}) {
+      const node = document.createElementNS("http://www.w3.org/2000/svg", tag);
+      Object.entries(attributes).forEach(([name, value]) => node.setAttribute(name, String(value)));
+      return node;
+    }
+
+    // Luminance masks tint the opaque black VFX plates without filters. No href
+    // is assigned until playback/seek starts and that individual asset loads.
+    function makeFxLayers() {
+      const defs = spotlight.querySelector("defs"), sources = {}, fields = [];
+      function image(asset, attributes = {}) {
+        const node = svg("image", { "data-texture": asset, preserveAspectRatio: "none", ...attributes });
+        (sources[asset] ||= []).push(node);
+        return node;
+      }
+      function tiled(asset, size, id) {
+        const pattern = svg("pattern", { id, patternUnits: "userSpaceOnUse", width: size, height: size });
+        pattern.append(image(asset, { width: size, height: size }));
+        defs.append(pattern);
+        return pattern;
+      }
+      function emissive(id, asset, kind, parent, tileSize = 0) {
+        const mask = svg("mask", { id, maskUnits: "userSpaceOnUse", maskContentUnits: "userSpaceOnUse", "mask-type": "luminance" });
+        const pattern = tileSize ? tiled(asset, tileSize, `${id}-tile`) : null;
+        const source = pattern ? svg("rect", { fill: `url(#${id}-tile)` }) : image(asset);
+        mask.append(source);
+        defs.append(mask);
+        const plate = svg("rect", { class: `stamp-fx-screen stamp-fx-${kind}`, mask: `url(#${id})` });
+        parent.append(plate);
+        fields.push(mask, plate);
+        if (pattern) fields.push(source);
+        return { mask, source, plate, pattern, group: parent };
+      }
+      Object.entries(lights).forEach(([name, beam]) => {
+        const clip = svg("clipPath", { id: `stamp-fx-clip-${name}`, clipPathUnits: "userSpaceOnUse" });
+        beam.clip = svg("polygon");
+        clip.append(beam.clip);
+        defs.append(clip);
+        const volume = svg("g", { "clip-path": `url(#stamp-fx-clip-${name})` });
+        beam.group.append(volume);
+        beam.texture = emissive(`stamp-fx-cone-${name}`, "beam-cone", "cone", volume);
+        beam.motes = emissive(`stamp-fx-dust-${name}`, "dust-motes", "dust", volume, 512);
+      });
+      const poolTextures = Object.fromEntries(Object.keys(pools).map((name) => [name,
+        emissive(`stamp-fx-pool-${name}`, "beam-pool", "pool", lights[name === "post" || name === "year" ? name : "filing"].group)]));
+      const flare = emissive("stamp-fx-flare", "lens-flare", "flare", spotlight.querySelector(".stamp-fx-flare-wrap"));
+      const burst = emissive("stamp-fx-burst", "impact-burst", "burst", spotlight.querySelector(".stamp-fx-burst-wrap"));
+      // Keep the contact mark itself legible; the burst radiates around its ink.
+      burst.exclusion = svg("rect", { fill: "black" });
+      burst.mask.append(burst.exclusion);
+      const atmosphere = spotlight.querySelector(".stamp-fx-atmosphere");
+      tiled("film-grain", 256, "stamp-fx-grain-tile");
+      const grain = svg("rect", { class: "stamp-fx-grain", fill: "url(#stamp-fx-grain-tile)" });
+      const vignette = image("vignette", { class: "stamp-fx-vignette" });
+      atmosphere.append(grain, vignette);
+      return { sources, fields, pools: poolTextures, flare, burst, grain, vignette };
+    }
+    const fx = makeFxLayers();
+    const polishImages = [];
+
+    function polishImage(path, className, width, height, isStatic = false) {
+      const image = element("img", `stamp-polish-art ${className}`);
+      image.alt = "";
+      image.width = width;
+      image.height = height;
+      image.loading = "lazy";
+      image.decoding = "async";
+      image.dataset.src = path;
+      // Image slots have fixed dimensions. Re-measure the actual text targets
+      // after decoding too, including the intrinsic phone maxima.
+      image.addEventListener("load", () => { sizeKey = ""; geometryKey = ""; measure(); });
+      image.addEventListener("error", () => image.classList.toggle("is-unavailable", true));
+      if (isStatic) image.src = path;
+      else polishImages.push(image);
+      return image;
+    }
+
+    function icon(name) {
+      const paths = {
+        reply: "M4 4h16v11H9l-5 5V4Z",
+        repost: "m4 8 4-4 4 4M8 4v12h11m1 0-4 4-4-4m4 4V8H5",
+        like: "M12 20 4 12C-2 5 7 1 12 7c5-6 14-2 8 5l-8 8Z",
+        views: "M3 20V12m6 8V7m6 13V3m6 17v-9",
+        audience: "M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0ZM3 12h18M12 3c-5 5-5 13 0 18 5-5 5-13 0-18Z"
+      };
+      const graphic = svg("svg", { viewBox: "0 0 24 24", "aria-hidden": "true" });
+      graphic.append(svg("path", { d: paths[name] }));
+      return graphic;
+    }
+
+    function makeInput(card, isStatic) {
+      const data = card.input_media;
+      const timestamp = data && typeof data.timestamp === "string" && /^\d{1,2}:\d{2}(?::\d{2})?(?:\.\d+)?$/.test(data.timestamp);
+      const thumbnail = data && typeof data.thumbnail === "string" && /^(?:img|media)\/(?!.*(?:\.\.|\/\/))[\w./-]+\.(?:webp|png|jpe?g|avif)$/.test(data.thumbnail);
+      const transcript = data && data.transcript && ["en", "zh"].every((language) => typeof data.transcript[language] === "string" && data.transcript[language].trim());
+      const waveform = data && Array.isArray(data.waveform) && data.waveform.length > 1 && data.waveform.length <= 128 &&
+        data.waveform.every((sample) => Number.isFinite(sample) && sample >= 0 && sample <= 1);
+      // Current recorded inputs are text. No waveform, frame or timestamp is
+      // fabricated for them; future variants require their actual payload.
+      const kind = card.input_kind === "audio" && timestamp && transcript && waveform ? "audio" :
+        card.input_kind === "video" && timestamp && thumbnail ? "video" :
+        card.input_kind === "screenshot" && thumbnail ? "screenshot" : "text";
+      const badge = element("span", "stamp-input-badge");
+      badge.dataset.inputKind = kind;
+      if (kind === "text") return { badge, kind, body: null };
+      const body = element("div", `stamp-input-media stamp-input-${kind}`);
+      if (kind === "audio") {
+        const strip = element("div", "stamp-waveform");
+        strip.setAttribute("aria-hidden", "true");
+        data.waveform.forEach((sample) => {
+          const bar = element("span", "");
+          bar.style.setProperty("--sample", String(sample));
+          strip.append(bar);
+        });
+        body.append(strip);
+      } else body.append(polishImage(data.thumbnail, "stamp-frame", 320, 180, isStatic));
+      if (timestamp && kind !== "screenshot") body.append(element("time", "stamp-media-time", data.timestamp));
+      const quote = kind === "audio" ? element("blockquote", "stamp-transcript") : null;
+      if (quote) body.append(quote);
+      return { badge, kind, body, quote, transcript: data.transcript };
+    }
+
+    function paperDetails(parent, isStatic = false) {
+      const grain = polishImage("img/polish/paper-grain.webp", "stamp-paper-grain", 256, 256, isStatic);
+      grain.addEventListener("load", () => parent.classList.toggle("has-paper-grain", true));
+      parent.append(grain,
+        polishImage("img/polish/stack-edge.webp", "stamp-stack-edge", 384, 96, isStatic),
+        polishImage("img/polish/paperclip.webp", "stamp-paperclip", 96, 160, isStatic));
+    }
+    paperDetails(filingBox);
+
+    // Two effect layers follow both nozzles during the 120 ms body cross-fade.
+    // All seven images share a top attachment at (80, 20) on a 160px canvas.
+    const thrusters = ["previous", "current"].map((name) => {
+      const layer = element("div", `stamp-thruster stamp-thruster-${name}`);
+      const frames = [...Array(6).keys(), "burst"].map((frame) => {
+        const image = element("img", "stamp-thruster-frame");
+        image.alt = "";
+        image.width = 160;
+        image.height = 160;
+        image.loading = "lazy";
+        image.decoding = "async";
+        image.dataset.frame = String(frame);
+        image.addEventListener("error", () => { image.dataset.failed = "true"; paint(); });
+        layer.append(image);
+        return image;
+      });
+      robot.append(layer);
+      return { layer, frames };
+    });
+
+    const poses = Object.fromEntries(Object.keys(facing).map((name) => {
+      const image = element("img", `stamp-robot-pose stamp-robot-${name}`);
+      image.alt = "";
+      image.width = POSE_CANVAS[0];
+      image.height = POSE_CANVAS[1];
+      image.loading = "lazy";
+      image.decoding = "async";
+      image.dataset.pose = name;
+      image.dataset.facing = facing[name];
+      image.addEventListener("error", () => {
+        const fallback = poseFallbacks[name];
+        if (fallback && image.dataset.asset !== fallback) {
+          image.dataset.asset = fallback;
+          image.src = `img/auditor/H/${fallback}.webp`;
+          geometryKey = "";
+          measure();
+        }
+      });
+      robot.append(image);
+      return [name, image];
+    }));
+
+    function loadAssets() {
+      if (assetsLoaded || motion.matches) return;
+      assetsLoaded = true;
+      polishImages.forEach((image) => { image.src = image.dataset.src; });
+      Object.entries(poses).forEach(([name, image]) => {
+        image.dataset.asset = name;
+        image.addEventListener("load", () => {
+          if (image.decode) image.decode().catch(() => {});
+          geometryKey = "";
+          measure();
+        });
+        image.src = `img/auditor/H/${name}.webp`;
+      });
+      thrusters.forEach(({ frames }) => frames.forEach((image) => {
+        image.src = `img/auditor/H/thruster-${image.dataset.frame}.webp`;
+      }));
+      // A failed ink texture leaves solid, readable stamp text.
+      const ink = element("img", "");
+      ink.decoding = "async";
+      ink.addEventListener("load", () => scene.classList.toggle("has-stamp-ink", ink.naturalWidth > 0));
+      ink.addEventListener("error", () => scene.classList.remove("has-stamp-ink"));
+      ink.src = "img/stamp-ink.webp";
+      Object.entries(fx.sources).forEach(([name, sources]) => {
+        const image = element("img", "stamp-fx-preload"), url = `img/fx/${name}.webp`;
+        image.decoding = "async";
+        image.dataset.texture = name;
+        image.addEventListener("load", () => sources.forEach((node) => node.setAttribute("href", url)));
+        image.addEventListener("error", () => sources.forEach((node) => node.removeAttribute("href")));
+        image.src = url;
+      });
+    }
+
+    function makePassage(card, isStatic) {
+      if (!card.excerpt) return null;
+      const source = card.excerpt;
+      const passage = element("div", "stamp-passage");
+      passage.dataset.cardId = card.id;
+      const header = element("div", "stamp-passage-header");
+      header.append(element("p", "stamp-filing-authority", "UNITED STATES SECURITIES AND EXCHANGE COMMISSION"));
+      const formLine = element("div", "stamp-form-line");
+      const dateStamp = element("span", "stamp-filing-date");
+      const filedDate = element("time", "");
+      filedDate.dateTime = source.filed;
+      dateStamp.append(polishImage("img/polish/ink-ring.webp", "stamp-date-ring", 256, 128, isStatic), filedDate);
+      formLine.append(element("p", "stamp-passage-meta", `FORM ${source.form}`), dateStamp);
+      header.append(formLine);
+      header.append(element("p", "stamp-passage-company", source.company));
+      if (source.section_title) header.append(element("p", "stamp-passage-section", source.section_title));
+      const period = element("p", "stamp-passage-period");
+      header.append(period);
+      const details = element("div", "stamp-passage-details");
+      const row = element("p", "stamp-passage-row");
+      const fact = element("mark", "stamp-fact");
+      const sweep = element("span", "stamp-amber-sweep");
+      fact.append(sweep, element("strong", "", source.value));
+      if (source.type === "table") {
+        row.append(element("span", "stamp-row-label", source.row_label), fact);
+      } else {
+        const offset = source.text.indexOf(source.value);
+        row.append(document.createTextNode(source.text.slice(0, offset)), fact,
+          document.createTextNode(source.text.slice(offset + source.value.length)));
+      }
+      const units = element("p", "stamp-passage-units");
+      details.append(row, units);
+      const ledgerRows = [];
+      let ledger = null;
+      if (!source.derivation && card.stated_value_display && card.filed_value_display) {
+        ledger = { nine: element("span", "stamp-ledger-label"), quarter: element("span", "stamp-ledger-label"), direct: true };
+        const statedRow = element("p", "stamp-ledger-row");
+        ledger.statedValue = element("span", "stamp-ledger-value");
+        statedRow.append(ledger.nine, ledger.statedValue);
+        const filedRow = element("p", "stamp-ledger-row is-result");
+        ledger.filedValue = element("span", "stamp-ledger-value");
+        filedRow.append(ledger.quarter, ledger.filedValue);
+        ledgerRows.push(statedRow, filedRow);
+      } else if (source.derivation) {
+        const millions = (value) => Math.round(value / 1e6).toLocaleString("en-US");
+        const nine = source.derivation.nine_months;
+        ledger = { nine: element("span", "stamp-ledger-label"), quarter: element("span", "stamp-ledger-label") };
+        const nineRow = element("p", "stamp-ledger-row");
+        nineRow.append(ledger.nine, element("span", "stamp-ledger-value", `− ${millions(nine.value)}`));
+        const quarterRow = element("p", "stamp-ledger-row is-result");
+        quarterRow.append(ledger.quarter, element("span", "stamp-ledger-value", `= ${millions(source.derivation.result)}`));
+        ledger.nineSource = `${nine.form} · ${nine.filed}`;
+        ledgerRows.push(nineRow, quarterRow);
+      }
+      const ledgerBox = element("div", "stamp-ledger");
+      ledgerBox.append(...ledgerRows);
+      if (source.derivation) details.append(ledgerBox);
+      const derivation = source.derivation ? element("p", "stamp-derivation") : null;
+      if (derivation) details.append(derivation);
+      // Direct facts use their ledger as the comparison; a derived quarter
+      // needs a separate pair so the filed result is not confused with full year.
+      const compare = source.derivation ? element("div", "stamp-compare stamp-compare-pair") : ledgerBox;
+      if (!source.derivation) compare.classList.toggle("stamp-compare", true);
+      const statedLabel = source.derivation ? element("span", "stamp-compare-label") : ledger.nine;
+      const filedLabel = source.derivation ? element("span", "stamp-compare-label") : ledger.quarter;
+      const statedValue = source.derivation ? element("strong", "stamp-compare-stated") : ledger.statedValue;
+      const filedValue = source.derivation ? element("strong", "stamp-compare-filed") : ledger.filedValue;
+      if (source.derivation) {
+        const statedCell = element("p", "");
+        const filedCell = element("p", "");
+        statedCell.append(statedLabel, statedValue);
+        filedCell.append(filedLabel, filedValue);
+        compare.append(statedCell, filedCell);
+      }
+      const accn = source.source_evidence && source.source_evidence.accn;
+      const accession = accn ? element("p", "stamp-passage-accession") : null;
+      passage.append(header, details, compare);
+      if (accession) passage.append(accession);
+      if (isStatic) paperDetails(passage, true);
+      return { body: passage, header, details, row, fact, period, units, derivation, ledger, ledgerRows, accession, accn, sweep,
+        compare, statedLabel, filedLabel, statedValue, filedValue, filedDate };
+    }
     function makeCard(card, index, isStatic) {
-      const body = document.createElement(isStatic ? "a" : "article");
-      body.className = `stamp-card ${verdictClass(card)}`;
+      const body = element(isStatic ? "a" : "article", `stamp-card ${verdictClass(card)}`);
       body.dataset.cardId = card.id;
-      // Stable per-claim variation, including when the list loops or language changes.
+      body.dataset.sourceKind = card.source_kind;
+      body.dataset.severity = card.severity || "unknown";
       const hash = Array.from(card.id).reduce((value, character) => (value * 31 + character.charCodeAt(0)) >>> 0, 0);
-      const angle = (hash % 21) - 12;
+      const angle = (hash % 13) - 6;
       body.style.setProperty("--stamp-angle", `${angle}deg`);
-      // GitHub Pages publishes docs/ as its root; this also works in the checkout.
       if (isStatic) body.href = card.filing_url || card.source_report.replace(/^docs\//, "../");
-
-      const header = document.createElement("div");
-      header.className = "stamp-card-header";
-      const ticker = document.createElement("span");
-      ticker.className = "stamp-ticker";
-      ticker.textContent = `$${card.ticker}`;
-      const source = document.createElement("span");
-      source.className = "stamp-source";
-      header.append(ticker, source);
-      const claim = document.createElement("p");
-      claim.className = "stamp-claim";
-
-      const mark = document.createElement("span");
-      mark.className = "stamp-mark";
-      const impression = document.createElement("span");
-      impression.className = "stamp-impression";
-      mark.append(impression);
-      let bleed = null;
+      const postHeader = element("div", "stamp-post-header");
+      const avatar = element("img", "stamp-avatar");
+      avatar.alt = "";
+      avatar.width = 56;
+      avatar.height = 56;
+      avatar.loading = "lazy";
+      avatar.decoding = "async";
+      avatar.src = card.persona.avatar;
+      const identity = element("div", "stamp-identity");
+      const authorRow = element("div", "stamp-author-row");
+      const author = element("strong", "stamp-author");
+      const example = element("span", "stamp-example");
+      authorRow.append(author);
+      if (card.source_kind !== "article") authorRow.append(example);
+      const byline = element("p", "stamp-byline");
+      const postMeta = element("p", "stamp-post-meta");
+      const followers = element("span", "stamp-followers");
+      const date = element("time", "stamp-post-date", card.post_date);
+      date.dateTime = card.post_date;
+      const audience = card.source_kind === "social" ? element("span", "stamp-audience") : null;
+      if (audience) audience.append(icon("audience"));
+      postMeta.append(byline, date);
+      if (card.source_kind === "article") postMeta.append(example);
+      if (audience) postMeta.append(audience);
+      identity.append(authorRow, postMeta, followers);
+      postHeader.append(avatar, identity);
+      const header = element("div", "stamp-card-header");
+      const metadata = element("span", "stamp-source");
+      const source = element("span", "");
+      const input = makeInput(card, isStatic);
+      metadata.append(source);
+      if (card.source_kind === "article") postMeta.append(input.badge);
+      else metadata.append(input.badge);
+      if (card.source_kind === "thread" && card.thread_index) metadata.append(element("span", "stamp-thread-index", card.thread_index));
+      header.append(element("span", "stamp-ticker", `$${card.ticker}`), element("span", "stamp-company", card.company), metadata);
+      identity.append(header);
+      const reposted = card.reposted_from ? element("p", "stamp-reposted") : null;
+      let original = null;
+      let quoteHeader = null;
+      if (card.source_kind === "repost") {
+        original = cards.find((candidate) => candidate.id === card.same_claim_as);
+        if (original) {
+          quoteHeader = element("div", "stamp-quote-header");
+          const originalAvatar = element("img", "stamp-avatar");
+          originalAvatar.alt = "";
+          originalAvatar.width = 56;
+          originalAvatar.height = 56;
+          originalAvatar.loading = "lazy";
+          originalAvatar.decoding = "async";
+          originalAvatar.src = original.persona.avatar;
+          const identity = element("div", "stamp-identity");
+          identity.append(element("strong", "stamp-original-author"), element("p", "stamp-original-byline"));
+          const originalDate = element("time", "stamp-post-date", original.post_date);
+          originalDate.dateTime = original.post_date;
+          identity.append(originalDate);
+          quoteHeader.append(originalAvatar, identity);
+        }
+      }
+      const article = card.source_kind === "article" && card.article ? element("div", "stamp-article-deck") : null;
+      const lead = article ? element("p", "stamp-article-lead") : null;
+      if (article) {
+        const masthead = polishImage("img/polish/banana-masthead.webp", "stamp-masthead", 520, 96, isStatic);
+        masthead.addEventListener("error", () => identity.classList.toggle("masthead-unavailable", true));
+        identity.prepend(masthead);
+        const pictures = element("div", "stamp-article-pictures");
+        card.article.illustrations.forEach((path) => pictures.append(polishImage(path, "stamp-article-picture", 320, 180, isStatic)));
+        article.append(lead, pictures);
+      }
+      const claim = element("p", "stamp-claim");
+      const period = element("span", "stamp-period");
+      period.hidden = false;
+      const actions = element("div", `stamp-actions${card.source_kind === "social" ? " stamp-reactions" : ""}`);
+      const actionLabels = [];
+      if (card.example_activity && card.source_kind !== "article") {
+        Object.entries(card.example_activity).forEach(([kind, count]) => {
+          if (!["reply", "repost", "like", "views"].includes(kind) || !Number.isFinite(count)) return;
+          const action = element("span", "stamp-action");
+          action.append(icon(kind), element("span", "", count.toLocaleString("en-US")));
+          actions.append(action);
+          actionLabels.push({ action, kind });
+        });
+        actions.append(element("small", "stamp-activity-label"));
+      }
+      const filed = element("p", "stamp-filed");
+      const footer = element("div", "stamp-review");
+      const reviewCopy = element("div", "stamp-review-copy");
+      const assessment = element("div", "stamp-assessment");
+      reviewCopy.append(filed, assessment);
+      let meter = null;
+      let fill = null;
+      let marker = null;
+      let severity = null;
+      let summary = null;
+      let score = null;
+      let gap = null;
+      const checkable = card.score !== null && card.score !== undefined;
+      if (checkable) {
+        summary = element("p", "stamp-score-summary");
+        severity = element("strong", "stamp-severity");
+        score = element("span", "stamp-score");
+        summary.append(severity, score);
+        meter = element("span", "stamp-meter");
+        meter.setAttribute("role", "meter");
+        meter.setAttribute("aria-valuemin", "0");
+        meter.setAttribute("aria-valuemax", "100");
+        meter.setAttribute("aria-valuenow", String(Math.round(card.score)));
+        fill = element("span", "stamp-meter-fill");
+        marker = element("span", "stamp-meter-marker");
+        marker.setAttribute("aria-hidden", "true");
+        meter.append(fill, marker);
+        gap = element("p", "stamp-gap");
+        assessment.append(summary, meter, gap);
+      } else {
+        gap = element("p", "stamp-uncheckable");
+        assessment.append(gap);
+      }
+      const mark = element("span", "stamp-mark");
+      const impression = element("span", "stamp-impression");
+      const bleed = element("span", "stamp-bleed");
+      bleed.setAttribute("aria-hidden", "true");
+      mark.append(impression, bleed);
+      footer.append(reviewCopy, mark);
+      body.append(postHeader);
+      if (reposted) body.append(reposted);
+      const content = element("div", original ? "stamp-post-content stamp-quote-card" : "stamp-post-content");
+      if (quoteHeader) content.append(quoteHeader);
+      content.append(claim);
+      if (article) content.append(article);
+      if (input.body) content.append(input.body);
+      content.append(period);
+      if (actions.children.length) content.append(actions);
+      body.append(content, footer);
       let scan = null;
       if (!isStatic) {
-        bleed = document.createElement("span");
-        bleed.className = "stamp-bleed";
-        bleed.setAttribute("aria-hidden", "true");
-        mark.append(bleed);
-        const scanClip = document.createElement("span");
-        scanClip.className = "stamp-scan";
-        scan = document.createElement("span");
-        scan.className = "stamp-scan-light";
-        scanClip.append(scan);
-        body.append(scanClip);
+        const clip = element("span", "stamp-scan");
+        scan = element("span", "stamp-scan-light");
+        clip.append(scan);
+        body.append(clip);
       }
-
-      body.append(header, claim, mark);
-      let evidence = null;
-      if (card.evidence_label) {
-        evidence = document.createElement("span");
-        evidence.className = "stamp-evidence";
-        evidence.textContent = card.evidence_label;
-        body.append(evidence);
-      }
-
-      const carrier = document.createElement(isStatic ? "li" : "div");
-      carrier.className = isStatic ? "stamp-static-item" : "stamp-carrier";
+      const passage = makePassage(card, isStatic);
+      const carrier = element(isStatic ? "li" : "div", isStatic ? "stamp-static-item" : "stamp-carrier");
       carrier.append(body);
+      if (passage) (isStatic ? body : filingContent).append(passage.body);
+      const unavailable = !passage && isStatic ? element("div", "stamp-static-unavailable") : null;
+      if (unavailable) {
+        unavailable.append(element("p", "stamp-no-number-title"), element("p", "stamp-no-number-explanation"), element("span", "stamp-no-number-kind"));
+        body.append(unavailable);
+      }
       (isStatic ? list : track).append(carrier);
-      return { card, index, angle, body, source, claim, mark, impression, bleed, evidence, scan, carrier };
+      return { card, index, isStatic, body, source, claim, period, filed, footer, assessment, summary,
+        author, example, byline, followers, reposted, original, quoteHeader, article, lead, input, actions, actionLabels, audience,
+        severity, score, meter, fill, marker, gap, mark, impression, bleed, scan, passage, carrier, angle, unavailable, number: null, light: null, glow: null };
     }
 
     const moving = cards.map((card, index) => makeCard(card, index, false));
@@ -471,86 +991,510 @@
 
     function localize() {
       [...moving, ...still].forEach((item) => {
-        item.claim.textContent = item.card.text[pageLanguage];
-        item.source.textContent = getCopy(`stamps.${item.card.source_kind}`);
-        const verdict = item.card.verdict === "supported" ? "true" : item.card.verdict === "contradicted" ? "false" : "unknown";
+        const card = item.card;
+        const text = card.text[pageLanguage];
+        // Enlarge a number actually present in the post, never a year from its period.
+        const number = text.match(/\$[\d,.]+[BM]?|[\d,.]+\s*億美元|\d+(?:\.\d+)?%|\d+(?:\.\d+)?x|\d+(?:\.\d+)?\s*倍/);
+        item.claim.replaceChildren();
+        item.glow = null;
+        item.number = null;
+        if (number) {
+          const strong = element("strong", "stamp-number");
+          item.number = strong;
+          item.glow = element("span", "stamp-number-glow");
+          strong.append(item.glow, document.createTextNode(number[0]));
+          item.claim.append(document.createTextNode(text.slice(0, number.index)), strong,
+            document.createTextNode(text.slice(number.index + number[0].length)));
+        } else item.claim.textContent = text;
+        item.source.textContent = getCopy(`stamps.${card.source_kind}`);
+        item.author.textContent = card.persona.name[pageLanguage];
+        item.byline.textContent = card.persona.byline[pageLanguage];
+        item.byline.hidden = item.byline.textContent === item.author.textContent;
+        item.followers.textContent = card.persona.follower_label[pageLanguage];
+        item.input.badge.textContent = getCopy(`stamps.input.${item.input.kind}`);
+        if (item.input.quote) {
+          item.input.quote.textContent = item.input.transcript[pageLanguage];
+          item.input.quote.setAttribute("aria-label", getCopy("stamps.transcript"));
+        }
+        if (item.audience) item.audience.title = getCopy("stamps.audience");
+        item.actions.setAttribute("aria-label", getCopy("stamps.activity.label"));
+        item.actionLabels.forEach(({ action, kind }) => { action.title = `${getCopy("stamps.activity.label")} · ${getCopy(`stamps.activity.${kind}`)}`; });
+        const activityLabel = item.actions.querySelector(".stamp-activity-label");
+        if (activityLabel) activityLabel.textContent = getCopy("stamps.activity.label");
+        if (item.original) {
+          item.quoteHeader.querySelector(".stamp-original-author").textContent = item.original.persona.name[pageLanguage];
+          item.quoteHeader.querySelector(".stamp-original-byline").textContent = item.original.persona.byline[pageLanguage];
+        }
+        if (item.lead) item.lead.textContent = card.article.lead[pageLanguage];
+        item.example.textContent = getCopy("stamps.example");
+        item.example.title = getCopy("stamps.exampleDetail");
+        if (item.reposted) item.reposted.textContent = `${getCopy("stamps.repostedFrom")} ${card.reposted_from}`;
+        item.period.textContent = item.meter ? `${getCopy("stamps.claim")}: ${compact(card.stated_value_display)} · ${card.period[pageLanguage]}` : getCopy("stamps.noClaim");
+        if (item.unavailable) {
+          item.unavailable.querySelector(".stamp-no-number-title").textContent = getCopy("stamps.noNumber");
+          item.unavailable.querySelector(".stamp-no-number-explanation").textContent = getCopy("stamps.noNumberExplanation");
+          item.unavailable.querySelector(".stamp-no-number-kind").textContent = getCopy(`claimKind.${card.kind}`);
+        }
+        const verdict = card.verdict === "supported" ? "true" : card.verdict === "contradicted" ? "false" : "unknown";
         item.impression.textContent = getCopy(`stamps.${verdict}`);
-        if (item.bleed) item.bleed.textContent = item.impression.textContent;
+        item.bleed.textContent = item.impression.textContent;
+        item.captions = {
+          read: getCopy("stamps.caption.read"),
+          reach: card.excerpt ? getCopy("stamps.caption.reach")(card.excerpt.form) : "",
+          find: card.excerpt ? getCopy("stamps.caption.find")(card.excerpt.value) : "",
+          compare: card.excerpt && card.excerpt.derivation ? getCopy("stamps.caption.fullYear") :
+            item.meter ? getCopy("stamps.caption.compare")(compact(card.filed_value_display), compact(card.stated_value_display)) : "",
+          verdict: item.impression.textContent,
+          uncheckable: getCopy("stamps.caption.uncheckable")(getCopy(`claimKind.${card.kind}`))
+        };
+        item.filed.textContent = card.filed_value_display ? `${getCopy("stamps.filed")}: ${compact(card.filed_value_display)}` : "";
+        if (item.meter) {
+          item.severity.textContent = getCopy(`stamps.severity.${card.severity}`);
+          item.score.textContent = `${Math.round(card.score)} / 100`;
+          item.meter.setAttribute("aria-label", getCopy("stamps.accuracy"));
+          const gap = card.gap_kind === "points" ? `${card.gap.toFixed(1)} pp` : `${(100 * card.gap).toFixed(card.gap >= 1 ? 0 : 1)}%`;
+          item.gap.textContent = card.direction_wrong ? `${getCopy("stamps.direction")} · ${gap}` :
+            card.severity === "exact" ? getCopy("stamps.within") : `${gap} ${getCopy(card.gap_relation === "shortfall" ? "stamps.short" : "stamps.off")}`;
+        } else item.gap.textContent = getCopy(`claimKind.${card.kind}`);
+        if (item.passage) {
+          const source = card.excerpt;
+          item.passage.filedDate.textContent = `${getCopy("stamps.filed")} ${source.filed}`;
+          item.passage.period.textContent = source.derivation ? `${source.derivation.label[pageLanguage]} · ${source.period_header}` : source.period_header;
+          item.passage.units.textContent = source.fact.scale === 6 ? getCopy("stamps.millions") : getCopy("stamps.filingUnits");
+          if (item.passage.derivation) item.passage.derivation.textContent = source.derivation.text[pageLanguage];
+          const growth = card.gap_kind === "points";
+          const signed = (value) => growth ? value.replace(/^-/, "−").replace(/^(?=\d)/, "+") : value;
+          const suffix = growth ? ` · ${getCopy("stamps.growth")}` : "";
+          item.passage.statedLabel.textContent = `${getCopy("stamps.stated")}${suffix}`;
+          item.passage.filedLabel.textContent = `${getCopy("stamps.filed")}${suffix}`;
+          item.passage.statedValue.textContent = `${card.gap_relation === "shortfall" ? "> " : ""}${signed(compact(card.stated_value_display))}`;
+          item.passage.filedValue.textContent = signed(compact(card.filed_value_display));
+          const ledger = item.passage.ledger;
+          if (ledger && ledger.direct) {
+            // Percent-change claims compare growth rates, signed, not the revenue row itself.
+            ledger.nine.textContent = `${getCopy("stamps.stated")}${suffix}`;
+            ledger.statedValue.textContent = `${card.gap_relation === "shortfall" ? "> " : ""}${signed(compact(card.stated_value_display))}`;
+            ledger.quarter.textContent = `${getCopy("stamps.filed")}${suffix}`;
+            ledger.filedValue.textContent = signed(compact(card.filed_value_display));
+          } else if (ledger) {
+            ledger.nine.textContent = `${getCopy("stamps.nineMonths")} · ${ledger.nineSource}`;
+            ledger.quarter.textContent = getCopy("stamps.quarter");
+          }
+          if (item.passage.accession) item.passage.accession.textContent = `${getCopy("stamps.accession")} ${item.passage.accn}`;
+        }
+        if (item.isStatic) {
+          if (item.fill) item.fill.style.transform = `scaleX(${card.score / 100})`;
+          if (item.marker) item.marker.style.transform = `translate3d(${card.score}%, 0, 0)`;
+          if (item.glow) item.glow.style.opacity = "0";
+          item.bleed.style.opacity = "0.12";
+          if (item.passage) item.passage.sweep.style.transform = "scaleX(1)";
+        }
       });
-      pause.textContent = getCopy(userPaused ? "stamps.play" : "stamps.pause");
-      // A language switch changes the card's intrinsic text width. Repaint the
-      // current frame now so a later console seek cannot inherit a stale layout.
+      queuedIndex = -1;
+      geometryKey = "";
+      paintPause();
       measure();
     }
 
-    function measure() {
-      refreshTiming();
-      width = scene.clientWidth;
-      // The accessible list also has measurable card widths in reduced-motion mode.
-      cardWidth = still[0].body.getBoundingClientRect().width;
-      // Cards must never overlap: on narrow screens the fixed interval gives a pitch smaller than the card.
-      if (width + cardWidth > 0) {
-        interval = Math.max(interval, Math.ceil(TRAVEL * (cardWidth + 24) / (width + cardWidth)));
-        loop = cards.length * interval;
-      }
-      paint();
+    function paintPause() {
+      const label = getCopy(userPaused ? "stamps.play" : "stamps.pause");
+      pause.setAttribute("aria-label", label);
+      pauseIcon.textContent = userPaused ? "▶" : "Ⅱ";
+      pauseLabel.textContent = label;
+    }
+
+    function phaseAt(age, canCheck) {
+      if (age < READ) return "enter";
+      if (age < REACH) return "read";
+      if (!canCheck) return age < UNKNOWN_STRIKE ? "shrug" : age < UNKNOWN_STRIKE + 500 ? "strike" :
+        age < UNKNOWN_EXIT ? "react" : "exit";
+      return age < FIND ? "reach" : age < COMPARE ? "find" : age < WINDUP ? "compare" :
+        age < STRIKE ? "windup" : age < REACT ? "strike" : age < EXIT ? "react" : age < REST ? "exit" : "rest";
+    }
+
+    function paintRobot(age, card) {
+      const canCheck = checkable(card);
+      const transitions = canCheck ? [[0, "idle"], [READ, "inspect"], [REACH, "reach"], [FIND, "point"],
+        [COMPARE, "think"], [WINDUP, "stamp"], [STRIKE, "stamp-down"],
+        [REACT, card.verdict === "supported" ? "approve" : "concern"], [EXIT, "idle"]] :
+        [[0, "idle"], [READ, "inspect"], [REACH, "shrug"], [UNKNOWN_EXIT, "idle"]];
+      const current = transitions.findLastIndex(([at]) => age >= at);
+      const [at, pose] = transitions[current];
+      const previous = current > 0 ? transitions[current - 1][1] : pose;
+      const blend = current > 0 ? fadeIn(age, at) : 1;
+      Object.entries(poses).forEach(([name, image]) => {
+        image.style.opacity = String(name === pose ? blend : name === previous ? 1 - blend : 0);
+      });
+      const directionOf = (name) => facing[name] === "post" ? -1 : facing[name] === "filing" ? 1 : 0;
+      const direction = directionOf(previous) * (1 - blend) + directionOf(pose) * blend;
+      const lean = direction * 3 * (0.5 + 0.5 * Math.sin(elapsed / 420));
+      const strike = canCheck ? STRIKE : UNKNOWN_STRIKE;
+      const sinceStrike = age - strike;
+      const dip = sinceStrike < 0 || sinceStrike >= DIP_DOWN + DIP_RECOVER ? 0 : sinceStrike < DIP_DOWN ?
+        8 * easeOut(sinceStrike / DIP_DOWN) : 8 * (1 - easeOut((sinceStrike - DIP_DOWN) / DIP_RECOVER));
+      const burst = sinceStrike >= 0 && sinceStrike < THRUSTER_BURST;
+      const bob = 4 * Math.sin(elapsed / loop * Math.PI * 2 * floatCycles);
+      robot.style.transform = `translate3d(0px, ${bob + dip}px, 0) rotate(${lean}deg)`;
+      robot.dataset.pose = pose;
+      robot.dataset.facing = facing[pose];
+      robot.dataset.gesture = !canCheck && age >= REACH && age < UNKNOWN_EXIT ? "shrug" : "review";
+      robot.dataset.bob = String(bob);
+      robot.dataset.dip = String(dip);
+      robot.dataset.thruster = burst ? "burst" : String(Math.floor(elapsed / THRUSTER_FRAME) % 6);
+      if (!geometry) return { x: 0, y: 0 };
+      thrusters.forEach(({ layer, frames }, index) => {
+        const name = index ? pose : previous, nozzle = geometry.nozzles[name];
+        const frame = frames.find((image) => image.dataset.frame === robot.dataset.thruster && image.dataset.failed !== "true") ||
+          frames.find((image) => image.dataset.failed !== "true");
+        frames.forEach((image) => { image.style.opacity = image === frame ? "1" : "0"; });
+        const scale = nozzle.scale * (burst ? 1.6 : 1);
+        layer.style.opacity = String(index ? blend : 1 - blend);
+        layer.style.transform = `translate3d(${nozzle.x}px, ${nozzle.y}px, 0) scale(${scale}) scaleX(${facing[name] === "post" ? -1 : 1}) translate3d(-80px, -20px, 0)`;
+        layer.dataset.pose = name;
+        layer.dataset.facing = facing[name];
+        layer.dataset.nozzleX = String(nozzle.x);
+        layer.dataset.nozzleY = String(nozzle.y);
+        layer.dataset.scale = String(burst ? 1.6 : 1);
+        layer.dataset.frame = frame?.dataset.frame || "none";
+      });
+      const shadowScale = 0.9 + (bob + dip) * 0.025;
+      floorShadow.style.transform = `translate3d(${geometry.floor.x}px, ${geometry.floor.y}px, 0) scale(${geometry.floor.scale * shadowScale}) translate3d(-110px, -17px, 0)`;
+      floorShadow.style.opacity = String(0.8 * shadowScale);
+      floorShadow.dataset.scale = String(shadowScale);
+      const from = geometry.visors[previous], to = geometry.visors[pose];
+      const x = from.x + (to.x - from.x) * blend - geometry.pivot.x;
+      const y = from.y + (to.y - from.y) * blend - geometry.pivot.y;
+      const radians = lean * Math.PI / 180;
+      const visor = { x: geometry.pivot.x + x * Math.cos(radians) - y * Math.sin(radians),
+        y: geometry.pivot.y + x * Math.sin(radians) + y * Math.cos(radians) + bob + dip };
+      robot.dataset.visorX = String(visor.x);
+      robot.dataset.visorY = String(visor.y);
+      return visor;
+    }
+
+    function currentCard() {
+      const index = starts.findLastIndex((start) => elapsed >= start);
+      return { index, age: elapsed - starts[index] };
     }
 
     function paint() {
-      let gatePulse = 0;
+      const { index, age } = currentCard();
+      const active = moving[index];
+      const canCheck = !!active.meter;
+      const exit = canCheck ? EXIT : UNKNOWN_EXIT;
+      const phase = phaseAt(age, canCheck);
+      scene.dataset.phase = phase;
+      scene.dataset.cardId = active.card.id;
+      track.dataset.sourceKind = active.card.source_kind;
+      const step = age < READ || age >= exit ? 0 : !canCheck ? (age < UNKNOWN_STRIKE ? 1 : 4) : phase === "read" ? 1 :
+        phase === "reach" || phase === "find" ? 2 : phase === "compare" || phase === "shrug" ? 3 : 4;
+      scene.dataset.step = String(step);
+      progress.forEach((node, offset) => {
+        const lit = offset + 1 === step;
+        node.classList.toggle("is-active", lit);
+        node.classList.toggle("is-skipped", !canCheck && (offset === 1 || offset === 2));
+        if (lit) node.setAttribute("aria-current", "step");
+        else node.removeAttribute("aria-current");
+      });
+      if (queuedIndex !== index) {
+        const upcoming = [1, 2].map((offset) => cards[(index + offset) % cards.length]);
+        next.replaceChildren(...upcoming.map((card) => {
+          const concept = card.excerpt && card.excerpt.source_evidence && card.excerpt.source_evidence.concept;
+          const kind = concept && /Revenue/.test(concept) ? getCopy("stamps.revenue") : getCopy(`claimKind.${card.kind}`);
+          return element("span", "stamp-next-chip", `$${card.ticker}${upcoming[0].ticker === upcoming[1].ticker ? ` ${kind.toLowerCase()}` : ""}`);
+        }));
+        queuedIndex = index;
+      }
+      const noNumber = !canCheck && age >= REACH;
+      setText(filingTitle, getCopy(noNumber ? "stamps.noNumber" : "stamps.waiting"));
+      setText(filingExplanation, getCopy("stamps.noNumberExplanation"));
+      setText(filingKind, getCopy(`claimKind.${active.card.kind}`));
+      filingExplanation.hidden = !noNumber;
+      filingKind.hidden = !noNumber;
+      filingState.style.opacity = String(canCheck ? 1 - fadeIn(age, REACH) : 1 - clamp((age - UNKNOWN_EXIT) / 800));
+      filingBox.dataset.state = !canCheck && age >= REACH ? "uncheckable" : age < REACH ? "waiting" : "filing";
+      const words = active.captions;
+      setText(caption, phase === "read" ? words.read : noNumber && phase === "shrug" ? words.uncheckable :
+        phase === "reach" ? words.reach : phase === "find" ? words.find :
+          phase === "compare" || phase === "windup" ? words.compare : phase === "strike" || phase === "react" ? words.verdict : words.read);
+      captionVerdict.hidden = !phone.matches || (phase !== "compare" && phase !== "windup");
+      setText(captionVerdict, words.verdict);
       moving.forEach((item) => {
-        const age = ((elapsed - item.index * interval) % loop + loop) % loop;
-        const visible = age < TRAVEL;
-        if (item.carrier.hidden !== !visible) item.carrier.hidden = !visible;
-        if (!visible) return;
-        const progress = age / TRAVEL;
-        item.carrier.style.transform = `translate3d(${-cardWidth + (width + cardWidth) * progress}px, 0, 0)`;
-        item.carrier.style.opacity = String(Math.min(clamp(progress / 0.08), clamp((1 - progress) / 0.12)));
-        // Outgoing cards must stay above incoming cards until they leave the track.
-        // Demoting them one second after the gate hid stamps on overlapping cards.
-        // Only change stacking at discrete stages; animate transform/opacity only.
-        const layer = 1 + Math.floor(age / interval);
-        if (item.layer !== layer) {
-          item.carrier.style.zIndex = String(layer);
-          item.layer = layer;
-        }
-
-        // Start 400 ms early so the stamp lands with the card centred on the gate, not past it.
-        const sinceGate = age - (CROSSING - 400);
-        const sweep = clamp(sinceGate / 300);
+        const selected = item.index === index;
+        const age = selected ? currentCard().age : 0;
+        item.carrier.hidden = !selected || age >= (item.meter ? REST : UNCHECKABLE);
+        const itemPhase = selected ? phase : "rest";
+        item.body.dataset.phase = itemPhase;
+        if (item.passage) item.passage.body.hidden = !selected || age >= REST;
+        const itemExit = item.meter ? EXIT : UNKNOWN_EXIT;
+        const leave = clamp((age - itemExit) / 800);
+        const x = age < READ ? -cardWidth * (1 - easeOut(age / READ)) : (cardWidth + 24) * easeOut(leave);
+        item.carrier.style.transform = `translate3d(${x}px, 0, 0)`;
+        item.carrier.style.opacity = String(age < READ ? clamp(age / 160) : 1 - leave);
+        const scanning = age >= READ && age < REACH;
+        const sweep = clamp((age - READ) / (REACH - READ));
         item.scan.style.transform = `translate3d(${(cardWidth + 48) * sweep - 48}px, 0, 0)`;
-        item.scan.style.opacity = String(sinceGate >= 0 && sinceGate < 300 ? Math.sin(sweep * Math.PI) * 0.28 : 0);
-        if (item.evidence) {
-          const pop = easeOut((sinceGate - 300) / 100);
-          item.evidence.style.opacity = String(pop);
-          item.evidence.style.transform = `translateY(${6 * (1 - pop)}px) scale(${0.9 + pop * 0.1})`;
+        item.scan.style.opacity = String(scanning ? Math.sin(sweep * Math.PI) * 0.22 : 0);
+        if (item.glow) item.glow.style.opacity = String(scanning ? Math.sin(sweep * Math.PI) * 0.35 : 0);
+        item.period.style.opacity = String(fadeIn(age, item.meter ? READ : REACH));
+        const scored = fadeIn(age, COMPARE);
+        item.filed.style.opacity = String(item.meter ? scored : 0);
+        item.assessment.style.opacity = String(item.meter ? scored : fadeIn(age, REACH));
+        const scoreProgress = easeOut((age - COMPARE) / (WINDUP - COMPARE));
+        if (item.fill) item.fill.style.transform = `scaleX(${item.card.score / 100 * scoreProgress})`;
+        if (item.marker) item.marker.style.transform = `translate3d(${item.card.score * scoreProgress}%, 0, 0)`;
+        if (item.passage) {
+          const passage = item.passage;
+          passage.body.style.opacity = String(1 - leave);
+          passage.header.style.opacity = String(fadeIn(age, REACH));
+          passage.header.style.transform = `translate3d(0, ${8 * (1 - easeOut((age - REACH) / 250))}px, 0)`;
+          passage.details.style.opacity = String(fadeIn(age, FIND));
+          passage.ledgerRows.forEach((row, rowIndex) => {
+            row.style.opacity = String(fadeIn(age, FIND + (rowIndex + 1) * LEDGER_STAGGER));
+          });
+          if (passage.derivation) passage.derivation.style.opacity = String(fadeIn(age, FIND + 3 * LEDGER_STAGGER));
+          if (passage.accession) passage.accession.style.opacity = String(fadeIn(age, FIND + 3 * LEDGER_STAGGER));
+          passage.sweep.style.transform = `scaleX(${clamp((age - FIND_LOCK) / AMBER_SWEEP)})`;
+          passage.fact.style.setProperty("--stamp-bloom", String(age >= FIND_LOCK && age < STRIKE ?
+            Math.sin(clamp((age - FIND_LOCK) / BLOOM) * Math.PI) : 0));
+          passage.compare.style.opacity = String(passage.derivation ? scored : 1);
+          passage.compare.classList.toggle("is-active", age >= COMPARE && age < itemExit);
         }
-
-        // 300ms sweep → 100ms evidence pop → 300ms impact/ink settle (700ms total).
-        const impact = sinceGate - 400;
-        const phase = impact >= 0 ? "stamped" : sinceGate >= 300 ? "evidence" : sinceGate >= 0 ? "scanning" : "incoming";
-        if (item.body.dataset.phase !== phase) item.body.dataset.phase = phase;
-        let scale = 1;
-        if (impact < 0) scale = 1.8;
-        else if (impact < 105) scale = 1.8 - 0.86 * easeOut(impact / 105);
-        else if (impact < 160) scale = 0.94 + 0.10 * easeOut((impact - 105) / 55);
-        else if (impact < 200) scale = 1.04 - 0.04 * easeOut((impact - 160) / 40);
+        const impact = age - (item.meter ? STRIKE : UNKNOWN_STRIKE);
+        const scale = impact < 0 ? 1.32 : impact < 105 ? 1.32 - 0.36 * easeOut(impact / 105) :
+          impact < 200 ? 0.96 + 0.04 * easeOut((impact - 105) / 95) : 1;
         item.mark.style.transform = `rotate(${item.angle}deg) scale(${scale})`;
         item.mark.style.opacity = String(clamp(impact / 45));
-        // The permanent impression and a little ink bleed survive the impact.
-        // Reset only when this card is recycled to the incoming side of the loop.
-        item.bleed.style.opacity = String(impact >= 0 ? 0.12 + 0.88 * (1 - clamp((impact - 150) / 150)) : 0);
-        const shakeAge = impact - 105;
-        const shake = shakeAge >= 0 && shakeAge < 150 ? Math.sin(shakeAge / 13) * 3 * (1 - shakeAge / 150) : 0;
-        item.body.style.transform = `translate3d(${shake}px, ${shake * 0.5}px, 0)`;
-        gatePulse = Math.max(gatePulse, clamp(1 - Math.abs(impact - 105) / 180));
+        item.bleed.style.opacity = String(impact < 0 ? 0 : 0.12 + 0.45 * (1 - clamp(impact / 300)));
+        const shake = impact > 105 && impact < 300 ? Math.sin((impact - 105) / 14) * 1.8 * (1 - (impact - 105) / 195) : 0;
+        item.body.style.transform = `translate3d(${shake}px, ${shake / 2}px, 0)`;
       });
-      gateBeam.style.transform = `scaleY(${0.7 + Math.sin(elapsed / interval * Math.PI * 2) * 0.15})`;
-      gateBeam.style.opacity = String(0.4 + Math.sin(elapsed / interval * Math.PI * 2) * 0.15);
-      // Reduced motion keeps the pill completely still, including when seeking.
-      if (motion.matches) gatePulse = 0;
-      gateLabel.style.transform = `translateX(-50%) scale(${1 + gatePulse * 0.06})`;
-      gateLabel.style.opacity = String(0.88 + gatePulse * 0.12);
+      paintSpotlight(age, active, paintRobot(age, active.card));
+    }
+
+    const emptyBox = { x: 0, y: 0, width: 0, height: 0 };
+    const center = (box) => ({ x: box.x + box.width / 2, y: box.y + box.height / 2 });
+    const padBox = (box, pad) => ({ x: box.x - pad, y: box.y - pad, width: box.width + 2 * pad, height: box.height + 2 * pad });
+    const unionBox = (a, b) => ({ x: Math.min(a.x, b.x), y: Math.min(a.y, b.y),
+      width: Math.max(a.x + a.width, b.x + b.width) - Math.min(a.x, b.x),
+      height: Math.max(a.y + a.height, b.y + b.height) - Math.min(a.y, b.y) });
+    function setBox(node, box) {
+      Object.entries(box).forEach(([name, value]) => node.setAttribute(name, String(value)));
+    }
+
+    // The convex hull includes every corner of the target box. Even a steep
+    // phone beam stays narrow at the visor and covers the whole destination.
+    function conePoints(visor, box, radius) {
+      const target = center(box), dx = target.x - visor.x, dy = target.y - visor.y;
+      const distance = Math.hypot(dx, dy) || 1;
+      const nx = -dy / distance * radius, ny = dx / distance * radius;
+      const points = [[visor.x + nx, visor.y + ny], [visor.x - nx, visor.y - ny],
+        [box.x, box.y], [box.x + box.width, box.y], [box.x + box.width, box.y + box.height], [box.x, box.y + box.height]];
+      points.sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+      const cross = (o, a, b) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
+      const half = (values) => values.reduce((hull, point) => {
+        while (hull.length >= 2 && cross(hull[hull.length - 2], hull[hull.length - 1], point) <= 0) hull.pop();
+        hull.push(point);
+        return hull;
+      }, []);
+      return [...half(points).slice(0, -1), ...half([...points].reverse()).slice(0, -1)].map((point) => point.join(",")).join(" ");
+    }
+
+    function paintSpotlight(age, item, visor) {
+      const enabled = !!item.light && !motion.matches;
+      const light = item.light || { post: emptyBox, row: emptyBox, compare: emptyBox, search: [emptyBox] };
+      const finding = enabled && age >= FIND && age < COMPARE;
+      const comparing = enabled && age >= COMPARE && age < STRIKE;
+      const compareIn = enabled ? fadeIn(age, COMPARE) : 0;
+      const lift = 1 - easeOut((age - STRIKE) / DIM_LIFT);
+      const filingAlpha = enabled && age < STRIKE ? fadeIn(age, FIND) : 0;
+      const postAlpha = comparing ? compareIn : 0;
+      const yearAlpha = enabled && light.quarter && age >= COMPARE && age < WINDUP ? 0.28 * compareIn : 0;
+      let row = age >= COMPARE && light.quarter ? light.quarter : light.row;
+      if (finding) {
+        const sweep = clamp((age - FIND) / FIND_SWEEP) * (light.search.length - 1);
+        const index = Math.min(Math.floor(sweep), light.search.length - 1);
+        const from = light.search[index], to = light.search[Math.min(index + 1, light.search.length - 1)];
+        const blend = easeOut(sweep - index);
+        row = Object.fromEntries(Object.keys(from).map((name) => [name, from[name] + (to[name] - from[name]) * blend]));
+      }
+      const filingTarget = age >= COMPARE ? unionBox(row, light.compare) : row;
+      const poolCenter = center(row);
+      filingVignette.setAttribute("cx", String(poolCenter.x));
+      filingVignette.setAttribute("cy", String(poolCenter.y));
+      const targets = { post: light.post, filing: filingTarget, year: light.row };
+      lights.post.group.style.opacity = String(postAlpha);
+      lights.filing.group.style.opacity = String(filingAlpha);
+      lights.year.group.style.opacity = String(yearAlpha);
+      Object.entries(lights).forEach(([name, beam]) => {
+        const target = targets[name], end = center(target), source = name === "year" ? center(light.post) : visor;
+        const points = conePoints(source, target, VISOR_RADIUS);
+        beam.cone.setAttribute("points", points);
+        beam.clip.setAttribute("points", points);
+        beam.haze.setAttribute("points", conePoints(source, padBox(target, POOL_PAD), VISOR_RADIUS + 1));
+        Object.entries({ x1: source.x, y1: source.y, x2: end.x, y2: end.y }).forEach(([key, value]) => beam.gradient.setAttribute(key, String(value)));
+        const dx = end.x - source.x, dy = end.y - source.y, distance = Math.hypot(dx, dy) || 1;
+        const across = (Math.abs(dy) * target.width + Math.abs(dx) * target.height) / distance;
+        const along = (Math.abs(dx) * target.width + Math.abs(dy) * target.height) / distance;
+        const width = (distance + along / 2 + 12) / 0.95, height = Math.max(12, across * 1.4);
+        setBox(beam.texture.source, { x: -width * 0.015, y: -height / 2, width, height });
+        beam.texture.source.setAttribute("transform", `translate(${source.x} ${source.y}) rotate(${Math.atan2(dy, dx) * 180 / Math.PI})`);
+        beam.motes.pattern.setAttribute("patternTransform", `translate(${age / 40 % 512} ${-age / 70 % 512})`);
+      });
+      const protectedBoxes = { post: light.post, row, compare: light.compare, year: light.row };
+      Object.entries(protectedBoxes).forEach(([name, box]) => {
+        const visible = enabled && (name === "year" ? yearAlpha > 0 :
+          (name === "row" ? age >= FIND : age >= COMPARE) && age < STRIKE + DIM_LIFT);
+        setBox(holes[name][0], visible ? padBox(box, POOL_PAD) : emptyBox);
+        setBox(holes[name][1], visible ? box : emptyBox);
+        const pool = pools[name], middle = center(box);
+        Object.entries({ cx: middle.x, cy: middle.y, rx: box.width / 2 + 16, ry: box.height / 2 + 12 })
+          .forEach(([key, value]) => pool.setAttribute(key, String(value)));
+        pool.style.opacity = String(name === "compare" ? compareIn : 1);
+        setBox(fx.pools[name].source, { x: box.x - 24, y: box.y - 16, width: box.width + 48, height: box.height + 32 });
+      });
+      const stageShade = compareIn * lift, filingShade = filingAlpha * (1 - compareIn);
+      stageDim.style.opacity = String(stageShade);
+      paperDim.style.opacity = String(stageShade);
+      filingDim.style.opacity = String(filingShade);
+      const dimmed = Math.max(stageShade, filingShade);
+      const field = geometry ? (age < COMPARE ? geometry.filing : geometry.field) : emptyBox;
+      setBox(fx.grain, field);
+      setBox(fx.vignette, field);
+      fx.grain.style.opacity = String(0.1 * dimmed);
+      fx.vignette.style.opacity = String(0.24 * dimmed);
+      const flareWidth = phone.matches ? 84 : 128;
+      setBox(fx.flare.source, { x: visor.x - flareWidth / 2, y: visor.y - 10, width: flareWidth, height: 20 });
+      fx.flare.group.style.opacity = String(Math.max(postAlpha, filingAlpha));
+      const impact = age - (item.meter ? STRIKE : UNKNOWN_STRIKE);
+      const burstSize = 160 * easeOut(impact / 110), contact = item.contact || emptyBox, strike = center(contact);
+      setBox(fx.burst.source, { x: strike.x - burstSize / 2, y: strike.y - burstSize / 2, width: burstSize, height: burstSize });
+      setBox(fx.burst.exclusion, contact);
+      fx.burst.group.style.opacity = String(!motion.matches && item.contact && impact >= 0 && impact < BURST ? 1 - impact / BURST : 0);
+      const barsIn = enabled ? easeOut((age - COMPARE) / LETTERBOX_EASE) * (1 - easeOut((age - REACT) / LETTERBOX_EASE)) : 0;
+      const letterboxHeight = phone.matches ? 4 : LETTERBOX;
+      letterbox.style.opacity = String(barsIn);
+      bars[0].style.transform = `translate3d(0, ${-letterboxHeight * (1 - barsIn)}px, 0)`;
+      bars[1].style.transform = `translate3d(0, ${letterboxHeight * (1 - barsIn)}px, 0)`;
+      flash.style.opacity = String(enabled && age >= STRIKE && age < STRIKE + FLASH ? 0.7 * (1 - (age - STRIKE) / FLASH) : 0);
+      dust.forEach((mote, index) => {
+        const target = center(targets[index < 3 ? "post" : "filing"]);
+        const travel = ((age + index * 347) % DUST_PERIOD) / DUST_PERIOD;
+        const drift = Math.sin(travel * Math.PI * 2 + index) * 6 * travel;
+        const dx = target.x - visor.x, dy = target.y - visor.y, distance = Math.hypot(dx, dy) || 1;
+        mote.style.transform = `translate3d(${visor.x + dx * travel - dy / distance * drift}px, ${visor.y + dy * travel + dx / distance * drift}px, 0)`;
+        mote.style.opacity = String(comparing ? 0.65 * Math.sin(travel * Math.PI) * (index < 3 ? postAlpha : filingAlpha) : 0);
+      });
+    }
+
+    function measure() {
+      cardWidth = track.clientWidth;
+      const key = `${cardWidth}:${pageLanguage}:${phone.matches}`;
+      if (motion.matches || geometryKey === key) { paint(); return; }
+      const saved = moving.map((item) => ({ hidden: item.carrier.hidden, passageHidden: item.passage && item.passage.body.hidden,
+        transform: item.carrier.style.transform, shake: item.body.style.transform, mark: item.mark.style.transform }));
+      moving.forEach((item) => {
+        item.carrier.hidden = false;
+        if (item.passage) item.passage.body.hidden = false;
+        item.carrier.style.transform = "translate3d(0px, 0, 0)";
+        item.body.style.transform = "translate3d(0px, 0px, 0)";
+        item.mark.style.transform = `rotate(${item.angle}deg) scale(1)`;
+      });
+      if (sizeKey !== key) {
+        const explanationHidden = filingExplanation.hidden, kindHidden = filingKind.hidden;
+        const title = filingTitle.textContent;
+        filingTitle.textContent = getCopy("stamps.noNumber");
+        filingExplanation.textContent = getCopy("stamps.noNumberExplanation");
+        filingExplanation.hidden = false;
+        filingKind.hidden = false;
+        scene.classList.toggle("is-measuring", true);
+        const inset = filingBox.getBoundingClientRect().height - filingContent.getBoundingClientRect().height;
+        const postInset = track.getBoundingClientRect().width - track.clientWidth;
+        const postHeight = Math.ceil(Math.max(...moving.map((item) => item.body.getBoundingClientRect().height)) + postInset);
+        const unknownHeights = cards.filter((card) => !checkable(card)).map((card) => {
+          filingKind.textContent = getCopy(`claimKind.${card.kind}`);
+          return filingState.getBoundingClientRect().height;
+        });
+        const filingHeight = Math.ceil(Math.max(0, ...unknownHeights,
+          ...moving.filter((item) => item.passage).map((item) => item.passage.body.getBoundingClientRect().height + inset)));
+        scene.style.setProperty("--stamp-content-height", `${Math.max(postHeight, filingHeight)}px`);
+        scene.style.setProperty("--stamp-post-height", `${postHeight}px`);
+        scene.style.setProperty("--stamp-filing-height", `${filingHeight}px`);
+        scene.classList.toggle("is-measuring", false);
+        filingTitle.textContent = title;
+        filingExplanation.hidden = explanationHidden;
+        filingKind.hidden = kindHidden;
+        sizeKey = key;
+      }
+      const origin = stage.getBoundingClientRect();
+      const box = (node) => {
+        const rect = node.getBoundingClientRect();
+        return { x: rect.left - origin.left, y: rect.top - origin.top, width: rect.width, height: rect.height };
+      };
+      const robotTransform = robot.style.transform;
+      robot.style.transform = "translate3d(0px, 0px, 0)";
+      const robotBox = box(robot);
+      const bandBox = box(robotBand);
+      const bodyScale = Math.min(robotBox.width / POSE_CANVAS[0], robotBox.height / POSE_CANVAS[1]);
+      geometry = { width: origin.width, height: origin.height,
+        pivot: { x: robotBox.x + robotBox.width / 2, y: robotBox.y + robotBox.height }, visors: {}, nozzles: {},
+        floor: { x: robotBox.x - bandBox.x + robotBox.width / 2,
+          y: robotBox.y - bandBox.y + robotBox.height - (POSE_CANVAS[1] - 646) * bodyScale, scale: bodyScale } };
+      Object.entries(poses).forEach(([name, image]) => {
+        const anchor = POSE_VISORS[image.dataset.asset || name];
+        const width = image.naturalWidth || POSE_CANVAS[0], height = image.naturalHeight || POSE_CANVAS[1];
+        const scale = Math.min(robotBox.width / width, robotBox.height / height);
+        const nozzle = POSE_ANCHORS[image.dataset.asset || name].nozzle;
+        geometry.nozzles[name] = { x: (robotBox.width - width * scale) / 2 +
+          (facing[name] === "post" ? 1 - nozzle[0] / POSE_CANVAS[0] : nozzle[0] / POSE_CANVAS[0]) * width * scale,
+          y: robotBox.height - height * scale + nozzle[1] / POSE_CANVAS[1] * height * scale, scale };
+        geometry.visors[name] = { x: robotBox.x + (robotBox.width - width * scale) / 2 +
+          (facing[name] === "post" ? 1 - anchor[0] : anchor[0]) * width * scale,
+        y: robotBox.y + robotBox.height - height * scale + anchor[1] * height * scale };
+      });
+      robot.style.transform = robotTransform;
+      moving.forEach((item) => {
+        item.contact = box(item.mark);
+        if (!item.passage) return;
+        const passage = item.passage;
+        // Align the filed comparison's text baseline with the meter's center.
+        // Only the measurement pass writes this fixed desktop offset.
+        passage.body.style.setProperty("--stamp-compare-top", "0px");
+        if (!phone.matches && item.meter) {
+          const meter = box(item.meter), filed = box(passage.filedValue);
+          passage.body.style.setProperty("--stamp-compare-top", `${meter.y + meter.height / 2 - filed.y - filed.height}px`);
+        }
+        const row = box(passage.row);
+        item.light = { post: box(item.number || item.claim), row, compare: box(passage.compare),
+          quarter: passage.derivation ? box(passage.ledgerRows[passage.ledgerRows.length - 1]) : null,
+          search: [row, ...passage.ledgerRows.map(box), row] };
+      });
+      const field = { x: 0, y: 0, width: origin.width, height: origin.height };
+      spotlight.querySelectorAll(".stamp-mask-field").forEach((node) => setBox(node, field));
+      ["#stamp-dim-mask", "#stamp-ink-mask", "#stamp-stage-mask"].forEach((selector) => setBox(spotlight.querySelector(selector), field));
+      setBox(stageDim, field);
+      const filingBounds = box(filingBox);
+      geometry.field = field;
+      geometry.filing = filingBounds;
+      setBox(paperDim, filingBounds);
+      setBox(paperHole, filingBounds);
+      fx.fields.forEach((node) => setBox(node, field));
+      setBox(filingDim, filingBounds);
+      filingVignette.setAttribute("r", String(Math.max(filingBounds.width, filingBounds.height) * 0.75));
+      setBox(flash, box(track));
+      const letterboxHeight = phone.matches ? 4 : LETTERBOX;
+      setBox(bars[0], { x: 0, y: 0, width: origin.width, height: letterboxHeight });
+      setBox(bars[1], { x: 0, y: origin.height - letterboxHeight, width: origin.width, height: letterboxHeight });
+      moving.forEach((item, index) => {
+        const state = saved[index];
+        item.carrier.hidden = state.hidden;
+        if (item.passage) item.passage.body.hidden = state.passageHidden;
+        item.carrier.style.transform = state.transform;
+        item.body.style.transform = state.shake;
+        item.mark.style.transform = state.mark;
+      });
+      geometryKey = key;
+      paint();
     }
 
     function tick(now) {
@@ -563,7 +1507,7 @@
     function updatePlayback() {
       if (frame !== null) cancelAnimationFrame(frame);
       frame = null;
-      lastFrame = null; // Resuming must not jump through time spent off-screen/hidden.
+      lastFrame = null;
       const animated = !motion.matches;
       scene.dataset.animated = String(animated);
       list.classList.toggle("is-sr-only", animated);
@@ -571,54 +1515,47 @@
       const running = animated && inView && !document.hidden && !userPaused;
       scene.dataset.running = String(running);
       pause.setAttribute("aria-pressed", String(userPaused));
-      localize();
-      if (running) frame = requestAnimationFrame(tick);
+      paintPause();
+      if (running) { loadAssets(); frame = requestAnimationFrame(tick); }
     }
 
     function seek(seconds) {
       if (typeof seconds !== "number" || !Number.isFinite(seconds) || seconds < 0) {
         throw new RangeError("Stamp scene time must be a finite, non-negative number of seconds.");
       }
-      measure(); // Normalize against the measured spacing, including the narrow-screen minimum gap.
-      // Keep console seeks on the same millisecond grid as animation frames so
-      // exact boundary states do not drift through floating-point remainders.
-      elapsed = Math.round((seconds % (loop / 1000)) * 1000);
+      elapsed = Math.round((seconds % (loop / 1000)) * 1000) % loop;
       userPaused = true;
+      loadAssets();
       updatePlayback();
       measure();
       return elapsed / 1000;
     }
 
-    window.__stampScene = Object.freeze({ seek });
-
-    // A failed mask image must never erase the permanent stamp. Enable the grain
-    // only after the existing local asset loads; otherwise leave solid ink.
-    const ink = document.createElement("img");
-    ink.addEventListener("load", () => { scene.classList.toggle("has-stamp-ink", ink.naturalWidth > 0); });
-    ink.addEventListener("error", () => { scene.classList.toggle("has-stamp-ink", false); });
-    ink.src = "img/stamp-ink.webp";
-
-    pause.addEventListener("click", () => {
-      userPaused = !userPaused;
-      updatePlayback();
-    });
+    window.__stampScene = Object.freeze({ seek, timing: Object.freeze({ checkable: CHECKABLE / 1000,
+      uncheckable: UNCHECKABLE / 1000, read: READ / 1000, reach: REACH / 1000, find: FIND / 1000,
+      compare: COMPARE / 1000, windup: WINDUP / 1000, strike: STRIKE / 1000, react: REACT / 1000,
+      exit: EXIT / 1000, rest: REST / 1000, unknownStrike: UNKNOWN_STRIKE / 1000, unknownExit: UNKNOWN_EXIT / 1000,
+      crossfade: FADE / 1000, ledgerStagger: LEDGER_STAGGER / 1000, findLock: FIND_LOCK / 1000, flash: FLASH / 1000, burst: BURST / 1000,
+      floatPeriod: loop / floatCycles / 1000, thrusterFrame: THRUSTER_FRAME / 1000, thrusterBurst: THRUSTER_BURST / 1000,
+      dipDown: DIP_DOWN / 1000, dipRecover: DIP_RECOVER / 1000,
+      starts: Object.freeze(starts.map((time) => time / 1000)), loop: loop / 1000 }),
+      getState: () => ({ seconds: elapsed / 1000, cardId: scene.dataset.cardId, phase: scene.dataset.phase,
+        pose: robot.dataset.pose, facing: robot.dataset.facing, step: Number(scene.dataset.step), localTime: currentCard().age / 1000 }) });
+    pause.addEventListener("click", () => { userPaused = !userPaused; updatePlayback(); });
     document.addEventListener("visibilitychange", updatePlayback);
     motion.addEventListener("change", () => { updatePlayback(); measure(); });
-    narrowViewport.addEventListener("change", measure);
+    phone.addEventListener("change", measure);
     scene.hidden = false;
     if ("IntersectionObserver" in window) {
-      const observer = new IntersectionObserver(([entry]) => {
-        inView = entry.isIntersecting;
-        updatePlayback();
-      });
-      observer.observe(scene);
-    } else {
-      inView = true;
-    }
+      new IntersectionObserver(([entry]) => { inView = entry.isIntersecting; updatePlayback(); }).observe(scene);
+    } else inView = true;
     if ("ResizeObserver" in window) new ResizeObserver(measure).observe(scene);
     else window.addEventListener("resize", measure);
-    const requestedTime = new URLSearchParams(window.location.search).get("stamp-t");
-    const seconds = requestedTime === null || requestedTime.trim() === "" ? NaN : Number(requestedTime);
+    // Font completion invalidates the intrinsic maxima and cached light boxes.
+    if (document.fonts) document.fonts.ready.then(() => { sizeKey = ""; geometryKey = ""; measure(); });
+    localize();
+    const requested = new URLSearchParams(window.location.search).get("stamp-t");
+    const seconds = requested === null || requested.trim() === "" ? NaN : Number(requested);
     if (Number.isFinite(seconds) && seconds >= 0) seek(seconds);
     else { updatePlayback(); measure(); }
     return { localize };

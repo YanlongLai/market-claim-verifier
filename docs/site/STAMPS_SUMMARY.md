@@ -1,210 +1,152 @@
-# Hero stamp animation
+# Stamp v2 implementation and verification
 
-Implemented on `site/stamp-animation`, directly after the hero headline/subtitle
-and before “A real post, checked.” The scene fills the existing content width at
-360 px high on desktop and 300 px on phones. The example follows with a 12 px gap.
-No commit or push was made.
+Implemented the Owner's animation brief on `site/stamp-v2` in
+`/Users/yan/git/market-claim-verifier-stamp2`, against `STAMP-V2-DESIGN.md` sections
+3–6, including the round-2b persona note and the persona implementation brief.
+The brief is the bounded implementation authority; the approved gap math
+and existing unrelated worktree edits were preserved. No commit, push, or
+publication was performed.
 
-## Files changed
+The character is **B only**: lazy, asynchronously decoded idle/inspect/present/stamp
+WebP poses, with a deterministic 120 ms cross-fade and small lean/bob transforms.
+A/C image files, previews, and redundant PNG pose exports were removed. The
+four runtime poses total **311,514 bytes**. With the five 128 px persona avatars,
+new runtime artwork totals **335,118 bytes**, below the 400,000-byte budget. The
+Owner-required `sheet-B.png` and historical prompts remain as source material;
+the page never requests the source sheet.
 
-- `docs/site/index.html`: labeled scene, scan gate, hidden moving track, accessible
-  claim list and pause button.
-- `docs/site/styles.css`: responsive cards, ink mask, paper grain, both theme
-  tokens and static reduced-motion row; 58%-width double-border stamps,
-  condensed caps, 18/16 px claims, paper surfaces/shadows and gate-label pill.
-- `docs/site/script.js`: conveyor clock, scan/evidence/stamp sequence, deterministic
-  angles, language updates, visibility/off-screen/manual pausing, retained outgoing
-  stacking, mask-loading fallback, gate-pill pulse and deterministic seek hook.
-- `docs/scripts/build_site.py`: report-derived `stamp_cards` extraction.
-- `docs/site/data/site.json`: rebuilt offline, including all nine stamp cards.
-- `docs/site/img/stamp-ink.webp` and `docs/site/img/stamp-paper.webp`: generated and
-  optimized material textures.
-- `docs/prompts/site/stamps.md` and `docs/prompts/site/README.md`: exact prompts,
-  generation notes, sizes and reuse instructions.
-- `tests/test_site_stamps.py`: report identity, verdict, ticker, source, language,
-  filing/evidence and cyclic-order checks.
-- `tests/test_site_stamps_runtime.py`: offline JavaScript clock/lifecycle checks.
-- `docs/site/STAMPS_SUMMARY.md`: this implementation and verification record.
+Cards show the fictional post author's circular avatar (40 px desktop / 32 px
+phone), localized display name, handle or outlet, example follower count, post
+date and **Example post / 示範貼文** tag. The tag explains that authors and follower
+counts are fictional, while claims and verdicts come from real checks. Below it
+are the real ticker, SEC company name, source kind, enlarged claim number and
+bilingual period chip. The example dates are validated against SEC companyfacts;
+the source reports remain unmodified. The unused `news-paper` images were deleted.
+After review they show the existing verdict, severity, rounded score out of
+100, meter, gap description, and compact filed value. Forecasts and opinions
+have no passage, filed value, severity, or meter; the robot shrugs in idle and
+a grey CAN'T CHECK stamp lands.
 
-## Cards, in loop order
+Each card runs the specified phases on the same clock at both widths:
 
-Source references below are claim indices within the linked original reports.
-Tickers, original quotes, statuses, verdicts, summaries and filing URLs are read
-from those reports. Compact bilingual display text preserves the claims; the two
-original Chinese quotes are unchanged in Chinese mode.
+| Local time | Phase |
+| --- | --- |
+| 0.0–0.7 s | Enter and stop at the desk; idle |
+| 0.7–1.4 s | Inspect, scan, number glow |
+| 1.4–3.0 s | Present the filing passage and sweep its matching value amber |
+| 3.0–3.6 s | Reveal severity and fill score meter |
+| 3.6–4.2 s | Stamp impact and small card shake |
+| 4.2–5.0 s | Exit with verdict, meter and filed value; fold passage away |
+| 5.0–6.5 s | Rest before the next card |
 
-| Card | Verdict | Source report / claim |
-| --- | --- | --- |
-| AMZN: Q3 2023 revenue $143.1B | TRUE | [demo-thread-baseten](../evidence/posts-2026-10-28/demo-thread-baseten/report.json), #1 |
-| AAPL: fiscal Q4 2025 alone, $416.2B revenue | FALSE | [demo-thread-baseten](../evidence/posts-2026-10-28/demo-thread-baseten/report.json), #3 |
-| NVDA: still cheap at 30× sales | CAN'T CHECK (opinion) | [demo-thread-baseten](../evidence/posts-2026-10-28/demo-thread-baseten/report.json), #4 |
-| NVDA: FY2024 revenue $60.9B, more than double | TRUE | [demo-thread-baseten](../evidence/posts-2026-10-28/demo-thread-baseten/report.json), #2 |
-| TSLA: full-year 2025 revenue grew 3% | FALSE | [bigtech-thread-baseten](../evidence/posts-2026-10-28/bigtech-thread-baseten/report.json), #3 |
-| MSFT: FY2024 revenue $245.1B, up 16% | TRUE | [tw-social-post-meta](../evidence/posts-2026-10-28/tw-social-post-meta/report.json), #1 |
-| AAPL: revenue will cross $500B by 2027 | CAN'T CHECK (forecast) | [bigtech-thread-baseten](../evidence/posts-2026-10-28/bigtech-thread-baseten/report.json), #5 |
-| AAPL: fiscal 2024 revenue $391.0B | TRUE | [bigtech-thread-baseten](../evidence/posts-2026-10-28/bigtech-thread-baseten/report.json), #4 |
-| KO: 2024 revenue exceeded $50B | FALSE | [tw-social-post-meta](../evidence/posts-2026-10-28/tw-social-post-meta/report.json), #3 |
+CAN'T CHECK substitutes a shrug for the passage/meter phases. The eleven-card loop
+is **71.5 s**, with no adjacent equal verdicts, including wraparound. The
+deterministic `?stamp-t=` and `window.__stampScene.seek(seconds)`
+hooks work forward, backward, and across loop boundaries. `getState()` and the
+frozen `timing` object expose the review state for reproducible local checks.
+Off-screen, hidden-tab, manual pause and reduced-motion changes cancel the
+animation clock; resuming preserves its time. Only transform and opacity animate.
 
-There are no equal adjacent verdicts, including the last-to-first transition.
-The first three crossings show TRUE, FALSE and CAN'T CHECK over four seconds on
-desktop, or 5.776 seconds at a 375 px viewport.
-`not_checked` opinions/forecasts keep the report's absent verdict and display
-CAN'T CHECK; they never receive SEC evidence chips. The Apple quarter's report
-records $102.5B of derived quarterly revenue and supplies no filing URL, so its
-static card links to that report. Other cards use their filing URLs where present;
-cards without filing URLs retain their source report as a link target.
-Report fallback links resolve relative to the published `docs/` root, preserving
-the repository prefix on GitHub Pages as well as working in the checkout.
+Desktop has a central desk, B on its right, source paper between card and robot,
+and a 70%-scale upcoming queue on the left. Cards have natural content height
+with no desktop minimum height; the filed value joins the compact meter/stamp
+footer. The compact layout puts B above/right
+and the passage in a reserved area in the lower half of the card. The filed
+value, meter and stamp have separate space. Reduced motion uses a complete,
+linked static list with verdict, severity, score, filed value, and passage text;
+that same list is available to assistive technology during animation. EN/中文
+are retained. Light mode keeps warm paper; dark mode uses cool slate
+(`#202d36`) with subtle grain and a slight lift from the background. Playback is
+right-aligned below the stage, with space reserved before the next section.
+Failed ink masks leave readable solid verdict text.
 
-## Motion and accessibility
+## Final card list and date evidence
 
-- Cards travel left to right in six seconds. The crossing interval is
-  `max(baseInterval, ceil(6000 * (cardWidth + 24) / (sceneWidth + cardWidth)))`,
-  with base intervals of 2000 ms on desktop and 2500 ms on phones. This keeps
-  at least 24 px between carriers. At 1280 px the interval is 2000 ms and the
-  nine-card cycle lasts 18 seconds; at 375 px the scene is 341 px wide, the card
-  is 270 px wide (72vw), the interval is 2888 ms and the cycle lasts 25.992 seconds.
-  Playback starts with cards already in flight.
-- The 300 ms beam sweep starts 400 ms before the centered gate crossing,
-  followed by a 100 ms evidence pop for checkable claims. Stamp contact coincides
-  with the card's center reaching the gate, followed by a 300 ms impact/settle.
-  The scale moves from
-  1.8 to 0.94 to 1.04 to 1.0; the card shakes by at most 3 px. Each claim's hash
-  fixes its angle within −12°…+8°. A static blurred ink duplicate fades over
-  150 ms to a faint 12% ink bleed. The impression has a 4 px outer border and
-  1.5 px inner border, with a more visible 340 px grain-mask scale. Travel,
-  sweep, impact, label pulse and settling animate transform/opacity only.
-- Stamps and evidence stay on their cards through the right-edge fade. Outgoing
-  cards retain higher stacking than incoming cards, including after the previous
-  one-second gate highlight would have ended. Hidden cards keep their ink until
-  recycled off-screen left. The permanent stamp stays solid if its texture cannot
-  load; the luminance mask is enabled only after a successful local-image load.
-- Cards continue right and fade out. The animation clock freezes off-screen via
-  IntersectionObserver, on `visibilitychange`, and with the pause button; resume
-  preserves the current point rather than catching up on hidden time.
-- `prefers-reduced-motion: reduce` schedules no animation frames and hides the
-  conveyor/gate/pause control. All nine already-stamped, linked cards appear in a
-  manually scrollable static row within the same scene height. A preference
-  change is handled immediately.
-- Moving cards are `aria-hidden` and `inert`. The single matching claim/verdict
-  list stays available to screen readers, visually hidden during motion and
-  visible for reduced motion. Its links enter keyboard order in static mode.
-- Claim text is 18 px on desktop and 16 px on phones, limited to two/three lines. Cards
-  use warm off-white (`#fff9ed`) or lighter slate (`#283b44`), the existing paper
-  grain in an isolated layer above the background, a subtle shadow and bolder
-  ticker chips. Card heights are 210 px on desktop and at least 154 px on phones;
-  scene heights remain 360/300 px.
-  The gate label sits in a centered pill and pulses when a stamp lands.
-  The existing EN/中文
-  switch translates claims, source labels, gate, stamps, controls and region label.
-- Ink-to-paper token contrast is TRUE 6.31:1, FALSE 5.59:1, unknown 4.20:1 in
-  light mode; TRUE 7.14:1, FALSE 5.08:1, unknown 7.15:1 in dark mode. Automated
-  tests calculate all six ratios against the actual paper tokens (required ≥3:1).
+All requested example dates passed without adjustment. `date_basis.facts` in
+`site.json` records each concept, unit, exact start/end, earliest `filed`, first
+reported value, form, accession, CIK and SEC companyfacts URL.
+`date_basis.not_before` is the latest of those earliest filing dates. Both years
+of growth checks and both components of the derived Apple quarter are included;
+duplicate evidence references are collapsed. Opinions and forecasts have no
+checked figures, so their basis is empty, and their dates still cannot be future.
 
-## Deterministic QA
+| # | Persona · claim | Kind · followers (EN / 中文) | Post date | `date_basis` first-filed dates | Verdict | Severity · score |
+| --- | --- | --- | --- | --- | --- | --- |
+| 1 | Ticker Owl · @tickerowl · AMZN Q3 2023 | Thread · 18.4K / 1.84 萬 | 2025-11-03 | AMZN Q3: 2023-10-27 | TRUE | Exact · 100 |
+| 2 | Ticker Owl · @tickerowl · AAPL fiscal Q4 2025 | Thread · 18.4K / 1.84 萬 | 2025-11-03 | Full year: 2025-10-31; nine months: 2025-08-01 | FALSE | Severe · 0 |
+| 3 | Ticker Owl · @tickerowl · NVDA valuation opinion | Thread · 18.4K / 1.84 萬 | 2025-11-03 | None: opinion | CAN'T CHECK | — |
+| 4 | Ticker Owl · @tickerowl · NVDA FY2024 revenue + growth | Thread · 18.4K / 1.84 萬 | 2025-11-03 | FY2024: 2024-02-21; FY2023: 2023-02-24 | TRUE | Exact · 100 |
+| 5 | Chart Coon · @chartcoon · TSLA FY2025 growth | Thread · 52.1K / 5.21 萬 | 2026-02-03 | FY2025: 2026-01-29; FY2024: 2025-01-30 | FALSE | Major · 46 |
+| 6 | US Stocks in 1 Minute / 美股懶人包 · MSFT FY2024 | Social post · 43K / 4.3 萬 | 2025-02-24 | FY2024: 2024-07-30; FY2023: 2023-07-27 | TRUE | Exact · 100 |
+| 7 | Chart Coon · @chartcoon · AAPL forecast | Thread · 52.1K / 5.21 萬 | 2026-02-03 | None: forecast | CAN'T CHECK | — |
+| 8 | Chart Coon · @chartcoon · AAPL FY2024 | Thread · 52.1K / 5.21 萬 | 2026-02-03 | FY2024: 2024-11-01 | TRUE | Exact · 100 |
+| 9 | US Stocks in 1 Minute / 美股懶人包 · KO FY2024 | Social post · 43K / 4.3 萬 | 2025-02-24 | FY2024: 2025-02-20 | FALSE | Moderate · 88 |
+| 10 | Banana News Flash / 香蕉新聞快報 · AMZN headline | Article · 96K / 9.6 萬 | 2023-10-27 | Q3 2023: 2023-10-27 | TRUE | Exact · 100 |
+| 11 | Market Recap · KO repost | Repost · 210K / 21 萬 | 2025-02-25 | FY2024: 2025-02-20 | FALSE | Moderate · 88 |
 
-After site data loads, `window.__stampScene.seek(seconds)` pauses playback and
-renders that exact timeline position. It returns the normalized time within the
-measured loop (18 seconds at 1280 px, 25.992 seconds at 375 px). Time zero places
-the first AMZN card off-screen left; scanning starts at 2.6 seconds and stamp
-contact occurs at the centered gate at 3 seconds. Subsequent crossings use the
-width-dependent interval above. Ordinary playback starts at 3 seconds to show a
-check immediately. Seek normalization uses the measured spacing as well.
+Chart Coon is the fictional finance influencer; Banana News Flash is the
+fictional newsroom. The two added cards share their original `check_id`, quote,
+verdict, exact unrounded score, severity, gap, filed value and excerpt. There are
+still **nine source claims**. The repost says **Reposted from 美股懶人包 / 轉貼自
+美股懶人包**; the article uses bilingual headline copy of the same Amazon claim.
 
-Open `site/?stamp-t=12.5` (or append `?stamp-t=12.5` to the existing site URL) to
-start paused at 12.5 seconds. The query parameter uses the same seek function.
-Invalid/negative/empty query values are ignored; invalid console arguments throw
-`RangeError`. The Play animation button resumes from the sought time. Visibility,
-language and size changes preserve the paused state. Inspect the reported NVDA
-FY2024 card (`data-card-id="demo-thread-baseten-2"`, fourth in the loop) using
-the same measured interval as the animation:
+## Filing provenance
 
-```js
-const scene = document.querySelector('#stamp-scene');
-const cardWidth = document.querySelector('.stamp-static-item .stamp-card').getBoundingClientRect().width;
-const travel = 6000;
-const crossing = travel / 2;
-const scanDuration = 300;
-const evidenceDuration = 100;
-const impactOvershoot = 105;
-const inkSettled = 300;
-const interval = Math.max(matchMedia('(max-width: 639px)').matches ? 2500 : 2000,
-  Math.ceil(travel * (cardWidth + 24) / (scene.clientWidth + cardWidth)));
-const loop = document.querySelectorAll('#stamp-track > .stamp-carrier').length * interval;
-const seekAge = (age) => window.__stampScene.seek((3 * interval + age) / 1000);
+All **9 checkable cards** (seven original numeric claims plus two presentations
+of existing claims) have `stamp_cards[].excerpt`, selected with the same
+`filing_excerpts.py` fact matcher used by the See filing modal. Six reuse existing
+matched modal rows; Apple's Q4 source is matched from the actual 10-K HTML.
+The excerpts include form, filed date, company, verbatim row label, matching
+period header, raw value, scale, source evidence, and original-filing URLs.
 
-seekAge(crossing - scanDuration - evidenceDuration - 25); // Before scanning: no stamp/evidence.
-seekAge(crossing + impactOvershoot);                     // Visible impact and gate-pill pulse.
-seekAge(crossing + inkSettled);                          // Settled TRUE stamp and SEC evidence.
-seekAge(crossing + inkSettled + 1000);                   // Moving right: stamp/evidence remain.
-seekAge(travel - 1);                                    // Right-edge fade: ink remains.
-seekAge(loop);                                          // Recycled off-screen left: ink reset.
-```
+Apple's $416.2B quarter claim is labelled explicitly:
 
-The corresponding seek times are:
+- 10-K, filed 2025-10-31, Full year, Total net sales, **416,161** (USD millions).
+- SEC nine-month revenue is **313,695** (USD millions), from the 10-Q filed
+  2025-08-01. Both source accessions, dates, ranges and values are preserved.
+- **Q4 = full year − nine months = $102.5B**; exact raw result is $102.466B.
+- The claim's original missing quarter filing URL is preserved; the static card
+  links to the source report and the excerpt retains its real annual-filing URL.
 
-| Checkpoint | 1280 px | 375 px |
-| --- | --- | --- |
-| Before scanning | 8.575 s | 11.239 s |
-| Visible impact | 9.105 s | 11.769 s |
-| Settled | 9.300 s | 11.964 s |
-| Moving right | 10.300 s | 12.964 s |
-| Right-edge fade | 11.999 s | 14.663 s |
-| Recycled | 24.000 s | 34.656 s |
+Only the SEC filing index and primary Apple HTML were fetched, with the required
+`User-Agent: DappGo market-claim-verifier admin@dappgo.com`, at no more than
+5 requests/s, cached under `.cache/filings/`. The pre-existing dangling cache
+symlink was replaced with a local cache directory. Subsequent `--offline` rebuilds
+reuse matching stored excerpt/component provenance. The persona round read
+companyfacts from existing local SEC caches and seeded the SEC-only build cache
+under `.cache/filings/`; no external download was needed. Every build, including
+`--offline`, resolves minimum `filed` from those facts again and fails for a post
+preceding any checked figure, a missing first-filing match, or a future date.
+The fetcher now rejects uncached requests in offline mode and allows only
+`www.sec.gov` and `data.sec.gov`.
 
-For phone/theme/language QA, use a 375 px viewport, light or dark color scheme,
-and the existing EN/中文 toggle, then use the derived checkpoints above. With reduced
-motion, seeking still schedules no frames and preserves the visible, fully
-stamped linked list; it never enables the hidden conveyor or pulses the pill.
+## Verification and gate status
 
-## Generated assets
+- **380 tests passed** in the full suite; **81 stamp tests passed**. Source lint
+  reports **0 failures, 0 warnings**. The offline rebuild is byte-identical.
+- Stamp data/runtime tests cover exact phase boundaries on all eleven cards,
+  120 ms pose blending, the CAN'T CHECK branch, all checkable excerpts, Apple
+  derivation, scores, personas, bilingual headers and attribution, example dates,
+  complete date bases, failing date cases, offline fact caches, artwork budgets
+  and lazy decoding.
+- Offline CSS envelope checks sample the whole loop at 25 ms intervals at
+  **375 / 1024 / 1280 px**, checking held-card, passage, robot and rotated stamp bounds,
+  separate meter/stamp space, and no overlapping moving cards. Enter/exit may
+  cross the clipped track edge intentionally. These checks do not render glyphs.
+- Forward/backward/loop seek, resize repaint, both languages, reduced motion,
+  off-screen/hidden pause, resumption and texture fallback are tested.
+- `node --check docs/site/script.js`, `git diff --check`, source design lint and
+  an offline data rebuild are the local source/data checks.
+- Use `PYTHONPATH="$PWD/src:$PWD" .venv/bin/python -m pytest -q` for the full
+  suite: this worktree's existing `.venv` is linked to another checkout, so the
+  source path must point here to load the approved gap helpers.
 
-Both images were created with the built-in image-generation tool. Exact prompts,
-export settings and reuse notes: [stamps.md](../prompts/site/stamps.md).
+Actual browser screenshots and visual inspection remain **pending**. Chrome's
+headless process did not start in the sandbox; the browser tool then rejected
+the localhost preview because browser network access was declined. No browser
+workaround, screenshot, Claude review, second-AI review, Owner visual approval,
+or publication is claimed.
 
-| Asset | Dimensions | Bytes |
-| --- | --- | --- |
-| [stamp-ink.webp](img/stamp-ink.webp) | 1024 × 1024 | 124,168 |
-| [stamp-paper.webp](img/stamp-paper.webp) | 512 × 512 | 4,766 |
-
-Both are below 150 KB. Stamp words remain real HTML text.
-Fix1 reuses both original generated files; no new artwork, prompts or downloads.
-
-## Verification
-
-- `.venv/bin/python docs/scripts/build_site.py --offline`: completed using stored
-  reports and excerpts; no external requests.
-- Fix3 stamp tests: **40 passed** in this worktree, including all nine cards' continuous
-  stamp/evidence retention, stacking after age 4 seconds, right-edge exit and
-  recycling, forward/backward/repeated seeks, query equivalence/validation,
-  mask-load failure, pill pulse, 1280/375 px dimensions, EN/中文 and reduced motion.
-  New checks sample a full measured loop at both widths (including impact shake
-  and wraparound) and verify all nine cards at centered contact and visible impact.
-  Card bounds stay within the scene; rotated/scaled stamp boxes stay within the
-  cards at visible impact. The adapter derives scene width from page padding
-  (341 px at a 375 px viewport), card sizes from CSS and timing from the production
-  travel/base-interval constants and minimum-gap formula. These remain offline
-  geometry checks, not browser layout verification.
-- Fix1 full suite (historical): **249 passed** in 57.51 seconds in the isolated copy
-  `/private/tmp/stamp-fix1-offline-1bhgqy32`, using the existing `.venv`, cached
-  company facts/tickers from the main checkout and read-only Git revision
-  discovery. Python socket connections and DNS resolution were disabled. The
-  first isolated run passed 248 tests but lacked Git metadata needed by an
-  existing manifest-provenance test; retaining revision discovery resolved it.
-  No out-of-scope worktree cache or metadata files were changed.
-- The JavaScript lifecycle test runs the production animation code with a small
-  offline element/event adapter. It checks crossing timing, sweep, evidence pop,
-  stamp overshoot/settle, cyclic position, all pause/resume paths, reduced-motion
-  links, angle bounds and Chinese localization. Phone dimensions are supplied to
-  the production renderer by the DOM adapter; this does not verify browser layout.
-- `node --check docs/site/script.js`, frontend source lint (0 failures/warnings),
-  token contrast checks and `git diff --check`: passed.
-- The prior browser visual verification attempt was unavailable: automatic approval review
-  rejected opening `http://127.0.0.1:8766/site/` because the origin-access gate
-  declined browser network authority. No alternate browser, CDP or rendering
-  workaround was used. No visual score or screenshot verification is claimed.
-
-The existing site design guided this single-section change; no new design draw,
-external images, libraries, screenshots or page-wide redesign were introduced.
-The Git remote is absent from the DappGo workspace registry; discovery was
-recorded as degraded and the work stayed within the brief's standalone scope.
+[Owner key-frame times](STAMP-V2-KEYFRAMES.md): **7.55 s** inspecting,
+**8.95 s** passage + amber sweep, **10.24 s** stamp + Severe meter; identical
+for desktop and phone. These are concrete review frames, not an approval record.

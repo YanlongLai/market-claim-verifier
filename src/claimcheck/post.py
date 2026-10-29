@@ -18,6 +18,7 @@ from typing import Any, Callable, Mapping, Sequence
 
 from .agent import verify_claim
 from .budget import Ledger
+from .checks import program_check_gap
 from .edgar import EdgarClient
 from .providers import get_provider
 from .trace import TraceRecorder, redact, write_trace
@@ -275,11 +276,38 @@ def _evidence_rows(trace: Mapping[str, Any], cited: set[str]) -> list[dict[str, 
     return rows
 
 
+def with_report_gaps(report: Mapping[str, Any], report_dir: Path) -> dict[str, Any]:
+    """Copy a saved report with gaps computed from its program checks, offline.
+
+    Older checks lack claim_type; recover only that metadata from the saved
+    sub-claims. Never substitute the model's numbers for the program's values.
+    """
+
+    claims = []
+    for item in report["claims"]:
+        if not item.get("program_checks"):
+            claims.append(dict(item))
+            continue
+        sub_claims = []
+        if any(not check.get("claim_type") for check in item["program_checks"]) and item.get("trace_path"):
+            trace = json.loads((report_dir / item["trace_path"]).read_text(encoding="utf-8"))
+            sub_claims = (trace.get("final_verdict") or {}).get("sub_claims") or []
+        checks = []
+        for index, check in enumerate(item["program_checks"]):
+            check = dict(check)
+            if not check.get("claim_type") and index < len(sub_claims):
+                check["claim_type"] = sub_claims[index].get("claim_type")
+            check["gap"] = program_check_gap(check)
+            checks.append(check)
+        claims.append({**item, "program_checks": checks})
+    return {**report, "claims": claims}
+
+
 def refresh_evidence(report_dir: Path) -> dict[str, Any]:
-    """Rebuild each verified claim's evidence rows from its saved trace (no model calls) and rewrite the report."""
+    """Refresh gaps and evidence from saved checks and traces, with no model calls."""
 
     report_path = report_dir / "report.json"
-    report = json.loads(report_path.read_text(encoding="utf-8"))
+    report = with_report_gaps(json.loads(report_path.read_text(encoding="utf-8")), report_dir)
     for item in report["claims"]:
         if item.get("status") != "verified" or not item.get("trace_path"):
             continue

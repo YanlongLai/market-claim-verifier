@@ -11,6 +11,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from decimal import Decimal, InvalidOperation
 from html.parser import HTMLParser
+import gzip
 import hashlib
 import json
 import re
@@ -21,7 +22,7 @@ from urllib.parse import urlparse
 from urllib.request import Request, urlopen
 
 
-SEC_HOSTS = {"www.sec.gov", "sec.gov", "data.sec.gov"}
+SEC_HOSTS = {"www.sec.gov", "data.sec.gov"}
 SEC_USER_AGENT = "DappGo market-claim-verifier admin@dappgo.com"
 REQUEST_INTERVAL_SECONDS = 0.2
 
@@ -863,17 +864,22 @@ def _select_primary_document(index_data: Mapping[str, Any]) -> str | None:
 class SECFilingFetcher:
     """Small SEC-only fetch/cache layer used by the site build."""
 
-    def __init__(self, cache_dir: Path) -> None:
+    def __init__(self, cache_dir: Path, *, offline: bool = False, fixture_dir: Path | None = None) -> None:
         self.cache_dir = Path(cache_dir)
         self.cache_dir.mkdir(parents=True, exist_ok=True)
+        self.offline = offline
+        self.fixture_dir = fixture_dir
         self._last_request_at = 0.0
         self._filing_cache: dict[str, dict[str, Any]] = {}
+        self._companyfacts_cache: dict[int, dict[str, Any]] = {}
 
     def _download(self, url: str) -> str:
         _safe_host(url)
         cache_path = self.cache_dir / _cache_name(url)
         if cache_path.exists():
             return cache_path.read_text(encoding="utf-8")
+        if self.offline:
+            raise ValueError(f"No cached SEC filing for {url}")
 
         wait = REQUEST_INTERVAL_SECONDS - (time.monotonic() - self._last_request_at)
         if wait > 0:
@@ -893,12 +899,53 @@ class SECFilingFetcher:
         cache_path.write_text(text, encoding="utf-8")
         return text
 
+    def load_companyfacts(self, cik: int, *, seed_cache: Path | None = None) -> dict[str, Any]:
+        """Reuse local SEC facts, with the same host, rate and disk cache as filings."""
+        if cik in self._companyfacts_cache:
+            return self._companyfacts_cache[cik]
+        url = f"https://data.sec.gov/api/xbrl/companyfacts/CIK{cik:010d}.json"
+        cache_path = self.cache_dir / _cache_name(url)
+        # Earlier checks already downloaded companyfacts into the program cache.
+        # Seed our build cache once; never change that shared source cache.
+        if not cache_path.exists() and seed_cache is not None and seed_cache.is_file():
+            payload = seed_cache.read_text(encoding="utf-8")
+            if int(json.loads(payload)["cik"]) != cik:
+                raise ValueError(f"SEC companyfacts CIK mismatch for {cik}")
+            cache_path.write_text(payload, encoding="utf-8")
+        data = json.loads(self._download(url))
+        if int(data["cik"]) != cik:
+            raise ValueError(f"SEC companyfacts CIK mismatch for {cik}")
+        self._companyfacts_cache[cik] = data
+        return data
+
     def load_filing(self, evidence: Mapping[str, Any]) -> dict[str, Any]:
         """Fetch/cache a filing index and its primary inline document."""
 
         cache_key = str(evidence.get("filing_url") or evidence.get("accn") or "")
         if cache_key in self._filing_cache:
             return self._filing_cache[cache_key]
+        if self.fixture_dir is not None:
+            # Lossless, hash-checked SEC documents make the first-filing paper
+            # reproducible without the author's cache or a network connection.
+            accession, _, _ = _accession_parts(evidence)
+            manifest = json.loads((self.fixture_dir / "manifest.json").read_text(encoding="utf-8"))
+            record = manifest["filings"].get(accession)
+            if record is None:
+                raise ValueError(f"No committed SEC filing fixture for {accession}")
+            if (record["form"], record["filed"]) != (evidence.get("form"), evidence.get("filed")):
+                raise ValueError(f"SEC filing fixture metadata mismatch for {accession}")
+            primary_url = record["primary_url"]
+            if primary_url.rsplit("/", 1)[0] != _filing_folder_url(evidence):
+                raise ValueError(f"SEC filing fixture accession/URL mismatch for {accession}")
+            payload = (self.fixture_dir / f"{accession}.html.gz").read_bytes()
+            raw = gzip.decompress(payload)
+            if (hashlib.sha256(payload).hexdigest() != record["gzip_sha256"]
+                    or hashlib.sha256(raw).hexdigest() != record["sha256"]):
+                raise ValueError(f"SEC filing fixture hash mismatch for {accession}")
+            filing = {"html": raw.decode("utf-8"), "primary_url": primary_url,
+                      "inline_url": record["inline_url"], "primary_document": record["primary_document"]}
+            self._filing_cache[cache_key] = filing
+            return filing
         folder_url = _filing_folder_url(evidence)
         if not folder_url:
             raise ValueError("evidence has no SEC filing URL")

@@ -65,6 +65,86 @@ def _relative_difference(left: float, right: float) -> float:
     return abs(left - right) / denominator
 
 
+def gap_assessment(
+    stated: float | None,
+    actual: float | None,
+    comparator: str,
+    tolerance: float | None,
+    claim_type: str,
+) -> dict[str, Any] | None:
+    """Measure numeric accuracy without changing the program verdict.
+
+    Relative gaps are fractions; percent-change gaps are percentage points.
+    Major starts at 10% or 5 pp, and Severe starts above 50% or 20 pp.
+    An undefined relative gap against zero has no assessment.
+    """
+
+    if (
+        not all(_is_number(value) for value in (stated, actual, tolerance))
+        or tolerance < 0
+        or comparator not in COMPARATORS
+        or claim_type not in CLAIM_TYPES
+        or claim_type == "other"
+    ):
+        return None
+
+    if comparator in {"gt", "gte"}:
+        difference = max(0.0, stated - actual)
+    elif comparator in {"lt", "lte"}:
+        difference = max(0.0, actual - stated)
+    else:
+        difference = abs(stated - actual)
+
+    points = claim_type == "change_pct"
+    gap_kind = "points" if points else "relative"
+    if difference <= tolerance:
+        return {
+            "gap_kind": gap_kind,
+            "gap": 0.0,
+            "direction_wrong": False,
+            "severity": "exact",
+            "score": 100.0,
+        }
+
+    if not points and actual == 0:
+        return None
+    gap = difference if points else difference / abs(actual)
+    if not math.isfinite(gap):
+        return None
+    direction_wrong = points and (stated < 0 < actual or actual < 0 < stated)
+    minor, major, severe = (1.0, 5.0, 20.0) if points else (0.02, 0.10, 0.50)
+    if gap > severe:
+        severity = "severe"
+    elif gap >= major or direction_wrong:
+        severity = "major"
+    elif gap >= minor:
+        severity = "moderate"
+    else:
+        severity = "minor"
+    score = max(0.0, 100 - (4 if points else 200) * gap - (30 if direction_wrong else 0))
+    return {
+        "gap_kind": gap_kind,
+        "gap": gap,
+        "direction_wrong": direction_wrong,
+        "severity": severity,
+        "score": score,
+    }
+
+
+def program_check_gap(check: Mapping[str, Any]) -> dict[str, Any] | None:
+    """Assess only a program check with an established numeric verdict."""
+
+    if check.get("program_verdict") not in {"supported", "contradicted"}:
+        return None
+    return gap_assessment(
+        check.get("stated_value_used"),
+        check.get("actual_value"),
+        str(check.get("comparator") or ""),
+        check.get("tolerance"),
+        str(check.get("claim_type") or ""),
+    )
+
+
 def _runner_evidence_kind(runner: Any, evidence_id: str, result: Mapping[str, Any]) -> str | None:
     kinds = getattr(runner, "evidence_kind", {})
     if isinstance(kinds, Mapping) and evidence_id in kinds:
@@ -807,6 +887,7 @@ def _with_evidence_quality(
     """Attach program-owned evidence strength and restatement flags."""
 
     value = dict(result)
+    value["gap"] = program_check_gap(value)
     strength, nodes = _evidence_quality(evidence_ids, runner)
     value["evidence_strength"] = strength
     value["evidence_summary"] = _evidence_summary(nodes)
@@ -1719,6 +1800,7 @@ def evaluate_sub_claim(
                     program_verdict = "supported" if is_first else "contradicted"
                     return _with_evidence_quality({
                         "text": str(sub_claim.get("text") or ""),
+                        "claim_type": claim_type,
                         "stated_value": stated,
                         "evidence_ids": evidence_ids,
                         "evidence_valid": evidence_valid,
@@ -1800,6 +1882,7 @@ def evaluate_sub_claim(
 
     return _with_evidence_quality({
         "text": str(sub_claim.get("text") or ""),
+        "claim_type": claim_type,
         "stated_value": stated,
         "evidence_ids": evidence_ids,
         "evidence_valid": evidence_valid,
@@ -1848,6 +1931,8 @@ __all__ = [
     "CLAIM_TYPES",
     "COMPARATORS",
     "PROGRAM_VERDICTS",
+    "gap_assessment",
+    "program_check_gap",
     "evaluate_sub_claim",
     "evaluate_verdict",
     "overall_program_verdict",
