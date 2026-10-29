@@ -4,7 +4,7 @@ Dates below are **America/Los_Angeles** calendar days counted from the hackathon
 
 Commit IDs below identify the Git history; `git show <id>` reads each locally. [AGENTS.md](AGENTS.md#verify-the-build-window) gives commands to inspect dates. No future work is recorded as completed; plans are in [ROADMAP.md](ROADMAP.md).
 
-## Days 1–2 — 2026-10-27
+## Day 1 — 2026-10-27
 
 The first/root commit is **`7c5670b84e6052db9fa67fd86606fb2ee11ee42c`**, authored **2026-10-27T14:20:17-07:00**, “Day 1: EDGAR fact tool, budget ledger, Meta Responses tool-call loop.” No repository code pre-existed ([build disclosure](BUILD_LOG.md#build-log)).
 
