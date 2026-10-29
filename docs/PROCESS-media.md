@@ -75,7 +75,7 @@ ffmpeg with subtitles and ducking. **Rejected:**
 | v002 (2:40) | Rendered. **Failed** both reviews: `&#39;` shown in text, small labels on phones, a few reveals out of sync, a clipped table, an imprecise "+70 points", no explicit hackathon line, and a Chinese example (Meta 623 億) whose FALSE relied on strict rounding → replaced by Coca-Cola 500 億 vs $47.1B |
 | v003 | 7 of 10 fixed; new issues: SEC table numbers ran together, subtitles up to 0.6 s behind narration, missing spaces after periods in headlines |
 | v004 | All three fixed (two-column proof table, subtitles from the same sentence timing as motion cues, spacing). One left: two-line subtitles 45 px from the bottom edge |
-| v005 | Subtitle panel resized (2 lines = 136 px) and anchored 64 px above the bottom; measured 68–78 px on every sampled frame. 2:40, −14.5 LUFS, −1.1 dBTP. Awaiting Owner review |
+| v005 | Subtitle panel resized (2 lines = 136 px) and anchored 64 px above the bottom; measured 68–78 px on every sampled frame. 2:40, −14.5 LUFS, −1.1 dBTP. **Approved by the Owner as the final video** (rebuilt byte-identical as v006 after a media-loss incident) |
 
 ### Lessons
 

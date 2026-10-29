@@ -162,3 +162,8 @@ local media (demo/cache, demo/out, narrator-ref.wav). No backup existed. Everyth
 recorded parameters: narrator reference (Breeze-TTS-2 voice design, seed 2026), music (ACE-Step seed 92), ten clone
 narration clips, then render. Result v006 is byte-identical to v005 (SHA-256 30bbf433…2149a); voicecheck 0.8977
 as before. Lesson: move or check ignored outputs before removing a worktree; never `--force` remove after builds.
+
+## 2026-10-29 UTC — Owner approved the final demo video
+
+demo-v006.mp4 (= v005, SHA-256 30bbf433…2149a, 160.4 s) approved by the Owner as the final hackathon demo video.
+Not uploaded or posted anywhere yet; the Breeze-TTS-2 non-commercial licence note was given to the Owner before approval.
