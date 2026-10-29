@@ -275,3 +275,7 @@ reasoning, cost, latency) and `REPORT.md`. Gold labels for the 30 claims were co
   - Paired flips vs v2 (fixed/broke): Fireworks 9/3, Baseten 8/6, Meta API 27/19; McNemar p = 0.15, 0.79, 0.30, so accuracy changes are within noise.
   - Meta API: 3 provider errors (two 400 "No tool output found for function call", one 503), counted wrong.
   - Spend: Meta $8.96, Baseten $7.23, Fireworks $7.31. Labeled post-hoc: fixes were designed after seeing v2 failures.
+- **Media production (Day 3 evening).** Website "See filing" pop-up and post-hoc rerun block shipped; stamp animation
+  in review; X thread and Discord intro posted; demo video v001 → v002 built with local Breeze-TTS-2 narration
+  (one locked voice), ACE-Step music and an HTML/JS motion timeline under staged Owner approval and a second-AI
+  review. Full record: [docs/PROCESS-media.md](docs/PROCESS-media.md).
