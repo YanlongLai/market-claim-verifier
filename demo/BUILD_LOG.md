@@ -144,3 +144,21 @@ Changed scene cache keys: m01-open: render; m02-spread: render; m03-baseline: re
 Changed global cache keys: assembly_cache_key.
 
 Output: `/Users/yan/git/market-claim-verifier-demo/demo/out/demo-v005.mp4`; SHA-256 `30bbf4335952960fcb1c2db918ef351d733c70f99205bf5c7534c65ebac2149a`.
+
+## v006 — 2026-10-29T05:43:49.017526+00:00
+
+Length: 160.433 s. Scenes >25% over budget: m05-verdicts (+39.1%).
+
+Changed scene cache keys: m01-open: render; m02-spread: render; m03-baseline: render; m04-extract: render; m05-verdicts: render; m06-proof: render; m07-program: render; m08-results: render; m09-chinese: render; m10-cta: render.
+
+Changed global cache keys: assembly_cache_key.
+
+Output: `/Users/yan/git/market-claim-verifier/demo/out/demo-v006.mp4`; SHA-256 `30bbf4335952960fcb1c2db918ef351d733c70f99205bf5c7534c65ebac2149a`.
+
+## 2026-10-29 UTC — media lost and rebuilt (incident)
+
+Claude removed the demo worktree with `git worktree remove --force` after merging, which deleted the git-ignored
+local media (demo/cache, demo/out, narrator-ref.wav). No backup existed. Everything was regenerated from the
+recorded parameters: narrator reference (Breeze-TTS-2 voice design, seed 2026), music (ACE-Step seed 92), ten clone
+narration clips, then render. Result v006 is byte-identical to v005 (SHA-256 30bbf433…2149a); voicecheck 0.8977
+as before. Lesson: move or check ignored outputs before removing a worktree; never `--force` remove after builds.
