@@ -73,7 +73,9 @@ ffmpeg with subtitles and ducking. **Rejected:**
 | Key frames | Approved after 3 tweaks. Owner asked for a more dramatic false example: Tesla (+3% vs −2.9%) replaced by Apple "$416.2B in one quarter" — really the full year; the quarter was $102.5B (4×). The new example post was run through the checker first ($0.06) so the video only shows real verdicts |
 | 2 s motion test | Cards hit the beat, but were too small and flipped before the narrator named each company → cues now follow the narration (silence detection per sentence, event on the next beat) |
 | v002 (2:40) | Rendered. **Failed** both reviews: `&#39;` shown in text, small labels on phones, a few reveals out of sync, a clipped table, an imprecise "+70 points", no explicit hackathon line, and a Chinese example (Meta 623 億) whose FALSE relied on strict rounding → replaced by Coca-Cola 500 億 vs $47.1B |
-| v003 | Fixing all findings; will be re-reviewed by the second AI and Claude before the Owner sees it |
+| v003 | 7 of 10 fixed; new issues: SEC table numbers ran together, subtitles up to 0.6 s behind narration, missing spaces after periods in headlines |
+| v004 | All three fixed (two-column proof table, subtitles from the same sentence timing as motion cues, spacing). One left: two-line subtitles 45 px from the bottom edge |
+| v005 | Subtitle panel resized (2 lines = 136 px) and anchored 64 px above the bottom; measured 68–78 px on every sampled frame. 2:40, −14.5 LUFS, −1.1 dBTP. Awaiting Owner review |
 
 ### Lessons
 
@@ -87,9 +89,9 @@ ffmpeg with subtitles and ducking. **Rejected:**
 
 | What | Path |
 |---|---|
-| Video pipeline, storyboard, shot list, build log, runs | `demo/` on branch `demo/pipeline` |
+| Video pipeline, storyboard, shot list, build log, runs, review reports | `demo/` (merged to main) |
 | Video prompts (music, stills) | `demo/prompts/` |
-| Locked narrator reference | `demo/assets/voice/narrator-ref.wav` + `.txt` |
+| Locked narrator reference | `demo/assets/voice/narrator-ref.txt` in git; the `.wav` stays local (Breeze-TTS-2 output licence is non-commercial) |
 | Demo example post and its check | `examples/posts/demo-thread.txt`, `docs/evidence/posts-2026-10-28/demo-thread-baseten/` |
 | Social images and prompts | `docs/social/`, `docs/prompts/social/` |
 | Site image prompts | `docs/prompts/site/` |
