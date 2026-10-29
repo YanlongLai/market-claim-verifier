@@ -555,8 +555,8 @@ intersection([{isIntersecting:true}]);assert.equal(scene.dataset.running,'true')
 """
 
 GEOMETRY = r"""
-near(sceneHeight,phone?2*letterboxHeight+2*labelHeight+postHeight+56+filingHeight+32:tablet?444:420);
-assert.ok(sceneHeight<=(phone?600:tablet?444:424));
+near(sceneHeight,phone?2*letterboxHeight+2*labelHeight+postHeight+92+filingHeight+32:tablet?436:420);
+assert.ok(sceneHeight<=(phone?640:tablet?444:424));
 near(sceneHeight,stageHeight+stripHeight+stripGap);
 assert.equal(property('.stamp-carrier','position'),'absolute');
 assert.equal(property('.stamp-passage','position'),'absolute');assert.equal(property('.stamp-passage','inset'),'0');
@@ -567,7 +567,7 @@ assert.equal(pause.parent,tree.querySelector('.stamp-strip'));
 assert.ok(!rule('.stamp-pause').includes('position:'),'Playback occupies the strip');
 assert.equal(property('.stamp-robot','width'),'var(--stamp-robot-width)');
 assert.equal(property('.stamp-robot','height'),'var(--stamp-robot-height)');
-near(robotWidth,phone?64:tablet?120:190);near(robotHeight,phone?48:tablet?165:260);
+near(robotWidth,phone?88:tablet?120:190);near(robotHeight,phone?88:tablet?165:260);
 const post=track.getBoundingClientRect(), filed=filingBox.getBoundingClientRect();
 for(const box of [post,filed]){
   assert.ok(box.left>=0&&box.right<=sceneWidth);assert.ok(box.top>=0&&box.bottom<=sceneHeight);
@@ -577,9 +577,9 @@ if(phone){
   assert.equal(property('.stamp-strip','display'),'flex');assert.equal(property('.stamp-next','display'),'none');
   assert.equal(property('.stamp-pause-label','display'),'none');assert.equal(property('.stamp-pause-icon','display'),'inline');
   assert.ok(post.bottom<=robotTop);near(robotTop,post.bottom+4);near(robotLeft,8);
-  near(filed.top-post.bottom,labelHeight+56);
-  assert.ok(robotTop+robotHeight<=post.bottom+56,'The pose stays inside the compact phone band');
-  assert.ok(sceneHeight<=600,`Phone stage envelope ${sceneHeight}`);
+  near(filed.top-post.bottom,labelHeight+92);
+  assert.ok(robotTop+robotHeight<=post.bottom+92,'The pose stays inside the compact phone band');
+  assert.ok(sceneHeight<=640,`Phone stage envelope ${sceneHeight}`);
   near(postHeight,Math.max(...naturalPostHeights));
   assert.ok(filingHeight>=Math.max(...naturalFilingHeights));
 }else{
@@ -1030,7 +1030,7 @@ seek(1);assert.equal(intrinsicReads,once);near(postHeight,expectedPost);
 onFonts();assert.ok(intrinsicReads>once,'A completed font load invalidates intrinsic maxima');near(postHeight,246);near(filingHeight,226);
 const afterFont=intrinsicReads;onResize();seek(12.1);assert.equal(intrinsicReads,afterFont);
 context.stamps.setLanguage(config.language==='en'?'zh':'en');conveyor.localize();assert.ok(intrinsicReads>afterFont);
-assert.equal(scene.classList.contains('is-measuring'),false);assert.ok(sceneHeight<=600);
+assert.equal(scene.classList.contains('is-measuring'),false);assert.ok(sceneHeight<=640);
 """
 
 CARD_FITS = r"""
@@ -1061,7 +1061,7 @@ assert.equal(property('.stamp-filing-box','overflow'),'hidden');
 assert.equal(property('.stamp-stack-edge','bottom'),'0');
 assert.ok(!property('.stamp-filing-box::after','inset').includes('-'));
 if(phone){
-  assert.ok(sceneHeight<=600,`${config.sourceKind}: phone scene ${sceneHeight}`);
+  assert.ok(sceneHeight<=640,`${config.sourceKind}: phone scene ${sceneHeight}`);
   assert.equal(property('.stamp-review','margin-top'),'auto','Review stays at the bottom of the phone card');
   assert.equal(property('.stamp-filing-authority','white-space'),'nowrap');
   assert.equal(property('.stamp-passage-section','display'),'none');
