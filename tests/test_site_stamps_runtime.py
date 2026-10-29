@@ -118,6 +118,37 @@ def test_desktop_meter_and_filed_comparison_share_a_baseline(viewport, language)
     run_check(BASELINES, viewport=viewport, language=language)
 
 
+@pytest.mark.parametrize("viewport", [320, 375, 390, 639, 640, 768, 1023, 1024, 1100, 1101, 1280, 1440])
+@pytest.mark.parametrize("source_kind", ["thread", "social", "article", "repost"])
+@pytest.mark.parametrize("language", ["en", "zh"])
+def test_each_publication_format_grows_the_panel_to_fit_its_intrinsic_geometry(viewport, source_kind, language):
+    run_check(CARD_FITS, viewport=viewport, sourceKind=source_kind, language=language,
+              postHeights=[174, 182, 168, 196, 171, 182, 178, 179, 170, 206, 211],
+              filingHeights=[139, 196, 0, 139, 147, 155, 0, 139, 139, 139, 139])
+
+
+@pytest.mark.parametrize("viewport", [390, 768, 1024])
+@pytest.mark.parametrize("language", ["en", "zh"])
+@pytest.mark.parametrize("reduced", [False, True])
+def test_polished_publication_formats_preserve_real_checks_and_label_fiction(viewport, language, reduced):
+    run_check(POLISH, viewport=viewport, language=language, reduced=reduced)
+
+
+@pytest.mark.parametrize("kind,payload,expected", [
+    ("audio", {"timestamp": "00:12", "transcript": {"en": "Recorded transcript", "zh": "實際逐字稿"}, "waveform": [0.2, 0.7, 1, 0.4]}, "audio"),
+    ("video", {"timestamp": "01:23", "thumbnail": "img/real-frame.webp"}, "video"),
+    ("screenshot", {"thumbnail": "img/real-shot.webp"}, "screenshot"),
+    ("audio", None, "text"),
+    ("audio", {"timestamp": "00:12", "transcript": {"en": "Actual", "zh": "實際"}}, "text"),
+    ("audio", {"timestamp": "00:12", "transcript": {"en": "Actual", "zh": "實際"}, "waveform": [0.1, 2]}, "text"),
+    ("video", {"timestamp": "01:23", "thumbnail": "img/../invented.webp"}, "text"),
+    ("video", {"thumbnail": "img/real-frame.webp"}, "text"),
+])
+@pytest.mark.parametrize("language", ["en", "zh"])
+def test_media_variants_require_actual_payload_and_keep_transcript_and_timestamp(kind, payload, expected, language):
+    run_check(MEDIA, viewport=390, language=language, inputKind=kind, inputPayload=payload, expectedInput=expected)
+
+
 @pytest.mark.parametrize("viewport", [390, 1280])
 @pytest.mark.parametrize("theme", ["light", "dark"])
 def test_reduced_motion_has_no_spotlight_dim_letterbox_dust_or_flash(viewport, theme):
@@ -143,11 +174,12 @@ const root = process.argv[2];
 const config = JSON.parse(process.argv[3]);
 const viewport = config.viewport || 1280;
 const phone = viewport < 640;
-const tablet = viewport >= 640 && viewport < 1024;
+const tablet = viewport >= 640 && viewport <= 1100;
 const css = readFileSync(`${root}/docs/site/styles.css`, 'utf8');
 const source = readFileSync(`${root}/docs/site/script.js`, 'utf8');
 const html = readFileSync(`${root}/docs/site/index.html`, 'utf8');
 const cards = JSON.parse(readFileSync(`${root}/docs/site/data/site.json`, 'utf8')).stamp_cards;
+if (config.inputKind) { cards[0].input_kind=config.inputKind; cards[0].input_media=config.inputPayload; }
 // Read the actual CSS cascade, including either side of both breakpoints.
 const rules = [];
 function mediaActive(query) {
@@ -215,7 +247,7 @@ function refreshBoxes() {
 refreshBoxes();
 const rect = (left, top, width, height) => ({left,top,right:left+width,bottom:top+height,width,height});
 // Heterogeneous synthetic intrinsic boxes test the maximum-height algorithm.
-// They do not claim to model browser fonts; Claude performs that visual review.
+// They exercise measured-size handling, not browser font metrics or screenshot approval.
 let naturalPostHeights = config.postHeights || [174,182,168,196,171,182,178,179,170,206,211];
 let naturalFilingHeights = config.filingHeights || [139,196,0,139,147,155,0,139,139,139,139];
 let layoutReads = 0, intrinsicReads = 0;
@@ -258,6 +290,7 @@ class Element {
   set textContent(text) { this._text = String(text); this.children = []; }
   get textContent() { return this._text + this.children.map(child => child.textContent).join(''); }
   append(...children) { for (const child of children) { child.parent = this; this.children.push(child); } }
+  prepend(...children) { for (const child of children) child.parent = this; this.children.unshift(...children); }
   replaceChildren(...children) { this.children = []; this._text = ''; this.append(...children); }
   setAttribute(key,value) {
     this.attributes[key] = String(value);
@@ -267,7 +300,10 @@ class Element {
   }
   getAttribute(key) { return this.attributes[key] ?? null; }
   removeAttribute(key) { delete this.attributes[key]; }
-  addEventListener(key,fn) { this.events[key] = fn; }
+  addEventListener(key,fn) {
+    const previous=this.events[key];
+    this.events[key]=previous?(...args)=>{previous(...args);fn(...args);}:fn;
+  }
   querySelectorAll(selector) {
     return this.children.flatMap(child => [...(matches(child,selector)?[child]:[]), ...child.querySelectorAll(selector)]);
   }
@@ -302,13 +338,13 @@ class Element {
     if (this.classList.contains('stamp-filing-box')) return rect(filingLeft,filingTop,panelWidth,filingHeight);
     if (this.classList.contains('stamp-filing-content')||this.classList.contains('stamp-passage'))return rect(passageLeft,passageTop,passageWidth,passageHeight);
     if (this.classList.contains('stamp-robot')) return rect(robotLeft,robotTop,robotWidth,robotHeight);
-    if (this.classList.contains('stamp-number')) return rect(16,postTop+78,Math.min(panelWidth-32,this.textContent.length*14),28);
+    if (this.classList.contains('stamp-number')) return rect(16+(this.testOffset||0),postTop+78,Math.min(panelWidth-32,this.textContent.length*14),28);
     if (this.classList.contains('stamp-mark')) return rect(panelWidth-100,postTop+postHeight-64,86,40);
     if (this.classList.contains('stamp-meter'))return rect(14,postTop+postHeight-40,panelWidth-150,phone?4:6);
     if (this.classList.contains('stamp-compare'))return rect(passageLeft,compareTop,passageWidth,compareHeight);
     if (this.classList.contains('stamp-compare-filed') || this.classList.contains('stamp-ledger-value'))
       return rect(filingLeft+panelWidth/2,compareTop+compareHeight-20,Math.min(panelWidth/2-14,90),16);
-    if(this.classList.contains('stamp-passage-row'))return rect(passageLeft,passageTop+65,passageWidth,26);
+    if(this.classList.contains('stamp-passage-row'))return rect(passageLeft+(this.testOffset||0),passageTop+65,passageWidth,26);
     if(this.classList.contains('stamp-ledger-row')){
       const offset=this.parent.children.indexOf(this);
       return rect(passageLeft,compare?compareTop+offset*20:passageTop+99+offset*20,passageWidth,18);
@@ -456,7 +492,7 @@ for(let index=0;index<cards.length;index++)if(cards[index].score===null){
 """
 
 LIFECYCLE = r"""
-assert.equal(callbacks.size,0);assert.equal(created.filter(x=>x.src&&!x.classList.contains('stamp-avatar')).length,0);
+assert.equal(callbacks.size,0);assert.equal(created.filter(x=>x.src&&!x.classList.contains('stamp-avatar')&&!x.classList.contains('stamp-polish-art')).length,0);
 intersection([{isIntersecting:true}]);assert.equal(callbacks.size,1);
 assert.equal(created.filter(x=>x.src?.includes('/H/')&&x.classList.contains('stamp-robot-pose')).length,11);
 const reads=layoutReads;
@@ -505,7 +541,7 @@ for(let index=0;index<cards.length;index++){
 assert.equal(callbacks.size,0);assert.equal(scene.dataset.animated,String(!config.reduced));
 assert.equal(tree.querySelector('#stamp-static-list').classList.contains('is-sr-only'),!config.reduced);
 if(config.reduced){
-  assert.equal(created.filter(x=>x.src&&!x.classList.contains('stamp-avatar')).length,0);
+  assert.equal(created.filter(x=>x.src&&!x.classList.contains('stamp-avatar')&&!x.classList.contains('stamp-polish-art')).length,0);
   assert.equal(property('.stamp-stage','display'),'none');assert.equal(property('.stamp-strip','display'),'none');
 }
 context.stamps.setLanguage(config.language==='zh'?'en':'zh');conveyor.localize();seek(12.94);
@@ -519,8 +555,8 @@ intersection([{isIntersecting:true}]);assert.equal(scene.dataset.running,'true')
 """
 
 GEOMETRY = r"""
-near(sceneHeight,phone?2*letterboxHeight+2*labelHeight+postHeight+96+filingHeight+36:tablet?444:420);
-assert.ok(sceneHeight<=(phone?844:tablet?444:424));
+near(sceneHeight,phone?2*letterboxHeight+2*labelHeight+postHeight+56+filingHeight+32:tablet?444:420);
+assert.ok(sceneHeight<=(phone?600:tablet?444:424));
 near(sceneHeight,stageHeight+stripHeight+stripGap);
 assert.equal(property('.stamp-carrier','position'),'absolute');
 assert.equal(property('.stamp-passage','position'),'absolute');assert.equal(property('.stamp-passage','inset'),'0');
@@ -531,19 +567,19 @@ assert.equal(pause.parent,tree.querySelector('.stamp-strip'));
 assert.ok(!rule('.stamp-pause').includes('position:'),'Playback occupies the strip');
 assert.equal(property('.stamp-robot','width'),'var(--stamp-robot-width)');
 assert.equal(property('.stamp-robot','height'),'var(--stamp-robot-height)');
-near(robotWidth,phone?100:tablet?120:190);near(robotHeight,phone?88:tablet?165:260);
+near(robotWidth,phone?64:tablet?120:190);near(robotHeight,phone?48:tablet?165:260);
 const post=track.getBoundingClientRect(), filed=filingBox.getBoundingClientRect();
 for(const box of [post,filed]){
   assert.ok(box.left>=0&&box.right<=sceneWidth);assert.ok(box.top>=0&&box.bottom<=sceneHeight);
 }
 if(phone){
-  assert.equal(property('.stamp-strip','order'),'-1');near(stripHeight,36);
+  assert.equal(property('.stamp-strip','order'),'-1');near(stripHeight,32);
   assert.equal(property('.stamp-strip','display'),'flex');assert.equal(property('.stamp-next','display'),'none');
   assert.equal(property('.stamp-pause-label','display'),'none');assert.equal(property('.stamp-pause-icon','display'),'inline');
   assert.ok(post.bottom<=robotTop);near(robotTop,post.bottom+4);near(robotLeft,8);
-  near(filed.top-post.bottom,labelHeight+96);
-  assert.ok(robotTop+robotHeight<=post.bottom+96,'The pose stays inside the 96px phone band');
-  assert.ok(sceneHeight<=844,`Phone stage envelope ${sceneHeight}`);
+  near(filed.top-post.bottom,labelHeight+56);
+  assert.ok(robotTop+robotHeight<=post.bottom+56,'The pose stays inside the compact phone band');
+  assert.ok(sceneHeight<=600,`Phone stage envelope ${sceneHeight}`);
   near(postHeight,Math.max(...naturalPostHeights));
   assert.ok(filingHeight>=Math.max(...naturalFilingHeights));
 }else{
@@ -716,8 +752,8 @@ assert.ok(doc.includes('82.8 s'));assert.ok(doc.includes('8.0 s'));
 """
 
 PERSONAS = r"""
-assert.equal(px('.stamp-avatar','width'),phone||tablet?28:36);
-assert.equal(px('.stamp-avatar','height'),phone||tablet?28:36);assert.equal(property('.stamp-avatar','border-radius'),'50%');
+assert.equal(px('.stamp-avatar','width'),phone?44:56);
+assert.equal(px('.stamp-avatar','height'),phone?44:56);assert.equal(property('.stamp-avatar','border-radius'),'50%');
 function check(language){
   for(let index=0;index<cards.length;index++){
     const card=cards[index];seek(starts[index]+(card.score===null?3.14:4.94));
@@ -750,9 +786,14 @@ assert.equal(light.attributes['aria-hidden'],'true');assert.equal(property('.sta
 const tokens=declarations(':root');assert.equal(tokens['--stamp-light'],config.theme==='dark'?'#d9fff0':'#ffd59a');
 assert.equal(tokens['--stamp-dim'],config.theme==='dark'?'#03090d':'#38210f');
 const dimOpacity=Number(tokens['--stamp-dim-opacity']);near(dimOpacity,config.theme==='dark'?.45:.25);
+const paperOpacity=Number(tokens['--stamp-paper-dim-opacity']);near(paperOpacity,config.theme==='dark'?.32:.25);
+assert.equal(property('.stamp-paper-dim','fill'),'var(--stamp-paper-dim)');
+assert.equal(property('.stamp-paper-dim','fill-opacity'),'var(--stamp-paper-dim-opacity)');
+assert.equal(light.querySelector('.stamp-stage-dim').attributes.mask,'url(#stamp-stage-mask)');
+assert.equal(light.querySelector('.stamp-fx-atmosphere').attributes.mask,'url(#stamp-stage-mask)');
 assert.equal(property('.stamp-stage-dim','fill'),'var(--stamp-dim)');
 assert.equal(property('.stamp-stage-dim','fill-opacity'),'var(--stamp-dim-opacity)');
-assert.equal(property('#stamp-filing-vignette stop','stop-color'),'var(--stamp-dim)');
+assert.equal(property('#stamp-filing-vignette stop','stop-color'),'var(--stamp-paper-dim)');
 near(Number(tokens['--stamp-cone-opacity']),config.theme==='dark'?.6:.75);
 near(Number(tokens['--stamp-beam-haze']),config.theme==='dark'?.22:.3);
 for(const name of ['post','filing']){
@@ -835,10 +876,13 @@ seek(2.99);assert.ok(Number(find(passage(0),'stamp-fact').style['--stamp-bloom']
 seek(3.56);near(scaleX(find(passage(0),'stamp-amber-sweep')),1);
 seek(3.5);assert.equal(light.querySelector('.stamp-stage-dim').style.opacity,'0');near(Number(light.querySelector('.stamp-filing-dim').style.opacity)*dimOpacity,dimOpacity);
 seek(4.1);near(Number(light.querySelector('.stamp-stage-dim').style.opacity)*dimOpacity,dimOpacity);assert.equal(light.querySelector('.stamp-filing-dim').style.opacity,'0');
-for(const bar of light.querySelectorAll('.stamp-letterbox rect'))near(Number(bar.attributes.height),12);
+near(Number(light.querySelector('.stamp-paper-dim').style.opacity),1);
+assert.deepEqual(boxOf(light.querySelector('.stamp-paper-dim')),local(filingBox));
+assert.deepEqual(boxOf(light.querySelector('.stamp-stage-hole-paper')),local(filingBox));
+for(const bar of light.querySelectorAll('.stamp-letterbox rect'))near(Number(bar.attributes.height),letterboxHeight);
 assert.equal(light.querySelector('.stamp-letterbox').style.opacity,'1');
-// Real CSS padding reserves both 12px bars outside every text-bearing region.
-near(px('.stamp-stage','padding-block'),12);
+// CSS padding reserves the matching bars outside every text-bearing region.
+near(px('.stamp-stage','padding-block'),letterboxHeight);
 const textEnvelope=[...scene.querySelectorAll('.stamp-panel-label'),track,filingBox,
   scene.querySelector('.stamp-caption'),scene.querySelector('.stamp-strip')].map(local);
 assert.equal(property('.stamp-spotlight','overflow'),'hidden');
@@ -964,7 +1008,7 @@ check(config.language);const other=config.language==='en'?'zh':'en';context.stam
 PHONE_MAXIMA = r"""
 assert.ok(phone);assert.ok(intrinsicReads>0);
 const expectedPost=Math.ceil(Math.max(...naturalPostHeights));
-const expectedFiling=Math.ceil(Math.max(124,...naturalFilingHeights.map(h=>h+18)));
+const expectedFiling=Math.ceil(Math.max(124,...naturalFilingHeights.map(h=>h+14)));
 near(postHeight,expectedPost);near(filingHeight,expectedFiling);
 const once=intrinsicReads,heights=[postHeight,filingHeight,stageHeight,sceneHeight];
 for(let index=0;index<cards.length;index++)for(const age of [.1,1.05,2.4,3.14,4.1]){
@@ -972,7 +1016,7 @@ for(let index=0;index<cards.length;index++)for(const age of [.1,1.05,2.4,3.14,4.
 }
 onResize();onResize();assert.equal(intrinsicReads,once,'Seeks and observer echoes never remeasure the card set');
 assert.equal(property('.stamp-strip','display'),'flex');assert.equal(property('.stamp-progress','display'),'flex');
-near(stripHeight,36);assert.equal(property('.stamp-next','display'),'none');
+near(stripHeight,32);assert.equal(property('.stamp-next','display'),'none');
 assert.equal(property('.stamp-pause-label','display'),'none');assert.equal(property('.stamp-pause-icon','display'),'inline');
 const hiddenLabel='.stamp-progress li:not(.is-active) > [data-i18n]';
 assert.equal(property(hiddenLabel,'position'),'absolute');assert.equal(property(hiddenLabel,'clip-path'),'inset(50%)');
@@ -983,10 +1027,47 @@ assert.equal(scene.querySelector('.stamp-pause-label').textContent,label);assert
 pause.events.click();assert.equal(pause.attributes['aria-label'],config.language==='en'?'Pause':'暫停');
 naturalPostHeights[3]=245.6;naturalFilingHeights[1]=211.1;
 seek(1);assert.equal(intrinsicReads,once);near(postHeight,expectedPost);
-onFonts();assert.ok(intrinsicReads>once,'A completed font load invalidates intrinsic maxima');near(postHeight,246);near(filingHeight,230);
+onFonts();assert.ok(intrinsicReads>once,'A completed font load invalidates intrinsic maxima');near(postHeight,246);near(filingHeight,226);
 const afterFont=intrinsicReads;onResize();seek(12.1);assert.equal(intrinsicReads,afterFont);
 context.stamps.setLanguage(config.language==='en'?'zh':'en');conveyor.localize();assert.ok(intrinsicReads>afterFont);
-assert.equal(scene.classList.contains('is-measuring'),false);assert.ok(sceneHeight<=844);
+assert.equal(scene.classList.contains('is-measuring'),false);assert.ok(sceneHeight<=600);
+"""
+
+CARD_FITS = r"""
+// Feed actual measurement responses to the production sizing path. Each source
+// kind must be able to determine the maximum, including a tall desktop repost.
+const selected=cards.map((card,index)=>card.source_kind===config.sourceKind?index:-1).filter(i=>i>=0);
+assert.ok(selected.length);
+selected.forEach(index=>{naturalPostHeights[index]=phone?250.2:442.2;
+  if(cards[index].excerpt)naturalFilingHeights[index]=phone?196.2:270.2;});
+onFonts();
+const inset=2*(length(property('.stamp-filing-box','padding').split(' ')[0])+1);
+for(const index of selected){
+  seek(starts[index]+(cards[index].score===null?3.14:4.1));
+  assert.ok(postHeight>=Math.ceil(naturalPostHeights[index]),`${cards[index].id}: post fits`);
+  if(cards[index].excerpt)assert.ok(filingHeight>=Math.ceil(naturalFilingHeights[index]+inset),`${cards[index].id}: paper fits`);
+  const body=moving[index].children[0];
+  assert.ok(find(body,'stamp-review'));
+  if(cards[index].source_kind==='repost')assert.ok(find(body,'stamp-gap').textContent.includes('6.2%'));
+}
+const reads=intrinsicReads,heights=[postHeight,filingHeight,sceneHeight];
+for(const index of selected)for(const age of [.1,2.5,4.1])seek(starts[index]+age);
+onResize();assert.equal(intrinsicReads,reads);assert.deepEqual([postHeight,filingHeight,sceneHeight],heights);
+assert.equal(property('.stamp-claim','font-family'),'var(--font)');
+assert.equal(property('.stamp-card[data-source-kind="article"] .stamp-claim','font-family'),'var(--font-document)');
+assert.equal(property('.stamp-number','font-weight'),'800');
+assert.equal(px('.stamp-avatar','width'),phone?44:56);
+assert.equal(property('.stamp-filing-box','overflow'),'hidden');
+assert.equal(property('.stamp-stack-edge','bottom'),'0');
+assert.ok(!property('.stamp-filing-box::after','inset').includes('-'));
+if(phone){
+  assert.ok(sceneHeight<=600,`${config.sourceKind}: phone scene ${sceneHeight}`);
+  assert.equal(property('.stamp-review','margin-top'),'auto','Review stays at the bottom of the phone card');
+  assert.equal(property('.stamp-filing-authority','white-space'),'nowrap');
+  assert.equal(property('.stamp-passage-section','display'),'none');
+  assert.equal(property('.stamp-period','display'),'table','The compact period avoids a body-sized line box');
+  assert.equal(property('.stamp-filing-content .stamp-derivation','display'),'none','The ledger shows all operands without a repeated footnote');
+}
 """
 
 BASELINES = r"""
@@ -1007,7 +1088,7 @@ REDUCED_SPOTLIGHT = r"""
 assert.equal(property('.stamp-spotlight','display'),'none');
 for(const time of [2.4,2.99,4.1,4.8,4.84,5.3,12.1,18.4,49]){
   seek(time);
-  for(const name of ['stamp-stage-dim','stamp-filing-dim','stamp-beam-post','stamp-beam-filing','stamp-impact-flash','stamp-letterbox'])
+  for(const name of ['stamp-stage-dim','stamp-paper-dim','stamp-filing-dim','stamp-beam-post','stamp-beam-filing','stamp-impact-flash','stamp-letterbox'])
     assert.equal(scene.querySelector(`.${name}`).style.opacity,'0',`${name} @ ${time}`);
   assert.ok(scene.querySelectorAll('.stamp-dust').every(mote=>mote.style.opacity==='0'));
 }
@@ -1086,4 +1167,92 @@ seek(4.94);
 for(const layer of layers){layer.querySelectorAll('.stamp-thruster-frame').find(image=>image.dataset.frame==='burst').events.error();}
 assert.equal(robot.dataset.pose,'stamp-down');assert.ok(layers.every(layer=>layer.dataset.frame==='0'));
 assert.ok(robot.querySelectorAll('.stamp-robot-pose').every(image=>image.src.includes('/H/')));
+"""
+
+POLISH = r"""
+for (let i=0;i<cards.length;i++) {
+  const card=cards[i];
+  for(const group of [moving,still]) {
+    const body=find(group[i],'stamp-card');
+    assert.equal(body.dataset.sourceKind,card.source_kind);
+    assert.equal(find(body,'stamp-example').textContent,config.language==='zh'?'示範貼文':'Example post');
+    assert.equal(find(body,'stamp-input-badge').textContent,config.language==='zh'?'文字':'Text');
+    assert.equal(find(body,'stamp-input-badge').dataset.inputKind,'text');
+    for(const name of ['stamp-waveform','stamp-frame','stamp-transcript'])assert.equal(body.querySelectorAll('.'+name).length,0);
+    for(const avatar of body.querySelectorAll('.stamp-avatar')) {
+      assert.ok(avatar.src.endsWith('-256.webp'));assert.equal(avatar.loading,'lazy');
+    }
+    assert.equal(find(body,'stamp-claim').textContent,card.text[config.language||'en']);
+    if(card.source_kind==='thread')assert.equal(find(body,'stamp-thread-index').textContent,card.thread_index);
+    const actions=find(body,'stamp-actions');
+    if(card.source_kind!=='article') {
+      assert.equal(actions.querySelectorAll('svg').length,4);
+      for(const count of Object.values(card.example_activity))assert.ok(actions.textContent.includes(count.toLocaleString('en-US')));
+      assert.equal(find(actions,'stamp-activity-label').textContent,config.language==='zh'?'示範互動':'Example activity');
+    }
+    if(card.source_kind==='social')assert.equal(body.querySelectorAll('.stamp-audience svg').length,1);
+    if(card.source_kind==='repost') {
+      const original=cards.find(c=>c.id===card.same_claim_as),quote=find(body,'stamp-quote-card');
+      assert.ok(quote.querySelector('.stamp-quote-header'));
+      assert.equal(find(quote,'stamp-original-author').textContent,original.persona.name[config.language||'en']);
+      assert.equal(find(quote,'stamp-post-date').textContent,original.post_date);
+      assert.equal(find(quote,'stamp-claim').textContent,original.text[config.language||'en']);
+    }
+    if(card.source_kind==='article') {
+      assert.equal(find(body,'stamp-article-lead').textContent,card.article.lead[config.language||'en']);
+      const masthead=find(body,'stamp-masthead');assert.equal(masthead.loading,'lazy');
+      assert.equal(masthead.dataset.src,'img/polish/banana-masthead.webp');
+      assert.equal(body.querySelectorAll('.stamp-article-picture').length,2);
+      masthead.events.error();assert.ok(find(body,'stamp-identity').classList.contains('masthead-unavailable'));
+      assert.equal(find(body,'stamp-author').textContent,card.persona.name[config.language||'en']);
+    }
+  }
+  const paper=passage(i);
+  if(paper) {
+    assert.equal(find(paper,'stamp-filing-authority').textContent,'UNITED STATES SECURITIES AND EXCHANGE COMMISSION');
+    assert.equal(find(paper,'stamp-passage-meta').textContent,'FORM '+card.excerpt.form);
+    const time=find(paper,'stamp-filing-date').querySelector('time');
+    assert.equal(time.dateTime,card.excerpt.filed);assert.ok(time.textContent.endsWith(card.excerpt.filed));
+  }
+}
+for(const art of created.filter(n=>n.classList.contains('stamp-polish-art'))) {
+  assert.equal(art.loading,'lazy');assert.equal(art.decoding,'async');assert.equal(art.alt,'');
+}
+if(!config.reduced) {
+  seek(3.8);
+  const number=find(moving[0],'stamp-number'),row=find(passage(0),'stamp-passage-row');
+  number.testOffset=21;row.testOffset=13;
+  layoutReads=0;find(passage(0),'stamp-date-ring').events.load();
+  assert.ok(layoutReads>0,'Artwork completion invalidates cached light geometry');
+  seek(3.8);
+  const target=number.getBoundingClientRect(),origin=stage.getBoundingClientRect();
+  near(Number(scene.querySelector('.stamp-pool-post').attributes.cx),target.left-origin.left+target.width/2);
+  const fact=row.getBoundingClientRect();
+  near(Number(scene.querySelector('.stamp-pool-row').attributes.cx),fact.left-origin.left+fact.width/2);
+  intersection([{isIntersecting:true}]);pause.events.click();
+  layoutReads=0;step(0);step(16);assert.equal(layoutReads,0,'The scene clock never reads layout');
+}
+"""
+
+MEDIA = r"""
+const expected=config.expectedInput,labels=config.language==='zh'?{text:'文字',audio:'音訊',video:'影片',screenshot:'截圖'}:
+  {text:'Text',audio:'Audio',video:'Video',screenshot:'Screenshot'};
+for(const group of [moving,still]) {
+  const body=find(group[0],'stamp-card'),badge=find(body,'stamp-input-badge');
+  assert.equal(badge.dataset.inputKind,expected);assert.equal(badge.textContent,labels[expected]);
+  const media=find(body,'stamp-input-media');
+  if(expected==='text'){assert.equal(media,undefined);continue;}
+  assert.ok(media);
+  if(expected==='audio') {
+    assert.equal(find(media,'stamp-waveform').children.length,config.inputPayload.waveform.length);
+    assert.deepEqual(find(media,'stamp-waveform').children.map(n=>Number(n.style['--sample'])),config.inputPayload.waveform);
+    assert.equal(find(media,'stamp-transcript').textContent,config.inputPayload.transcript[config.language||'en']);
+    assert.equal(find(media,'stamp-media-time').textContent,config.inputPayload.timestamp);
+  } else {
+    assert.equal(find(media,'stamp-frame').dataset.src,config.inputPayload.thumbnail);
+    if(expected==='video')assert.equal(find(media,'stamp-media-time').textContent,config.inputPayload.timestamp);
+    else assert.equal(find(media,'stamp-media-time'),undefined);
+  }
+}
+const before=fingerprint();seek(2);seek(3);seek(2);const first=fingerprint();seek(1);seek(2);assert.equal(fingerprint(),first);
 """

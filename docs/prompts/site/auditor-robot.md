@@ -400,44 +400,46 @@ The initial export check caught color spill after resampling. An initial indexed
 
 ## Files and sizes
 
+Historical export inventory from the original A/B/C selection run. Retired exports absent from this checkout are shown as filenames; surviving files retain links. Recorded dimensions, sizes and exact prompts are preserved. Runtime Hover assets are documented below.
+
 All paths below are relative to `docs/site/img/auditor/`. KB uses 1,000 bytes. The <=120 KB cap applies to pose PNG and WebP files; source sheets and review contacts retain larger review-quality dimensions.
 
 | File | Dimensions | Bytes | KB |
 |---|---|---:|---:|
-| [A/idle.png](../../site/img/auditor/A/idle.png) | 308 × 509 | 112,119 | 112.119 |
-| [A/idle.webp](../../site/img/auditor/A/idle.webp) | 308 × 509 | 76,306 | 76.306 |
-| [A/inspect.png](../../site/img/auditor/A/inspect.png) | 397 × 493 | 115,445 | 115.445 |
-| [A/inspect.webp](../../site/img/auditor/A/inspect.webp) | 397 × 493 | 74,968 | 74.968 |
-| [A/present.png](../../site/img/auditor/A/present.png) | 381 × 510 | 114,009 | 114.009 |
-| [A/present.webp](../../site/img/auditor/A/present.webp) | 381 × 510 | 77,118 | 77.118 |
-| [A/stamp.png](../../site/img/auditor/A/stamp.png) | 364 × 512 | 116,224 | 116.224 |
-| [A/stamp.webp](../../site/img/auditor/A/stamp.webp) | 364 × 512 | 74,584 | 74.584 |
-| [B/idle.png](../../site/img/auditor/B/idle.png) | 293 × 512 | 117,245 | 117.245 |
+| `A/idle.png` | 308 × 509 | 112,119 | 112.119 |
+| `A/idle.webp` | 308 × 509 | 76,306 | 76.306 |
+| `A/inspect.png` | 397 × 493 | 115,445 | 115.445 |
+| `A/inspect.webp` | 397 × 493 | 74,968 | 74.968 |
+| `A/present.png` | 381 × 510 | 114,009 | 114.009 |
+| `A/present.webp` | 381 × 510 | 77,118 | 77.118 |
+| `A/stamp.png` | 364 × 512 | 116,224 | 116.224 |
+| `A/stamp.webp` | 364 × 512 | 74,584 | 74.584 |
+| `B/idle.png` | 293 × 512 | 117,245 | 117.245 |
 | [B/idle.webp](../../site/img/auditor/B/idle.webp) | 293 × 512 | 78,464 | 78.464 |
-| [B/inspect.png](../../site/img/auditor/B/inspect.png) | 376 × 502 | 119,522 | 119.522 |
+| `B/inspect.png` | 376 × 502 | 119,522 | 119.522 |
 | [B/inspect.webp](../../site/img/auditor/B/inspect.webp) | 376 × 502 | 78,130 | 78.130 |
-| [B/present.png](../../site/img/auditor/B/present.png) | 347 × 510 | 114,167 | 114.167 |
+| `B/present.png` | 347 × 510 | 114,167 | 114.167 |
 | [B/present.webp](../../site/img/auditor/B/present.webp) | 347 × 510 | 76,940 | 76.940 |
-| [B/stamp.png](../../site/img/auditor/B/stamp.png) | 338 × 510 | 118,910 | 118.910 |
+| `B/stamp.png` | 338 × 510 | 118,910 | 118.910 |
 | [B/stamp.webp](../../site/img/auditor/B/stamp.webp) | 338 × 510 | 77,980 | 77.980 |
-| [C/idle.png](../../site/img/auditor/C/idle.png) | 288 × 501 | 116,091 | 116.091 |
-| [C/idle.webp](../../site/img/auditor/C/idle.webp) | 288 × 501 | 81,356 | 81.356 |
-| [C/inspect.png](../../site/img/auditor/C/inspect.png) | 336 × 478 | 104,736 | 104.736 |
-| [C/inspect.webp](../../site/img/auditor/C/inspect.webp) | 336 × 478 | 70,234 | 70.234 |
-| [C/present.png](../../site/img/auditor/C/present.png) | 305 × 498 | 105,796 | 105.796 |
-| [C/present.webp](../../site/img/auditor/C/present.webp) | 305 × 498 | 74,012 | 74.012 |
-| [C/stamp.png](../../site/img/auditor/C/stamp.png) | 305 × 512 | 107,723 | 107.723 |
-| [C/stamp.webp](../../site/img/auditor/C/stamp.webp) | 305 × 512 | 69,672 | 69.672 |
-| [sheet-A.png](../../site/img/auditor/sheet-A.png) | 2172 × 724 | 1,582,594 | 1582.594 |
+| `C/idle.png` | 288 × 501 | 116,091 | 116.091 |
+| `C/idle.webp` | 288 × 501 | 81,356 | 81.356 |
+| `C/inspect.png` | 336 × 478 | 104,736 | 104.736 |
+| `C/inspect.webp` | 336 × 478 | 70,234 | 70.234 |
+| `C/present.png` | 305 × 498 | 105,796 | 105.796 |
+| `C/present.webp` | 305 × 498 | 74,012 | 74.012 |
+| `C/stamp.png` | 305 × 512 | 107,723 | 107.723 |
+| `C/stamp.webp` | 305 × 512 | 69,672 | 69.672 |
+| `sheet-A.png` | 2172 × 724 | 1,582,594 | 1582.594 |
 | [sheet-B.png](../../site/img/auditor/sheet-B.png) | 2172 × 724 | 1,597,506 | 1597.506 |
-| [sheet-C.png](../../site/img/auditor/sheet-C.png) | 2170 × 725 | 1,538,932 | 1538.932 |
-| [variant-A-preview.png](../../site/img/auditor/variant-A-preview.png) | 1840 × 1320 | 907,518 | 907.518 |
-| [variant-B-preview.png](../../site/img/auditor/variant-B-preview.png) | 1840 × 1320 | 909,636 | 909.636 |
-| [variant-C-preview.png](../../site/img/auditor/variant-C-preview.png) | 1840 × 1320 | 838,677 | 838.677 |
+| `sheet-C.png` | 2170 × 725 | 1,538,932 | 1538.932 |
+| `variant-A-preview.png` | 1840 × 1320 | 907,518 | 907.518 |
+| `variant-B-preview.png` | 1840 × 1320 | 909,636 | 909.636 |
+| `variant-C-preview.png` | 1840 × 1320 | 838,677 | 838.677 |
 | [manifest.json](../../site/img/auditor/manifest.json) | supporting file | 18,665 | 18.665 |
 | [process-auditor.py](../../site/img/auditor/process-auditor.py) | supporting file | 12,519 | 12.519 |
 
-Total: **30 artwork files** (3 raw sheets + 24 transparent pose exports + 3 dual-background review previews), plus the reproducible processor and machine-readable verification manifest. The exact prompt set and full processing/review notes are this document.
+Recorded total: **30 artwork files** (3 raw sheets + 24 transparent pose exports + 3 dual-background review previews), plus the reproducible processor and machine-readable verification manifest. The exact prompt set and full processing/review notes are this document.
 
 
 ## v3 cute candidates

@@ -6,11 +6,12 @@ from urllib.parse import urlparse
 
 import pytest
 
-from docs.scripts.build_site import ROOT, first_reported_fact, stamp_cards, validate_stamp_post_date
+from docs.scripts.build_site import ROOT, first_reported_fact, stamp_cards, validate_stamp_filing, validate_stamp_post_date
 from docs.scripts.filing_excerpts import SECFilingFetcher
 
 
 REPORT_DIR = Path("docs/evidence/posts-2026-10-28")
+pytestmark = pytest.mark.usefixtures("offline_stamp_facts")
 EXPECTED = {
     ("demo-thread-baseten", 1): "supported",
     ("demo-thread-baseten", 2): "supported",
@@ -24,7 +25,7 @@ EXPECTED = {
 }
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture
 def cards():
     return stamp_cards()
 
@@ -80,22 +81,21 @@ def test_stamp_loop_never_repeats_adjacent_verdicts_including_wraparound(cards):
         assert current["verdict"] != following["verdict"]
 
 
-def test_stamp_links_and_evidence_chips_come_from_reports(cards):
+def test_stamp_links_target_the_displayed_first_filing_and_chips_preserve_report_forms(cards):
     for card in cards:
         claim = report_claim(card)
         evidence = claim.get("evidence") or []
         urls = [item["filing_url"] for item in evidence if item.get("filing_url")]
-        assert card["filing_url"] == (urls[0] if urls else None)
+        assert card["filing_url"] == (card["excerpt"]["primary_url"] if card["excerpt"] else (urls[0] if urls else None))
         if claim["status"] == "not_checked":
             assert card["kind"] in ("forecast", "opinion")
             assert card["evidence_label"] is None
         else:
             assert evidence
             assert card["evidence_label"].startswith("SEC 10-")
-    # The derived Apple quarter has no filing link: preserve that absence instead
-    # of inventing one. The UI can still link to its source report.
+    # The derived quarter links to its explicitly labelled annual component.
     apple_quarter = next(card for card in cards if card["id"] == "demo-thread-baseten-3")
-    assert apple_quarter["filing_url"] is None
+    assert apple_quarter["filing_url"] == apple_quarter["excerpt"]["primary_url"]
     assert "102.5 billion" in apple_quarter["summary"]
 
 
@@ -131,6 +131,39 @@ def test_every_checkable_card_has_a_real_matching_filing_row(cards):
         else:
             assert len(excerpt["text"]) <= 220
             assert excerpt["value"] in excerpt["text"]
+
+
+def test_every_displayed_filing_is_the_first_accession_and_never_postdates_its_post(cards):
+    for card in cards:
+        validate_stamp_filing(card)
+        excerpt = card.get("excerpt")
+        if not excerpt:
+            continue
+        source = excerpt["source_evidence"]
+        fact = next(f for f in card["date_basis"]["facts"] if (f["concept"], f["start"], f["end"]) ==
+                    (source["concept"], source["start"], source["end"]))
+        assert excerpt["filed"] == source["filed"] == fact["first_filed"] <= card["post_date"]
+        assert excerpt["form"] == source["form"] == fact["form"]
+        assert source["accn"] == fact["accn"]
+        assert excerpt["fact"]["full_value"] == source["value"] == fact["first_reported_value"]
+        assert fact["accn"].replace("-", "") in excerpt["primary_url"]
+
+
+@pytest.mark.parametrize("change,error", [("future", "follows post date"), ("later_accession", "not the first filing"),
+                                         ("date_stamp", "does not match"), ("value", "value differs")])
+def test_build_rejects_a_future_or_mislabelled_paper(cards, change, error):
+    import copy
+    card = copy.deepcopy(next(c for c in cards if c["id"] == "banana-news-article"))
+    if change == "future":
+        card["post_date"] = "2023-10-26"
+    elif change == "later_accession":
+        card["excerpt"]["source_evidence"]["accn"] = "0001018724-24-000161"
+    elif change == "date_stamp":
+        card["excerpt"]["filed"] = "2024-11-01"
+    else:
+        card["excerpt"]["fact"]["full_value"] += 1
+    with pytest.raises(ValueError, match=error):
+        validate_stamp_filing(card)
 
 
 def test_apple_quarter_passage_labels_annual_row_and_preserves_both_sources(cards):
@@ -184,13 +217,13 @@ def test_offline_rebuild_revalidates_dates_from_cached_sec_facts_without_network
     assert stamp_cards() == json.loads((ROOT / "docs/site/data/site.json").read_text())["stamp_cards"]
 
 
-def test_date_basis_uses_the_earliest_sec_filing_for_every_concept_and_period(cards):
+def test_date_basis_uses_the_earliest_sec_filing_for_every_concept_and_period(cards, offline_stamp_facts):
     for card in cards:
         basis = card["date_basis"]
         assert basis["method"] == "sec-companyfacts-first-filed"
         assert bool(basis["facts"]) == (card["status"] == "verified")
         for fact in basis["facts"]:
-            data = json.loads((ROOT / f".cache/companyfacts-CIK{fact['cik']:010d}.json").read_text())
+            data = json.loads((offline_stamp_facts / f"companyfacts-CIK{fact['cik']:010d}.json").read_text())
             values = data["facts"]["us-gaap"][fact["concept"]]["units"][fact["unit"]]
             dates = [item["filed"] for item in values if item.get("start") == fact["start"] and item["end"] == fact["end"]]
             assert fact["first_filed"] == min(dates)

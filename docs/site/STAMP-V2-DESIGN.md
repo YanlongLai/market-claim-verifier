@@ -252,3 +252,76 @@ The contact was inspected visually. The browser permission gate declined the
 local preview; these checks do not claim a browser font/layout review.
 
 Final budget: eleven bodies **364,786 bytes**, seven thruster frames **22,532 bytes**, total **387,318 bytes**. Largest body: **35,862 bytes**. Full suite: **498 passed** (`.venv/bin/python -m pytest -q`); site subset: **199 passed**. JavaScript syntax and whitespace checks passed. The calibration table and per-file sizes are in `STAMP-V2-KEYFRAMES.md`; complete per-pose bboxes/anchors/hashes remain in `H/manifest.json`. Archived B hashes are unchanged. No commit or push.
+
+## 9. Polish pass (Owner round 6): quality, paper filing, platform-style posts, bigger avatars
+
+Owner: make the whole site feel premium; the SEC filing should feel like paper; the post under review should
+look like the platform it came from (or a general post); bigger avatars; use AI-generated art for detail and texture.
+Later: other input types (audio, video files) will be tested — the stage must be ready to show them.
+
+### 9.1 SEC filing = a printed filing on paper
+- Light bond paper in BOTH themes (paper stays paper; dark theme dims it to ~88 % and warms it), AI-generated
+  paper grain, two offset sheets behind (a small stack), soft contact shadow, a paperclip (AI art) on the top edge.
+- Filing head in serif small caps, as on real filings: "UNITED STATES SECURITIES AND EXCHANGE COMMISSION",
+  "FORM 10-K" (form from data), company, period. No seal or logo.
+- Statement table: serif tabular numerals, ruled lines, dotted leaders from label to value, units line,
+  derived rows set like a footnote calculation.
+- "Filed 2025-10-31" as an ink date stamp (AI ink texture), accession as a page-footer line.
+
+### 9.2 Post under review = platform-styled card (generic, no real platform names, logos or trademarks)
+| source_kind | Style |
+|---|---|
+| thread | microblog: 48 px avatar, name, handle · date, thread index "1/5", body, quiet action row (reply / repost / like / views icons, example counts) |
+| social | community post: rounded card, 48 px avatar, name, date · audience icon, larger body, reaction row |
+| article | news page: fictional masthead (Banana News Flash logotype, AI art), serif headline, byline and dateline, lead, small AI illustration |
+| repost | reposter header + the original card embedded as a quote card |
+All keep the "Example post" tag. Phone avatar 40 px. Icons are inline SVG drawn for this site.
+
+### 9.3 Site-wide quality
+Serif for documents and headlines inside cards, refined spacing and rules, subtle paper/grain backgrounds per
+section, custom spot illustrations for "How it works" featuring Hover (AI art), polished results bars and footer
+Hover. Total added images ≤ 600 KB, lazy-loaded; first screen at 1024×768 still shows header + headline + stage.
+
+### 9.4 Ready for other inputs
+Post card gets an input badge (Text / Screenshot / Audio / Video) and variants: audio = waveform strip +
+timestamp + transcript quote; video = frame thumbnail + timestamp. Rendered only when real data exists.
+
+## 10. Director review, round 1 (2026-10-29)
+
+This round supersedes the avatar sizes, breakpoint boundary and phone dimensions
+above, while retaining the polish artwork and publication formats.
+
+1. The filing paper uses the first accession for the exact concept, unit and
+   duration in each card's `date_basis`. Eleven complete, lossless SEC iXBRL
+   documents are [committed fixtures](../../tests/fixtures/sec-filings/README.md).
+   Every raw component value matches the recorded checks, including both years
+   of growth and Apple's annual/nine-month subtraction. The build rejects a
+   later accession, incorrect stamp/value or filing date after the post. No
+   comparative fallback is needed. The [generated table](BUILD_SUMMARY.md#on-screen-filing-chronology)
+   lists every card, post date, displayed filing and first-filed basis.
+2. All four formats participate in the intrinsic sizing pass at every width.
+   Desktop/tablet panels share the larger measured height, with a 316/334 px
+   minimum. The compact tablet rules include 1024 px, through 1100 px. A taller
+   repost therefore enlarges its panel instead of losing the shortfall line.
+3. The phone budget is 600 px including controls. Its non-content allowance is
+   128 px: two 4 px bars, two 16 px labels, a 56 px robot band and a 32 px strip.
+   SEC authority is one line; the form/date row is 22 px; the section line is
+   hidden. Tighter statement rows and a block period chip remove excess line
+   boxes. The visible annual, minus-nine-month and equals-Q4 ledger retains all
+   operands; its repeated prose footnote remains in the full static version.
+   The review footer anchors to the bottom of the phone card.
+4. Offset paper sheets and the edge texture stay inside the filing box's clipped
+   footprint. Their entire footprint is included in the paper dim mask.
+5. Thread, social and repost copy uses the site sans; the news headline and
+   filing paper use serif. Numeric emphasis remains weight 800.
+6. Avatars are 56 px on desktop/tablet and 44 px on phones, using the existing
+   256 px exports. The article masthead dimensions are unchanged.
+7. The stage shade and atmosphere exclude the paper. A separate warm paper shade
+   uses 0.32 opacity in dark mode (about 73% relative brightness); existing ink
+   masks leave lit rows at the full paper colour.
+
+Offline geometry regressions cover each `source_kind` in English and Chinese at
+320, 375, 390, 639, 640, 768, 1023, 1024, 1100, 1101, 1280 and 1440 px. They inject
+intrinsic measurements into production sizing and do not model browser fonts.
+Fresh browser screenshots were unavailable: local browser access was declined
+by the approval gate, and the headless inspector could not launch in the sandbox.

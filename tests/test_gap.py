@@ -14,6 +14,7 @@ from docs.scripts.build_site import ROOT, stamp_cards, stamp_gap_snapshot
 
 
 REPORTS = ROOT / "docs/evidence/posts-2026-10-28"
+pytestmark = pytest.mark.usefixtures("offline_stamp_facts")
 GAP_FIELDS = {
     "severity", "score", "gap", "gap_kind", "direction_wrong",
     "filed_value_display", "stated_value_display",

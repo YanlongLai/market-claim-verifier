@@ -11,6 +11,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from decimal import Decimal, InvalidOperation
 from html.parser import HTMLParser
+import gzip
 import hashlib
 import json
 import re
@@ -863,10 +864,11 @@ def _select_primary_document(index_data: Mapping[str, Any]) -> str | None:
 class SECFilingFetcher:
     """Small SEC-only fetch/cache layer used by the site build."""
 
-    def __init__(self, cache_dir: Path, *, offline: bool = False) -> None:
+    def __init__(self, cache_dir: Path, *, offline: bool = False, fixture_dir: Path | None = None) -> None:
         self.cache_dir = Path(cache_dir)
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         self.offline = offline
+        self.fixture_dir = fixture_dir
         self._last_request_at = 0.0
         self._filing_cache: dict[str, dict[str, Any]] = {}
         self._companyfacts_cache: dict[int, dict[str, Any]] = {}
@@ -922,6 +924,28 @@ class SECFilingFetcher:
         cache_key = str(evidence.get("filing_url") or evidence.get("accn") or "")
         if cache_key in self._filing_cache:
             return self._filing_cache[cache_key]
+        if self.fixture_dir is not None:
+            # Lossless, hash-checked SEC documents make the first-filing paper
+            # reproducible without the author's cache or a network connection.
+            accession, _, _ = _accession_parts(evidence)
+            manifest = json.loads((self.fixture_dir / "manifest.json").read_text(encoding="utf-8"))
+            record = manifest["filings"].get(accession)
+            if record is None:
+                raise ValueError(f"No committed SEC filing fixture for {accession}")
+            if (record["form"], record["filed"]) != (evidence.get("form"), evidence.get("filed")):
+                raise ValueError(f"SEC filing fixture metadata mismatch for {accession}")
+            primary_url = record["primary_url"]
+            if primary_url.rsplit("/", 1)[0] != _filing_folder_url(evidence):
+                raise ValueError(f"SEC filing fixture accession/URL mismatch for {accession}")
+            payload = (self.fixture_dir / f"{accession}.html.gz").read_bytes()
+            raw = gzip.decompress(payload)
+            if (hashlib.sha256(payload).hexdigest() != record["gzip_sha256"]
+                    or hashlib.sha256(raw).hexdigest() != record["sha256"]):
+                raise ValueError(f"SEC filing fixture hash mismatch for {accession}")
+            filing = {"html": raw.decode("utf-8"), "primary_url": primary_url,
+                      "inline_url": record["inline_url"], "primary_document": record["primary_document"]}
+            self._filing_cache[cache_key] = filing
+            return filing
         folder_url = _filing_folder_url(evidence)
         if not folder_url:
             raise ValueError("evidence has no SEC filing URL")

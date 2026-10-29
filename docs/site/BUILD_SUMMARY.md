@@ -29,6 +29,24 @@
 - Claim 3: Coca-Cola's 2024 revenue exceeded $50 billion. — 1 matched, 0 unmatched.
   - Modal block after dedupe: E1 — highlighted value: 47,061.
 
+## On-screen filing chronology
+
+Each checkable card uses the first filing of its unchanged fact. Complete, lossless iXBRL documents are committed under `tests/fixtures/sec-filings/`; offline builds re-extract the rows and validate dates and values. All 11 component facts match their recorded values; no later comparative-column fallback is needed. Saved report/modal provenance is preserved separately.
+
+| Card | Post date | Displayed filing | First-filed basis (accession) |
+| --- | --- | --- | --- |
+| demo-thread-baseten-1 (AMZN) | 2025-11-03 | 10-Q, 2023-10-27 | 2023-10-27 (0001018724-23-000018) |
+| demo-thread-baseten-3 (AAPL) | 2025-11-03 | 10-K, 2025-10-31 | 2025-10-31 (0000320193-25-000079); 2025-08-01 (0000320193-25-000073) |
+| demo-thread-baseten-4 (NVDA) | 2025-11-03 | No filing — opinion / forecast | Not checked |
+| demo-thread-baseten-2 (NVDA) | 2025-11-03 | 10-K, 2024-02-21 | 2024-02-21 (0001045810-24-000029); 2023-02-24 (0001045810-23-000017) |
+| bigtech-thread-baseten-3 (TSLA) | 2026-02-03 | 10-K, 2026-01-29 | 2026-01-29 (0001628280-26-003952); 2025-01-30 (0001628280-25-003063) |
+| tw-social-post-meta-1 (MSFT) | 2025-02-24 | 10-K, 2024-07-30 | 2024-07-30 (0000950170-24-087843); 2023-07-27 (0000950170-23-035122) |
+| bigtech-thread-baseten-5 (AAPL) | 2026-02-03 | No filing — opinion / forecast | Not checked |
+| bigtech-thread-baseten-4 (AAPL) | 2026-02-03 | 10-K, 2024-11-01 | 2024-11-01 (0000320193-24-000123) |
+| tw-social-post-meta-3 (KO) | 2025-02-24 | 10-K, 2025-02-20 | 2025-02-20 (0000021344-25-000011) |
+| banana-news-article (AMZN) | 2023-10-27 | 10-Q, 2023-10-27 | 2023-10-27 (0001018724-23-000018) |
+| market-recap-repost (KO) | 2025-02-25 | 10-K, 2025-02-20 | 2025-02-20 (0000021344-25-000011) |
+
 ## Files changed
 
 - `docs/site/index.html`

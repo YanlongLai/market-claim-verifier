@@ -47,16 +47,17 @@ with the shared nozzle at (352, 520). Each body has no baked jet. Six separate
 `H/thruster-{0..5}.webp` frames cycle every 80 ms; `H/thruster-burst.webp` replaces
 them at 1.6× scale during [strike, strike + 250 ms). Its 160×160 canvas attaches
 at (80, 20). The outgoing and incoming jets cross-fade and mirror with their
-respective poses, behind the stamp. All assets load on the existing scene-start
-path and remain unloaded under reduced motion.
+respective poses, behind the stamp. Hover body/thruster assets load on the existing
+scene-start path and remain unloaded under reduced motion. The static footer
+separately reuses one lazily loaded Hover greeting.
 
 Height arithmetic, including panel labels and the progress strip:
 
 | Viewport | Height calculation | Total | Robot box |
 | --- | --- | --- | --- |
-| ≥1024 | 24 label + 316 panels + 12 gap + 44 strip | **396 px** | 190 × 260 |
-| 640–1023 | 24 label + 334 panels + 10 gap + 52 strip | **420 px** | 120 × 165 |
-| <640 | 36 strip + 20 label + measured post maximum + 96 robot band + 20 label + measured filing maximum | **172 px + both maxima** | 100 × 88 |
+| ≥1024 | 24 letterbox reserve + 24 label + 316 panels + 12 gap + 44 strip | **420 px** | 190 × 260 |
+| 640–1023 | 24 letterbox reserve + 24 label + 334 panels + 10 gap + 52 strip | **444 px** | 120 × 165 |
+| <640 | 24 letterbox reserve + 36 strip + 20 label + measured post maximum + 96 robot band + 20 label + measured filing maximum | **196 px + both maxima** | 100 × 88 |
 
 On phones the robot sits on the left of the 96 px band, with a fixed-height
 bubble to its right. Compare adds a small verdict word inside that bubble;
@@ -69,7 +70,7 @@ data-derived kind, e.g. “$NVDA opinion” / “$NVDA revenue” (also in 中�
 Both phone panel heights use the ceiling of the maximum intrinsic content
 height across all cards, measured once per width/language/font completion.
 Seeks, playback and observer echoes reuse those maxima. CSS fallbacks are
-206 px post / 214 px filing, giving a 592 px initial envelope. Synthetic
+206 px post / 214 px filing, giving a 616 px CSS fallback envelope. Synthetic
 heterogeneous and fractional DOM-box fixtures verify the maximum calculation
 and the one-screen 844 px envelope; actual font wrapping awaits Claude's render.
 Caption heights are fixed at 46 px desktop / 60 px tablet / 64 px phone so a
@@ -79,13 +80,14 @@ baseline box meets the meter center, above the accession.
 
 The headline caps at 64 px.
 Conservative header + hero top padding + two headline lines + two lede lines +
-scene margin + scene envelopes are **≤691 px at 1024×768** and **≤740 px at
+scene margin + scene envelopes are **≤714 px at 1024×768** and **≤763 px at
 1440×900**, in either language. Reduced motion shows the full, linked static list instead;
 its height is intentionally unconstrained so every claim and passage can be read.
 
 EN/中文 share the strip's first three headings with How it works, which now
-follows the hero directly, before A real post, checked. Light/dark retain their
-v2 paper, ink, severity colours and accessible contrast. Playback pauses while
+follows the hero directly, before A real post, checked. Post cards retain their
+theme-aware ink and severity colours; filings now keep light bond paper in both
+themes. Playback pauses while
 off-screen, while the tab is hidden, when requested, and under reduced motion.
 
 Spotlight geometry and constants (production `createStampConveyor`):
@@ -149,3 +151,112 @@ Thruster root: **(80, 20)** on a 160×160 canvas. Frame sizes in order 0–5: 2,
 Runtime total: **387,318 bytes** (eleven bodies: **364,786**; seven effects: **22,532**). Contact sheet: **895,977 bytes**, 1560×1640. Contact/source/provenance files are never requested by the page.
 
 Validation: `.venv/bin/python -m pytest -q` — **498 passed in 54.33 s** on the final exports. The site subset passed **199 tests**. `node --check docs/site/script.js` and `git diff --check` passed. All eleven archived B WebPs retain their pre-task SHA-256 hashes. No commit or push.
+
+## Polish pass — 2026-10-29
+
+The beat times, H pose/visor/nozzle calibration, loop order, score values, verdicts,
+source dates and spotlight constants above are preserved. The height table now
+includes the existing two 12 px letterbox reserves; this corrects its previous
+arithmetic, without increasing the actual stage. The offline envelope measures
+713.40 px at 1024×768 and 762.78 px at 1440×900 for header + headline + lede + stage.
+These remain conservative geometry checks, not browser font measurements.
+
+The post formats now follow `source_kind`: microblog threads, rounded community
+posts, a fictional newspaper and an embedded original for reposts. Avatars use
+existing 256 px exports at 48 px (40 px below 640). Thread positions come from
+numbered entries in each saved post, not the extraction count: the big-tech
+forecast remains 5/5 even though six claims were extracted. Fictional activity
+counts are stored in `site.json` and explicitly labelled as example activity.
+The article's headline and lead use its saved claim text; its two decorative
+finance illustrations switch from revenue to ledger at Compare/React, from the
+same scene phase. Reduced motion displays both illustrations in the static card.
+
+Filings are warm bond paper in both themes (`#fff9ed` / `#e1dacb`), with two offset
+sheets, contact shadow, generated grain/stack edge/paperclip, serif small-cap
+commission/form headings, statement rules and dotted leaders, and a textured ink
+ring around the real filed date. Accession remains the page-footer line. The
+commission heading contains no seal. Filing ink, secondary text and date ink
+retain at least 4.5:1 contrast including the decoded grain extremes.
+
+Post headers, article decks, quote-card content and filing headers now have new
+intrinsic positions. `measure()` reads the actual number, filing row, ledger and
+comparison boxes after localization, resize, font completion and artwork load.
+It caches phone maxima per width/language and aligns desktop comparisons to the
+meter. No clock frame reads layout. Regression checks move target boxes before
+an artwork load and confirm the light pools follow the new coordinates.
+
+All current cards are recorded **Text** inputs. Future producers can supply
+`input_kind: audio | video | screenshot` with an `input_media` object. Audio needs
+an actual `timestamp`, bilingual `transcript` and normalized `[0, 1]` `waveform`
+samples. Video needs an actual local `thumbnail` and timestamp; screenshots need
+a thumbnail. Incomplete payloads display Text with no media strip. No sample
+waveforms, frames, durations or transcripts were added to the published cards.
+
+New artwork: **11 WebPs, 108,004 bytes**, with [exact reusable prompts and per-file
+sizes](../prompts/site/polish.md) and a [hash manifest](img/polish/manifest.json).
+Sections use lazy grain images; How it works has three H-reference spot scenes.
+The footer reuses the existing palm-out H pose. New art was visually inspected
+as processed contact sheets on ivory/navy; the page still awaits Claude's actual
+browser render/review. Chromium was not run, per the brief.
+
+The offline builder now revalidates first-filed dates from the existing
+hash-checked SEC snapshots. Gap/stamp tests use temporary filing caches and
+block downloads. The prompt log's retired A/C export inventory retains its exact
+filenames, dimensions, byte counts and prompts as plain text where files are no
+longer present, so the clean-clone link checker does not point to missing assets.
+
+Local staging was blocked by the sandbox when Git tried to create the worktree's
+`index.lock` outside the writable root. Changes remain uncommitted; nothing was
+pushed. Intended logical commits: cache-independent tests/build; site polish and
+art; verification/handoff documentation. Each should end with
+`Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`.
+
+Polish validation: `UV_OFFLINE=1 sh scripts/verify.sh` completed successfully —
+**616 product/site tests**, **83 demo Python tests**, and **41 standalone Node
+tests** passed. No tests were skipped. Figure regeneration/checks and all three
+byte-identical data rebuilds passed. Final output:
+
+```text
+PASS offline Python and Node suites
+PASS figure rebuild + --check
+PASS explorer, site data and build summary: 3 byte-identical outputs
+PASS Markdown links and anchors
+PASS no model calls, SEC fetches or credentials; source tree unchanged
+```
+
+The source design lint has 0 failures / 0 warnings; JavaScript syntax, export
+hash/budget checks and whitespace checks pass. A comparison against the previous
+site snapshot confirms every pre-existing card field is unchanged except its
+128 → 256 px avatar path; new publication/input metadata is additive. Figures,
+recorded results, program checks and prompts used by the verifier are unchanged.
+
+## Director review, round 1 — 2026-10-29
+
+The [round 1 specification](STAMP-V2-DESIGN.md#10-director-review-round-1-2026-10-29)
+supersedes the earlier polish's avatar sizes and phone layout. The scene timings
+and verdicts are unchanged. Filing rows, fact IDs, primary URLs and ink dates now
+come from the original first-filed accessions, freshly extracted from the
+[complete SEC fixtures](../../tests/fixtures/sec-filings/README.md). The
+[generated chronology](BUILD_SUMMARY.md#on-screen-filing-chronology) gives the
+post date, displayed filing and all first-filed component accessions per card.
+All component numbers still match; no comparative-column fallback is used.
+
+Intrinsic post/paper maxima are now measured at every width, cached per width,
+language and font state. The compact tablet rules extend through 1100 px.
+Phone controls, paper head and repeated prose are compacted; the footer anchors
+to the card bottom. Source-kind geometry regressions include deliberately tall
+desktop cards and the 600 px phone envelope, both languages, twelve widths.
+Avatars are 56/44 px from 256 px sources. Paper stack edges are clipped and warm
+paper dimming is independent of stage atmosphere, with lit rows fully exposed.
+
+The source design lint reports no findings; JavaScript syntax and whitespace
+checks pass. The browser gate declined access to the local preview; no new
+browser screenshots or browser font measurements are claimed. Geometry tests
+exercise the production code with supplied intrinsic boxes.
+
+Final round 1 verification: `UV_OFFLINE=1 sh scripts/verify.sh` passed with
+**720 product/site tests**, **83 demo Python tests** and **41 standalone Node
+tests**, with no skips. All 11 first-filing iXBRL/value checks, figure checks,
+three byte-identical output rebuilds and Markdown links passed. Staging failed
+because the sandbox could not create the parent repository's worktree
+`index.lock`; the polish and review fixes remain uncommitted. Nothing was pushed.

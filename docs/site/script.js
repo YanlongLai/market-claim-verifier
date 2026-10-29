@@ -38,6 +38,9 @@
         thread: "Thread",
         social: "Social post",
         repost: "Repost", article: "Article", example: "Example post", repostedFrom: "Reposted from",
+        input: { text: "Text", screenshot: "Screenshot", audio: "Audio", video: "Video" },
+        activity: { label: "Example activity", reply: "Replies", repost: "Reposts", like: "Likes", views: "Views" },
+        audience: "Public", transcript: "Transcript", by: "By",
         exampleDetail: "Fictional author and example follower count. Claims and verdicts come from real program checks.",
         pause: "Pause",
         play: "Play",
@@ -197,6 +200,9 @@
         thread: "討論串",
         social: "社群貼文",
         repost: "轉貼", article: "新聞報導", example: "示範貼文", repostedFrom: "轉貼自",
+        input: { text: "文字", screenshot: "截圖", audio: "音訊", video: "影片" },
+        activity: { label: "示範互動", reply: "回覆", repost: "轉貼", like: "喜歡", views: "瀏覽" },
+        audience: "公開", transcript: "逐字稿", by: "作者",
         exampleDetail: "作者與追蹤人數為虛構示範；說法與判定來自真實程式查核。",
         pause: "暫停",
         play: "播放",
@@ -422,6 +428,8 @@
     const pauseLabel = scene.querySelector(".stamp-pause-label");
     const spotlight = scene.querySelector(".stamp-spotlight");
     const stageDim = spotlight.querySelector(".stamp-stage-dim");
+    const paperDim = spotlight.querySelector(".stamp-paper-dim");
+    const paperHole = spotlight.querySelector(".stamp-stage-hole-paper");
     const filingDim = spotlight.querySelector(".stamp-filing-dim");
     const filingVignette = spotlight.querySelector("#stamp-filing-vignette");
     const flash = spotlight.querySelector(".stamp-impact-flash");
@@ -586,6 +594,78 @@
       return { sources, fields, pools: poolTextures, flare, burst, grain, vignette };
     }
     const fx = makeFxLayers();
+    const polishImages = [];
+
+    function polishImage(path, className, width, height, isStatic = false) {
+      const image = element("img", `stamp-polish-art ${className}`);
+      image.alt = "";
+      image.width = width;
+      image.height = height;
+      image.loading = "lazy";
+      image.decoding = "async";
+      image.dataset.src = path;
+      // Image slots have fixed dimensions. Re-measure the actual text targets
+      // after decoding too, including the intrinsic phone maxima.
+      image.addEventListener("load", () => { sizeKey = ""; geometryKey = ""; measure(); });
+      image.addEventListener("error", () => image.classList.toggle("is-unavailable", true));
+      if (isStatic) image.src = path;
+      else polishImages.push(image);
+      return image;
+    }
+
+    function icon(name) {
+      const paths = {
+        reply: "M4 4h16v11H9l-5 5V4Z",
+        repost: "m4 8 4-4 4 4M8 4v12h11m1 0-4 4-4-4m4 4V8H5",
+        like: "M12 20 4 12C-2 5 7 1 12 7c5-6 14-2 8 5l-8 8Z",
+        views: "M3 20V12m6 8V7m6 13V3m6 17v-9",
+        audience: "M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0ZM3 12h18M12 3c-5 5-5 13 0 18 5-5 5-13 0-18Z"
+      };
+      const graphic = svg("svg", { viewBox: "0 0 24 24", "aria-hidden": "true" });
+      graphic.append(svg("path", { d: paths[name] }));
+      return graphic;
+    }
+
+    function makeInput(card, isStatic) {
+      const data = card.input_media;
+      const timestamp = data && typeof data.timestamp === "string" && /^\d{1,2}:\d{2}(?::\d{2})?(?:\.\d+)?$/.test(data.timestamp);
+      const thumbnail = data && typeof data.thumbnail === "string" && /^(?:img|media)\/(?!.*(?:\.\.|\/\/))[\w./-]+\.(?:webp|png|jpe?g|avif)$/.test(data.thumbnail);
+      const transcript = data && data.transcript && ["en", "zh"].every((language) => typeof data.transcript[language] === "string" && data.transcript[language].trim());
+      const waveform = data && Array.isArray(data.waveform) && data.waveform.length > 1 && data.waveform.length <= 128 &&
+        data.waveform.every((sample) => Number.isFinite(sample) && sample >= 0 && sample <= 1);
+      // Current recorded inputs are text. No waveform, frame or timestamp is
+      // fabricated for them; future variants require their actual payload.
+      const kind = card.input_kind === "audio" && timestamp && transcript && waveform ? "audio" :
+        card.input_kind === "video" && timestamp && thumbnail ? "video" :
+        card.input_kind === "screenshot" && thumbnail ? "screenshot" : "text";
+      const badge = element("span", "stamp-input-badge");
+      badge.dataset.inputKind = kind;
+      if (kind === "text") return { badge, kind, body: null };
+      const body = element("div", `stamp-input-media stamp-input-${kind}`);
+      if (kind === "audio") {
+        const strip = element("div", "stamp-waveform");
+        strip.setAttribute("aria-hidden", "true");
+        data.waveform.forEach((sample) => {
+          const bar = element("span", "");
+          bar.style.setProperty("--sample", String(sample));
+          strip.append(bar);
+        });
+        body.append(strip);
+      } else body.append(polishImage(data.thumbnail, "stamp-frame", 320, 180, isStatic));
+      if (timestamp && kind !== "screenshot") body.append(element("time", "stamp-media-time", data.timestamp));
+      const quote = kind === "audio" ? element("blockquote", "stamp-transcript") : null;
+      if (quote) body.append(quote);
+      return { badge, kind, body, quote, transcript: data.transcript };
+    }
+
+    function paperDetails(parent, isStatic = false) {
+      const grain = polishImage("img/polish/paper-grain.webp", "stamp-paper-grain", 256, 256, isStatic);
+      grain.addEventListener("load", () => parent.classList.toggle("has-paper-grain", true));
+      parent.append(grain,
+        polishImage("img/polish/stack-edge.webp", "stamp-stack-edge", 384, 96, isStatic),
+        polishImage("img/polish/paperclip.webp", "stamp-paperclip", 96, 160, isStatic));
+    }
+    paperDetails(filingBox);
 
     // Two effect layers follow both nozzles during the 120 ms body cross-fade.
     // All seven images share a top attachment at (80, 20) on a 160px canvas.
@@ -632,6 +712,7 @@
     function loadAssets() {
       if (assetsLoaded || motion.matches) return;
       assetsLoaded = true;
+      polishImages.forEach((image) => { image.src = image.dataset.src; });
       Object.entries(poses).forEach(([name, image]) => {
         image.dataset.asset = name;
         image.addEventListener("load", () => {
@@ -660,13 +741,20 @@
       });
     }
 
-    function makePassage(card) {
+    function makePassage(card, isStatic) {
       if (!card.excerpt) return null;
       const source = card.excerpt;
       const passage = element("div", "stamp-passage");
       passage.dataset.cardId = card.id;
       const header = element("div", "stamp-passage-header");
-      header.append(element("p", "stamp-passage-meta", `SEC ${source.form} · ${source.filed}`));
+      header.append(element("p", "stamp-filing-authority", "UNITED STATES SECURITIES AND EXCHANGE COMMISSION"));
+      const formLine = element("div", "stamp-form-line");
+      const dateStamp = element("span", "stamp-filing-date");
+      const filedDate = element("time", "");
+      filedDate.dateTime = source.filed;
+      dateStamp.append(polishImage("img/polish/ink-ring.webp", "stamp-date-ring", 256, 128, isStatic), filedDate);
+      formLine.append(element("p", "stamp-passage-meta", `FORM ${source.form}`), dateStamp);
+      header.append(formLine);
       header.append(element("p", "stamp-passage-company", source.company));
       if (source.section_title) header.append(element("p", "stamp-passage-section", source.section_title));
       const period = element("p", "stamp-passage-period");
@@ -731,12 +819,14 @@
       const accession = accn ? element("p", "stamp-passage-accession") : null;
       passage.append(header, details, compare);
       if (accession) passage.append(accession);
+      if (isStatic) paperDetails(passage, true);
       return { body: passage, header, details, row, fact, period, units, derivation, ledger, ledgerRows, accession, accn, sweep,
-        compare, statedLabel, filedLabel, statedValue, filedValue };
+        compare, statedLabel, filedLabel, statedValue, filedValue, filedDate };
     }
     function makeCard(card, index, isStatic) {
       const body = element(isStatic ? "a" : "article", `stamp-card ${verdictClass(card)}`);
       body.dataset.cardId = card.id;
+      body.dataset.sourceKind = card.source_kind;
       body.dataset.severity = card.severity || "unknown";
       const hash = Array.from(card.id).reduce((value, character) => (value * 31 + character.charCodeAt(0)) >>> 0, 0);
       const angle = (hash % 13) - 6;
@@ -745,8 +835,8 @@
       const postHeader = element("div", "stamp-post-header");
       const avatar = element("img", "stamp-avatar");
       avatar.alt = "";
-      avatar.width = 40;
-      avatar.height = 40;
+      avatar.width = 56;
+      avatar.height = 56;
       avatar.loading = "lazy";
       avatar.decoding = "async";
       avatar.src = card.persona.avatar;
@@ -754,24 +844,77 @@
       const authorRow = element("div", "stamp-author-row");
       const author = element("strong", "stamp-author");
       const example = element("span", "stamp-example");
-      authorRow.append(author, example);
+      authorRow.append(author);
+      if (card.source_kind !== "article") authorRow.append(example);
       const byline = element("p", "stamp-byline");
       const postMeta = element("p", "stamp-post-meta");
       const followers = element("span", "stamp-followers");
       const date = element("time", "stamp-post-date", card.post_date);
       date.dateTime = card.post_date;
-      postMeta.append(followers, date);
-      identity.append(authorRow, byline, postMeta);
+      const audience = card.source_kind === "social" ? element("span", "stamp-audience") : null;
+      if (audience) audience.append(icon("audience"));
+      postMeta.append(byline, date);
+      if (card.source_kind === "article") postMeta.append(example);
+      if (audience) postMeta.append(audience);
+      identity.append(authorRow, postMeta, followers);
       postHeader.append(avatar, identity);
       const header = element("div", "stamp-card-header");
       const metadata = element("span", "stamp-source");
       const source = element("span", "");
+      const input = makeInput(card, isStatic);
       metadata.append(source);
+      if (card.source_kind === "article") postMeta.append(input.badge);
+      else metadata.append(input.badge);
+      if (card.source_kind === "thread" && card.thread_index) metadata.append(element("span", "stamp-thread-index", card.thread_index));
       header.append(element("span", "stamp-ticker", `$${card.ticker}`), element("span", "stamp-company", card.company), metadata);
+      identity.append(header);
       const reposted = card.reposted_from ? element("p", "stamp-reposted") : null;
+      let original = null;
+      let quoteHeader = null;
+      if (card.source_kind === "repost") {
+        original = cards.find((candidate) => candidate.id === card.same_claim_as);
+        if (original) {
+          quoteHeader = element("div", "stamp-quote-header");
+          const originalAvatar = element("img", "stamp-avatar");
+          originalAvatar.alt = "";
+          originalAvatar.width = 56;
+          originalAvatar.height = 56;
+          originalAvatar.loading = "lazy";
+          originalAvatar.decoding = "async";
+          originalAvatar.src = original.persona.avatar;
+          const identity = element("div", "stamp-identity");
+          identity.append(element("strong", "stamp-original-author"), element("p", "stamp-original-byline"));
+          const originalDate = element("time", "stamp-post-date", original.post_date);
+          originalDate.dateTime = original.post_date;
+          identity.append(originalDate);
+          quoteHeader.append(originalAvatar, identity);
+        }
+      }
+      const article = card.source_kind === "article" && card.article ? element("div", "stamp-article-deck") : null;
+      const lead = article ? element("p", "stamp-article-lead") : null;
+      if (article) {
+        const masthead = polishImage("img/polish/banana-masthead.webp", "stamp-masthead", 520, 96, isStatic);
+        masthead.addEventListener("error", () => identity.classList.toggle("masthead-unavailable", true));
+        identity.prepend(masthead);
+        const pictures = element("div", "stamp-article-pictures");
+        card.article.illustrations.forEach((path) => pictures.append(polishImage(path, "stamp-article-picture", 320, 180, isStatic)));
+        article.append(lead, pictures);
+      }
       const claim = element("p", "stamp-claim");
       const period = element("span", "stamp-period");
       period.hidden = false;
+      const actions = element("div", `stamp-actions${card.source_kind === "social" ? " stamp-reactions" : ""}`);
+      const actionLabels = [];
+      if (card.example_activity && card.source_kind !== "article") {
+        Object.entries(card.example_activity).forEach(([kind, count]) => {
+          if (!["reply", "repost", "like", "views"].includes(kind) || !Number.isFinite(count)) return;
+          const action = element("span", "stamp-action");
+          action.append(icon(kind), element("span", "", count.toLocaleString("en-US")));
+          actions.append(action);
+          actionLabels.push({ action, kind });
+        });
+        actions.append(element("small", "stamp-activity-label"));
+      }
       const filed = element("p", "stamp-filed");
       const footer = element("div", "stamp-review");
       const reviewCopy = element("div", "stamp-review-copy");
@@ -811,9 +954,16 @@
       bleed.setAttribute("aria-hidden", "true");
       mark.append(impression, bleed);
       footer.append(reviewCopy, mark);
-      body.append(postHeader, header);
+      body.append(postHeader);
       if (reposted) body.append(reposted);
-      body.append(claim, period, footer);
+      const content = element("div", original ? "stamp-post-content stamp-quote-card" : "stamp-post-content");
+      if (quoteHeader) content.append(quoteHeader);
+      content.append(claim);
+      if (article) content.append(article);
+      if (input.body) content.append(input.body);
+      content.append(period);
+      if (actions.children.length) content.append(actions);
+      body.append(content, footer);
       let scan = null;
       if (!isStatic) {
         const clip = element("span", "stamp-scan");
@@ -821,7 +971,7 @@
         clip.append(scan);
         body.append(clip);
       }
-      const passage = makePassage(card);
+      const passage = makePassage(card, isStatic);
       const carrier = element(isStatic ? "li" : "div", isStatic ? "stamp-static-item" : "stamp-carrier");
       carrier.append(body);
       if (passage) (isStatic ? body : filingContent).append(passage.body);
@@ -832,7 +982,7 @@
       }
       (isStatic ? list : track).append(carrier);
       return { card, index, isStatic, body, source, claim, period, filed, footer, assessment, summary,
-        author, example, byline, followers, reposted,
+        author, example, byline, followers, reposted, original, quoteHeader, article, lead, input, actions, actionLabels, audience,
         severity, score, meter, fill, marker, gap, mark, impression, bleed, scan, passage, carrier, angle, unavailable, number: null, light: null, glow: null };
     }
 
@@ -861,6 +1011,21 @@
         item.byline.textContent = card.persona.byline[pageLanguage];
         item.byline.hidden = item.byline.textContent === item.author.textContent;
         item.followers.textContent = card.persona.follower_label[pageLanguage];
+        item.input.badge.textContent = getCopy(`stamps.input.${item.input.kind}`);
+        if (item.input.quote) {
+          item.input.quote.textContent = item.input.transcript[pageLanguage];
+          item.input.quote.setAttribute("aria-label", getCopy("stamps.transcript"));
+        }
+        if (item.audience) item.audience.title = getCopy("stamps.audience");
+        item.actions.setAttribute("aria-label", getCopy("stamps.activity.label"));
+        item.actionLabels.forEach(({ action, kind }) => { action.title = `${getCopy("stamps.activity.label")} · ${getCopy(`stamps.activity.${kind}`)}`; });
+        const activityLabel = item.actions.querySelector(".stamp-activity-label");
+        if (activityLabel) activityLabel.textContent = getCopy("stamps.activity.label");
+        if (item.original) {
+          item.quoteHeader.querySelector(".stamp-original-author").textContent = item.original.persona.name[pageLanguage];
+          item.quoteHeader.querySelector(".stamp-original-byline").textContent = item.original.persona.byline[pageLanguage];
+        }
+        if (item.lead) item.lead.textContent = card.article.lead[pageLanguage];
         item.example.textContent = getCopy("stamps.example");
         item.example.title = getCopy("stamps.exampleDetail");
         if (item.reposted) item.reposted.textContent = `${getCopy("stamps.repostedFrom")} ${card.reposted_from}`;
@@ -893,6 +1058,7 @@
         } else item.gap.textContent = getCopy(`claimKind.${card.kind}`);
         if (item.passage) {
           const source = card.excerpt;
+          item.passage.filedDate.textContent = `${getCopy("stamps.filed")} ${source.filed}`;
           item.passage.period.textContent = source.derivation ? `${source.derivation.label[pageLanguage]} · ${source.period_header}` : source.period_header;
           item.passage.units.textContent = source.fact.scale === 6 ? getCopy("stamps.millions") : getCopy("stamps.filingUnits");
           if (item.passage.derivation) item.passage.derivation.textContent = source.derivation.text[pageLanguage];
@@ -1019,6 +1185,7 @@
       const phase = phaseAt(age, canCheck);
       scene.dataset.phase = phase;
       scene.dataset.cardId = active.card.id;
+      track.dataset.sourceKind = active.card.source_kind;
       const step = age < READ || age >= exit ? 0 : !canCheck ? (age < UNKNOWN_STRIKE ? 1 : 4) : phase === "read" ? 1 :
         phase === "reach" || phase === "find" ? 2 : phase === "compare" || phase === "shrug" ? 3 : 4;
       scene.dataset.step = String(step);
@@ -1188,6 +1355,7 @@
       });
       const stageShade = compareIn * lift, filingShade = filingAlpha * (1 - compareIn);
       stageDim.style.opacity = String(stageShade);
+      paperDim.style.opacity = String(stageShade);
       filingDim.style.opacity = String(filingShade);
       const dimmed = Math.max(stageShade, filingShade);
       const field = geometry ? (age < COMPARE ? geometry.filing : geometry.field) : emptyBox;
@@ -1204,9 +1372,10 @@
       setBox(fx.burst.exclusion, contact);
       fx.burst.group.style.opacity = String(!motion.matches && item.contact && impact >= 0 && impact < BURST ? 1 - impact / BURST : 0);
       const barsIn = enabled ? easeOut((age - COMPARE) / LETTERBOX_EASE) * (1 - easeOut((age - REACT) / LETTERBOX_EASE)) : 0;
+      const letterboxHeight = phone.matches ? 4 : LETTERBOX;
       letterbox.style.opacity = String(barsIn);
-      bars[0].style.transform = `translate3d(0, ${-LETTERBOX * (1 - barsIn)}px, 0)`;
-      bars[1].style.transform = `translate3d(0, ${LETTERBOX * (1 - barsIn)}px, 0)`;
+      bars[0].style.transform = `translate3d(0, ${-letterboxHeight * (1 - barsIn)}px, 0)`;
+      bars[1].style.transform = `translate3d(0, ${letterboxHeight * (1 - barsIn)}px, 0)`;
       flash.style.opacity = String(enabled && age >= STRIKE && age < STRIKE + FLASH ? 0.7 * (1 - (age - STRIKE) / FLASH) : 0);
       dust.forEach((mote, index) => {
         const target = center(targets[index < 3 ? "post" : "filing"]);
@@ -1231,7 +1400,7 @@
         item.body.style.transform = "translate3d(0px, 0px, 0)";
         item.mark.style.transform = `rotate(${item.angle}deg) scale(1)`;
       });
-      if (phone.matches && sizeKey !== key) {
+      if (sizeKey !== key) {
         const explanationHidden = filingExplanation.hidden, kindHidden = filingKind.hidden;
         const title = filingTitle.textContent;
         filingTitle.textContent = getCopy("stamps.noNumber");
@@ -1240,13 +1409,15 @@
         filingKind.hidden = false;
         scene.classList.toggle("is-measuring", true);
         const inset = filingBox.getBoundingClientRect().height - filingContent.getBoundingClientRect().height;
-        const postHeight = Math.ceil(Math.max(...moving.map((item) => item.body.getBoundingClientRect().height)));
+        const postInset = track.getBoundingClientRect().width - track.clientWidth;
+        const postHeight = Math.ceil(Math.max(...moving.map((item) => item.body.getBoundingClientRect().height)) + postInset);
         const unknownHeights = cards.filter((card) => !checkable(card)).map((card) => {
           filingKind.textContent = getCopy(`claimKind.${card.kind}`);
           return filingState.getBoundingClientRect().height;
         });
         const filingHeight = Math.ceil(Math.max(0, ...unknownHeights,
           ...moving.filter((item) => item.passage).map((item) => item.passage.body.getBoundingClientRect().height + inset)));
+        scene.style.setProperty("--stamp-content-height", `${Math.max(postHeight, filingHeight)}px`);
         scene.style.setProperty("--stamp-post-height", `${postHeight}px`);
         scene.style.setProperty("--stamp-filing-height", `${filingHeight}px`);
         scene.classList.toggle("is-measuring", false);
@@ -1300,17 +1471,20 @@
       });
       const field = { x: 0, y: 0, width: origin.width, height: origin.height };
       spotlight.querySelectorAll(".stamp-mask-field").forEach((node) => setBox(node, field));
-      ["#stamp-dim-mask", "#stamp-ink-mask"].forEach((selector) => setBox(spotlight.querySelector(selector), field));
+      ["#stamp-dim-mask", "#stamp-ink-mask", "#stamp-stage-mask"].forEach((selector) => setBox(spotlight.querySelector(selector), field));
       setBox(stageDim, field);
       const filingBounds = box(filingBox);
       geometry.field = field;
       geometry.filing = filingBounds;
+      setBox(paperDim, filingBounds);
+      setBox(paperHole, filingBounds);
       fx.fields.forEach((node) => setBox(node, field));
       setBox(filingDim, filingBounds);
       filingVignette.setAttribute("r", String(Math.max(filingBounds.width, filingBounds.height) * 0.75));
       setBox(flash, box(track));
-      setBox(bars[0], { x: 0, y: 0, width: origin.width, height: LETTERBOX });
-      setBox(bars[1], { x: 0, y: origin.height - LETTERBOX, width: origin.width, height: LETTERBOX });
+      const letterboxHeight = phone.matches ? 4 : LETTERBOX;
+      setBox(bars[0], { x: 0, y: 0, width: origin.width, height: letterboxHeight });
+      setBox(bars[1], { x: 0, y: origin.height - letterboxHeight, width: origin.width, height: letterboxHeight });
       moving.forEach((item, index) => {
         const state = saved[index];
         item.carrier.hidden = state.hidden;
