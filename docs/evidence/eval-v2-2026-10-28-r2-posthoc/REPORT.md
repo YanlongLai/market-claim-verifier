@@ -12,15 +12,14 @@ Tokens are shown as input/cached/output/reasoning. Totals include every recorded
 
 | System | Pairs | Completed | Total cost | Input tokens | Cached tokens | Output tokens | Reasoning tokens | Model calls | Tool calls | Mean latency ms | p50 ms | p95 ms |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-
-No significance claims are made for groups with n < 50; Wilson intervals and paired tests there are descriptive and unstable.
-
 | single_shot@meta | 0 | 0 | 0.000000 | 0 | 0 | 0 | 0 | 0 | 0 | — | — | — |
 | agent@meta | 357 | 354 | 8.957472 | 3504993 | 1479607 | 1305061 | 1070616 | 1211 | 588 | 38001.0 | 31116.9 | 73709.0 |
 | single_shot@baseten | 0 | 0 | 0.000000 | 0 | 0 | 0 | 0 | 0 | 0 | — | — | — |
 | agent@baseten | 357 | 357 | 7.229009 | 4309456 | 2459648 | 1070071 | 851332 | 1143 | 723 | 11796.9 | 9999.0 | 21170.7 |
 | single_shot@fireworks | 0 | 0 | 0.000000 | 0 | 0 | 0 | 0 | 0 | 0 | — | — | — |
 | agent@fireworks | 357 | 357 | 7.313721 | 4356285 | 2502720 | 1087378 | 866500 | 1136 | 739 | 53231.4 | 47149.4 | 112921.2 |
+
+No significance claims are made for groups with n < 50; Wilson intervals and paired tests there are descriptive and unstable.
 
 ## Provider comparison
 
