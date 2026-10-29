@@ -166,6 +166,14 @@ def test_non_usd_claim_cannot_match_a_usd_per_share_amount():
     assert evaluate_sub_claim(sub, runner)["reason"] == "unsupported_release_currency"
 
 
+@pytest.mark.parametrize("replacement,verdict", [("−$5.31", "contradicted"), ("($5.31", "insufficient_evidence")])
+def test_negative_or_malformed_claims_never_reuse_a_positive_value(replacement, verdict):
+    runner, _, sub = selected(CLAIMS[26])
+    claim = sub["original_claim"].replace("$5.31", replacement)
+    sub.update(original_claim=claim, stated_text=claim, text=claim)
+    assert evaluate_sub_claim(sub, runner)["program_verdict"] == verdict
+
+
 @pytest.mark.parametrize("field,value", [("filing_type", "ytd"), ("filing_end", "2025-09-30")])
 def test_wrong_filing_period_does_not_override_release(field, value):
     edgar = RecordedEdgar()
@@ -208,6 +216,20 @@ def test_post_routes_only_issuer_guidance_and_retains_release_provenance():
     assert ev["sha256"] and ev["accession"] and ev["filed"] and ev["quote"]
     page = render_release_quote(ev)
     assert "<mark>" in page and "47.5-50.5 billion" in page and "data-start=" in page
+
+
+def test_insufficient_outlook_keeps_the_inspected_primary_source_in_reports():
+    runner, found, sub = selected(CLAIMS[6])
+    assert not found["candidates"]
+    rows = _evidence_rows({"tool_calls": runner.calls}, {found["evidence_id"]})
+    assert rows and rows[0]["role"] == "searched"
+    assert rows[0]["filing_url"] == SOURCES["AAPL"]["exhibit_url"]
+    assert rows[0]["accession"] == SOURCES["AAPL"]["accession"]
+
+
+def test_parallel_gaap_non_gaap_points_are_not_treated_as_a_guidance_range():
+    doc = parse_html('<h1>Second Quarter Fiscal 2025 Results</h1><h2>Third quarter fiscal 2025 outlook</h2><p>GAAP and non-GAAP diluted earnings per share are expected to be $2.00 and $3.00, respectively.</p>')
+    assert extract_candidates(doc, "adjusted_eps", "guidance", "FY2025Q3") == []
 
 
 def test_gold_builder_is_independent_and_byte_reproducible(tmp_path):

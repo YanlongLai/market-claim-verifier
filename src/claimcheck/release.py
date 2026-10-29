@@ -154,6 +154,7 @@ def _period_matches(requested: str, labels: set[str], calendar: bool) -> bool:
 
 
 def _numeric_cell(text: str) -> bool:
+    text = text.replace("−", "-")
     return bool(re.fullmatch(r"\(?\$?\s*[+-]?\d[\d,.]*\)?(?:\s*(?:billion|million|thousand))?(?:\s*(?:-|–|to)\s*\$?\d[\d,.]*(?:\s*(?:billion|million|thousand))?)?", text, re.I))
 
 
@@ -176,6 +177,10 @@ def extract_candidates(doc: Document, metric: str, kind: str, period: str, *, ca
                 continue
             for sentence in re.finditer(r".+?(?:[.!?](?=\s+[A-Z]|$)|$)", text):
                 value_text = sentence[0].strip()
+                # Parallel GAAP/non-GAAP points are not one financial range.
+                # Without explicit cell bindings, 'respectively' is ambiguous.
+                if re.search(r"\brespectively\b|\bGAAP\s+and\s+non[ -]GAAP\b", value_text, re.I):
+                    continue
                 m = metric_match(value_text, metric)
                 if not m or not _OUTLOOK.search(value_text):
                     continue

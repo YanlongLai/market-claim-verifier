@@ -6,10 +6,11 @@ No model participates in extraction.
 """
 from __future__ import annotations
 
+import math
 import re
 from dataclasses import dataclass, field
 from datetime import datetime
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from html.parser import HTMLParser
 from typing import Any
 
@@ -208,17 +209,28 @@ def number(text: str, *, scale: Decimal = Decimal(1), per_share: bool = False) -
     Verbal ranges deliberately have no numeric mapping. Callers must isolate
     the metric's value before calling; years are not financial values.
     """
+    text = text.replace("−", "-")  # same-length normalization retains offsets
     if re.search(r"(?:single|double)[ -]digits?|\b(?:low|mid|high)[ -](?:\d|teens)", text, re.I):
         return None
     match = _RANGE.search(text) or _POINT.search(text)
     if not match:
         return None
+    # Refuse partial tokens such as $1e3, $1banana or $1 billionish. A
+    # whitespace-delimited word after a complete amount is ordinary prose.
+    if match.end() < len(text) and not text[match.end() - 1].isspace() and text[match.end()].isalnum():
+        return None
     a_scale = SCALE.get((match["sa"] or "").lower())
     b_scale = SCALE.get((match.groupdict().get("sb") or "").lower())
     multiplier = Decimal(1) if per_share or match["pct"] else scale
-    lo = _decimal(match["a"]) * (a_scale or b_scale or multiplier)
-    b = match.groupdict().get("b")
-    hi = _decimal(b) * (b_scale or a_scale or multiplier) if b else lo
+    try:
+        lo = _decimal(match["a"]) * (a_scale or b_scale or multiplier)
+        b = match.groupdict().get("b")
+        hi = _decimal(b) * (b_scale or a_scale or multiplier) if b else lo
+    except InvalidOperation:
+        return None
+    prefix = text[:match.start()].rstrip()
+    if lo >= 0 and hi >= 0 and re.search(r"(?:\bnegative|\bloss(?:\s+of)?|-)\s*$", prefix, re.I):
+        lo, hi = -hi, -lo
     center = None
     suffix = text[match.end():]
     if not b and (pm := re.search(r"(?:plus\s+or\s+minus|\+/-|±)\s*(.*)", suffix, re.I)):
@@ -226,10 +238,17 @@ def number(text: str, *, scale: Decimal = Decimal(1), per_share: bool = False) -
         if not delta:
             return None
         center = lo
-        amount = _decimal(delta["a"])
+        try:
+            amount = _decimal(delta["a"])
+        except InvalidOperation:
+            return None
+        if amount < 0:
+            return None
         width = abs(lo) * amount / 100 if delta["pct"] else amount * SCALE.get((delta["sa"] or "").lower(), multiplier)
         lo, hi = lo - width, lo + width
     if lo > hi:
+        return None
+    if not all(math.isfinite(float(v)) for v in (lo, hi)):
         return None
     return {"low": float(lo), "high": float(hi), "center": float(center) if center is not None else None,
             "unit": "percent" if match["pct"] else "USD/shares" if per_share else "USD",

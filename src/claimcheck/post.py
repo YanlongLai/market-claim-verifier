@@ -257,6 +257,12 @@ def _evidence_rows(trace: Mapping[str, Any], cited: set[str]) -> list[dict[str, 
         if not isinstance(result, Mapping) or result.get("evidence_id") not in cited:
             continue
         ev_id = result["evidence_id"]
+        if isinstance(result.get("inspected"), list):
+            for source in result["inspected"]:
+                if isinstance(source, Mapping) and source.get("exhibit_url"):
+                    rows.append(row({**source, "ticker": result.get("ticker"), "concept": "Inspected release",
+                                     "provenance": {"tier": "L4", "strength": "medium", "furnished": True, "unaudited": True}}, ev_id, "searched"))
+            continue
         components = [(result.get(key), role) for key, role in (("current", "current"), ("base", "comparison"))]
         if any(isinstance(component, Mapping) for component, _ in components):
             for component, role in components:

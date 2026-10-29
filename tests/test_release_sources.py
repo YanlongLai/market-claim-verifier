@@ -71,6 +71,17 @@ def test_table_scale_and_verbal_ranges():
     assert number("mid-70% range") is None
 
 
+@pytest.mark.parametrize("phrase", ["($0.10", "$1e3", "$1banana", "$1 billionish", "9" * 400, "$1, plus or minus ($2"])
+def test_malformed_or_nonfinite_numeric_tokens_fail_closed(phrase):
+    assert number(phrase) is None
+
+
+@pytest.mark.parametrize("phrase", ["−$0.10", "-$0.10", "negative $0.10", "loss of $0.10", "$(0.10)"])
+def test_negative_signs_are_not_silently_discarded(phrase):
+    parsed = number(phrase, per_share=True)
+    assert parsed and parsed["low"] == -.1 and parsed["high"] == -.1
+
+
 def test_rowspan_preserves_column_coordinates():
     doc = parse_html('<table><tr><th rowspan="2">Metric</th><th>Quarter</th></tr><tr><th>Q3 2025</th></tr><tr><td>Revenue</td><td>100</td></tr></table>')
     assert doc.spans[1]["cells"][0]["column"] == 1
