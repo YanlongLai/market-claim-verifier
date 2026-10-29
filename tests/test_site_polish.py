@@ -66,14 +66,16 @@ def test_filing_paper_stays_warm_and_light_with_readable_ink_in_both_themes(them
     assert "UNITED STATES SECURITIES AND EXCHANGE COMMISSION" in (ROOT / "docs/site/script.js").read_text()
 
 
-def test_published_metadata_uses_existing_256px_avatars_and_only_recorded_text_inputs():
+def test_published_metadata_uses_existing_256px_avatars_and_recorded_input_kinds():
     cards = json.loads((ROOT / "docs/site/data/site.json").read_text())["stamp_cards"]
     for card in cards:
-        assert card["input_kind"] == "text" and "input_media" not in card
+        assert card["input_kind"] in {"text", "audio", "screenshot"}
+        assert ("input_media" in card) == (card["input_kind"] != "text")
         assert card["persona"]["fictional"] is True
         avatar = ROOT / "docs/site" / card["persona"]["avatar"]
         assert avatar.name.endswith("-256.webp") and Image.open(avatar).size == (256, 256)
-        assert set(card["example_activity"]) == {"reply", "repost", "like", "views"}
+        if "example_activity" in card:
+            assert set(card["example_activity"]) == {"reply", "repost", "like", "views"}
         if card["source_kind"] == "thread":
             report = json.loads((ROOT / card["source_report"]).read_text())
             assert card["thread_index"] == stamp_thread_position(report["post"], card["quote"])

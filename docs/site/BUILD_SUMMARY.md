@@ -31,13 +31,17 @@
 
 ## On-screen filing chronology
 
-Each checkable card uses the first filing of its unchanged fact. Complete, lossless iXBRL documents are committed under `tests/fixtures/sec-filings/`; offline builds re-extract the rows and validate dates and values. All 11 component facts match their recorded values; no later comparative-column fallback is needed. Saved report/modal provenance is preserved separately.
+XBRL cards use the first filing of each unchanged fact, re-extracted from `tests/fixtures/sec-filings/`. L4 cards re-extract exact quotes and numeric highlights from hash-checked release snapshots, validate both endpoints or the scalar against the independent gold, and validate Item 2.02 and filing dates against saved SEC index pages. Audio/screenshot cards retain the recorded ingest and program verdict; input media is never filing evidence. No network or model call is needed.
 
 | Card | Post date | Displayed filing | First-filed basis (accession) |
 | --- | --- | --- | --- |
 | demo-thread-baseten-1 (AMZN) | 2025-11-03 | 10-Q, 2023-10-27 | 2023-10-27 (0001018724-23-000018) |
 | demo-thread-baseten-3 (AAPL) | 2025-11-03 | 10-K, 2025-10-31 | 2025-10-31 (0000320193-25-000079); 2025-08-01 (0000320193-25-000073) |
 | demo-thread-baseten-4 (NVDA) | 2025-11-03 | No filing — opinion / forecast | Not checked |
+| l4-01 (META) | 2025-07-31 | 8-K Ex 99.1, 2025-07-30 | 2025-07-30 (0001628280-25-036719) |
+| input-audio-two-voices-2 (AAPL) | 2026-10-29 | 10-Q, 2025-08-01 | 2025-08-01 (0000320193-25-000073) |
+| l4-27 (ADBE) | 2025-09-12 | 8-K Ex 99.1, 2025-09-11 | 2025-09-11 (0000796343-25-000102) |
+| input-screenshot-2 (AAPL) | 2026-10-29 | 10-Q, 2025-08-01 | 2025-08-01 (0000320193-25-000073) |
 | demo-thread-baseten-2 (NVDA) | 2025-11-03 | 10-K, 2024-02-21 | 2024-02-21 (0001045810-24-000029); 2023-02-24 (0001045810-23-000017) |
 | bigtech-thread-baseten-3 (TSLA) | 2026-02-03 | 10-K, 2026-01-29 | 2026-01-29 (0001628280-26-003952); 2025-01-30 (0001628280-25-003063) |
 | tw-social-post-meta-1 (MSFT) | 2025-02-24 | 10-K, 2024-07-30 | 2024-07-30 (0000950170-24-087843); 2023-07-27 (0000950170-23-035122) |
@@ -47,6 +51,17 @@ Each checkable card uses the first filing of its unchanged fact. Complete, lossl
 | banana-news-article (AMZN) | 2023-10-27 | 10-Q, 2023-10-27 | 2023-10-27 (0001018724-23-000018) |
 | market-recap-repost (KO) | 2025-02-25 | 10-K, 2025-02-20 | 2025-02-20 (0000021344-25-000011) |
 
+## Day-4 cards and recorded sources
+
+Two furnished, unaudited L4 releases and two self-made synthetic input examples join the original eleven cards. The L4 set is a development regression set; the media probe is exploratory. Neither is a held-out benchmark. The audio's two synthetic voices were both labeled A; only whole-turn timing and an unverified session label are shown. Neither L4 card has an invented scalar accuracy score.
+
+| Card | Input / evidence | Recorded verdict | Recorded source |
+| --- | --- | --- | --- |
+| l4-01 | text / 8-K Item 2.02 · Ex 99.1 · L4 | supported | [docs/evidence/eval-l4-2026-10-29/traces/L4-01.json](../evidence/eval-l4-2026-10-29/traces/L4-01.json) |
+| input-audio-two-voices-2 | audio / SEC 10-Q · L2 | contradicted | [docs/evidence/multimodal-2026-10-29/audio-two-voices/ingest.json](../evidence/multimodal-2026-10-29/audio-two-voices/ingest.json) |
+| l4-27 | text / 8-K Item 2.02 · Ex 99.1 · L4 | supported | [docs/evidence/eval-l4-2026-10-29/traces/L4-27.json](../evidence/eval-l4-2026-10-29/traces/L4-27.json) |
+| input-screenshot-2 | screenshot / SEC 10-Q · L2 | contradicted | [docs/evidence/multimodal-2026-10-29/screenshot/ingest.json](../evidence/multimodal-2026-10-29/screenshot/ingest.json) |
+
 ## Files changed
 
 - `docs/site/index.html`
@@ -54,6 +69,12 @@ Each checkable card uses the first filing of its unchanged fact. Complete, lossl
 - `docs/site/styles.css`
 - `docs/site/data/site.json`
 - `docs/scripts/build_site.py`
-- `docs/scripts/filing_excerpts.py`
-- `tests/test_filing_excerpts.py`
+- `scripts/build_site_filing_fixtures.py`
+- `docs/site/img/inputs/example-post.png` (exact recorded test input)
+- `docs/site/STAMP-V2-KEYFRAMES.md`
+- `tests/test_site_day4.py`
+- `tests/test_site_stamps.py`
+- `tests/test_site_stamps_runtime.py`
+- `tests/test_site_polish.py`
+- `tests/test_site_filing_fixtures.py`
 - `docs/site/BUILD_SUMMARY.md`

@@ -14,7 +14,8 @@ def first_sources():
     site = json.loads((FIXTURES.parents[2] / "docs/site/data/site.json").read_text())
     return {fact["accn"]: {**fact, "filed": fact["first_filed"], "value": fact["first_reported_value"],
                           "filing_url": f"https://www.sec.gov/Archives/edgar/data/{fact['cik']}/{fact['accn'].replace('-', '')}/"}
-            for card in site["stamp_cards"] for fact in card["date_basis"]["facts"]}
+            for card in site["stamp_cards"] if card["date_basis"]["method"] == "sec-companyfacts-first-filed"
+            for fact in card["date_basis"]["facts"]}
 
 
 def test_all_first_filing_values_including_growth_and_q4_components_have_original_ixbrl(tmp_path, monkeypatch):

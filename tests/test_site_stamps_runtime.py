@@ -149,6 +149,14 @@ def test_media_variants_require_actual_payload_and_keep_transcript_and_timestamp
     run_check(MEDIA, viewport=390, language=language, inputKind=kind, inputPayload=payload, expectedInput=expected)
 
 
+@pytest.mark.parametrize("viewport", [320, 390, 1024])
+@pytest.mark.parametrize("theme", ["light", "dark"])
+@pytest.mark.parametrize("language", ["en", "zh"])
+@pytest.mark.parametrize("reduced", [False, True])
+def test_recorded_day4_release_and_media_cards_keep_their_evidence_in_every_presentation(viewport, theme, language, reduced):
+    run_check(DAY4, viewport=viewport, theme=theme, language=language, reduced=reduced)
+
+
 @pytest.mark.parametrize("viewport", [390, 1280])
 @pytest.mark.parametrize("theme", ["light", "dark"])
 def test_reduced_motion_has_no_spotlight_dim_letterbox_dust_or_flash(viewport, theme):
@@ -250,6 +258,8 @@ const rect = (left, top, width, height) => ({left,top,right:left+width,bottom:to
 // They exercise measured-size handling, not browser font metrics or screenshot approval.
 let naturalPostHeights = config.postHeights || [174,182,168,196,171,182,178,179,170,206,211];
 let naturalFilingHeights = config.filingHeights || [139,196,0,139,147,155,0,139,139,139,139];
+naturalPostHeights.splice(3,0,210,242,210,232);
+naturalFilingHeights.splice(3,0,190,147,190,147);
 let layoutReads = 0, intrinsicReads = 0;
 const created = [];
 function matches(node, selector) {
@@ -403,7 +413,8 @@ const robot = tree.querySelector('.stamp-robot'), pause = tree.querySelector('#s
 const track = tree.querySelector('#stamp-track'), filingBox = tree.querySelector('.stamp-filing-box');
 const filingContent = tree.querySelector('#stamp-filing-content');
 const moving = track.children, still = tree.querySelector('#stamp-static-list').children;
-const starts = [0,8,16,21.4,29.4,37.4,45.4,50.8,58.8,66.8,74.8];
+const starts = [0,8,16,21.4,29.4,37.4,45.4,53.4,61.4,69.4,77.4,82.8,90.8,98.8,106.8];
+const hasEvidence = card => Boolean(card.excerpt);
 const find = (node,name) => node.classList.contains(name) ? node : node.querySelector(`.${name}`);
 const passage = index => filingContent.children.find(node => node.dataset.cardId === cards[index].id);
 const parseX = node => Number(node.style.transform.match(/translate3d\(([-\d.]+)px/)[1]);
@@ -416,10 +427,10 @@ const near = (actual,expected) => assert.ok(Math.abs(actual-expected)<1e-8, `${a
 
 PHASES = r"""
 assert.equal(api.timing.checkable,8); assert.equal(api.timing.uncheckable,5.4);
-assert.equal(cards.length,11); assert.equal(api.timing.loop,82.8); assert.equal(api.timing.crossfade,.12);
+assert.equal(cards.length,15); assert.equal(api.timing.loop,114.8); assert.equal(api.timing.crossfade,.12);
 assert.deepEqual(Array.from(api.timing.starts),starts);
 for (let index=0;index<cards.length;index++) {
-  const can=cards[index].score!==null;
+  const can=hasEvidence(cards[index]);
   const beats=can?[[0,'enter','idle',0],[.699,'enter','idle',0],[.7,'read','inspect',1],[1.499,'read','inspect',1],
     [1.5,'reach','reach',2],[2.299,'reach','reach',2],[2.3,'find','point',2],[3.699,'find','point',2],
     [3.7,'compare','think',3],[4.499,'compare','think',3],[4.5,'windup','stamp',4],[4.799,'windup','stamp',4],
@@ -450,7 +461,7 @@ for (let index=0;index<cards.length;index++) {
     near(robot.querySelectorAll('.stamp-robot-pose').reduce((sum,image)=>sum+Number(image.style.opacity),0),1);
   }
 }
-seek(82.8);assert.equal(api.getState().cardId,cards[0].id);assert.equal(api.getState().phase,'enter');
+seek(114.8);assert.equal(api.getState().cardId,cards[0].id);assert.equal(api.getState().phase,'enter');
 assert.equal(property('.stamp-robot-pose[data-facing="post"]','transform'),'scaleX(-1)');
 assert.equal(property('.stamp-robot-pose[data-facing="filing"]','transform'),'scaleX(1)');
 for(const [time,facing] of [[1,'post'],[1.8,'filing'],[2.6,'filing'],[4,'front'],[4.6,'post'],[5,'post'],[5.6,'front']]){
@@ -459,13 +470,13 @@ for(const [time,facing] of [[1,'post'],[1.8,'filing'],[2.6,'filing'],[4,'front']
 """
 
 CANT_CHECK = r"""
-for(let index=0;index<cards.length;index++)if(cards[index].score===null){
+for(let index=0;index<cards.length;index++)if(!hasEvidence(cards[index])){
   assert.equal(passage(index),undefined);assert.equal(find(moving[index],'stamp-meter'),undefined);
   assert.equal(find(still[index],'stamp-passage'),undefined);assert.equal(find(still[index],'stamp-meter'),undefined);
   seek(starts[index]+1.499); assert.equal(filingBox.dataset.state,'waiting');
   seek(starts[index]+1.5); assert.equal(filingBox.dataset.state,'uncheckable');
   assert.equal(tree.querySelector('.stamp-filing-state-title').textContent,config.language==='zh'?'沒有可查核的 SEC 數字':'No SEC number to check');
-  assert.equal(tree.querySelector('.stamp-filing-state-explanation').textContent,config.language==='zh'?'財報記錄已發生的結果，不包含看法或預測。':'Filings report results, not opinions or forecasts.');
+  assert.equal(tree.querySelector('.stamp-filing-state-explanation').textContent,config.language==='zh'?'此看法或預測沒有對應的已申報數字。':'No matching filed number for this opinion or forecast.');
   assert.equal(tree.querySelector('.stamp-filing-state-explanation').hidden,false);
   const kind=cards[index].kind==='opinion'?(config.language==='zh'?'看法':'Opinion'):(config.language==='zh'?'預測':'Forecast');
   assert.equal(tree.querySelector('.stamp-filing-state-kind').textContent,kind);
@@ -520,7 +531,7 @@ assert.equal(find(moving[1],'stamp-severity').textContent,config.language==='zh'
 assert.equal(find(moving[1],'stamp-score').textContent,'0 / 100');
 for(const time of [0,.76,1.56,2.36,2.95,3.76,4.56,4.86,5.36,6.46,7.2,9.05,10.95,12.1,12.94,13.6,17,18.4,19.14,29,45.4,48.54,69,79.74]){
   seek(time);const once=fingerprint();seek(40);seek(.1);seek(time);assert.equal(fingerprint(),once,`history-independent @ ${time}`);
-  seek(time+82.8);assert.equal(fingerprint(),once,`wrap-independent @ ${time}`);
+  seek(time+114.8);assert.equal(fingerprint(),once,`wrap-independent @ ${time}`);
   onResize();assert.equal(fingerprint(),once,`resize-independent @ ${time}`);
 }
 seek(12.94);const frozen=fingerprint();
@@ -532,9 +543,13 @@ for(let index=0;index<cards.length;index++){
   assert.ok(body.href===card.filing_url||body.href===card.source_report.replace(/^docs\//,'../'));
   if(card.excerpt){
     const filing=find(body,'stamp-passage');
-    for(const text of [card.excerpt.form,card.excerpt.filed,card.excerpt.company,card.excerpt.section_title,card.excerpt.value])assert.ok(filing.textContent.includes(text));
-    assert.equal(find(body,'stamp-meter').attributes['aria-valuenow'],String(Math.round(card.score)));
-    assert.equal(find(body,'stamp-score').textContent,`${Math.round(card.score)} / 100`);assert.ok(find(body,'stamp-filed').textContent);
+    for(const text of [card.excerpt.filed,card.excerpt.company,card.excerpt.section_title,card.excerpt.value,
+      ...(card.excerpt.type==='release'?['8-K','Ex 99.1']:[card.excerpt.form])].filter(Boolean))assert.ok(filing.textContent.includes(text));
+    if(card.score!==null) {
+      assert.equal(find(body,'stamp-meter').attributes['aria-valuenow'],String(Math.round(card.score)));
+      assert.equal(find(body,'stamp-score').textContent,`${Math.round(card.score)} / 100`);
+    } else assert.equal(find(body,'stamp-meter'),undefined);
+    assert.ok(find(body,'stamp-filed').textContent);
     if(card.excerpt.derivation)assert.ok(filing.textContent.includes(card.excerpt.derivation.text[config.language]));
   }else assert.ok(find(body,'stamp-static-unavailable').textContent);
 }
@@ -613,7 +628,7 @@ const gap=px('.stamp-review','gap'), markWidth=px('.stamp-mark','width');
 const markPadding=property('.stamp-impression','padding').split(' ').map(x=>length(x))[0];
 const footerHeight=px('.stamp-review','min-height');
 for(let index=0;index<cards.length;index++){
-  const duration=cards[index].score===null?5.4:8;
+  const duration=!hasEvidence(cards[index])?5.4:8;
   for(let ms=0;ms<duration*1000;ms+=25){
     seek(starts[index]+ms/1000);
     assert.ok(moving.filter(item=>!item.hidden).length<=1,'Only one post in the fixed panel, including wraparound');
@@ -621,7 +636,7 @@ for(let index=0;index<cards.length;index++){
     const mark=find(moving[index],'stamp-mark');if(Number(mark.style.opacity)===0)continue;
     const match=mark.style.transform.match(/rotate\(([-\d.]+)deg\) scale\(([-\d.]+)\)/);
     const angle=Math.abs(Number(match[1]))*Math.PI/180,scale=Number(match[2]);
-    const font=cards[index].score===null?px('.stamp-card.is-unknown .stamp-mark','font-size'):px('.stamp-mark','font-size');
+    const font=!hasEvidence(cards[index])?px('.stamp-card.is-unknown .stamp-mark','font-size'):px('.stamp-mark','font-size');
     const markHeight=font+2*markPadding+6;
     const halfWidth=(markWidth*Math.cos(angle)+markHeight*Math.sin(angle))*scale/2;
     const halfHeight=(markHeight*Math.cos(angle)+markWidth*Math.sin(angle))*scale/2;
@@ -718,8 +733,8 @@ seek(10.95);const apple=moving[1],applePaper=passage(1);
 for(const text of ['Full year','Total net sales','416,161','313,695','= 102,466','0000320193-25-000079','Q4 = full year − nine months = $102.5B'])assert.ok(applePaper.textContent.includes(text),text);
 seek(12.94);assert.equal(find(apple,'stamp-score').textContent,'0 / 100');near(scaleX(find(apple,'stamp-meter-fill')),0);
 assert.equal(find(applePaper,'stamp-compare-stated').textContent,'$416.2B');assert.equal(find(applePaper,'stamp-compare-filed').textContent,'$102.5B');
-seek(starts[4]+4.2);assert.ok(passage(4).textContent.includes('+3.0%'));assert.ok(passage(4).textContent.includes('−2.9%'));
-seek(starts[8]+4.2);assert.ok(passage(8).textContent.includes('> $50.0B'));
+seek(starts[8]+4.2);assert.ok(passage(8).textContent.includes('+3.0%'));assert.ok(passage(8).textContent.includes('−2.9%'));
+seek(starts[12]+4.2);assert.ok(passage(12).textContent.includes('> $50.0B'));
 for(const image of robot.querySelectorAll('img')){assert.equal(image.loading,'lazy');assert.equal(image.decoding,'async');assert.ok(image.src.includes('/H/'));}
 """
 
@@ -748,7 +763,7 @@ for(const [time,phase,pose,step] of [[9.05,'read','inspect',1],[10.95,'find','po
   assert.equal(api.getState().cardId,'demo-thread-baseten-3');assert.equal(api.getState().phase,phase);
   assert.equal(api.getState().pose,pose);assert.equal(api.getState().step,step);
 }
-assert.ok(doc.includes('82.8 s'));assert.ok(doc.includes('8.0 s'));
+assert.ok(doc.includes('114.8 s'));assert.ok(doc.includes('8.0 s'));
 """
 
 PERSONAS = r"""
@@ -756,7 +771,7 @@ assert.equal(px('.stamp-avatar','width'),phone?44:56);
 assert.equal(px('.stamp-avatar','height'),phone?44:56);assert.equal(property('.stamp-avatar','border-radius'),'50%');
 function check(language){
   for(let index=0;index<cards.length;index++){
-    const card=cards[index];seek(starts[index]+(card.score===null?3.14:4.94));
+    const card=cards[index];seek(starts[index]+(!hasEvidence(card)?3.14:4.94));
     for(const carrier of [moving[index],still[index]]){
       const body=carrier.children[0];
       assert.equal(find(body,'stamp-author').textContent,card.persona.name[language]);assert.equal(find(body,'stamp-byline').textContent,card.persona.byline[language]);
@@ -815,7 +830,7 @@ function contains(polygon,box){
     assert.ok(sides.every(v=>v>=-1e-7)||sides.every(v=>v<=1e-7),'Cone includes all four target corners');
   }
 }
-for(let index=0;index<cards.length;index++)if(cards[index].score!==null){
+for(let index=0;index<cards.length;index++)if(hasEvidence(cards[index])){
   for(const age of [2.35,2.55,2.75,3,3.76,4.1,4.6]){
     seek(starts[index]+age);
     const names=age>=3.7?['post','row','compare']:['row'];
@@ -826,7 +841,7 @@ for(let index=0;index<cards.length;index++)if(cards[index].score!==null){
       contains(light.querySelector(`.stamp-beam-${name==='post'?'post':'filing'} .stamp-beam-cone`),ink);
       if(age>=3){
         const rows=passage(index).querySelectorAll('.stamp-ledger-row');
-        const expected=local(name==='post'?find(moving[index],'stamp-number'):name==='row'&&age>=3.7&&cards[index].excerpt.derivation?
+        const expected=local(name==='post'?(find(moving[index],'stamp-transcript')||find(moving[index],'stamp-number')):name==='row'&&age>=3.7&&cards[index].excerpt.derivation?
           rows[rows.length-1]:find(passage(index),name==='row'?'stamp-passage-row':'stamp-compare'));
         for(const key of ['x','y','width','height'])near(ink[key],expected[key]);
       }
@@ -960,7 +975,7 @@ if(config.reduced){
   seek(4.1);near(Number(grain.attributes.width),sceneWidth);near(Number(vignette.attributes.height),stageHeight);
   const locked=fingerprint();seek(4.2);assert.notEqual(fingerprint(),locked);seek(4.1);assert.equal(fingerprint(),locked);
   for(let index=0;index<cards.length;index++){
-    const strike=starts[index]+(cards[index].score===null?3:4.8);
+    const strike=starts[index]+(!hasEvidence(cards[index])?3:4.8);
     seek(strike-.001);assert.equal(burst.style.opacity,'0');
     seek(strike);assert.equal(burst.style.opacity,'1');near(Number(burstSource.attributes.width),0);
     assert.equal(flare.style.opacity,'0');
@@ -983,10 +998,10 @@ const beat=scene.querySelector('.stamp-caption-beat'),word=scene.querySelector('
 const bubble=scene.querySelector('.stamp-caption'),band=scene.querySelector('.stamp-robot-band');
 assert.equal(bubble.parent,band);assert.equal(robot.parent,band);
 assert.equal(property('.stamp-caption','height'),property('.stamp-caption','min-height'),'Caption changes cannot move the measured visor');
-const compact=value=>value.replace(/-?\d+\.\d+/,number=>Number(number).toFixed(1));
+const compact=value=>value.replace(/(-?\d+\.\d+)([BM%]?)/g,(_match,number,unit)=>unit?`${Number(number).toFixed(1)}${unit}`:String(Number(number)));
 function check(language){
   for(let index=0;index<cards.length;index++){
-    const card=cards[index],can=card.score!==null;
+    const card=cards[index],can=hasEvidence(card);
     const kind=card.kind==='opinion'?(language==='en'?'Opinion':'看法'):(language==='en'?'Forecast':'預測');
     const verdict=language==='en'?(card.verdict==='supported'?'TRUE':can?'FALSE':"CAN'T CHECK"):(card.verdict==='supported'?'正確':can?'錯誤':'無法查核');
     const examples=can?[[1.05,language==='en'?'Reading the post…':'正在讀貼文⋯'],
@@ -1043,7 +1058,7 @@ selected.forEach(index=>{naturalPostHeights[index]=phone?250.2:442.2;
 onFonts();
 const inset=2*(length(property('.stamp-filing-box','padding').split(' ')[0])+1);
 for(const index of selected){
-  seek(starts[index]+(cards[index].score===null?3.14:4.1));
+  seek(starts[index]+(!hasEvidence(cards[index])?3.14:4.1));
   assert.ok(postHeight>=Math.ceil(naturalPostHeights[index]),`${cards[index].id}: post fits`);
   if(cards[index].excerpt)assert.ok(filingHeight>=Math.ceil(naturalFilingHeights[index]+inset),`${cards[index].id}: paper fits`);
   const body=moving[index].children[0];
@@ -1127,7 +1142,7 @@ for(const time of [1.05,1.56,2.95,3.76,4.799,4.8,4.86,4.94,5.049,5.05,5.3,19.06]
     assert.ok(layer.style.transform.includes(`scaleX(${layer.dataset.facing==='post'?-1:1})`));
     const visible=layer.querySelectorAll('.stamp-thruster-frame').filter(image=>image.style.opacity==='1');
     assert.equal(visible.length,1);assert.equal(visible[0].dataset.frame,robot.dataset.thruster);
-    const age=api.getState().localTime,strike=cards[starts.findLastIndex(at=>time>=at)].score===null?3:4.8;
+    const age=api.getState().localTime,strike=!hasEvidence(cards[starts.findLastIndex(at=>time>=at)])?3:4.8;
     const burst=age>=strike&&age<strike+.25;
     near(Number(layer.dataset.scale),burst?1.6:1);
     if(burst)assert.equal(layer.dataset.frame,'burst');
@@ -1146,7 +1161,7 @@ assert.equal(shadow.style.transform.split(' scale(')[0],floor,'Floor remains sta
 // worst bob phase. The phone has only a 96px band around its 88px robot box.
 const art=JSON.parse(readFileSync(`${root}/docs/site/img/auditor/H/manifest.json`,'utf8'));
 if(phone)for(let index=0;index<cards.length;index++)for(const offset of [0,.02,.06,.10,.14,.22,.249,.25]){
-  const strike=cards[index].score===null?3:4.8;
+  const strike=!hasEvidence(cards[index])?3:4.8;
   seek(starts[index]+strike+offset);
   const bodyScale=Math.min(robotWidth/704,robotHeight/744);
   const angle=Number(robot.style.transform.match(/rotate\(([-\d.]+)deg\)/)[1])*Math.PI/180;
@@ -1176,16 +1191,15 @@ for (let i=0;i<cards.length;i++) {
     const body=find(group[i],'stamp-card');
     assert.equal(body.dataset.sourceKind,card.source_kind);
     assert.equal(find(body,'stamp-example').textContent,config.language==='zh'?'示範貼文':'Example post');
-    assert.equal(find(body,'stamp-input-badge').textContent,config.language==='zh'?'文字':'Text');
-    assert.equal(find(body,'stamp-input-badge').dataset.inputKind,'text');
-    for(const name of ['stamp-waveform','stamp-frame','stamp-transcript'])assert.equal(body.querySelectorAll('.'+name).length,0);
+    assert.equal(find(body,'stamp-input-badge').dataset.inputKind,card.input_kind);
+    if(card.input_kind==='text')for(const name of ['stamp-waveform','stamp-frame','stamp-transcript'])assert.equal(body.querySelectorAll('.'+name).length,0);
     for(const avatar of body.querySelectorAll('.stamp-avatar')) {
       assert.ok(avatar.src.endsWith('-256.webp'));assert.equal(avatar.loading,'lazy');
     }
     assert.equal(find(body,'stamp-claim').textContent,card.text[config.language||'en']);
     if(card.source_kind==='thread')assert.equal(find(body,'stamp-thread-index').textContent,card.thread_index);
     const actions=find(body,'stamp-actions');
-    if(card.source_kind!=='article') {
+    if(card.example_activity&&card.source_kind!=='article') {
       assert.equal(actions.querySelectorAll('svg').length,4);
       for(const count of Object.values(card.example_activity))assert.ok(actions.textContent.includes(count.toLocaleString('en-US')));
       assert.equal(find(actions,'stamp-activity-label').textContent,config.language==='zh'?'示範互動':'Example activity');
@@ -1209,8 +1223,13 @@ for (let i=0;i<cards.length;i++) {
   }
   const paper=passage(i);
   if(paper) {
-    assert.equal(find(paper,'stamp-filing-authority').textContent,'UNITED STATES SECURITIES AND EXCHANGE COMMISSION');
-    assert.equal(find(paper,'stamp-passage-meta').textContent,'FORM '+card.excerpt.form);
+    if(card.excerpt.type==='release') {
+      assert.equal(find(paper,'stamp-filing-authority').textContent,config.language==='zh'?'財報新聞稿':'Earnings release');
+      assert.equal(find(paper,'stamp-passage-meta').textContent,'8-K · Item 2.02 · Ex 99.1');
+    } else {
+      assert.equal(find(paper,'stamp-filing-authority').textContent,'UNITED STATES SECURITIES AND EXCHANGE COMMISSION');
+      assert.equal(find(paper,'stamp-passage-meta').textContent,'FORM '+card.excerpt.form);
+    }
     const time=find(paper,'stamp-filing-date').querySelector('time');
     assert.equal(time.dateTime,card.excerpt.filed);assert.ok(time.textContent.endsWith(card.excerpt.filed));
   }
@@ -1232,6 +1251,45 @@ if(!config.reduced) {
   intersection([{isIntersecting:true}]);pause.events.click();
   layoutReads=0;step(0);step(16);assert.equal(layoutReads,0,'The scene clock never reads layout');
 }
+"""
+
+DAY4 = r"""
+const language=config.language||'en';
+for(const id of ['l4-01','input-audio-two-voices-2','l4-27','input-screenshot-2']) {
+  const index=cards.findIndex(card=>card.id===id),card=cards[index];
+  seek(starts[index]+4.1);
+  assert.equal(api.getState().cardId,id);assert.equal(api.getState().phase,'compare');
+  for(const group of [moving,still]) {
+    const body=find(group[index],'stamp-card');
+    assert.equal(find(body,'stamp-input-badge').dataset.inputKind,card.input_kind);
+    if(card.input_media) {
+      assert.equal(find(body,'stamp-media-disclosure').textContent,card.input_media.disclosure[language]);
+      assert.equal(find(body,'stamp-media-limit').textContent,card.input_media.limit[language]);
+      assert.ok(find(body,'stamp-filed').textContent.includes('$1.57'));
+    }
+    const paper=group===moving?passage(index):find(body,'stamp-passage');
+    if(card.excerpt.type==='release') {
+      assert.ok(paper.classList.contains('stamp-release'));
+      assert.equal(find(paper,'stamp-passage-row').textContent,card.excerpt.text);
+      assert.equal(find(paper,'stamp-fact').textContent,card.excerpt.value);
+      assert.equal(find(paper,'stamp-passage-units').textContent,language==='en'?'Furnished · unaudited · L4':'提供資料 · 未經審計 · L4');
+      assert.equal(find(body,'stamp-meter'),undefined,'No scalar score was recorded for either L4 claim');
+      assert.equal(find(paper,'stamp-release-headline').textContent,card.excerpt.headline);
+    }
+    if(card.input_kind==='audio') {
+      assert.equal(find(body,'stamp-waveform').children.length,48);
+      assert.equal(find(body,'stamp-transcript').textContent,card.input_media.transcript[language]);
+      const time=find(body,'stamp-media-time').textContent;
+      assert.ok(time.includes('00:14.06–00:25.82')&&time.endsWith(' A'));
+      assert.equal(property('.stamp-card[data-input-kind="audio"] .stamp-claim','display'),'none');
+    }
+    if(card.input_kind==='screenshot')assert.equal(find(body,'stamp-frame').dataset.src,'img/inputs/example-post.png');
+  }
+  seek(starts[index]+4.94);
+  assert.equal(find(moving[index],'stamp-impression').textContent,language==='en'?(card.verdict==='supported'?'TRUE':'FALSE'):(card.verdict==='supported'?'正確':'錯誤'));
+}
+assert.equal(property('.stamp-release .stamp-passage-row','display'),'block','Release quotes flow as press-release prose');
+if(phone)assert.ok(sceneHeight<=640);
 """
 
 MEDIA = r"""

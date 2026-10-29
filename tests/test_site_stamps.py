@@ -27,7 +27,9 @@ EXPECTED = {
 
 @pytest.fixture
 def cards():
-    return stamp_cards()
+    # These regressions cover the original post-report cards; Day-4 producers
+    # have separate source/number/date checks in test_site_day4.py.
+    return [card for card in stamp_cards() if not card.get("claim_id") and not card.get("source_ingest")]
 
 
 def report_claim(card):
@@ -109,7 +111,7 @@ def test_stamp_cards_have_both_languages_and_preserve_original_chinese(cards):
 
 def test_site_snapshot_contains_the_report_derived_stamp_cards(cards):
     snapshot = json.loads((ROOT / "docs/site/data/site.json").read_text(encoding="utf-8"))
-    assert snapshot["stamp_cards"] == cards
+    assert [card for card in snapshot["stamp_cards"] if not card.get("claim_id") and not card.get("source_ingest")] == cards
 
 
 def test_every_checkable_card_has_a_real_matching_filing_row(cards):
@@ -515,7 +517,7 @@ def test_page_sections_nav_and_shared_progress_headings_follow_the_v3_order():
     structure = Structure()
     structure.feed(html)
     assert not structure.stack
-    assert structure.sections == ["top", "how", "example", "results", "trust"]
+    assert structure.sections == ["top", "how", "capabilities", "example", "results", "trust"]
     assert structure.nav == ["#how", "#example", "#results", "#trust"]
     assert any(attrs.get("id") == "top" for _, attrs in structure.parents["stamp-scene"])
     assert any(attrs.get("id") == "example" for _, attrs in structure.parents["example-title"])

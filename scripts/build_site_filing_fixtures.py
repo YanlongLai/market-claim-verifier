@@ -13,6 +13,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from docs.scripts.filing_excerpts import SECFilingFetcher, extract_filing_excerpt
+from docs.scripts.build_site import validate_stamp_filing
 
 FIXTURES = ROOT / "tests/fixtures/sec-filings"
 
@@ -23,7 +24,11 @@ def main() -> None:
     parser.add_argument("--check", action="store_true")
     args = parser.parse_args()
     cards = json.loads((ROOT / "docs/site/data/site.json").read_text())["stamp_cards"]
-    facts = {fact["accn"]: fact for card in cards for fact in card["date_basis"]["facts"]}
+    facts = {fact["accn"]: fact for card in cards if card["date_basis"]["method"] == "sec-companyfacts-first-filed"
+             for fact in card["date_basis"]["facts"]}
+    releases = [card for card in cards if (card.get("excerpt") or {}).get("type") == "release"]
+    for card in releases:
+        validate_stamp_filing(card)
     # The fixture reader performs hash, metadata and accession/URL checks too.
     fetcher = SECFilingFetcher(args.cache, offline=args.check, fixture_dir=FIXTURES if args.check else None)
     records = {}
@@ -56,6 +61,7 @@ def main() -> None:
                     "filings": records}
         (FIXTURES / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
     print(f"PASS {len(facts)} first-filing iXBRL documents and exact fact values")
+    print(f"PASS {len(releases)} L4 release snapshots, exact quotes, numbers and filing dates")
 
 
 if __name__ == "__main__":

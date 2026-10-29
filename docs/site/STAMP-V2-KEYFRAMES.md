@@ -2,9 +2,10 @@
 
 All breakpoints use the same deterministic clock. Append `?stamp-t=<seconds>`
 to `docs/site/`, or call `window.__stampScene.seek(seconds)`. Seeking pauses
-playback. The eleven-card loop takes **82.8 s**: nine checkable slots of **8.0 s**
+playback. The fifteen-card loop takes **114.8 s**: thirteen checkable slots of **8.0 s**
 and two CAN'T CHECK slots of **5.4 s**. Apple Q4 is the second card, starting at
-**8.0 s**. No dates, personas, claim data or Example post tags have changed.
+**8.0 s**. The original opening three cards keep their seek times; Day-4 cards
+follow them so the new capabilities appear in the first minute.
 
 | Frame | Seek (desktop, tablet and phone) | Expected content |
 | --- | --- | --- |
@@ -25,7 +26,7 @@ Relative checkable beats (milliseconds): Enter 0–700, Read 700–1500, Reach
 with a **120 ms** cross-fade. Ledger rows reveal 200 ms apart. The character has
 ±4 px continuous bob over approximately 1.6 s, up to 3° lean toward the active
 panel, and an 8 px downward strike dip (60 ms down, 160 ms recovery). There are
-52 float cycles per scene loop, giving a seamless 1592.31 ms period. A separate
+72 float cycles per scene loop, giving a seamless 1594.44 ms period. A separate
 floor ellipse stays in place and shrinks as the robot floats upward.
 
 The first CAN'T CHECK card starts at **16.0 s**: Read at 16.7, shrug and
@@ -36,7 +37,67 @@ Forecast label. The bubble says “Opinion — not in any filing” (or Forecast
 Steps 2 and 3 are dimmed and struck through throughout this card; step 1 stays
 active until the grey stamp activates step 4. No passage, score or light is
 shown for this claim. The second CAN'T CHECK
-slot starts at 45.4 s. The article starts at 66.8 s; the repost starts at 74.8 s.
+slot starts at 77.4 s. The article starts at 98.8 s; the repost starts at 106.8 s.
+
+## Day-4 evidence and input keyframes — 2026-10-29
+
+The two L4 cards use issuer press-release sheets, with exact saved quotes and
+numeric highlight offsets; their paper says **8-K · Item 2.02 · Ex 99.1** and
+**Furnished · unaudited · L4**. All authors remain fictional and labeled
+**Example post**. Post dates follow the release filing dates. The guidance range
+checks both endpoints and shows no scalar accuracy meter. EPS comparisons keep
+the recorded cents ($5.31, $1.67, $1.57).
+
+| Card / recorded source | Starts | Find | Compare | Stamped |
+| --- | --- | --- | --- | --- |
+| `l4-01` · [META guidance, L4-01](../evidence/eval-l4-2026-10-29/traces/L4-01.json), supported | 21.4 s | `?stamp-t=24.35` | **`?stamp-t=25.5`** · $47.5–50.5B, exact release quote | `?stamp-t=26.34` |
+| `input-audio-two-voices-2` · [audio ingest](../evidence/multimodal-2026-10-29/audio-two-voices/ingest.json), contradicted | 29.4 s | `?stamp-t=32.35` | **`?stamp-t=33.5`** · actual PCM waveform, turn 00:14.06–00:25.82, speaker A, raw transcript; $1.67 vs $1.57 SEC EPS | `?stamp-t=34.34` |
+| `l4-27` · [Adobe non-GAAP EPS, L4-27](../evidence/eval-l4-2026-10-29/traces/L4-27.json), supported | 37.4 s | `?stamp-t=40.35` | `?stamp-t=41.5` · $5.31, verbatim release table-cell span on press-release paper | `?stamp-t=42.34` |
+| `input-screenshot-2` · [screenshot ingest](../evidence/multimodal-2026-10-29/screenshot/ingest.json), contradicted | 45.4 s | `?stamp-t=48.35` | `?stamp-t=49.5` · exact tested PNG; $1.67 vs $1.57 SEC EPS | `?stamp-t=50.34` |
+
+The media cards say **Self-made synthetic test media · deliberate EPS error**.
+The audio warning discloses that two synthetic voices were both labeled A;
+these are unverified labels and whole-turn boundaries, not word timestamps or
+executive identities. The waveform is 48 peak-amplitude bins from that exact
+WAV turn, normalized by PCM16 full scale. Screenshot bytes match the committed
+input. Both cards still use L2 SEC XBRL for their numeric verdict, independently
+of the input medium. No real earnings call or synthetic executive voice is
+implied. The [input probe](../evidence/multimodal-2026-10-29/REPORT.md) retains
+provider errors, repeats and the known video period-loss false contradiction;
+the [L4 analysis](../evidence/eval-l4-2026-10-29/ANALYSIS.md) discloses the
+development-set boundary and routing failure.
+
+The compact **What it can check** section follows How it works, with four
+bilingual limits, report links and plain replay links. Reduced motion keeps the
+complete linked list of all fifteen cards. Earlier notes below describe the
+eleven-card version; this section supersedes their text-only/input claims.
+
+Day-4 validation: the full product/site suite passed **791 tests**. The final
+`UV_OFFLINE=1 sh scripts/verify.sh` run independently passed **791 product/site
+tests, 83 demo Python tests and 41 standalone Node tests**, with no skips. This
+includes 288 scene runtime checks and 16 Day-4 data/validation tests. Both L4
+snapshots and all 11 first-filing iXBRL documents passed the fixture checker.
+All eleven original cards and all non-card site data remain identical as parsed
+JSON. Recorded evidence, gold, prompts and product code were not changed.
+
+```text
+PASS offline Python and Node suites
+PASS figure rebuild + --check
+PASS explorer, site data and build summary: 3 byte-identical outputs
+PASS Markdown links and anchors
+PASS no model calls, SEC fetches or credentials; source tree unchanged
+```
+
+Source design lint: **0 failures / 0 warnings**; JavaScript syntax and whitespace
+checks passed. Runtime tests use supplied DOM geometry rather than browser font
+metrics. The Chrome inspector exited before rendering in this sandbox; actual
+visual review remains with Claude. Phone media uses compact thumbnail/annotation
+rows and omits the duplicate period chip; the complete period remains in the
+quote and static presentation. The [generated build summary](BUILD_SUMMARY.md)
+lists every changed file and the four cards' recorded sources. Git staging in
+the shared worktree was blocked by its external `index.lock` path; the local
+commit is delivered in a portable bundle with the requested co-author footer.
+Nothing was pushed.
 
 The Hover artwork is requested at `img/auditor/H/<pose>.webp`. Missing reach and
 point fall back to present; think to inspect; stamp-down to stamp; approve,
@@ -78,10 +139,10 @@ caption change cannot move the cached robot origin. The stray folder tab is
 removed. Desktop/tablet comparison offsets are measured so the filed value's
 baseline box meets the meter center, above the accession.
 
-The headline caps at 64 px.
-Conservative header + hero top padding + two headline lines + two lede lines +
-scene margin + scene envelopes are **≤714 px at 1024×768** and **≤763 px at
-1440×900**, in either language. Reduced motion shows the full, linked static list instead;
+The headline caps at 64 px. Tests budget the header, hero padding, two headline
+lines, two lede lines and the scene within **768 px at 1024×768** and **900 px at
+1440×900**, in either language. The phone scene budget is **≤640 px**. These are
+geometry envelopes, pending Claude's browser review. Reduced motion shows the full, linked static list instead;
 its height is intentionally unconstrained so every claim and passage can be read.
 
 EN/中文 share the strip's first three headings with How it works, which now

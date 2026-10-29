@@ -29,7 +29,7 @@
         claims: "Claims and report verdicts",
         postPanel: "① Post under review", filingPanel: "② SEC filing", progress: "Review progress",
         waiting: "Waiting for filing", noNumber: "No SEC number to check", claim: "Claim",
-        noNumberExplanation: "Filings report results, not opinions or forecasts.",
+        noNumberExplanation: "No matching filed number for this opinion or forecast.",
         revenue: "revenue",
         caption: { read: "Reading the post…", reach: (form) => `Opening the ${form}…`,
           find: (value) => `Found it: ${value}`, compare: (filed, posted) => `${filed} filed vs ${posted} posted`, fullYear: "That's the full year",
@@ -40,7 +40,10 @@
         repost: "Repost", article: "Article", example: "Example post", repostedFrom: "Reposted from",
         input: { text: "Text", screenshot: "Screenshot", audio: "Audio", video: "Video" },
         activity: { label: "Example activity", reply: "Replies", repost: "Reposts", like: "Likes", views: "Views" },
-        audience: "Public", transcript: "Transcript", by: "By",
+        audience: "Public", transcript: "Transcript", by: "By", speaker: "Speaker", turn: "ASR turn",
+        release: "Earnings release", releaseStatus: "Furnished · unaudited · L4",
+        rangeMatch: "Both guidance endpoints match",
+        releaseMatch: "Number and period match",
         exampleDetail: "Fictional author and example follower count. Claims and verdicts come from real program checks.",
         pause: "Pause",
         play: "Play",
@@ -62,13 +65,13 @@
         claimCount: (count) => `${count} claims found`
       },
       verdict: { true: "True", false: "False", unknown: "Can't check" },
-      claimKind: { reported_fact: "Money claim", forecast: "Forecast", opinion: "Opinion" },
+      claimKind: { reported_fact: "Money claim", forecast: "Forecast", opinion: "Opinion", guidance: "Guidance", non_gaap: "Non-GAAP" },
       claimSource: {
         sec: "SEC says",
         filed: "filed",
         see: "See filing",
         derived: "SEC check",
-        notChecked: "Forecasts and opinions are not checked.",
+        notChecked: "No filed fact to compare for this claim.",
         noSource: "No filing value returned."
       },
       filing: {
@@ -117,6 +120,13 @@
           title: "Code decides",
           body: "Code, not the AI, compares the numbers and gives the final True, False, or Can't check verdict."
         }
+      },
+      capabilities: {
+        title: "What it can check", report: "Evidence report", replay: "Replay example",
+        xbrl: { title: "SEC XBRL · L1–L3", limit: "Reported numbers and periods; tagging and restatements can limit evidence." },
+        release: { title: "Earnings releases · L4", limit: "Guidance and non-GAAP; furnished, unaudited. 32 development claims, not held-out." },
+        screenshot: { title: "Screenshots", limit: "OCR text enters SEC checks; extraction can lose context. Self-made test images." },
+        audio: { title: "Audio / video", limit: "ASR turns + 3 sampled frames; speakers unverified. Known period-loss error in video." }
       },
       results: {
         title: "Does it work?",
@@ -191,7 +201,7 @@
         claims: "說法與報告判定",
         postPanel: "① 待查核貼文", filingPanel: "② SEC 財報", progress: "查核進度",
         waiting: "等待財報", noNumber: "沒有可查核的 SEC 數字", claim: "說法",
-        noNumberExplanation: "財報記錄已發生的結果，不包含看法或預測。",
+        noNumberExplanation: "此看法或預測沒有對應的已申報數字。",
         revenue: "營收",
         caption: { read: "正在讀貼文⋯", reach: (form) => `正在打開 ${form}⋯`,
           find: (value) => `找到了：${value}`, compare: (filed, posted) => `財報 ${filed} vs 貼文 ${posted}`, fullYear: "那是全年數字",
@@ -202,7 +212,10 @@
         repost: "轉貼", article: "新聞報導", example: "示範貼文", repostedFrom: "轉貼自",
         input: { text: "文字", screenshot: "截圖", audio: "音訊", video: "影片" },
         activity: { label: "示範互動", reply: "回覆", repost: "轉貼", like: "喜歡", views: "瀏覽" },
-        audience: "公開", transcript: "逐字稿", by: "作者",
+        audience: "公開", transcript: "逐字稿", by: "作者", speaker: "說話者", turn: "ASR 話輪",
+        release: "財報新聞稿", releaseStatus: "提供資料 · 未經審計 · L4",
+        rangeMatch: "指引區間的兩個端點均吻合",
+        releaseMatch: "數字與期間均吻合",
         exampleDetail: "作者與追蹤人數為虛構示範；說法與判定來自真實程式查核。",
         pause: "暫停",
         play: "播放",
@@ -224,13 +237,13 @@
         claimCount: (count) => `找出 ${count} 個說法`
       },
       verdict: { true: "正確", false: "錯誤", unknown: "無法查核" },
-      claimKind: { reported_fact: "財務說法", forecast: "預測", opinion: "看法" },
+      claimKind: { reported_fact: "財務說法", forecast: "預測", opinion: "看法", guidance: "業績指引", non_gaap: "非 GAAP" },
       claimSource: {
         sec: "SEC 顯示",
         filed: "申報日期",
         see: "查看申報文件",
         derived: "SEC 查核",
-        notChecked: "預測和看法不在查核範圍內。",
+        notChecked: "此說法沒有可比對的已申報數字。",
         noSource: "報告沒有回傳申報數字。"
       },
       filing: {
@@ -279,6 +292,13 @@
           title: "程式判定",
           body: "由程式，不是 AI，比對數字，最後給出正確、錯誤或無法查核。"
         }
+      },
+      capabilities: {
+        title: "能查核哪些內容", report: "查核紀錄", replay: "重播範例",
+        xbrl: { title: "SEC XBRL · L1–L3", limit: "核對已申報數字與期間；標籤差異與重編可能限制證據。" },
+        release: { title: "財報新聞稿 · L4", limit: "業績指引與非 GAAP；提供資料、未經審計。32 個開發測試案例，非獨立測試。" },
+        screenshot: { title: "截圖", limit: "OCR 文字交由 SEC 查核；擷取可能遺失語境。使用自製測試圖片。" },
+        audio: { title: "音訊／影片", limit: "ASR 話輪與 3 個抽樣畫面；說話者未驗證。影片已知有期間遺失錯誤。" }
       },
       results: {
         title: "有效嗎？",
@@ -500,7 +520,7 @@
     });
     const POSE_VISORS = Object.fromEntries(Object.entries(POSE_ANCHORS).map(([name, anchors]) =>
       [name, anchors.visor.map((value, axis) => value / POSE_CANVAS[axis])]));
-    const checkable = (card) => card.score !== null && card.score !== undefined;
+    const checkable = (card) => Boolean(card.excerpt) && card.status === "verified" && ["supported", "contradicted"].includes(card.verdict);
     const durations = cards.map((card) => checkable(card) ? CHECKABLE : UNCHECKABLE);
     const starts = durations.reduce((times, duration) => [...times, times[times.length - 1] + duration], [0]);
     const loop = starts.pop();
@@ -508,7 +528,8 @@
     const clamp = (value) => Math.max(0, Math.min(1, value));
     const easeOut = (value) => 1 - Math.pow(1 - clamp(value), 3);
     const fadeIn = (age, at) => clamp((age - at) / FADE);
-    const compact = (value) => (value || "").replace(/-?\d+\.\d+/, (number) => Number(number).toFixed(1));
+    const compact = (value) => (value || "").replace(/(-?\d+\.\d+)([BM%]?)/g,
+      (_match, number, unit) => unit ? `${Number(number).toFixed(1)}${unit}` : String(Number(number)));
     const poseFallbacks = { reach: "present", point: "present", think: "inspect", "stamp-down": "stamp",
       approve: "idle", concern: "idle", shrug: "idle" };
     const facing = { idle: "front", inspect: "post", present: "filing", reach: "filing", point: "filing",
@@ -633,8 +654,7 @@
       const transcript = data && data.transcript && ["en", "zh"].every((language) => typeof data.transcript[language] === "string" && data.transcript[language].trim());
       const waveform = data && Array.isArray(data.waveform) && data.waveform.length > 1 && data.waveform.length <= 128 &&
         data.waveform.every((sample) => Number.isFinite(sample) && sample >= 0 && sample <= 1);
-      // Current recorded inputs are text. No waveform, frame or timestamp is
-      // fabricated for them; future variants require their actual payload.
+      // Missing media payloads fall back to Text; media never becomes SEC evidence.
       const kind = card.input_kind === "audio" && timestamp && transcript && waveform ? "audio" :
         card.input_kind === "video" && timestamp && thumbnail ? "video" :
         card.input_kind === "screenshot" && thumbnail ? "screenshot" : "text";
@@ -652,10 +672,15 @@
         });
         body.append(strip);
       } else body.append(polishImage(data.thumbnail, "stamp-frame", 320, 180, isStatic));
-      if (timestamp && kind !== "screenshot") body.append(element("time", "stamp-media-time", data.timestamp));
+      const timing = timestamp && kind !== "screenshot" ? element("p", "stamp-media-time") : null;
+      if (timing) body.append(timing);
       const quote = kind === "audio" ? element("blockquote", "stamp-transcript") : null;
       if (quote) body.append(quote);
-      return { badge, kind, body, quote, transcript: data.transcript };
+      const disclosure = data.disclosure ? element("p", "stamp-media-disclosure") : null;
+      const limit = data.limit ? element("p", "stamp-media-limit") : null;
+      if (disclosure) body.append(disclosure);
+      if (limit) body.append(limit);
+      return { badge, kind, body, quote, timing, disclosure, limit, transcript: data.transcript };
     }
 
     function paperDetails(parent, isStatic = false) {
@@ -745,29 +770,32 @@
       if (!card.excerpt) return null;
       const source = card.excerpt;
       const passage = element("div", "stamp-passage");
+      passage.classList.toggle("stamp-release", source.type === "release");
       passage.dataset.cardId = card.id;
       const header = element("div", "stamp-passage-header");
-      header.append(element("p", "stamp-filing-authority", "UNITED STATES SECURITIES AND EXCHANGE COMMISSION"));
+      const authority = element("p", "stamp-filing-authority", "UNITED STATES SECURITIES AND EXCHANGE COMMISSION");
+      header.append(authority);
       const formLine = element("div", "stamp-form-line");
       const dateStamp = element("span", "stamp-filing-date");
       const filedDate = element("time", "");
       filedDate.dateTime = source.filed;
       dateStamp.append(polishImage("img/polish/ink-ring.webp", "stamp-date-ring", 256, 128, isStatic), filedDate);
-      formLine.append(element("p", "stamp-passage-meta", `FORM ${source.form}`), dateStamp);
+      formLine.append(element("p", "stamp-passage-meta", source.type === "release" ? "8-K · Item 2.02 · Ex 99.1" : `FORM ${source.form}`), dateStamp);
       header.append(formLine);
       header.append(element("p", "stamp-passage-company", source.company));
+      if (source.headline) header.append(element("p", "stamp-release-headline", source.headline));
       if (source.section_title) header.append(element("p", "stamp-passage-section", source.section_title));
       const period = element("p", "stamp-passage-period");
       header.append(period);
       const details = element("div", "stamp-passage-details");
-      const row = element("p", "stamp-passage-row");
+      const row = element(source.type === "release" ? "blockquote" : "p", "stamp-passage-row");
       const fact = element("mark", "stamp-fact");
       const sweep = element("span", "stamp-amber-sweep");
       fact.append(sweep, element("strong", "", source.value));
       if (source.type === "table") {
         row.append(element("span", "stamp-row-label", source.row_label), fact);
       } else {
-        const offset = source.text.indexOf(source.value);
+        const offset = source.highlight_ranges ? source.highlight_ranges[0][0] : source.text.indexOf(source.value);
         row.append(document.createTextNode(source.text.slice(0, offset)), fact,
           document.createTextNode(source.text.slice(offset + source.value.length)));
       }
@@ -821,7 +849,7 @@
       if (accession) passage.append(accession);
       if (isStatic) paperDetails(passage, true);
       return { body: passage, header, details, row, fact, period, units, derivation, ledger, ledgerRows, accession, accn, sweep,
-        compare, statedLabel, filedLabel, statedValue, filedValue, filedDate };
+        compare, statedLabel, filedLabel, statedValue, filedValue, filedDate, authority };
     }
     function makeCard(card, index, isStatic) {
       const body = element(isStatic ? "a" : "article", `stamp-card ${verdictClass(card)}`);
@@ -862,6 +890,7 @@
       const metadata = element("span", "stamp-source");
       const source = element("span", "");
       const input = makeInput(card, isStatic);
+      body.dataset.inputKind = input.kind;
       metadata.append(source);
       if (card.source_kind === "article") postMeta.append(input.badge);
       else metadata.append(input.badge);
@@ -1012,6 +1041,10 @@
         item.byline.hidden = item.byline.textContent === item.author.textContent;
         item.followers.textContent = card.persona.follower_label[pageLanguage];
         item.input.badge.textContent = getCopy(`stamps.input.${item.input.kind}`);
+        if (item.input.timing) item.input.timing.textContent = card.input_media.speaker && card.input_media.end_timestamp ?
+          `${getCopy("stamps.turn")} ${card.input_media.timestamp}–${card.input_media.end_timestamp} · ${getCopy("stamps.speaker")} ${card.input_media.speaker}` : card.input_media.timestamp;
+        if (item.input.disclosure) item.input.disclosure.textContent = card.input_media.disclosure[pageLanguage];
+        if (item.input.limit) item.input.limit.textContent = card.input_media.limit[pageLanguage];
         if (item.input.quote) {
           item.input.quote.textContent = item.input.transcript[pageLanguage];
           item.input.quote.setAttribute("aria-label", getCopy("stamps.transcript"));
@@ -1029,7 +1062,7 @@
         item.example.textContent = getCopy("stamps.example");
         item.example.title = getCopy("stamps.exampleDetail");
         if (item.reposted) item.reposted.textContent = `${getCopy("stamps.repostedFrom")} ${card.reposted_from}`;
-        item.period.textContent = item.meter ? `${getCopy("stamps.claim")}: ${compact(card.stated_value_display)} · ${card.period[pageLanguage]}` : getCopy("stamps.noClaim");
+        item.period.textContent = checkable(card) ? `${getCopy("stamps.claim")}: ${compact(card.stated_value_display)} · ${card.period[pageLanguage]}` : getCopy("stamps.noClaim");
         if (item.unavailable) {
           item.unavailable.querySelector(".stamp-no-number-title").textContent = getCopy("stamps.noNumber");
           item.unavailable.querySelector(".stamp-no-number-explanation").textContent = getCopy("stamps.noNumberExplanation");
@@ -1043,7 +1076,7 @@
           reach: card.excerpt ? getCopy("stamps.caption.reach")(card.excerpt.form) : "",
           find: card.excerpt ? getCopy("stamps.caption.find")(card.excerpt.value) : "",
           compare: card.excerpt && card.excerpt.derivation ? getCopy("stamps.caption.fullYear") :
-            item.meter ? getCopy("stamps.caption.compare")(compact(card.filed_value_display), compact(card.stated_value_display)) : "",
+            card.filed_value_display ? getCopy("stamps.caption.compare")(compact(card.filed_value_display), compact(card.stated_value_display)) : "",
           verdict: item.impression.textContent,
           uncheckable: getCopy("stamps.caption.uncheckable")(getCopy(`claimKind.${card.kind}`))
         };
@@ -1055,12 +1088,15 @@
           const gap = card.gap_kind === "points" ? `${card.gap.toFixed(1)} pp` : `${(100 * card.gap).toFixed(card.gap >= 1 ? 0 : 1)}%`;
           item.gap.textContent = card.direction_wrong ? `${getCopy("stamps.direction")} · ${gap}` :
             card.severity === "exact" ? getCopy("stamps.within") : `${gap} ${getCopy(card.gap_relation === "shortfall" ? "stamps.short" : "stamps.off")}`;
-        } else item.gap.textContent = getCopy(`claimKind.${card.kind}`);
+        } else item.gap.textContent = checkable(card) && card.excerpt.type === "release" ?
+          getCopy(card.kind === "guidance" ? "stamps.rangeMatch" : "stamps.releaseMatch") : getCopy(`claimKind.${card.kind}`);
         if (item.passage) {
           const source = card.excerpt;
           item.passage.filedDate.textContent = `${getCopy("stamps.filed")} ${source.filed}`;
           item.passage.period.textContent = source.derivation ? `${source.derivation.label[pageLanguage]} · ${source.period_header}` : source.period_header;
-          item.passage.units.textContent = source.fact.scale === 6 ? getCopy("stamps.millions") : getCopy("stamps.filingUnits");
+          if (source.type === "release") item.passage.authority.textContent = getCopy("stamps.release");
+          item.passage.units.textContent = source.type === "release" ? getCopy("stamps.releaseStatus") :
+            source.fact.scale === 6 ? getCopy("stamps.millions") : getCopy("stamps.filingUnits");
           if (item.passage.derivation) item.passage.derivation.textContent = source.derivation.text[pageLanguage];
           const growth = card.gap_kind === "points";
           const signed = (value) => growth ? value.replace(/^-/, "−").replace(/^(?=\d)/, "+") : value;
@@ -1180,7 +1216,7 @@
     function paint() {
       const { index, age } = currentCard();
       const active = moving[index];
-      const canCheck = !!active.meter;
+      const canCheck = checkable(active.card);
       const exit = canCheck ? EXIT : UNKNOWN_EXIT;
       const phase = phaseAt(age, canCheck);
       scene.dataset.phase = phase;
@@ -1222,11 +1258,12 @@
       moving.forEach((item) => {
         const selected = item.index === index;
         const age = selected ? currentCard().age : 0;
-        item.carrier.hidden = !selected || age >= (item.meter ? REST : UNCHECKABLE);
+        const canCheck = checkable(item.card);
+        item.carrier.hidden = !selected || age >= (canCheck ? REST : UNCHECKABLE);
         const itemPhase = selected ? phase : "rest";
         item.body.dataset.phase = itemPhase;
         if (item.passage) item.passage.body.hidden = !selected || age >= REST;
-        const itemExit = item.meter ? EXIT : UNKNOWN_EXIT;
+        const itemExit = canCheck ? EXIT : UNKNOWN_EXIT;
         const leave = clamp((age - itemExit) / 800);
         const x = age < READ ? -cardWidth * (1 - easeOut(age / READ)) : (cardWidth + 24) * easeOut(leave);
         item.carrier.style.transform = `translate3d(${x}px, 0, 0)`;
@@ -1236,10 +1273,10 @@
         item.scan.style.transform = `translate3d(${(cardWidth + 48) * sweep - 48}px, 0, 0)`;
         item.scan.style.opacity = String(scanning ? Math.sin(sweep * Math.PI) * 0.22 : 0);
         if (item.glow) item.glow.style.opacity = String(scanning ? Math.sin(sweep * Math.PI) * 0.35 : 0);
-        item.period.style.opacity = String(fadeIn(age, item.meter ? READ : REACH));
+        item.period.style.opacity = String(fadeIn(age, canCheck ? READ : REACH));
         const scored = fadeIn(age, COMPARE);
-        item.filed.style.opacity = String(item.meter ? scored : 0);
-        item.assessment.style.opacity = String(item.meter ? scored : fadeIn(age, REACH));
+        item.filed.style.opacity = String(canCheck ? scored : 0);
+        item.assessment.style.opacity = String(canCheck ? scored : fadeIn(age, REACH));
         const scoreProgress = easeOut((age - COMPARE) / (WINDUP - COMPARE));
         if (item.fill) item.fill.style.transform = `scaleX(${item.card.score / 100 * scoreProgress})`;
         if (item.marker) item.marker.style.transform = `translate3d(${item.card.score * scoreProgress}%, 0, 0)`;
@@ -1260,7 +1297,7 @@
           passage.compare.style.opacity = String(passage.derivation ? scored : 1);
           passage.compare.classList.toggle("is-active", age >= COMPARE && age < itemExit);
         }
-        const impact = age - (item.meter ? STRIKE : UNKNOWN_STRIKE);
+        const impact = age - (canCheck ? STRIKE : UNKNOWN_STRIKE);
         const scale = impact < 0 ? 1.32 : impact < 105 ? 1.32 - 0.36 * easeOut(impact / 105) :
           impact < 200 ? 0.96 + 0.04 * easeOut((impact - 105) / 95) : 1;
         item.mark.style.transform = `rotate(${item.angle}deg) scale(${scale})`;
@@ -1366,7 +1403,7 @@
       const flareWidth = phone.matches ? 84 : 128;
       setBox(fx.flare.source, { x: visor.x - flareWidth / 2, y: visor.y - 10, width: flareWidth, height: 20 });
       fx.flare.group.style.opacity = String(Math.max(postAlpha, filingAlpha));
-      const impact = age - (item.meter ? STRIKE : UNKNOWN_STRIKE);
+      const impact = age - (checkable(item.card) ? STRIKE : UNKNOWN_STRIKE);
       const burstSize = 160 * easeOut(impact / 110), contact = item.contact || emptyBox, strike = center(contact);
       setBox(fx.burst.source, { x: strike.x - burstSize / 2, y: strike.y - burstSize / 2, width: burstSize, height: burstSize });
       setBox(fx.burst.exclusion, contact);
@@ -1465,7 +1502,7 @@
           passage.body.style.setProperty("--stamp-compare-top", `${meter.y + meter.height / 2 - filed.y - filed.height}px`);
         }
         const row = box(passage.row);
-        item.light = { post: box(item.number || item.claim), row, compare: box(passage.compare),
+        item.light = { post: box(item.input.quote || item.number || item.claim), row, compare: box(passage.compare),
           quarter: passage.derivation ? box(passage.ledgerRows[passage.ledgerRows.length - 1]) : null,
           search: [row, ...passage.ledgerRows.map(box), row] };
       });
