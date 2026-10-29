@@ -13,6 +13,7 @@ from typing import Any, Callable, Iterable, Mapping
 import httpx
 
 from .fiscal import normalize_fiscal_labels
+from .sec_transport import sec_get
 
 
 SEC_DATA_BASE = "https://data.sec.gov"
@@ -720,13 +721,7 @@ class EdgarClient:
         }
 
     def _http_fetch(self, url: str) -> bytes:
-        response = httpx.get(
-            url,
-            headers={"User-Agent": self.user_agent},
-            timeout=self.timeout,
-        )
-        response.raise_for_status()
-        return response.content
+        return sec_get(url, user_agent=self.user_agent, timeout=self.timeout)
 
     def _load_document(self, filename: str, url: str) -> tuple[dict[str, Any], str]:
         if filename in self._document_cache:
