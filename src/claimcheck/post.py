@@ -2,7 +2,8 @@
 
 The model only proposes claims. The program keeps a claim for verification only when its quote is an exact span of
 the post and every number in the rewritten claim also appears in that quote, so a model cannot invent or alter what
-the post said. Forecasts and opinions are reported but not verified against filings.
+the post said. Issuer guidance can be checked against L4 releases; opinions and
+third-party forecasts remain outside filing verification.
 """
 
 from __future__ import annotations
@@ -21,6 +22,7 @@ from .checks import program_check_gap
 from .edgar import EdgarClient
 from .providers import get_provider
 from .trace import TraceRecorder, write_trace
+from .release_report import render_release_quote
 
 EXTRACTION_PROMPT = """You extract financial claims from a social media post or article so they can be checked against SEC filings.
 
@@ -31,7 +33,7 @@ Rules for each item:
 - quote: the exact span of the post that states the claim, copied character for character (same language, same punctuation). Keep it short: one sentence or clause.
 - claim: one standalone English sentence that names the company and keeps every number, unit, period and direction word from the quote. Convert East Asian units to standard English scale words: 億 = hundred million, so 2,451 億美元 = $245.1 billion and 623 億 = $62.3 billion; 萬 = ten thousand. Write currency as $ only when the post says US dollars (美元); otherwise keep the currency it names. Do not add a period, number or company that the post does not state. If the post says "last quarter" without a date, keep "last quarter".
 - ticker: the US stock ticker if the company is clear, otherwise null.
-- kind: "reported_fact" for a statement about results a company has reported (revenue, profit, EPS, growth, margins, cash, spending); "forecast" for guidance, targets or predictions; "opinion" for valuations, recommendations or judgments; "other" for anything else with a number (stock price moves, market share, user counts).
+- kind: "reported_fact" for results a company reported, including non-GAAP measures; "issuer_guidance" for a claim about the company's own stated guidance, expectations or financial targets; "forecast" for analysts' or other third parties' predictions; "opinion" for valuations, recommendations or judgments; "other" for anything else with a number (stock price moves, market share, user counts).
 Include every sentence that contains a number about a company. Return {"claims": []} if there are none.
 
 Post:
@@ -39,7 +41,7 @@ Post:
 
 MAX_POST_CHARS = 6000
 MAX_EXTRACTION_TOKENS = 4000
-KINDS = {"reported_fact", "forecast", "opinion", "other"}
+KINDS = {"reported_fact", "issuer_guidance", "forecast", "opinion", "other"}
 _DIGITS = re.compile(r"\d[\d,]*(?:\.\d+)?")
 
 
@@ -160,9 +162,9 @@ def screen_claims(post: str, proposed: Sequence[Mapping[str, Any]]) -> list[dict
             status, reason = "rejected", "quote has no number"
         elif not preserved:
             status, reason = "rejected", "claim has numbers the quote does not: " + ", ".join(missing)
-        elif kind != "reported_fact":
+        elif kind not in {"reported_fact", "issuer_guidance"}:
             status, reason = "not_checked", {
-                "forecast": "forecast or guidance; filings report results, not predictions",
+                "forecast": "third-party forecast; not the issuer's own stated guidance",
                 "opinion": "opinion or valuation; not a reported fact",
                 "other": "not a reported financial result in SEC filings (for example a stock price or user count)",
             }[kind]
@@ -236,12 +238,16 @@ def _evidence_rows(trace: Mapping[str, Any], cited: set[str]) -> list[dict[str, 
     """Cited evidence as flat fact rows; a year-over-year change becomes its two underlying filed facts."""
 
     keep = ("ticker", "entity", "metric", "concept", "value", "unit", "start", "end", "form", "filed", "accn",
-            "frame", "fiscal_year", "fiscal_period", "derived", "filing_url", "period")
+            "frame", "fiscal_year", "fiscal_period", "derived", "filing_url", "period", "accession", "exhibit_url",
+            "sha256", "quote", "highlight_offsets", "context_spans", "low", "high", "provenance")
 
     def row(result: Mapping[str, Any], ev_id: str, role: str | None = None) -> dict[str, Any]:
         out = {key: result[key] for key in keep if result.get(key) is not None}
         out["id"] = ev_id
         out["tier"] = (result.get("provenance") or {}).get("tier")
+        if result.get("exhibit_url"):
+            out["filing_url"] = result["exhibit_url"]
+            out["quote_start"], out["quote_end"] = result.get("start"), result.get("end")
         if role:
             out["role"] = role
         return out
@@ -252,6 +258,12 @@ def _evidence_rows(trace: Mapping[str, Any], cited: set[str]) -> list[dict[str, 
         if not isinstance(result, Mapping) or result.get("evidence_id") not in cited:
             continue
         ev_id = result["evidence_id"]
+        if isinstance(result.get("inspected"), list):
+            for source in result["inspected"]:
+                if isinstance(source, Mapping) and source.get("exhibit_url"):
+                    rows.append(row({**source, "ticker": result.get("ticker"), "concept": "Inspected release",
+                                     "provenance": {"tier": "L4", "strength": "medium", "furnished": True, "unaudited": True}}, ev_id, "searched"))
+            continue
         components = [(result.get(key), role) for key, role in (("current", "current"), ("base", "comparison"))]
         if any(isinstance(component, Mapping) for component, _ in components):
             for component, role in components:
@@ -350,6 +362,7 @@ def check_post(
             verdict=result.get("verdict"),
             summary=result.get("summary"),
             evidence_strength=result.get("evidence_strength"),
+            flags=result.get("flags") or [],
             program_checks=result.get("program_checks") or [],
             evidence=_evidence_rows(trace_dict, cited),
             cost_usd=summary.get("cost_usd"),
@@ -439,9 +452,10 @@ def render_html(report: Mapping[str, Any]) -> str:
             '<div class="ev">'
             f'<b>{html.escape(str(ev.get("id")))} · {html.escape(str(ev.get("entity") or ev.get("ticker") or ""))}</b> '
             f'<mark class="n">{_money(ev.get("value"))}</mark> · {html.escape(str(ev.get("concept") or ""))} · '
-            f'{html.escape(str(ev.get("start") or ""))} → {html.escape(str(ev.get("end") or ""))} · '
+            + (f'L4 · {html.escape(str(ev.get("accession") or ""))} · ' if ev.get("tier") == "L4" else f'{html.escape(str(ev.get("start") or ""))} → {html.escape(str(ev.get("end") or ""))} · ')
             + ("derived from two filed values" if ev.get("derived") else f'{html.escape(str(ev.get("form") or ""))} filed {html.escape(str(ev.get("filed") or ""))}')
             + (f' · <a href="{html.escape(str(ev["filing_url"]))}" target="_blank" rel="noopener">filing on SEC EDGAR</a>' if ev.get("filing_url") else "")
+            + render_release_quote(ev)
             + "</div>"
             for ev in item.get("evidence") or []
         )

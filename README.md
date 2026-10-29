@@ -1,6 +1,10 @@
-# market-claim-verifier
+# Market Claim Verifier
 
-`market-claim-verifier` turns a financial sentence into atomic sub-claims, retrieves the relevant SEC EDGAR XBRL facts, and uses Muse Spark to draft a cited verdict. Python then rechecks the cited numbers and returns `supported`, `contradicted`, or `insufficient_evidence`. Built during the Meta Global AI Developer Hackathon starting 2026-10-27.
+Check financial sentences against SEC filings with Meta Muse Spark and auditable Python checks ([agent](src/claimcheck/agent.py), [checks](src/claimcheck/checks.py)).
+
+[![Tests: offline suite](docs/badges/tests.svg)](.github/workflows/verify.yml)
+[![License: MIT](docs/badges/license.svg)](LICENSE)
+[![Built for the Meta AI hackathon](docs/badges/hackathon.svg)](BUILD_LOG.md)
 
 <!-- figure:hero:start -->
 ![Editorial illustration of a sentence connected to filing sheets](docs/figures/hero.png)
@@ -8,11 +12,49 @@
 *AI-generated illustration: a sentence being checked against filings.* The reusable prompt is recorded in [`docs/prompts/hero-image.md`](docs/prompts/hero-image.md).
 <!-- figure:hero:end -->
 
+## Try it
+
+[Website / saved demo](https://yanlonglai.github.io/market-claim-verifier/site/) · [Results explorer](https://yanlonglai.github.io/market-claim-verifier/explorer/) · **Demo video: publication link pending** ([records and opening disclosure](demo/JUDGE_INTRO.md)). The [site source](docs/site/index.html) and [explorer data](docs/explorer/data.json) are included here.
+
+```sh
+sh scripts/verify.sh
+```
+
+One command runs the offline tests, rebuilds/checks figures, and checks that rebuilt site data is byte-identical ([verifier](scripts/verify.py)). [Prerequisites and expected output](AGENTS.md#offline-verification): Python 3.12–3.14, uv, Node 22+; first run installs locked dependencies.
+
+## Key results
+
+Original v2 run, **357 claims / six systems**, scored against the corrected gold ([full report](docs/evidence/eval-v2-2026-10-27/REPORT.md), [registered-gold report](docs/evidence/eval-v2-2026-10-27/REPORT-registered-gold.md)):
+
+| Meta model / provider | Agent | Single-shot, no tools |
+| --- | --- | --- |
+| Muse Spark Open · Baseten | **323/357 = 90.5%** | 74/357 = 20.7% |
+| Muse Spark Open · Fireworks | **323/357 = 90.5%** | 71/357 = 19.9% |
+| Muse Spark 1.3 · Meta Model API | **297/357 = 83.2%** | 158/357 = 44.3% |
+
+This includes development claims; **266** claims are held out. The [later agent rerun](docs/evidence/eval-v2-2026-10-28-r2-posthoc/REPORT.md) is post-hoc, after failure analysis. [Scope, corrections and limitations](JUDGES.md#limits-to-keep-in-view).
+
+**How Meta models are used.** Muse Spark 1.3 via Meta Model API and open-weight Muse Spark Open via Baseten/Fireworks decompose claims, choose SEC tools and draft cited verdicts; Python checks the numbers and evidence ([provider/model record](docs/evidence/eval-v2-2026-10-27/manifest.json), [program checks](src/claimcheck/checks.py)). [Media-production credits](CREDITS.md#media-and-dependencies) describe the separate offline asset tooling.
+
+**Judges: [start with JUDGES.md](JUDGES.md)** for the four criteria, evidence links and build-window disclosure. AI readers: [llms.txt](llms.txt) and [AGENTS.md](AGENTS.md). [MIT license](LICENSE) · [SEC/data credits](CREDITS.md) · [Changelog](CHANGELOG.md) · [Planned roadmap](ROADMAP.md).
+
+## Project overview
+
+`market-claim-verifier` turns a financial sentence into atomic sub-claims, retrieves the relevant SEC EDGAR XBRL facts, and uses Muse Spark to draft a cited verdict. Python then rechecks the cited numbers and returns `supported`, `contradicted`, or `insufficient_evidence`. Built during the Meta Global AI Developer Hackathon starting 2026-10-27.
+
 ## The problem
 
 - DappGo's AI-written stock commentary on 2026-10-26 failed its internal fact-assertion check; this repository is the focused response.
 - One sentence can contain several atomic assertions: a value, a period-to-period change, and a record or first-time claim.
 - A model can draft the explanation, but numbers, comparators, evidence IDs, budget reservations, and the final verdict need an auditable program path.
+
+## L4 earnings-release evidence
+
+Guidance and non-GAAP claims can use the issuer's SEC **8-K Item 2.02 Ex 99.1** earnings release (plus HTML Ex 99.2). Muse selects a candidate quote; Python rechecks the cached bytes, offsets, metric, period and numbers. L4 is furnished, unaudited and medium strength at most. Consolidated reported totals are also checked against XBRL; L1/L2 wins a conflict with `release_vs_filing_mismatch`. Missing outlooks and verbal ranges such as “low to mid single digits” return insufficient evidence.
+
+The [source and comparison rules](docs/DATA_SOURCES.md#l4-parsing-and-decision-rules) and [independent 32-claim gold builder](eval/l4/GOLD_REVIEW.md) describe the supported scope. Rebuild gold with `.venv/bin/python eval/l4/build_gold.py`. After committing the gold and source fixtures, run `.venv/bin/python eval/l4/run_agent.py`; it uses Baseten's Meta Muse Spark Open, offline SEC snapshots, and one $5 budget for the entire run. Results belong in `docs/evidence/eval-l4-2026-10-29/`.
+
+The [registered L4 run](docs/evidence/eval-l4-2026-10-29/ANALYSIS.md) scored **31/32 (96.9%; Wilson 95% CI 84.3–99.4%)**, with **0/19 false-supported** results, for **$0.7157**. This is a fixture-based regression benchmark; the one routing miss and post-run changes are retained and explained.
 
 ## What it does
 

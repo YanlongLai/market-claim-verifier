@@ -9,6 +9,7 @@ from datetime import date
 from typing import Any
 
 from .numbers import ParsedNumber, infer_comparator, parse_stated_number
+from .release import RELEASE_KINDS, requires_release
 
 
 CLAIM_TYPES = (
@@ -19,9 +20,10 @@ CLAIM_TYPES = (
     "record_low",
     "first_time_above",
     "other",
+    *RELEASE_KINDS,
 )
 COMPARATORS = ("eq", "approx", "gt", "gte", "lt", "lte")
-PROGRAM_VERDICTS = ("supported", "contradicted", "unchecked")
+PROGRAM_VERDICTS = ("supported", "contradicted", "unchecked", "insufficient_evidence")
 
 _NEGATIVE_DIRECTION_WORDS = (
     "fell",
@@ -1606,6 +1608,13 @@ def evaluate_sub_claim(
     _allow_interpretations: bool = True,
 ) -> dict[str, Any]:
     """Evaluate one normalized model sub-claim against cited evidence."""
+
+    if requires_release(str(sub_claim.get("original_claim") or sub_claim.get("text") or "")) or sub_claim.get("claim_type") in RELEASE_KINDS or any(
+        getattr(runner, "evidence_kind", {}).get(str(eid)) in {"find_earnings_release", "quote_release"}
+        for eid in sub_claim.get("evidence_ids", [])
+    ):
+        from .release_checks import evaluate_release_claim
+        return evaluate_release_claim(sub_claim, runner)
 
     raw_evidence_ids = _normalise_evidence_ids(sub_claim.get("evidence_ids"))
     evidence_ids, evidence_groups = _deduplicate_evidence_ids(raw_evidence_ids, runner)

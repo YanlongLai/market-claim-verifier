@@ -80,7 +80,10 @@ def test_single_shot_trace_and_result_record_everything(tmp_path: Path) -> None:
     assert trace["tokens"] == result["tokens"]
 
 
-def test_manifest_records_versions_hashes_and_ledger(tmp_path: Path) -> None:
+def test_manifest_records_versions_hashes_and_ledger(tmp_path: Path, monkeypatch) -> None:
+    # Test recording metadata without requiring a Git executable/history in an archive.
+    commit = "7c5670b84e6052db9fa67fd86606fb2ee11ee42c"
+    monkeypatch.setattr("claimcheck.evaluate._git_metadata", lambda: {"commit": commit, "dirty": False})
     claims_path = tmp_path / "claims.jsonl"
     claims_path.write_text(json.dumps(_claim()) + "\n", encoding="utf-8")
     out = tmp_path / "eval"
@@ -98,8 +101,8 @@ def test_manifest_records_versions_hashes_and_ledger(tmp_path: Path) -> None:
     assert manifest["run_id"].startswith("eval-")
     assert manifest["finished_at"].endswith("Z")
     assert manifest["wall_clock_s"] >= 0
-    assert manifest["git_commit"]
-    assert isinstance(manifest["git_dirty"], bool)
+    assert manifest["git_commit"] == commit
+    assert manifest["git_dirty"] is False
     assert manifest["python_version"]
     assert manifest["openai_version"]
     assert manifest["split"] == "dev"

@@ -464,7 +464,7 @@ def test_amazon_calendar_issuer_keeps_unlabeled_quarter_supported(
 ) -> None:
     cache = tmp_path / "cache"
     cache.mkdir()
-    cached_snapshot = Path(".cache")
+    cached_snapshot = FIXTURES / "sec-offline"
     shutil.copyfile(cached_snapshot / "company_tickers.json", cache / "company_tickers.json")
     shutil.copyfile(
         cached_snapshot / "companyfacts-CIK0001018724.json",
