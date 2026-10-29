@@ -215,6 +215,7 @@ def test_period_interpretations_mixed_fail_closed_as_ambiguous() -> None:
 
     assert check["program_verdict"] == "unchecked"
     assert check["period_ambiguous"] is True
+    assert check["gap"] is None
     assert "period_ambiguous" in check["reason"]
     assert "8.1273e+10" in check["reason"]
     assert "2.81724e+11" in check["reason"]

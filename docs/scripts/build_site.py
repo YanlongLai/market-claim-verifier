@@ -12,8 +12,17 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import re
+import sys
+from datetime import date
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
+
+# Also support direct invocation from a checkout without an installed package.
+ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT / "src"))
+from claimcheck.post import with_report_gaps
 
 try:
     from .build_explorer_data import posthoc_snapshot
@@ -23,7 +32,6 @@ except ImportError:  # Running this file directly from the docs/scripts director
     from filing_excerpts import SECFilingFetcher, claim_excerpts, group_excerpt_records
 
 
-ROOT = Path(__file__).resolve().parents[2]
 EXPLORER_PATH = ROOT / "docs" / "explorer" / "data.json"
 SUMMARY_PATH = ROOT / "docs" / "evidence" / "eval-v2-2026-10-27" / "summary.json"
 OUTPUT_PATH = ROOT / "docs" / "site" / "data" / "site.json"
@@ -53,6 +61,43 @@ STAMP_SELECTIONS = (
     ("bigtech-thread-baseten", 4, "Fiscal 2024 revenue: $391.0B.", "2024 財年營收 3,910 億美元。"),
     ("tw-social-post-meta", 3, "2024 revenue exceeded $50B.", None),
 )
+
+# These are explicitly fictional example posts; their checks remain report data.
+STAMP_POST_DATES = {
+    "demo-thread-baseten": "2025-11-03",
+    "bigtech-thread-baseten": "2026-02-03",
+    "tw-social-post-meta": "2025-02-24",
+    "market-recap-repost": "2025-02-25",
+    "banana-news-article": "2023-10-27",
+}
+
+STAMP_PERSONAS = {
+    "demo-thread-baseten": {
+        "id": "retail-owl", "name": {"en": "Ticker Owl", "zh": "Ticker Owl"},
+        "byline": {"en": "@tickerowl", "zh": "@tickerowl"}, "followers": 18400,
+        "follower_label": {"en": "18.4K followers", "zh": "1.84 萬 追蹤"},
+    },
+    "bigtech-thread-baseten": {
+        "id": "chart-raccoon", "name": {"en": "Chart Coon", "zh": "Chart Coon"},
+        "byline": {"en": "@chartcoon", "zh": "@chartcoon"}, "followers": 52100,
+        "follower_label": {"en": "52.1K followers", "zh": "5.21 萬 追蹤"},
+    },
+    "tw-social-post-meta": {
+        "id": "lazy-cat", "name": {"en": "US Stocks in 1 Minute", "zh": "美股懶人包"},
+        "byline": {"en": "美股懶人包", "zh": "US Stocks in 1 Minute"}, "followers": 43000,
+        "follower_label": {"en": "43K followers", "zh": "4.3 萬 追蹤"},
+    },
+    "market-recap-repost": {
+        "id": "repost-bird", "name": {"en": "Market Recap", "zh": "Market Recap"},
+        "byline": {"en": "Market Recap", "zh": "Market Recap"}, "followers": 210000,
+        "follower_label": {"en": "210K followers", "zh": "21 萬 追蹤"},
+    },
+    "banana-news-article": {
+        "id": "banana-news", "name": {"en": "Banana News Flash", "zh": "香蕉新聞快報"},
+        "byline": {"en": "香蕉新聞快報", "zh": "Banana News Flash"}, "followers": 96000,
+        "follower_label": {"en": "96K followers", "zh": "9.6 萬 追蹤"},
+    },
+}
 
 SYSTEM_ORDER = [
     "agent@baseten",
@@ -190,23 +235,250 @@ def first_url(evidence: list[dict[str, Any]]) -> str | None:
     return None
 
 
-def stamp_cards() -> list[dict[str, Any]]:
+def stamp_gap_snapshot(claim: dict[str, Any]) -> dict[str, Any]:
+    """Use the most severe assessed check, keeping its values and units together."""
+
+    fields = ("severity", "score", "gap", "gap_kind", "direction_wrong", "gap_relation", "filed_value_display", "stated_value_display")
+    empty = dict.fromkeys(fields)
+    if claim.get("status") != "verified" or claim.get("verdict") not in {"supported", "contradicted"}:
+        return empty
+    checks = [check for check in claim.get("program_checks") or [] if check.get("gap") is not None]
+    if not checks:
+        return empty
+    severity_order = {name: index for index, name in enumerate(("exact", "minor", "moderate", "major", "severe"))}
+    check = max(checks, key=lambda item: (severity_order[item["gap"]["severity"]], -item["gap"]["score"]))
+    assessment = check["gap"]
+    unit = "percent" if assessment["gap_kind"] == "points" else next(
+        (item.get("unit") for item in claim.get("evidence") or [] if item.get("id") in (check.get("evidence_ids") or [])),
+        None,
+    )
+    return {
+        **assessment,
+        "gap_relation": "shortfall" if check.get("comparator") in {"gt", "gte"} else "off",
+        "filed_value_display": display_value(check.get("actual_value"), unit),
+        "stated_value_display": display_value(check.get("stated_value_used"), unit),
+    }
+
+
+def stamp_period(period: str | None) -> dict[str, str] | None:
+    if not period:
+        return None
+    match = re.fullmatch(r"(FY)?(\d{4})(?:Q([1-4]))?", period)
+    if not match:
+        return {"en": period, "zh": period}
+    fiscal, year, quarter = match.groups()
+    return {
+        "en": f"{'Fiscal ' if fiscal else ''}{'Q' + quarter + ' ' if quarter else ''}{year}",
+        "zh": f"{year} {'財年' if fiscal else '年'}{'第 ' + quarter + ' 季' if quarter else ''}",
+    }
+
+
+def stamp_source_evidence(evidence: dict[str, Any]) -> dict[str, Any]:
+    return {key: evidence.get(key) for key in (
+        "ticker", "entity", "concept", "value", "unit", "start", "end", "form", "filed", "accn", "filing_url",
+    )}
+
+
+def stamp_excerpt(
+    evidence: dict[str, Any], fetcher: SECFilingFetcher, cached_site: dict[str, Any],
+) -> dict[str, Any]:
+    """A single real row, selected by the same fact matcher as See filing."""
+    source = stamp_source_evidence(evidence)
+    for card in cached_site.get("stamp_cards", []):
+        excerpt = card.get("excerpt")
+        if excerpt and excerpt.get("source_evidence") == source:
+            return excerpt
+    # The modal snapshot already contains matched rows for most of these facts.
+    record = None
+    for example in cached_site.get("examples", {}).values():
+        for claim in example.get("claims", []):
+            for item in claim.get("excerpts", []):
+                index = item.get("evidence_index", 0)
+                facts = claim.get("evidence", [])
+                if index < len(facts) and stamp_source_evidence(facts[index]) == source and item.get("excerpt"):
+                    record = item
+    if record is None:
+        record = claim_excerpts({"status": "verified", "evidence": [evidence]}, fetcher)[0]
+    passage = record.get("excerpt")
+    if not passage:
+        raise ValueError(f"Stamp passage missing for {evidence.get('ticker')}: {record.get('reason')}")
+    result = {
+        "type": passage["type"], "form": evidence["form"], "filed": evidence["filed"],
+        "company": evidence["entity"], "section_title": passage.get("section_title"),
+        "source_evidence": source, "primary_url": record["primary_url"],
+        "inline_url": record.get("inline_url"), "fact": passage["fact"],
+    }
+    if passage["type"] == "table":
+        cells = passage["row"]["cells"]
+        labels = [cell["text"] for cell in cells if cell.get("is_row_label")]
+        headers = list(dict.fromkeys(
+            cell["text"] for row in passage["headers"] for cell in row["cells"]
+            if cell.get("covers_fact") and cell.get("text")
+        ))
+        result.update(row_label=" ".join(labels), period_header=" · ".join(headers), value=passage["fact"]["raw_value"])
+    else:
+        text = passage["text"]
+        if len(text) > 220:
+            # Preserve a verbatim, fact-centred fragment rather than inventing a sentence.
+            start = max(0, passage["fact_range"]["start"] - 80)
+            text = text[start:start + 220]
+        result.update(text=text, value=passage["fact"]["raw_value"])
+    return result
+
+
+def stamp_derivation(
+    evidence: dict[str, Any], cached_site: dict[str, Any],
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Resolve the Q4 source components from the existing SEC companyfacts cache."""
+    for card in cached_site.get("stamp_cards", []):
+        excerpt = card.get("excerpt") or {}
+        derivation = excerpt.get("derivation") or {}
+        if derivation.get("derived_from") == stamp_source_evidence(evidence):
+            annual, nine = derivation["full_year"], derivation["nine_months"]
+            if annual["value"] - nine["value"] == evidence["value"] and annual["end"] == evidence["end"]:
+                # Keep component metadata scoped to the source fact, rather than
+                # inheriting the derived quarter's period or fiscal-period tag.
+                derivation = {**derivation, "full_year": stamp_source_evidence(annual), "nine_months": stamp_source_evidence(nine)}
+                return derivation["full_year"], derivation
+    companies = {item["ticker"]: item for item in read_json(ROOT / ".cache/company_tickers.json").values()}
+    company = companies[evidence["ticker"]]
+    facts = read_json(ROOT / f".cache/companyfacts-CIK{company['cik_str']:010d}.json")
+    values = facts["facts"]["us-gaap"][evidence["concept"]]["units"][evidence["unit"]]
+    annuals = [item for item in values if item.get("end") == evidence["end"] and item.get("form") == "10-K"
+               and (int(item["end"][:4]) - int(item.get("start", item["end"])[:4]) >= 1)]
+    for annual in sorted(annuals, key=lambda item: item["filed"]):
+        nine_months = [item for item in values if item.get("start") == annual.get("start")
+                      and item.get("end", "") < evidence["start"] and item.get("form") == "10-Q"
+                      and annual["val"] - item["val"] == evidence["value"]]
+        if not nine_months:
+            continue
+        nine = min(nine_months, key=lambda item: item["filed"])
+        def component(item):
+            return {**stamp_source_evidence(evidence), "value": item["val"], "start": item["start"], "end": item["end"],
+                    "form": item["form"], "filed": item["filed"], "accn": item["accn"],
+                    "filing_url": f"https://www.sec.gov/Archives/edgar/data/{company['cik_str']}/{item['accn'].replace('-', '')}/"}
+        return component(annual), {"full_year": component(annual), "nine_months": component(nine),
+                                  "derived_from": stamp_source_evidence(evidence),
+                                  "result": evidence["value"], "label": {"en": "Full year", "zh": "全年"},
+                                  "text": {"en": f"Q4 = full year − nine months = ${evidence['value'] / 1e9:.1f}B",
+                                           "zh": f"第 4 季 = 全年 − 前九個月 = ${evidence['value'] / 1e9:.1f}B"}}
+    raise ValueError(f"No SEC full-year/nine-month components for {evidence['ticker']} {evidence['period']}")
+
+
+def first_reported_fact(evidence: dict[str, Any], companyfacts: dict[str, Any]) -> dict[str, Any]:
+    """First SEC filing of this exact concept, unit and duration (not a later repeat)."""
+    concept = evidence["concept"].removeprefix("us-gaap:")
+    values = companyfacts.get("facts", {}).get("us-gaap", {}).get(concept, {}).get("units", {}).get(evidence["unit"], [])
+    matching = [item for item in values if item.get("start") == evidence.get("start")
+                and item.get("end") == evidence.get("end") and item.get("filed")]
+    if not matching:
+        raise ValueError(f"No SEC first-filing date for {evidence['ticker']} {concept} {evidence.get('start')}–{evidence.get('end')}")
+    first = min(matching, key=lambda item: (date.fromisoformat(item["filed"]), item["accn"]))
+    cik = int(companyfacts["cik"])
+    return {
+        "ticker": evidence["ticker"], "cik": cik, "concept": concept, "unit": evidence["unit"],
+        "start": evidence.get("start"), "end": evidence["end"],
+        "first_filed": first["filed"], "form": first["form"], "accn": first["accn"],
+        "first_reported_value": first["val"],
+        "companyfacts_url": f"https://data.sec.gov/api/xbrl/companyfacts/CIK{cik:010d}.json",
+    }
+
+
+def stamp_date_basis(
+    evidence: list[dict[str, Any]], fetcher: SECFilingFetcher, cached_site: dict[str, Any],
+) -> dict[str, Any]:
+    """Include growth comparisons and both components of a derived quarter."""
+    facts = {}
+    for item in evidence:
+        components = [item]
+        if item.get("derived"):
+            _, derivation = stamp_derivation(item, cached_site)
+            components = [derivation["full_year"], derivation["nine_months"]]
+        for component in components:
+            key = tuple(component.get(field) for field in ("ticker", "concept", "unit", "start", "end"))
+            if key in facts:
+                continue
+            source_url = urlparse(component.get("filing_url") or "")
+            match = re.match(r"/Archives/edgar/data/(\d+)/", source_url.path)
+            if source_url.hostname != "www.sec.gov" or not match:
+                raise ValueError(f"No SEC company identity for date validation: {key}")
+            cik = int(match[1])
+            data = fetcher.load_companyfacts(cik, seed_cache=ROOT / f".cache/companyfacts-CIK{cik:010d}.json")
+            facts[key] = first_reported_fact(component, data)
+    return {
+        "method": "sec-companyfacts-first-filed",
+        "not_before": max((fact["first_filed"] for fact in facts.values()), default=None),
+        "facts": list(facts.values()),
+    }
+
+
+def validate_stamp_post_date(post_date: str, date_basis: dict[str, Any], *, today: date | None = None) -> None:
+    """Fail the build for a future example or one preceding any checked figure."""
+    try:
+        posted = date.fromisoformat(post_date)
+        if posted.isoformat() != post_date:
+            raise ValueError("Expected YYYY-MM-DD")
+    except (TypeError, ValueError) as error:
+        raise ValueError(f"Invalid example post date: {post_date!r}") from error
+    earliest = max((fact["first_filed"] for fact in date_basis["facts"]), default=None)
+    if date_basis["not_before"] != earliest:
+        raise ValueError("Post date_basis does not match its SEC first-filing dates")
+    if earliest and posted < date.fromisoformat(earliest):
+        raise ValueError(f"Example post date {post_date} precedes SEC first-filing date {earliest}")
+    if posted > (today or date.today()):
+        raise ValueError(f"Example post date {post_date} is after today")
+
+
+def stamp_persona(persona_id: str) -> dict[str, Any]:
+    persona = STAMP_PERSONAS[persona_id]
+    return {**persona, "fictional": True, "avatar": f"img/personas/{persona['id']}-128.webp"}
+
+
+def stamp_cards(filing_fetcher: SECFilingFetcher | None = None, cached_site: dict[str, Any] | None = None) -> list[dict[str, Any]]:
     """Select real claims in a mixed order, including across the loop boundary."""
-    reports = {}
+    reports = {
+        report_id: with_report_gaps(read_json(path), path.parent)
+        for report_id in dict.fromkeys(selection[0] for selection in STAMP_SELECTIONS)
+        for path in [ROOT / "docs/evidence/posts-2026-10-28" / report_id / "report.json"]
+    }
     cards = []
+    cached_site = cached_site if cached_site is not None else read_json(OUTPUT_PATH)
+    fetcher = filing_fetcher or SECFilingFetcher(FILING_CACHE_PATH, offline=True)
+    company_names = {item["ticker"]: item["entity"] for report in reports.values() for claim in report["claims"]
+                     for item in claim.get("evidence", []) if item.get("entity")}
     for report_id, index, english, chinese in STAMP_SELECTIONS:
         report_path = Path("docs/evidence/posts-2026-10-28") / report_id / "report.json"
-        if report_id not in reports:
-            reports[report_id] = read_json(ROOT / report_path)
         claim = next(item for item in reports[report_id]["claims"] if item["index"] == index)
         evidence = claim.get("evidence") or []
         checkable = claim.get("status") == "verified" and claim.get("verdict") in ("supported", "contradicted")
         forms = list(dict.fromkeys(item["form"] for item in evidence if item.get("form") in ("10-Q", "10-K")))
+        excerpt = None
+        if checkable:
+            source = evidence[0]
+            derivation = None
+            if source.get("derived"):
+                source, derivation = stamp_derivation(source, cached_site)
+            excerpt = dict(stamp_excerpt(source, fetcher, cached_site))
+            if derivation:
+                excerpt["derivation"] = derivation
+        date_basis = stamp_date_basis(evidence if checkable else [], fetcher, cached_site)
+        post_date = STAMP_POST_DATES[report_id]
+        validate_stamp_post_date(post_date, date_basis)
+        company = evidence[0]["entity"] if evidence else company_names[claim["ticker"]]
+        period = stamp_period(evidence[0].get("period")) if evidence else (
+            {"en": match[0], "zh": match[0] + " 年"} if claim["kind"] == "forecast" and (match := re.search(r"20\d{2}", claim["quote"])) else None
+        )
         cards.append({
             "id": f"{report_id}-{index}",
+            "check_id": f"{report_id}-{index}",
             "source_report": report_path.as_posix(),
             "claim_index": claim["index"],
             "ticker": claim["ticker"],
+            "company": company,
+            "persona": stamp_persona(report_id),
+            "post_date": post_date,
+            "date_basis": date_basis,
+            "period": period,
             "quote": claim["quote"],
             "kind": claim["kind"],
             "status": claim["status"],
@@ -216,7 +488,25 @@ def stamp_cards() -> list[dict[str, Any]]:
             "source_kind": "social" if report_id == "tw-social-post-meta" else "thread",
             "filing_url": first_url(evidence),
             "evidence_label": f"SEC {' / '.join(forms) if forms else '10-Q / 10-K'}" if checkable and evidence else None,
+            "excerpt": excerpt,
+            **stamp_gap_snapshot(claim),
         })
+    by_id = {card["id"]: card for card in cards}
+    amazon = by_id["demo-thread-baseten-1"]
+    coca_cola = by_id["tw-social-post-meta-3"]
+    cards.extend([
+        {**amazon, "id": "banana-news-article", "same_claim_as": amazon["id"],
+         "persona": stamp_persona("banana-news-article"), "source_kind": "article",
+         "post_date": STAMP_POST_DATES["banana-news-article"],
+         "text": {"en": "Amazon reports $143.1B in Q3 2023 revenue.", "zh": "亞馬遜 2023 年第 3 季營收達 1,431 億美元。"}},
+        {**coca_cola, "id": "market-recap-repost", "same_claim_as": coca_cola["id"],
+         "persona": stamp_persona("market-recap-repost"), "source_kind": "repost",
+         "post_date": STAMP_POST_DATES["market-recap-repost"], "reposted_from": "美股懶人包"},
+    ])
+    for card in cards:
+        validate_stamp_post_date(card["post_date"], card["date_basis"])
+    if len(cards) > 11 or any(card["verdict"] == following["verdict"] for card, following in zip(cards, cards[1:] + cards[:1])):
+        raise ValueError("Stamp loop must have at most 11 cards and alternate verdicts, including wraparound")
     return cards
 
 
@@ -500,7 +790,8 @@ def main() -> None:
         family_snapshot(stats, "period_trap"),
     ]
 
-    cached_examples = read_json(OUTPUT_PATH).get("examples", {}) if args.offline else {}
+    cached_site = read_json(OUTPUT_PATH) if OUTPUT_PATH.exists() else {}
+    cached_examples = cached_site.get("examples", {}) if args.offline else {}
     filing_fetcher = None if args.offline else SECFilingFetcher(FILING_CACHE_PATH)
     examples = {
         language: example_snapshot(EXAMPLE_IDS[language], read_json(report_path), filing_fetcher, cached_examples.get(language))
@@ -521,7 +812,7 @@ def main() -> None:
         "families": families,
         "research": research_snapshot(systems, paired, families),
         "examples": examples,
-        "stamp_cards": stamp_cards(),
+        "stamp_cards": stamp_cards(filing_fetcher, cached_site),
         "filing_excerpts": {
             "cache_dir": ".cache/filings",
             "examples": {language: example["filing_excerpt_summary"] for language, example in examples.items()},

@@ -9,6 +9,7 @@ from typing import Any
 from claimcheck.agent import verify_claim
 from claimcheck.budget import Ledger
 from claimcheck.edgar import EdgarClient
+from claimcheck.evaluate import run_evaluation
 from claimcheck.trace import TraceRecorder, write_trace
 
 
@@ -168,11 +169,30 @@ def test_agent_handles_parallel_calls_and_final_schema(tmp_path: Path) -> None:
     assert result["model_verdict"] == "supported"
     assert result["sub_claims"][0]["program_verdict"] == "supported"
     assert result["sub_claims"][0]["disagreement"] is False
+    assert result["program_checks"][0]["gap"] == {
+        "gap_kind": "relative", "gap": 0, "direction_wrong": False,
+        "severity": "exact", "score": 100,
+    }
     assert len(client.responses.calls) == 3
     assert len(client.responses.calls[1]["input"]) == 2
     assert client.responses.calls[1]["previous_response_id"] == "r1"
     assert "text" in client.responses.calls[2]
     assert "tools" not in client.responses.calls[2]
+
+
+def test_agent_evaluation_persists_gaps_in_results_and_traces(tmp_path: Path) -> None:
+    out = tmp_path / "eval"
+    run_evaluation(
+        [{"id": "gap", "split": "dev", "category": "exact_value_true", "claim": "Meta Q2 2025 revenue was $47.5B", "gold_verdict": "supported"}],
+        systems=("agent",), out_dir=out, client=FakeClient(supported_final()),
+        edgar=fixture_client(tmp_path / "edgar"), budget_usd=0.5,
+    )
+    result = json.loads((out / "gap--agent.json").read_text(encoding="utf-8"))
+    trace = json.loads((out / result["trace_path"]).read_text(encoding="utf-8"))
+    assert result["verdict"] == "supported"
+    gap = result["program_checks"][0]["gap"]
+    assert gap["severity"] == "exact" and gap["score"] == 100
+    assert result["sub_claims"][0]["gap"] == trace["program_checks"][0]["gap"] == gap
 
 
 def test_program_period_lookup_is_recorded_in_trace_with_program_role(
@@ -428,6 +448,7 @@ def test_invalid_evidence_id_is_flagged(tmp_path: Path) -> None:
     assert result["model_program_disagreement"] is True
     assert result["program_checks"][0]["evidence_valid"] is False
     assert result["program_checks"][0]["reason"] == "no_evidence"
+    assert result["program_checks"][0]["gap"] is None
 
 
 def test_trace_does_not_contain_model_key(tmp_path: Path) -> None:

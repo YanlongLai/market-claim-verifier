@@ -55,6 +55,17 @@ The model selects tools and drafts the explanation. The program owns the numeric
 
 See the [flow source](docs/diagrams/how-a-claim-is-checked.mmd).
 
+### Gap score
+
+Each program check includes a deterministic gap assessment: relative error for levels, one-sided shortfall or
+overshoot for thresholds, and percentage-point error for percent changes. Within tolerance is **Exact (100)**.
+Otherwise the bands are **Minor** (<2% / <1 pp), **Moderate** (2–<10% / 1–<5 pp), **Major** (10–50% / 5–20 pp,
+or wrong direction), and **Severe** (>50% / >20 pp). Otherwise the score is `max(0, 100 − 200 × relative_gap)`
+or `max(0, 100 − 4 × pp_gap)`, with another 30 points deducted for wrong direction (floor 0).
+This display signal leaves the verdict unchanged; CAN'T CHECK has no score. Existing reports can be updated
+offline with `claimcheck.post.refresh_evidence(report_dir)`; `python docs/scripts/build_site.py --offline`
+rebuilds the cards from saved checks and trace metadata without modifying the source reports.
+
 ## Real results
 
 **357 claims about 23 companies.** 260 are generated from SEC data across 10 trap families. 54 are model paraphrases of those. 43 are real sentences from news, aggregator and investor-relations pages, paraphrased.
