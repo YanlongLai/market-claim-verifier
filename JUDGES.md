@@ -5,7 +5,7 @@ Muse Spark chooses tools and drafts explanations; Python checks numbers, periods
 
 ## 60-second path
 
-1. Open the [website](https://yanlonglai.github.io/market-claim-verifier/site/) ([site source](docs/site/index.html)) and its saved post/filing example.
+1. Open the [website](https://hackathon.dappgo.com/site/) ([site source](docs/site/index.html)) and its saved post/filing example.
 2. **Demo video: publication link pending.** [Demo records](demo/BUILD_LOG.md) document the approved video; use the [opening disclosure](demo/JUDGE_INTRO.md): **“Nothing in this repository pre-existed the hackathon.”** ([build log](BUILD_LOG.md#build-log)).
 3. Run `sh scripts/verify.sh`: offline tests, figure rebuild/check, byte-identical site rebuild, and Markdown links ([script](scripts/verify.sh), [prerequisites and expected output](AGENTS.md#offline-verification)).
 

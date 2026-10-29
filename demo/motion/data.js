@@ -1933,7 +1933,7 @@ window.MOTION_DATA = {
     "provenance": {
       "demo/data/demo-thread.json": "ea571b5aca2475293215e72e2698b19bb22bde3756fa49d36dfad6f2ce69adef",
       "docs/evidence/posts-2026-10-28/tw-social-post-meta/report.json": "74cf3acdf3a8ae6daac797123255babafed2850342bd6ab763b321fc5499d922",
-      "docs/site/data/site.json": "9f41bc291090cb1cf19eee10abfcc5840e125a3dae28e7914e8bb8f22eb0f31c",
+      "docs/site/data/site.json": "d81d87f281426fbba671360b0ccd8ddee3e1c3380d56b39f59c5db00de5c113a",
       "docs/evidence/eval-v2-2026-10-27/summary.json": "27bbf13fe62f887cb0e81e7eadf6f2257f59ffc7bee73fe35b414159636cd675",
       "examples/posts/tw-social-post.txt": "9cca0dcfa0e0ccc056f015ec3d425fd257e59d9cc6279ce03feef0707a6be052",
       "docs/evidence/posts-2026-10-28/demo-thread-baseten/report.json": "6a3d9f1cf8e955b1f75028ba808125f9b15045855721fdd007ade2e9f24ee201",
