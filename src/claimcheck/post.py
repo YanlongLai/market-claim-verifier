@@ -23,6 +23,8 @@ from .edgar import EdgarClient
 from .providers import get_provider
 from .trace import TraceRecorder, redact, write_trace
 from .release_report import render_release_quote
+from .period_context import inherit_period
+from .retries import exception_status, retry_info, wait_for_retry
 
 EXTRACTION_PROMPT = """You extract financial claims from a social media post or article so they can be checked against SEC filings.
 
@@ -30,9 +32,10 @@ Return only JSON, with no prose and no code fence, in this shape:
 {"claims": [{"quote": "...", "claim": "...", "ticker": "...", "kind": "..."}]}
 
 Rules for each item:
-- quote: the exact span of the post that states the claim, copied character for character (same language, same punctuation). Keep it short: one sentence or clause.
+- quote: an exact contiguous span of the post, copied character for character (same language, same punctuation). Include the slide/table heading through the relevant row when its date or units are needed. For speech, use the surrounding turn or period introduction when needed. Do not combine noncontiguous excerpts.
 - claim: one standalone English sentence that names the company and keeps every number, unit, period and direction word from the quote. Convert East Asian units to standard English scale words: 億 = hundred million, so 2,451 億美元 = $245.1 billion and 623 億 = $62.3 billion; 萬 = ten thousand. Write currency as $ only when the post says US dollars (美元); otherwise keep the currency it names. Do not add a period, number or company that the post does not state. If the post says "last quarter" without a date, keep "last quarter".
 - ticker: the US stock ticker if the company is clear, otherwise null.
+- Preserve the document's stated period in every financial claim, including growth clauses. Resolve a nearby "June quarter" from an explicit fiscal quarter/year in the release introduction. Prefer fiscal Q3 2025 to repeating a calendar end date. Period years/quarter digits may come from nearby context, but any other added number (including the day 28 in a date) MUST occur in quote: expand the exact quote to cover that heading. Never use today's date or the latest filing to fill a missing period. Do not borrow a comparison period or a different company's period. If context is ambiguous, leave the period unresolved.
 - kind: "reported_fact" for results a company reported, including non-GAAP measures; "issuer_guidance" for a claim about the company's own stated guidance, expectations or financial targets; "forecast" for analysts' or other third parties' predictions; "opinion" for valuations, recommendations or judgments; "other" for anything else with a number (stock price moves, market share, user counts).
 Include every sentence that contains a number about a company. Return {"claims": []} if there are none.
 
@@ -170,6 +173,10 @@ def screen_claims(post: str, proposed: Sequence[Mapping[str, Any]]) -> list[dict
             }[kind]
         else:
             status, reason = "to_verify", ""
+        extracted_claim = claim
+        period_context = None
+        if status == "to_verify" and span:
+            claim, period_context = inherit_period(post, span, claim)
         screened.append(
             {
                 "index": len(screened) + 1,
@@ -180,6 +187,7 @@ def screen_claims(post: str, proposed: Sequence[Mapping[str, Any]]) -> list[dict
                 "kind": kind,
                 "status": status,
                 "screen_reason": reason,
+                **({"extracted_claim": extracted_claim, "period_context": period_context} if period_context else {}),
             }
         )
     return screened
@@ -216,9 +224,21 @@ def extract_claims(
     adapter = get_provider(provider)
     request = _extraction_payload(adapter, post, model)
     request["max_tokens" if adapter.chat_completions else "max_output_tokens"] = max_output_tokens
-    reservation = ledger.reserve(request, model=model, max_output_tokens=max_output_tokens, provider=provider)
-    started = time.perf_counter()
-    response = adapter.call(client, request)
+    attempt = 0
+    while True:
+        attempt += 1
+        reservation = ledger.reserve(request, model=model, max_output_tokens=max_output_tokens, provider=provider)
+        started = time.perf_counter()
+        try:
+            response = adapter.call(client, request)
+            break
+        except Exception as exc:
+            info = retry_info(exception_status(exc), attempt)
+            recorder.record_request(payload=request, response={"error": type(exc).__name__, "message": str(exc)},
+                reservation=reservation, usage=None, cost=reservation.amount,
+                latency_ms=(time.perf_counter() - started) * 1000, status="error", retry=info)
+            if not wait_for_retry(info):
+                raise
     latency_ms = (time.perf_counter() - started) * 1000
     cost = ledger.reconcile(reservation, response.usage)
     recorder.record_request(
@@ -319,6 +339,23 @@ def refresh_evidence(report_dir: Path) -> dict[str, Any]:
     return report
 
 
+def extraction_windows(post: str) -> list[tuple[int, int]]:
+    """Bound extraction requests, retaining overlap without losing source offsets."""
+    windows = []
+    start = 0
+    while start < len(post):
+        end = min(len(post), start + MAX_POST_CHARS - 200)
+        if end < len(post):
+            boundary = max(post.rfind('\n\n', start + 2800, end), post.rfind('. ', start + 2800, end))
+            if boundary > start:
+                end = boundary + 1
+        windows.append((start, end))
+        if end == len(post):
+            break
+        start = max(start + 1, end - 400)
+    return windows
+
+
 def check_post(
     post: str,
     *,
@@ -335,16 +372,27 @@ def check_post(
     release_client: Any = None,
     on_progress: Callable[[list[dict[str, Any]]], None] | None = None,
     extraction_max_output_tokens: int = MAX_EXTRACTION_TOKENS,
+    allow_long_input: bool = False,
 ) -> dict[str, Any]:
-    if len(post) > MAX_POST_CHARS:
+    if len(post) > MAX_POST_CHARS and not allow_long_input:
         raise PostError(f"post is longer than {MAX_POST_CHARS} characters; paste one article section at a time")
     out_dir.mkdir(parents=True, exist_ok=True)
     traces = out_dir / "traces"
     started = time.perf_counter()
     extraction_trace = TraceRecorder("[extraction] " + post[:200], model, provider=provider, secrets=secrets)
     try:
-        proposed = extract_claims(post, client=client, ledger=ledger, model=model, provider=provider,
-                                  recorder=extraction_trace, max_output_tokens=extraction_max_output_tokens)
+        proposed = []
+        for start, end in extraction_windows(post):
+            window = post[start:end]
+            # Repeat only explicit nearby period introductions for later windows.
+            # Quotes are still screened against the full original source.
+            if start:
+                from .period_context import period_mentions
+                mentions = period_mentions(post[max(0, start - 2400):start])
+                if len({m['period'] for m in mentions}) == 1:
+                    window = mentions[-1]['text'] + "\n\n" + window
+            proposed.extend(extract_claims(window, client=client, ledger=ledger, model=model, provider=provider,
+                                          recorder=extraction_trace, max_output_tokens=extraction_max_output_tokens))
     finally:
         extraction_path = write_trace(traces, extraction_trace)
     claims = screen_claims(post, proposed)
@@ -365,9 +413,14 @@ def check_post(
                 max_output_tokens=max_output_tokens, reasoning_effort=reasoning_effort,
                 release_client=release_client,
             )
+        except Exception as exc:
+            item.update(status="failed", error=f"provider/check failed ({type(exc).__name__})",
+                        http_status=exception_status(exc))
+            continue
         finally:
             trace_path = write_trace(traces, recorder)
             item["trace_path"] = str(trace_path.relative_to(out_dir))
+            item.update(cost_usd=recorder.summary()['cost_usd'], latency_ms=recorder.summary()['latency_ms'])
             if on_progress:
                 on_progress(claims)
         trace_dict = recorder.as_dict()
@@ -399,7 +452,7 @@ def check_post(
         "claims": claims,
         "counts": {
             status: sum(item["status"] == status for item in claims)
-            for status in ("verified", "not_checked", "rejected")
+            for status in ("verified", "not_checked", "rejected", "failed")
         },
         "verdicts": {
             verdict: sum(item.get("verdict") == verdict for item in claims)

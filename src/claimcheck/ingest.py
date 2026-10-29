@@ -13,9 +13,9 @@ from pathlib import Path
 from typing import Any, Sequence
 
 from .budget import BudgetExceeded, Ledger, UnknownModel
-from .ingest_media import IngestError, decode, input_kind, read_image, sha256, transcribe, write_json
+from .ingest_media import MAX_BYTES, IngestError, decode, input_kind, read_image, sha256, transcribe, write_json
 from .ingest_text import normalize_numbers, original_offset
-from .post import MAX_POST_CHARS, PostError, check_post
+from .post import PostError, check_post
 from .providers import BASETEN_DEFAULT_MODEL, FIREWORKS_DEFAULT_MODEL, META_DEFAULT_MODEL
 from .trace import redact
 
@@ -103,6 +103,14 @@ def attach_locations(channel: dict[str, Any], claims: list[dict[str, Any]]) -> N
                         sources.append(source)
                 locations.append({"raw_span": [start, end], "heard_or_read_quote": raw[start:end], "sources": sources})
         claim["source_locations"] = locations
+        context = claim.get('period_context')
+        if context:
+            a, b = context['span']
+            start = original_offset(a, channel['number_normalizations'])
+            end = original_offset(b, channel['number_normalizations'], end=True)
+            context.update(raw_span=[start, end], heard_or_read=raw[start:end],
+                sources=[{k: s[k] for k in ('id', 'start_ms', 'end_ms', 'speaker', 'sample_ms', 'timing') if k in s}
+                         for s in channel['segments'] if start < s['raw_span'][1] and end > s['raw_span'][0]])
 
 
 def channel_stages(channel: dict[str, Any]) -> list[dict[str, Any]]:
@@ -177,7 +185,7 @@ def ingest_file(path: Path, *, client: Any, edgar: Any, ledger: Ledger, model: s
 
     try:
         report["input"]["kind"] = input_kind(path)
-        if path.is_file() and path.stat().st_size <= 32 * 1024 * 1024:
+        if path.is_file() and path.stat().st_size <= MAX_BYTES:
             report["input"].update(sha256=sha256(path), bytes=path.stat().st_size)
         kind, channels = decode(path, out_dir / "media")
         report["input"]["kind"] = kind
@@ -202,8 +210,6 @@ def ingest_file(path: Path, *, client: Any, edgar: Any, ledger: Ledger, model: s
                     channel["media_call"] = str(call_path.relative_to(out_dir))
                 prepare_text(channel)
                 save()
-                if len(channel["normalized_text"]) > MAX_POST_CHARS:
-                    raise IngestError(f"decoded text exceeds the post pipeline's {MAX_POST_CHARS}-character limit; split the input")
                 if client is None:
                     raise IngestError("text extraction/checking client unavailable; configure the selected provider key")
 
@@ -217,10 +223,12 @@ def ingest_file(path: Path, *, client: Any, edgar: Any, ledger: Ledger, model: s
                     model=model, provider=provider, out_dir=post_dir, max_claims=max_claims, secrets=all_secrets,
                     max_output_tokens=max_output_tokens, reasoning_effort=reasoning_effort,
                     release_client=release_client, on_progress=progress,
-                    extraction_max_output_tokens=max_output_tokens or 4000)
+                    extraction_max_output_tokens=max_output_tokens or 4000, allow_long_input=True)
                 attach_locations(channel, result["claims"])
                 channel.update(claims=result["claims"], post_report=str((post_dir / "report.html").relative_to(out_dir)),
                                post_cost_usd=result["cost_usd"], extraction_trace=str((post_dir / result["extraction_trace"]).relative_to(out_dir)))
+                if any(c['status'] == 'failed' for c in result['claims']):
+                    channel['error'] = 'one or more claims failed; see retained claim traces'
                 # Source maps belong in both the machine report and the ingest view.
                 write_json(post_dir / "report.json", result, all_secrets)
             except Exception as exc:
@@ -238,6 +246,8 @@ def ingest_file(path: Path, *, client: Any, edgar: Any, ledger: Ledger, model: s
                 for key in ("image", "audio"):
                     if key in channel:
                         channel[key] = str(Path(channel[key]).relative_to(out_dir))
+                for chunk in channel.get('audio_chunks', []):
+                    chunk['audio'] = str(Path(chunk['audio']).relative_to(out_dir))
                 save()
         report["status"] = "partial" if any(c.get("error") for c in channels) else "completed"
     except Exception as exc:
@@ -271,7 +281,10 @@ def render_html(report: dict[str, Any]) -> str:
                         labels.append(f"source characters {loc['raw_span'][0]}–{loc['raw_span'][1]}")
                 sources.append(f"<p>{esc('; '.join(labels))}</p><blockquote>{esc(loc['heard_or_read_quote'])}</blockquote>")
             trace = f"<a href='checks/{esc(channel['id'])}/{esc(claim['trace_path'])}'>model/tool trace</a>" if claim.get("trace_path") else ""
-            claims.append(f"<li><b>{esc(claim.get('verdict') or claim['status'])}</b>: {esc(claim['claim'])}{''.join(sources)}{trace}</li>")
+            context = claim.get('period_context')
+            context_html = f"<p>Period context ({esc(context['scope'])}): {esc(context['heard_or_read'])}; source characters {context['raw_span'][0]}–{context['raw_span'][1]}</p>" if context and 'raw_span' in context else ''
+            reason = claim.get('summary') or claim.get('screen_reason') or claim.get('error') or ''
+            claims.append(f"<li><b>{esc(claim.get('verdict') or claim['status'])}</b>: {esc(claim['claim'])}<p>{esc(reason)}</p>{context_html}{''.join(sources)}{trace}</li>")
         link = f"<p><a href='{esc(channel['post_report'])}'>SEC evidence and program checks</a></p>" if channel.get("post_report") else ""
         blocks.append(f"<section><h2>{esc(channel['id'])}</h2><p>{esc(channel.get('error', ''))}</p><details><summary>Original heard/read text</summary><pre>{esc(channel.get('raw_text', ''))}</pre></details><ul>{''.join(claims)}</ul>{link}</section>")
     return f"""<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Input probe</title>

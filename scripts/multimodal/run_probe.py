@@ -1,4 +1,4 @@
-"""Run one paid Meta-only probe with recorded SEC fixtures and a shared $20 cap.
+"""Run one paid Meta-only probe with recorded SEC fixtures and a shared $13.69 cap.
 
 Example: .venv/bin/python scripts/multimodal/run_probe.py text post.txt
 Input paths are relative to tests/fixtures/multimodal unless absolute. Existing
@@ -27,7 +27,7 @@ from claimcheck.ingest_media import sha256, write_json
 from claimcheck.providers import create_client
 from claimcheck.release_fetch import ReleaseClient
 
-OUT = ROOT / "docs/evidence/multimodal-2026-10-29"
+OUT = ROOT / "docs/evidence/multimodal-2026-10-30"
 MEDIA = ROOT / "tests/fixtures/multimodal"
 
 
@@ -40,7 +40,7 @@ def main() -> int:
     parser.add_argument("name")
     parser.add_argument("file", type=Path)
     parser.add_argument("--provider", choices=("meta", "baseten"), default="meta")
-    parser.add_argument("--max-output-tokens", type=int, default=4000)
+    parser.add_argument("--max-output-tokens", type=int, default=8000)
     args = parser.parse_args()
     if not args.name.replace("-", "").isalnum():
         parser.error("name must contain letters, digits and hyphens")
@@ -52,8 +52,8 @@ def main() -> int:
     text = meta if args.provider == "meta" else load_settings(provider="baseten")
     if not meta.model_api_key or not text.model_api_key:
         parser.error("required provider key is unavailable")
-    ledger = Ledger(OUT / "ledger.jsonl", budget_usd=20,
-                    provider_budgets={"meta": 10, "baseten": 10, "fireworks": 0})
+    ledger = Ledger(OUT / "ledger.jsonl", budget_usd=13.69,
+                    provider_budgets={"meta": 8, "baseten": 5.69, "fireworks": 0})
     client = create_client(args.provider, text.model_api_key).with_options(max_retries=0, timeout=120)
     vision = client if args.provider == "meta" else create_client("meta", meta.model_api_key).with_options(max_retries=0, timeout=120)
     dest.mkdir(parents=True)
@@ -62,8 +62,10 @@ def main() -> int:
     protocol = {"started_at": datetime.now(timezone.utc).isoformat(), "kind": "exploratory development probe",
                 "input": str(path.relative_to(ROOT)), "input_sha256": sha256(path),
                 "provider": args.provider, "text_model": text.model, "vision_model": "muse-spark-1.3",
-                "asr_model": "muse-voice-transcribe-1.0", "total_budget_usd": 20,
-                "partition_usd": {"meta": 10, "baseten": 10}, "sdk_retries": 0,
+                "asr_model": "muse-voice-transcribe-1.0", "total_budget_usd": 13.69,
+                "prior_spend_allowance_usd": 1.31, "combined_cap_usd": 15,
+                "partition_usd": {"meta": 8, "baseten": 5.69}, "sdk_retries": 0,
+                "transient_retry_policy": "at most 3 attempts for HTTP 500/502/503/504; 1s, 2s backoff; each attempt reserved and traced",
                 "max_output_tokens": args.max_output_tokens,
                 "sec_policy": "committed SEC snapshots only; missing data fails closed; no SEC network",
                 "source_hashes": {str(p.relative_to(ROOT)): sha256(p) for p in sources}}
@@ -90,6 +92,9 @@ def main() -> int:
         if "audio" in channel:
             (dest / channel.pop("audio")).unlink(missing_ok=True)
             channel["decoded_audio"] = "recreate with ingest; redundant WAV omitted from evidence commit"
+        for chunk in channel.get('audio_chunks', []):
+            (dest / chunk.pop('audio')).unlink(missing_ok=True)
+            chunk['decoded_audio'] = 'recreate with ingest; redundant WAV omitted from evidence commit'
         if channel["kind"] == "ocr" and "image" in channel:
             (dest / channel.pop("image")).unlink(missing_ok=True)
     write_json(dest / "ingest.json", report)

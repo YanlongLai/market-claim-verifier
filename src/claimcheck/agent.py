@@ -18,6 +18,8 @@ from .providers import ParsedResponse, ProviderAdapter, get_provider
 from .tools import TOOL_DEFINITIONS, ToolRunner
 from .trace import TraceRecorder
 from .release_tools import RELEASE_INSTRUCTIONS
+from .period_context import missing_period_reason
+from .retries import exception_status, retry_info, wait_for_retry
 
 
 VERDICTS = ("supported", "contradicted", "insufficient_evidence")
@@ -581,6 +583,7 @@ def _request_with_retry(
     active_payload = payload
     active_context = previous_context
     fallback_used = False
+    transient_attempt = 1
     for attempt in range(attempts):
         request_limit = max_output_tokens * (2 if attempt else 1)
         retry_after_incomplete = False
@@ -606,6 +609,7 @@ def _request_with_retry(
                 response = active_provider.call(client, request_payload)
             except Exception as exc:
                 latency_ms = (time.perf_counter() - started) * 1000
+                retry = retry_info(exception_status(exc), transient_attempt)
                 recorder.record_request(
                     payload=request_payload,
                     response={
@@ -618,7 +622,11 @@ def _request_with_retry(
                     latency_ms=latency_ms,
                     status="error",
                     previous_response_fallback=using_fallback,
+                    retry=retry,
                 )
+                if wait_for_retry(retry):
+                    transient_attempt += 1
+                    continue
                 if (
                     not using_fallback
                     and not fallback_used
@@ -718,6 +726,14 @@ def verify_claim(
     active_provider = get_provider(provider)
     recorder = trace or TraceRecorder(claim, model, provider=active_provider.name)
     recorder.provider = active_provider.name
+    reason = missing_period_reason(claim)
+    if reason:
+        check = {"text": claim, "claim_type": "unresolved_period", "program_verdict": "insufficient_evidence",
+                 "reason": reason, "evidence_ids": [], "flags": ["missing_period"], "evidence_strength": "low"}
+        result = {"verdict": "insufficient_evidence", "summary": reason, "sub_claims": [],
+                  "program_checks": [check], "flags": ["missing_period"], "evidence_strength": "low"}
+        recorder.finish(result)
+        return result
     runner = ToolRunner(edgar, release_client=release_client)
     configured_max = _configured_max_output_tokens(max_output_tokens)
     tool_output_tokens = configured_max or MAX_TOOL_OUTPUT_TOKENS

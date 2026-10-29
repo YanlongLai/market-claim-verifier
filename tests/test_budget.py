@@ -24,7 +24,7 @@ def test_budget_refuses_before_client_call(tmp_path: Path) -> None:
     ledger = Ledger(tmp_path / "ledger.jsonl", budget_usd=0.000001)
     with pytest.raises(BudgetExceeded):
         verify_claim(
-            "META revenue was $47.5B",
+            "META revenue was $47.5B in Q4 2025",
             fake,
             EdgarClient(tmp_path / "cache", fetcher=lambda _: b"{}"),
             ledger,

@@ -151,6 +151,7 @@ class TraceRecorder:
         finish_reason: str | None = None,
         rate_limit_headers: Mapping[str, Any] | None = None,
         previous_response_fallback: bool = False,
+        retry: Mapping[str, Any] | None = None,
     ) -> None:
         entry: dict[str, Any] = {
             "request": redact(model_dump(payload), self.secrets),
@@ -171,6 +172,8 @@ class TraceRecorder:
             entry["rate_limit_headers"] = redact(model_dump(rate_limit_headers), self.secrets)
         if previous_response_fallback:
             entry["previous_response_fallback"] = True
+        if retry is not None:
+            entry["retry"] = redact(dict(retry), self.secrets)
         self.requests.append(entry)
 
     def mark_previous_response_fallback(self) -> None:
