@@ -48,6 +48,12 @@ This includes development claims; **266** claims are held out. The [later agent 
 - One sentence can contain several atomic assertions: a value, a period-to-period change, and a record or first-time claim.
 - A model can draft the explanation, but numbers, comparators, evidence IDs, budget reservations, and the final verdict need an auditable program path.
 
+## L4 earnings-release evidence
+
+Guidance and non-GAAP claims can use the issuer's SEC **8-K Item 2.02 Ex 99.1** earnings release (plus HTML Ex 99.2). Muse selects a candidate quote; Python rechecks the cached bytes, offsets, metric, period and numbers. L4 is furnished, unaudited and medium strength at most. Consolidated reported totals are also checked against XBRL; L1/L2 wins a conflict with `release_vs_filing_mismatch`. Missing outlooks and verbal ranges such as “low to mid single digits” return insufficient evidence.
+
+The [source and comparison rules](docs/DATA_SOURCES.md#l4-parsing-and-decision-rules) and [independent 32-claim gold builder](eval/l4/GOLD_REVIEW.md) describe the supported scope. Rebuild gold with `.venv/bin/python eval/l4/build_gold.py`. After committing the gold and source fixtures, run `.venv/bin/python eval/l4/run_agent.py`; it uses Baseten's Meta Muse Spark Open, offline SEC snapshots, and one $5 budget for the entire run. Results belong in `docs/evidence/eval-l4-2026-10-29/`.
+
 ## What it does
 
 <!-- diagram:how-a-claim-is-checked:start -->

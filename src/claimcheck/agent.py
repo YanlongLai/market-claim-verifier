@@ -17,6 +17,7 @@ from .edgar import EdgarClient
 from .providers import ParsedResponse, ProviderAdapter, get_provider
 from .tools import TOOL_DEFINITIONS, ToolRunner
 from .trace import TraceRecorder
+from .release_tools import RELEASE_INSTRUCTIONS
 
 
 VERDICTS = ("supported", "contradicted", "insufficient_evidence")
@@ -154,6 +155,8 @@ AGENT_FINAL_VERDICT_PROMPT = (
     "ids like E3, never free text), verdict, model_found_value, "
     "and a concise note."
 )
+
+SYSTEM_INSTRUCTIONS += RELEASE_INSTRUCTIONS
 
 
 def _validate_output_tokens(value: Any) -> int:
@@ -708,13 +711,14 @@ def verify_claim(
     max_output_tokens: int | None = None,
     reasoning_effort: str | None = None,
     provider: str | ProviderAdapter = "meta",
+    release_client: Any = None,
 ) -> dict[str, Any]:
     """Run the model/tool loop, then apply program checks to its verdict."""
 
     active_provider = get_provider(provider)
     recorder = trace or TraceRecorder(claim, model, provider=active_provider.name)
     recorder.provider = active_provider.name
-    runner = ToolRunner(edgar)
+    runner = ToolRunner(edgar, release_client=release_client)
     configured_max = _configured_max_output_tokens(max_output_tokens)
     tool_output_tokens = configured_max or MAX_TOOL_OUTPUT_TOKENS
     final_output_tokens = configured_max or MAX_FINAL_OUTPUT_TOKENS
@@ -944,6 +948,8 @@ def verify_claim(
         if "restated_evidence" not in flags:
             flags.append("restated_evidence")
         verdict["flags"] = flags
+    if any("release_vs_filing_mismatch" in check.get("flags", []) for check in checks):
+        verdict["flags"] = list(dict.fromkeys([*verdict.get("flags", []), "release_vs_filing_mismatch"]))
     verdict["model_program_disagreement"] = (
         model_verdict != program_verdict
         or any(check.get("disagreement") for check in checks)

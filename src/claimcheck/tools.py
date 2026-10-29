@@ -8,6 +8,8 @@ from datetime import date
 from typing import Any
 
 from .edgar import METRICS, EdgarClient
+from .release import ReleaseService
+from .release_tools import RELEASE_TOOLS, dispatch_release
 
 
 PERIOD_PATTERN = r"^(latest|FY\d{4}(?:Q[1-4])?|\d{4}Q[1-4])$"
@@ -17,7 +19,7 @@ BASE_PERIOD_PATTERN = r"^(FY\d{4}(?:Q[1-4])?|\d{4}Q[1-4])$"
 PROVENANCE_SCHEMA = {
     "type": "object",
     "properties": {
-        "tier": {"type": "string", "enum": ["L1", "L2", "L3"]},
+        "tier": {"type": "string", "enum": ["L1", "L2", "L3", "L4"]},
         "component_tiers": {"type": "array", "items": {"type": "string"}},
         "component_strengths": {"type": "array", "items": {"type": "string"}},
         "audited": {"type": "boolean"},
@@ -287,6 +289,7 @@ TOOL_DEFINITIONS = [
     LIST_PERIODS_TOOL,
     COMPUTE_CHANGE_TOOL,
     HISTORY_RANK_TOOL,
+    *RELEASE_TOOLS,
 ]
 # Public aliases for callers that prefer schema terminology.
 LOOKUP_FACT_SCHEMA = LOOKUP_FACT_TOOL
@@ -298,6 +301,7 @@ TOOL_SCHEMAS = {
     "list_periods": LIST_PERIODS_TOOL,
     "compute_change": COMPUTE_CHANGE_TOOL,
     "history_rank": HISTORY_RANK_TOOL,
+    **{tool["name"]: tool for tool in RELEASE_TOOLS},
 }
 TOOL_OUTPUT_SCHEMAS = {
     "lookup_fact": LOOKUP_FACT_OUTPUT_SCHEMA,
@@ -553,8 +557,10 @@ def _prior_year_period(period: str) -> str | None:
 class ToolRunner:
     """Dispatch tools and assign stable evidence IDs for one verification run."""
 
-    def __init__(self, edgar: EdgarClient) -> None:
+    def __init__(self, edgar: EdgarClient, release_client: Any = None) -> None:
         self.edgar = edgar
+        self._release_client = release_client
+        self.release_service: ReleaseService | None = None
         self._next_evidence = 1
         self._next_program_evidence = 1
         self.evidence: dict[str, dict[str, Any]] = {}
@@ -674,7 +680,11 @@ class ToolRunner:
         self, name: str, args: Any, *, program: bool = False
     ) -> dict[str, Any]:
         try:
-            if name == "lookup_fact":
+            if name in {"find_earnings_release", "quote_release"}:
+                if self.release_service is None:
+                    self.release_service = ReleaseService(self.edgar, self._release_client)
+                result = dispatch_release(self.release_service, name, args)
+            elif name == "lookup_fact":
                 valid = _validate_lookup(args)
                 result = _add_lookup_period(
                     self.edgar.lookup_fact(**valid), valid["period"]
