@@ -375,6 +375,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                   "max_claims": args.max_claims,
                   "max_output_tokens": args.max_output_tokens or settings.max_output_tokens,
                   "reasoning_effort": args.reasoning_effort or settings.reasoning_effort}
+        if args.command == "review-stock":
+            config["source_ticker"] = args.ticker.strip().upper()
         try:
             queue_out = args.out / "queue" if args.command == "review-stock" else args.out
             state = run_queue(args.files, args.evidence_cache, queue_out, config,

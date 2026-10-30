@@ -212,9 +212,11 @@ def ingest_file(path: Path, *, client: Any, edgar: Any, ledger: Ledger, model: s
                 provider: str, out_dir: Path, vision_client: Any = None, asr_http: Any = None,
                 meta_api_key: str | None = None, max_claims: int = 8, secrets: Sequence[str] = (),
                 max_output_tokens: int | None = None, reasoning_effort: str | None = None,
-                release_client: Any = None) -> dict[str, Any]:
+                release_client: Any = None, source_ticker: str | None = None) -> dict[str, Any]:
     if model not in META_MODELS.get(provider, set()):
         raise IngestError("ingest permits only the configured Meta Muse model IDs")
+    if source_ticker and not re.fullmatch(r'[A-Z][A-Z0-9.-]{0,9}', source_ticker):
+        raise IngestError('invalid source ticker context')
     if max_claims < 1:
         raise IngestError("max_claims must be positive")
     if (out_dir / "ingest.json").exists():
@@ -230,6 +232,10 @@ def ingest_file(path: Path, *, client: Any, edgar: Any, ledger: Ledger, model: s
             "Video samples three frames at 1/6, 1/2 and 5/6 of duration; unsampled visuals can be missed.",
             "Audio and frame claims are checked independently; no cross-modal identity or truth inference.",
             "PDF uses native page text only; reading order/table fidelity is not guaranteed, scanned pages are not checked, and context is not propagated across pages."]}
+
+    if source_ticker:
+        report['source_context'] = {'ticker_hint': source_ticker, 'authenticated': False}
+        report['limitations'].append(f'User-supplied ticker hint {source_ticker} is not issuer authentication. Extraction selects at most {max_claims} claims per window; unselected content remains unchecked.')
 
     def save() -> None:
         from .policy import policy_for
@@ -286,10 +292,12 @@ def ingest_file(path: Path, *, client: Any, edgar: Any, ledger: Ledger, model: s
                     model=model, provider=provider, out_dir=post_dir, max_claims=max_claims, secrets=all_secrets,
                     max_output_tokens=max_output_tokens, reasoning_effort=reasoning_effort,
                     release_client=release_client, on_progress=progress,
-                    extraction_max_output_tokens=max_output_tokens or 4000, allow_long_input=True)
+                    extraction_max_output_tokens=max_output_tokens or 4000, allow_long_input=True,
+                    **({'source_ticker': source_ticker, 'bounded_extraction': True, 'extraction_reasoning_effort': 'low'} if source_ticker else {}))
                 attach_locations(channel, result["claims"])
                 channel.update(claims=result["claims"], post_report=str((post_dir / "report.html").relative_to(out_dir)),
                                extraction_windows=result['extraction_windows'], claim_limit=result['claim_limit'],
+                               extraction_scope=result.get('extraction_scope'), source_context=result.get('source_context'),
                                post_cost_usd=result["cost_usd"], extraction_trace=str((post_dir / result["extraction_trace"]).relative_to(out_dir)))
                 if any(c['status'] == 'failed' for c in result['claims']):
                     channel['error'] = 'one or more claims failed; see retained claim traces'
@@ -372,4 +380,4 @@ def render_html(report: dict[str, Any]) -> str:
 <style>body{{max-width:1000px;margin:32px auto;padding:0 20px;font:16px/1.5 system-ui;color:#18212b;background:#f8f8f5}}table{{border-collapse:collapse;width:100%}}td,th{{padding:10px;text-align:left;border:1px solid #ccc}}pre{{white-space:pre-wrap}}section{{margin:32px 0}}blockquote{{border-left:3px solid #789;padding-left:16px}}li{{margin:20px 0}}</style>
 <h1>Input probe: {esc(report['input']['file'])}</h1><p>{esc(report['status'])} · ${report.get('cost_usd', 0):.6f} · {report.get('wall_clock_s', 0)} s</p>
 <p>Read/heard values require SEC evidence. Speaker labels are unverified, session-scoped labels. Timestamps cover whole turns, not individual words.</p>
-{policy_description}{cost_html}{coverage_html}<table><tr><th>Stage</th><th>Outcome</th><th>Reason</th></tr>{rows}</table>{''.join(blocks)}<p>{esc('; '.join(report['errors']))}</p></html>"""
+{policy_description}{cost_html}{coverage_html}<p>{esc("; ".join(report.get("limitations", [])))}</p><table><tr><th>Stage</th><th>Outcome</th><th>Reason</th></tr>{rows}</table>{''.join(blocks)}<p>{esc('; '.join(report['errors']))}</p></html>"""
