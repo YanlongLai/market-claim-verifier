@@ -2,7 +2,29 @@
 // Site SHA-256: b7db32513a4352239a6d53ff6a6892778b147adca92ac4f54b040b982a18ffe1
 (function(root) {
 "use strict";
-function state(age, card, elapsed=age) {
+const emptyBox = { x: 0, y: 0, width: 0, height: 0 };
+    const center = (box) => ({ x: box.x + box.width / 2, y: box.y + box.height / 2 });
+    const padBox = (box, pad) => ({ x: box.x - pad, y: box.y - pad, width: box.width + 2 * pad, height: box.height + 2 * pad });
+    const unionBox = (a, b) => ({ x: Math.min(a.x, b.x), y: Math.min(a.y, b.y),
+      width: Math.max(a.x + a.width, b.x + b.width) - Math.min(a.x, b.x),
+      height: Math.max(a.y + a.height, b.y + b.height) - Math.min(a.y, b.y) });
+    function conePoints(visor, box, radius) {
+      const target = center(box), dx = target.x - visor.x, dy = target.y - visor.y;
+      const distance = Math.hypot(dx, dy) || 1;
+      const nx = -dy / distance * radius, ny = dx / distance * radius;
+      const points = [[visor.x + nx, visor.y + ny], [visor.x - nx, visor.y - ny],
+        [box.x, box.y], [box.x + box.width, box.y], [box.x + box.width, box.y + box.height], [box.x, box.y + box.height]];
+      points.sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+      const cross = (o, a, b) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
+      const half = (values) => values.reduce((hull, point) => {
+        while (hull.length >= 2 && cross(hull[hull.length - 2], hull[hull.length - 1], point) <= 0) hull.pop();
+        hull.push(point);
+        return hull;
+      }, []);
+      return [...half(points).slice(0, -1), ...half([...points].reverse()).slice(0, -1)].map((point) => point.join(",")).join(" ");
+    }
+
+    function state(age, card, elapsed=age, targets=null) {
 const cards=[card], poses=Object.fromEntries(["idle","inspect","reach","present","point","think","stamp","stamp-down","approve","concern","shrug"].map(name=>[name,{style:{}}]));
 const robot={style:{},dataset:{}};
 const CHECKABLE = 8000;
@@ -103,7 +125,7 @@ const CHECKABLE = 8000;
       robot.dataset.dip = String(dip);
       robot.dataset.thruster = burst ? "burst" : String(Math.floor(elapsed / THRUSTER_FRAME) % 6);
       
-const item={light:true}, motion={matches:false};
+const item={light:targets||{post:emptyBox,row:emptyBox,compare:emptyBox,search:[emptyBox]}}, motion={matches:false};
 
       const enabled = !!item.light && !motion.matches;
       const light = item.light || { post: emptyBox, row: emptyBox, compare: emptyBox, search: [emptyBox] };
@@ -114,8 +136,17 @@ const item={light:true}, motion={matches:false};
       const filingAlpha = enabled && age < STRIKE ? fadeIn(age, FIND) : 0;
       const postAlpha = comparing ? compareIn : 0;
       const yearAlpha = enabled && light.quarter && age >= COMPARE && age < WINDUP ? 0.28 * compareIn : 0;
+      let row = age >= COMPARE && light.quarter ? light.quarter : light.row;
+      if (finding) {
+        const sweep = clamp((age - FIND) / FIND_SWEEP) * (light.search.length - 1);
+        const index = Math.min(Math.floor(sweep), light.search.length - 1);
+        const from = light.search[index], to = light.search[Math.min(index + 1, light.search.length - 1)];
+        const blend = easeOut(sweep - index);
+        row = Object.fromEntries(Object.keys(from).map((name) => [name, from[name] + (to[name] - from[name]) * blend]));
+      }
+      const filingTarget = age >= COMPARE ? unionBox(row, light.compare) : row;
       
-return {phase:phaseAt(age,canCheck),pose,previous,blend,bob,dip,lean,transform:robot.style.transform,thruster:robot.dataset.thruster,visor:POSE_VISORS[pose],nozzle:POSE_ANCHORS[pose].nozzle,canvas:POSE_CANVAS,facing:facing[pose],postAlpha,filingAlpha,yearAlpha,shade:compareIn*lift};
+return {phase:phaseAt(age,canCheck),pose,previous,blend,bob,dip,lean,transform:robot.style.transform,thruster:robot.dataset.thruster,visor:POSE_VISORS[pose],nozzle:POSE_ANCHORS[pose].nozzle,canvas:POSE_CANVAS,facing:facing[pose],postAlpha,filingAlpha,yearAlpha,shade:compareIn*lift,finding,comparing,locked:age>=FIND_LOCK,row,filingTarget};
 }
-const api={state}; if(typeof module==="object"&&module.exports)module.exports=api;else root.HoverSource=api;
+const api={state,conePoints}; if(typeof module==="object"&&module.exports)module.exports=api;else root.HoverSource=api;
 })(globalThis);

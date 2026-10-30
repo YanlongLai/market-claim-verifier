@@ -25,13 +25,12 @@
   }
   function disclosure() {
     return chrome('Built during the hackathon')+
-      box(64,184,1792,240,'Nothing in this repository<br>pre-existed the hackathon.','headline',96)+
-      surface(64,436,1792,428)+
-      box(96,452,1040,232,'Market Claim<br><span class="mint">Verifier</span>','headline',96)+
-      box(96,704,1040,80,'Post → SEC proof → verdict','body',64)+
-      box(1192,452,632,80,'Apple · claimed quarter','body muted',56)+
-      box(1192,550,632,142,n(dollars(P.apple.claimed_b)),'coral',112)+
-      box(1192,736,632,80,'Open saved check ↗','body mint',56);
+      box(64,184,1792,400,esc(D.product.disclosure),'body disclosure',64)+
+      surface(64,600,1792,264)+
+      box(96,612,1040,232,'Market Claim<br><span class="mint">Verifier</span>','headline',96)+
+      box(1192,608,632,72,'Apple · claimed quarter','body muted',56)+
+      box(1192,680,632,116,n(dollars(P.apple.claimed_b),96),'coral',96)+
+      box(1192,796,632,68,'Open saved check ↗','body mint',56);
   }
   function apple(t,s,e) {
     return chrome('Paste a post')+title('Apple. One quarter?')+
@@ -60,15 +59,22 @@
     return anchors.at(-1)[1];
   }
   function hover(t,s,e) {
-    const age=siteAge(t),state=H.state(age,{excerpt:true,status:'verified',verdict:P.apple.verdict},(t-s.start)*1000);
+    const year={x:480,y:464,width:608,height:138},quarter={x:1184,y:464,width:640,height:138},
+      targets={post:year,row:year,quarter,compare:{x:1184,y:632,width:640,height:74},
+        search:[year,{x:1184,y:354,width:640,height:74},quarter]};
+    const age=siteAge(t),state=H.state(age,{excerpt:true,status:'verified',verdict:P.apple.verdict},(t-s.start)*1000,targets);
     const struck=show(t,e,'strike'),cmp=show(t,e,'compare');
     const x=64,y=356,w=352,h=372, visor={x:x+w*state.visor[0],y:y+h*state.visor[1]};
     const images=[state.previous,state.pose].map((pose,i)=>`<img class="hover-pose" src="${ASSET}auditor/H/${pose}.webp" alt="" style="opacity:${i?state.blend:1-state.blend};transform:scaleX(${pose==='stamp'||pose==='stamp-down'||pose==='inspect'?-1:1})">`).join('');
     const thruster=state.thruster==='burst'?'burst':state.thruster;
+    const beams=[['filing',state.filingTarget,state.filingAlpha,visor],
+      ['post',targets.post,state.postAlpha,visor],
+      ['year',targets.row,state.yearAlpha,{x:quarter.x+quarter.width/2,y:quarter.y+quarter.height/2}]]
+      .map(([name,target,alpha,origin])=>`<polygon data-beam="${name}" points="${H.conePoints(origin,target,4)}" fill="url(#beam)" opacity="${alpha}"/>`).join('');
     let html=chrome('Hover · SEC audit')+title('The year is not the quarter.')+
       surface(448,332,672,408)+surface(1152,332,704,408)+
       `<img class="abs texture" style="left:448px;top:332px;width:1408px;height:408px" src="${ASSET}stamp-paper.webp" alt="">`+
-      `<svg class="spotlight" viewBox="0 0 1920 880" aria-hidden="true"><defs><mask id="stage-hole"><rect x="448" y="332" width="1408" height="408" fill="white"/><rect x="1168" y="440" width="672" height="190" rx="16" fill="black"/></mask></defs><rect x="448" y="332" width="1408" height="408" fill="#050b10" mask="url(#stage-hole)" opacity="${state.shade*.65}"/></svg>`+
+      `<svg class="spotlight" viewBox="0 0 1920 880" aria-hidden="true"><defs><mask id="stage-hole"><rect x="448" y="332" width="1408" height="408" fill="white"/><rect x="464" y="440" width="640" height="190" rx="16" fill="black"/><rect x="1168" y="440" width="672" height="190" rx="16" fill="black"/></mask></defs><rect x="448" y="332" width="1408" height="408" fill="#050b10" mask="url(#stage-hole)" opacity="${state.shade*.65}"/></svg>`+
       `<img class="abs fx" src="${ASSET}fx/beam-pool.webp" alt="" style="left:1168px;top:440px;width:672px;height:190px;opacity:${state.postAlpha*.16}">`+
       box(480,354,608,74,'Apple · full FY2025','body muted',56)+
       box(1184,354,640,74,'Apple · fiscal Q4 2025','body muted',56)+
@@ -78,7 +84,7 @@
       box(1184,632,640,74,'Filed quarter','body coral',56)+
       box(448,742,672,122,cmp?n('≈'+Math.round(P.apple.claimed_b/P.apple.quarter_b)+'×',96)+' too high':'Compare periods','body amber',64)+
       box(1152,744,704,120,cmp?verdict(P.apple.verdict):'SEC proof → program','status '+(cmp?'coral':'muted'),cmp?96:56)+
-      `<svg class="spotlight" viewBox="0 0 1920 880" aria-hidden="true"><defs><linearGradient id="beam"><stop stop-color="#d9a74a" stop-opacity=".04"/><stop offset="1" stop-color="#d9a74a" stop-opacity=".2"/></linearGradient></defs><path d="M${visor.x},${visor.y} L1184,448 L1824,612 Z" fill="url(#beam)" opacity="${state.filingAlpha}"/><rect x="1172" y="450" width="664" height="172" rx="12" fill="none" stroke="#d9a74a" stroke-width="4" opacity="${state.postAlpha}"/></svg>`+
+      `<svg class="spotlight" viewBox="0 0 1920 880" aria-hidden="true"><defs><linearGradient id="beam"><stop stop-color="#d9a74a" stop-opacity=".04"/><stop offset="1" stop-color="#d9a74a" stop-opacity=".2"/></linearGradient></defs>${beams}<rect data-find-lock="${state.locked}" x="${state.row.x-12}" y="${state.row.y-12}" width="${state.row.width+24}" height="${state.row.height+24}" rx="12" fill="none" stroke="#d9a74a" stroke-width="4" opacity="${state.filingAlpha}"/></svg>`+
       box(128,724,224,24,'','hover-shadow',64)+
       `<div class="abs" style="left:${x}px;top:${y}px;width:${w}px;height:${h}px;transform:${state.transform}">${images}</div>`+
       `<img class="abs fx" src="${ASSET}fx/lens-flare.webp" alt="" style="left:${visor.x-64}px;top:${visor.y-10}px;width:128px;height:20px;opacity:${Math.max(state.postAlpha,state.filingAlpha)*.45}">`+
@@ -147,13 +153,20 @@
     return html;
   }
   function limits() {
-    return chrome('Saved run report')+title('The limits stay visible.')+
-      surface(64,332,1792,532)+
-      box(96,356,1728,92,'Text EPS control → INSUFFICIENT','body amber',72)+
-      box(96,484,1728,80,'The same deliberate error was missed.','body',64)+
-      box(96,594,1728,80,'Speaker identity: unverified','body',64)+
-      box(96,680,1728,80,'Long clips: incomplete claim recall','body',64)+
-      box(96,784,1728,80,'L4: regression examples · not held out','body muted',64);
+    const R=D.product.recall,{live,frozen_asr:frozen}=R.coverage;
+    let html=chrome('Saved development probes')+title('The limits stay visible.')+
+      surface(64,332,1792,532);
+    for(const [i,kind] of ['text','screenshot','audio'].entries()) {
+      const row=D.product.inputs[kind],x=96+i*576;
+      html+=box(x,348,552,80,kind==='text'?'Text control':kind==='audio'?'Audio':'Screenshot','body',64)+
+        box(x,432,552,68,`<a href="../../../${esc(row.source)}">${esc(row.verdict.toUpperCase())}</a>`,'body coral',56);
+    }
+    return html+
+      box(96,512,1728,68,'Long-call coverage · guarded / checked','body muted',56)+
+      box(96,588,848,116,`<a href="../../../${esc(live.source)}">${n(live.program_checked+'/'+live.expected,96)} live</a>`,'body amber',64)+
+      box(976,588,848,116,`<a href="../../../${esc(frozen.source)}">${n(frozen.program_checked+'/'+frozen.expected,96)} frozen ASR</a>`,'body amber',56)+
+      box(96,716,1728,80,'Speaker labels: '+(R.speaker_identity.verified?'verified':'unverified'),'body',64)+
+      box(96,800,1728,68,'L4: regression test · not held out','body muted',56);
   }
   function qrSVG() {
     const {matrix,quiet_zone:q}=D.qr,size=matrix.length+2*q;

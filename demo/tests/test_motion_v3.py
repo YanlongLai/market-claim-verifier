@@ -32,18 +32,26 @@ def test_v007_preview_artifacts_rebuild_exactly_without_local_media(data):
     assert all('voice_s' not in shot for shot in data['timing']['shots'])
 
 
-def test_script_shotlist_and_storyboard_are_the_same_proposal():
+def test_script_shotlist_and_storyboard_retain_owner_approved_edits():
     rows=[line for line in (ROOT/'demo/SHOTLIST-v3.md').read_text().splitlines() if re.match(r'\| \d+ \|',line)]
     assert len(rows)==len(STORY['scenes'])==12
     for row,scene in zip(rows,STORY['scenes']):
         cells=row.strip('|').split('|')
         assert cells[3].strip()==scene['narration']
         assert cells[2].strip()==scene['director_notes']
+        clock=lambda t:f'{int(t)//60}:{int(t)%60:02d}'
+        assert cells[1].strip()==clock(scene['target_start_s'])+'–'+clock(scene['target_end_s'])
         for source in scene['evidence']:
             assert (ROOT/source).is_file()
     assert (ROOT/'demo/NARRATION-v007.txt').read_text().strip().split('\n\n')==[s['narration'] for s in STORY['scenes']]
     disclosure=(ROOT/'demo/JUDGE_INTRO.md').read_text().split('> ',1)[1].split('\n',1)[0]
-    assert STORY['scenes'][0]['narration']==disclosure
+    assert STORY['scenes'][0]['on_screen']==disclosure==v3.evidence_data(ROOT)['disclosure']
+    assert STORY['scenes'][0]['narration']=='Built entirely during the Meta hackathon. Nothing here pre-existed.'
+    assert [(s['target_start_s'],s['target_end_s'],s['target_s']) for s in STORY['scenes'][:4]]==[
+        (0,6,6),(6,20,14),(20,32,12),(32,60,28)]
+    assert STORY['scenes'][10]['narration']==(
+        'These are saved runs, not a guarantee. The text, screenshot and audio checks all catch the same error. '
+        'Long-call recall and speaker identity remain limited. L4 is a regression test.')
 
 
 def test_voice_and_music_keep_owner_lock_and_detected_grid(data):
@@ -76,21 +84,71 @@ def test_l4_examples_match_raw_checks_and_retain_release_provenance(data):
 
 
 def test_input_examples_use_new_recorded_runs_and_self_made_fixture_bytes(data):
-    for kind in ('screenshot','audio'):
+    for kind in ('text','screenshot','audio'):
         row=data['product']['inputs'][kind]
-        assert row['source'].startswith(v3.MM+'/')
+        assert row['source'].startswith((v3.RECALL if kind=='text' else v3.MM)+'/')
         assert row['verdict']==row['check']['program_verdict']=='contradicted'
         assert (row['check']['stated_value_used'],row['check']['actual_value'])==(1.67,1.57)
         assert 'fiscal Q3 2025' in row['check']['text']
         report=json.loads((ROOT/row['source']).read_text())
         assert any(row['check'] in c['program_checks'] and row['quote']==c['quote'] for c in report['claims'])
+        assert row['evidence'] and all(e['filing_url'].startswith('https://www.sec.gov/') for e in row['evidence'])
+        assert (ROOT/row['ingest_source']).is_file() and (ROOT/row['trace_source']).is_file()
     audio=data['product']['inputs']['audio']
     assert audio['display_quote'] in audio['quote']
     assert any('speaker' in s for s in audio['segments'])
-    assert data['product']['inputs']['text']['verdict']=='insufficient_evidence'
-    assert data['product']['inputs']['text']['check']['reason']=='release_quote_issuer_metric_kind_unit_or_period_mismatch'
     assert data['product']['waveform']==v3.waveform(ROOT/'tests/fixtures/multimodal/release-reading.wav')
     assert len(data['product']['waveform'])==64
+
+
+def test_recall_limits_come_from_30b_report_data_and_retain_source_links(data):
+    recall=data['product']['recall']
+    comparison=json.loads((ROOT/recall['source']).read_text())
+    assert recall['source']==v3.RECALL+'/before-after.json'
+    assert recall['policy']==comparison['policy']
+    for label,run,channel,expected in [('live','long-call-r2','audio',44),
+                                       ('frozen_asr','long-call-frozen','text',50)]:
+        row=recall['coverage'][label]
+        counts=comparison['runs'][run]['after']['channels'][channel]['recall']
+        assert row['guarded']==counts['accepted']==row['program_checked']==counts['program_checked']==expected
+        assert row['expected']==counts['expected']==60
+        assert row['channel']==channel
+        assert row['source']==f'{v3.RECALL}/{run}/ingest.json'
+        assert file_hash(ROOT/row['source'])==data['product']['provenance'][row['source']]
+    speaker=recall['speaker_identity']
+    assert speaker['verified'] is False
+    assert speaker['limitation'] in json.loads((ROOT/speaker['source']).read_text())['limitations']
+
+
+def test_compiler_reads_coverage_values_instead_of_baking_in_screen_numbers(monkeypatch):
+    original=v3.read_json
+    def changed(path):
+        data=deepcopy(original(path))
+        if str(path).endswith('/before-after.json'):
+            counts=data['runs']['long-call-r2']['after']['channels']['audio']['recall']
+            counts['accepted']=counts['program_checked']=42
+        return data
+    monkeypatch.setattr(v3,'read_json',changed)
+    assert v3.evidence_data(ROOT)['recall']['coverage']['live']['program_checked']==42
+
+
+@pytest.mark.parametrize('corruption', ['text_verdict','text_value','coverage','speaker'])
+def test_stale_text_verdict_and_inconsistent_recall_evidence_fail_closed(monkeypatch,corruption):
+    original=v3.read_json
+    def corrupt(path):
+        data=deepcopy(original(path))
+        if str(path).endswith('/multimodal-2026-10-30b/text/checks/text/report.json'):
+            claim=next(c for c in data['claims'] if c['verdict']=='contradicted')
+            if corruption=='text_verdict':claim['verdict']='insufficient_evidence'
+            if corruption=='text_value':claim['program_checks'][0]['actual_value']=1.67
+        if corruption=='coverage' and str(path).endswith('/before-after.json'):
+            data['runs']['long-call-r2']['after']['channels']['audio']['recall']['accepted']=61
+        if corruption=='speaker' and str(path).endswith('/long-call-r2/ingest.json'):
+            data['limitations']=[]
+        return data
+    monkeypatch.setattr(v3,'read_json',corrupt)
+    with pytest.raises(BuildError,match='EPS verdict|EPS values|coverage is inconsistent|speaker-label limitation'):
+        v3.evidence_data(ROOT)
 
 
 def test_scores_are_original_corrected_gold_counts_not_posthoc(data):

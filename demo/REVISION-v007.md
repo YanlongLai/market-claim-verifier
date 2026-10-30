@@ -1,6 +1,6 @@
-# v007 source revision — gate 1 handoff
+# v007 source revision — approved gate 1 edits
 
-**Proposal only; Owner shot-list approval is pending.** No TTS, Chromium, MPS, key-frame capture, video render,
+**Gate 1 passed with the Owner's two edits applied.** No TTS, Chromium, MPS, key-frame capture, video render,
 upload or post was run for v007. The approved v006 is 160.433 s; its source timeline and narration remain intact.
 [Shot list](SHOTLIST-v3.md), [storyboard](storyboard-v3.yaml), [narration](NARRATION-v007.txt).
 
@@ -8,9 +8,16 @@ upload or post was run for v007. The approved v006 is 160.433 s; its source time
 
 Twelve seekable product scenes retain the Apple whole-year/quarter trap, original Amazon proof table and original
 v2 results. New scenes show the complete opening disclosure, the site's real Hover H art/pose/spotlight logic,
-META guidance, Adobe non-GAAP EPS, self-made screenshot/audio inputs, retained misses and limits, and the new CTA.
+META guidance, Adobe non-GAAP EPS, self-made screenshot/audio inputs, recorded recall limits, and the new CTA.
 The source compiler adapts the relevant expressions directly from `docs/site/script.js`, records its hash, uses
-its H pose/nozzle anchors, and references the original WebP assets. Website/product source is unchanged.
+its H pose/nozzle anchors, search/lock-on geometry and compare beams, and references the original WebP assets.
+Website/product source is unchanged. Strike windup and recovery use two actual detected beats on either side;
+subtracting half a second could select the strike beat itself on the newly allocated timeline.
+
+Shot 1 now targets **6 s**, speaking exactly “Built entirely during the Meta hackathon. Nothing here pre-existed.”
+The complete disclosure is read from [JUDGE_INTRO](JUDGE_INTRO.md) and stays on screen at **64 px** throughout
+the opening, with the product and saved Apple claim visible at frame zero. Shot 4 receives all **12 saved seconds**
+and targets **28 s**. Shots 2 and 3 move earlier; shots 5–12 retain their original target boundaries.
 
 `storyboard-v3.yaml` uses `version: 2` for the existing clone/motion pipeline and `motion_variant: v3` to select
 `motion/v3/index.html`. `window.seek(t)` is synchronous and repeatable after arbitrary seeks; `?t=SECONDS` works.
@@ -19,9 +26,35 @@ preserved as `motion/qr-v006.json`. The requested `motion/qr.json` now encodes *
 independently decoded in the Node suite. The final URL/QR stay visible through the last frame.
 
 `motion_v3.py` compiles only recorded evidence. It verifies release spans/values against L4-01/L4-27 raw checks,
-the new 2026-10-30 EPS checks against hash-matched self-made fixtures, and original v2 counts. Source and art hashes
-enter render cache identities/receipts. No evaluation, SEC fetch or model call is used. The 2026-10-30 directory is
-the recorded report label; actual run timestamps remain in its protocols. No new held-out claim is made.
+EPS checks against hash-matched self-made fixtures, and original v2 counts. The corrected text control comes from
+the [30b text report](../docs/evidence/multimodal-2026-10-30b/text/checks/text/report.json): text / screenshot / audio
+all contradict **$1.67**, against **$1.57** filed. Screenshot/audio were not rerun; their evidence remains in the
+30 directory. The compiler includes report, ingest, trace and SEC filing links, with hashes for local sources.
+
+Shot 11 reads guarded/program-checked coverage directly from the [30b comparison data](../docs/evidence/multimodal-2026-10-30b/before-after.json):
+**44/60** for `long-call-r2` live media, **50/60** for the frozen-ASR **text recheck**. These counts describe assertion
+coverage, not verdict accuracy. Speaker labels remain unverified, sourced to the retained ingest limitation.
+The [30b report](../docs/evidence/multimodal-2026-10-30b/REPORT.md) retains the failed extraction attempt and all
+post-hoc caveats. L4 stays a furnished, unaudited regression test. No new held-out result or general error rate is claimed.
+Source and art hashes enter render cache identities/receipts. No evaluation, SEC fetch or model call is used;
+the evidence directory names are recorded report labels, with actual timestamps in their protocols.
+
+## Per-shot edit targets
+
+| # | Scene | Target time | Duration |
+| --- | --- | --- | --- |
+| 1 | Disclosure / product | 0:00–0:06 | 6 s |
+| 2 | Apple post | 0:06–0:20 | 14 s |
+| 3 | Extract | 0:20–0:32 | 12 s |
+| 4 | Hover spotlight / strike | 0:32–1:00 | 28 s |
+| 5 | Filing proof | 1:00–1:15 | 15 s |
+| 6 | Program checks | 1:15–1:27 | 12 s |
+| 7 | L4 releases | 1:27–1:52 | 25 s |
+| 8 | Screenshot | 1:52–2:05 | 13 s |
+| 9 | Audio | 2:05–2:18 | 13 s |
+| 10 | Original v2 results | 2:18–2:35 | 17 s |
+| 11 | Saved checks / limits | 2:35–2:48 | 13 s |
+| 12 | CTA | 2:48–2:58 | 10 s |
 
 ## Key-frame times
 
@@ -30,10 +63,10 @@ edit target **178 s**. Three times (opening / middle / settled end) for **every 
 
 | Scene | Opening / middle / end (s) |
 | --- | --- |
-| v301-disclosure | 1.451 / 9.067 / 16.684 |
-| v302-apple | 19.249 / 25.101 / 30.952 |
-| v303-extract | 33.036 / 38.127 / 43.218 |
-| v304-hover | 45.469 / 52.198 / 58.928 |
+| v301-disclosure | 0.492 / 3.077 / 5.661 |
+| v302-apple | 7.296 / 13.293 / 19.291 |
+| v303-extract | 21.364 / 26.250 / 31.136 |
+| v304-hover | 34.318 / 46.138 / 57.958 |
 | v305-proof | 61.417 / 67.756 / 74.095 |
 | v306-program | 76.242 / 81.177 / 86.112 |
 | v307-l4 | 89.063 / 99.625 / 110.187 |
@@ -50,8 +83,9 @@ its exact window is selected from measured `cues.json`, not from an invented BPM
 
 ## Host commands for Claude
 
-Run **only after Owner approval of the shot list**, in this worktree. These are handoff commands, not executed
-production steps. Prepare locked dependencies without following the shared `.venv` symlink:
+The shot list is approved. The current brief authorizes source edits/tests and a local commit or bundle;
+**do not render or push during this handoff**. The commands below are for the Director's later production pass,
+not executed steps. Prepare locked dependencies without following the shared `.venv` symlink:
 
 ```sh
 cd /Users/yan/git/market-claim-verifier-video
@@ -127,24 +161,28 @@ sh scripts/verify.sh
 UV_OFFLINE=1 sh scripts/verify.sh
 ```
 
-New Python tests check evidence/fixture hashes, raw release and EPS data, exact script/shot-list agreement, baseline
+Python tests check evidence/fixture hashes, raw release and corrected EPS data, 30b coverage/attribution sources,
+stale-verdict and inconsistent-evidence rejection, exact script/shot-list agreement, baseline
 voice/music settings, original results counts, measured timing/overrun refusal, all-word subtitle coverage and the
-36-frame manifest. New Node tests cover every preview frame at 30 fps, arbitrary/reverse seek determinism, Hover poses,
-source values/labels, type and safe rectangles, final CTA, and rejection paths for the host DOM geometry guard.
+36-frame manifest. Node tests cover every preview frame at 30 fps, arbitrary/reverse seek determinism, the complete
+disclosure throughout the opening, Hover search/lock-on/compare beams and beat spacing, corrected verdicts/coverage
+with evidence links, type and safe rectangles, final CTA, and rejection paths for the host DOM geometry guard.
 The existing Node entry imports the new suite, so the full offline verifier includes it.
 
-Result: **`UV_OFFLINE=1 sh scripts/verify.sh` passed** — 817 product, 94 demo and 52 Node tests;
-figure regeneration/check; all three explorer/site outputs byte-identical; local links/anchors; no model/SEC
-requests or credentials. The final scene and Markdown checks pass as well. These are source/test results.
+Both **`sh scripts/verify.sh`** and **`UV_OFFLINE=1 sh scripts/verify.sh`** passed for this revision:
+**840 product, 100 demo and 53 Node tests** each; figure rebuild/check; all three explorer/site outputs
+byte-identical; local Markdown links/anchors; no model/SEC requests or credentials; source tree unchanged.
+The targeted v3 suites also passed (17 Python and 12 Node tests). These are source/test results.
 
 **Remaining review:** actual voice durations, real Chromium font geometry, decoded art appearance, phone readability,
 beat/word perception, final loudness and independent/Owner approval. Static and offline tests do not claim these passed.
 
 ## Local commit handoff
 
-The shared `.git/worktrees/market-claim-verifier-video/index.lock` path rejected writes in this environment.
-As authorized by the brief, the local commit is packaged in `demo/out/v007-source.bundle`; the source changes are
-also present in this worktree. The bundle carries branch `demo/v007` and the exact requested footer:
+Staging was blocked at `/Users/yan/git/market-claim-verifier/.git/worktrees/market-claim-verifier-video/index.lock`
+by the workspace's write restrictions. As authorized by the brief, the local commit is packaged after
+verification in `demo/out/v007-owner-edits.bundle`, based on `2eab9f3` (the existing v007 source commit, above the
+30b recall fixes). The source edits remain in this worktree. The bundle uses branch `demo/v007` and the exact footer:
 
 ```text
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
@@ -153,8 +191,8 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 Import/review from a clean checkout containing the bundle's recorded base commit:
 
 ```sh
-git bundle verify /Users/yan/git/market-claim-verifier-video/demo/out/v007-source.bundle
-git fetch /Users/yan/git/market-claim-verifier-video/demo/out/v007-source.bundle refs/heads/demo/v007
+git bundle verify /Users/yan/git/market-claim-verifier-video/demo/out/v007-owner-edits.bundle
+git fetch /Users/yan/git/market-claim-verifier-video/demo/out/v007-owner-edits.bundle refs/heads/demo/v007
 git show --stat FETCH_HEAD
 ```
 

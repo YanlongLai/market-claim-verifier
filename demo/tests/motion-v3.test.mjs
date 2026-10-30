@@ -20,10 +20,16 @@ function at(scene,fn) {
 
 test('v007 opens with disclosure and product on frame zero; query seek works',()=>{
   const {window,stage}=page();
-  assert.match(plain(stage.innerHTML),/Nothing in this repository.*pre-existed the hackathon/);
-  assert.match(plain(stage.innerHTML),/Market Claim Verifier/);
-  assert.match(stage.innerHTML,/416\.2B/);assert.match(stage.innerHTML,/Open saved check/);
+  const disclosure=read('../JUDGE_INTRO.md').match(/^> (.+)$/m)[1],shot=window.timeline.shots[0];
   assert.equal(window.frame.time,0);
+  for(const t of [0,(shot.start+shot.end)/2,shot.end-1/30]) {
+    window.seek(t);
+    assert(plain(stage.innerHTML).includes(disclosure));
+    assert.match(plain(stage.innerHTML),/Market Claim Verifier/);
+    assert.match(stage.innerHTML,/416\.2B/);assert.match(stage.innerHTML,/Open saved check/);
+    const text=window.frame.boxes.find(b=>b.className==='body disclosure');
+    assert.equal(text.text,disclosure);assert(text.size>=64);
+  }
   assert.equal(page('?t=100').window.frame.time,100);
 });
 
@@ -65,9 +71,26 @@ test('Hover uses real H assets, site pose clock, thruster and spotlight alphas',
   assert.equal(window.frame.hover.phase,'compare');
   assert.match(stage.innerHTML,/416\.2B/);assert.match(stage.innerHTML,/102\.5B/);assert.match(stage.innerHTML,/FALSE/);
   assert(window.frame.hover.shade>0);assert.match(stage.innerHTML,/class="spotlight"/);
+  assert(window.frame.hover.postAlpha>0&&window.frame.hover.filingAlpha>0&&window.frame.hover.yearAlpha>0);
+  for(const name of ['filing','post','year'])assert(stage.innerHTML.includes(`data-beam="${name}"`));
   window.seek(a.find(a=>a[1]===4800)[0]+.01);
   assert.equal(window.frame.hover.pose,'stamp-down');assert.equal(window.frame.hover.thruster,'burst');
   assert(window.frame.hover.dip>0);assert.match(stage.innerHTML,/≈4×/);
+});
+
+test('Hover searches before locking the quarter and reserves detected beats around the strike',()=>{
+  const {window}=page(),a=window.MOTION_DATA.hover_anchors,
+    find=a.find(([t,age])=>age===2300)[0],lock=a.find(([t,age])=>age===2900)[0];
+  window.seek(find+.001);const first=JSON.stringify(window.frame.hover.row);
+  assert(window.frame.hover.finding&&!window.frame.hover.locked);
+  window.seek((find+lock)/2);
+  assert.notEqual(JSON.stringify(window.frame.hover.row),first);
+  window.seek(lock+.001);
+  assert(window.frame.hover.locked);assert.equal(window.frame.hover.row.x,1184);
+  assert.equal(window.frame.hover.row.y,464);
+  const strike=a.find(([t,age])=>age===4800)[0],i=window.MOTION_DATA.beats.beats_s.indexOf(strike);
+  assert.equal(a.find(([t,age])=>age===4500)[0],window.MOTION_DATA.beats.beats_s[i-2]);
+  assert.equal(a.find(([t,age])=>age===5300)[0],window.MOTION_DATA.beats.beats_s[i+2]);
 });
 
 test('new L4 scene retains raw values, fiscal period and unaudited regression labels',()=>{
@@ -89,16 +112,24 @@ for(const scene of ['screenshot','audio']) test(`${scene} shows its self-made in
   else {assert.match(html,/CONTRADICTED/);assert.match(stage.innerHTML,/tests\/fixtures\/multimodal\/example-post.png/);}
 }));
 
-test('v007 original results and limits are honest about corrected gold and misses',()=>{
+test('v007 original results and recall limits retain recorded corrections and evidence links',()=>{
   at('results',(window,stage)=>{
     for(const score of ['44.3%','83.2%','20.7%','90.5%','19.9%'])assert(stage.innerHTML.includes(score));
     assert.match(plain(stage.innerHTML),/includes dev \/ corrected gold/);
     assert(!/Pre-registered|92\.2|91\.0|85\.4/.test(stage.innerHTML));
   });
   at('limits',(window,stage)=>{
-    const html=plain(stage.innerHTML);assert.match(html,/Text EPS control.*INSUFFICIENT/);
-    assert.match(html,/same deliberate error was missed/);assert.match(html,/not held out/);
-    assert.match(html,/Speaker identity: unverified/);assert.match(html,/incomplete claim recall/);
+    const html=plain(stage.innerHTML);
+    for(const label of ['Text control','Screenshot','Audio'])assert(html.includes(label));
+    assert.equal(html.match(/CONTRADICTED/g).length,3);
+    assert(!/INSUFFICIENT|missed/.test(html));
+    assert.match(html,/Saved development probes/);assert.match(html,/not held out/);
+    assert.match(html,/Speaker labels: unverified/);assert.match(html,/guarded \/ checked/);
+    assert.match(html,/44\/60 live/);assert.match(html,/50\/60 frozen ASR/);
+    for(const row of Object.values(window.MOTION_DATA.product.inputs))
+      assert(stage.innerHTML.includes(`href="../../../${row.source}"`));
+    for(const row of Object.values(window.MOTION_DATA.product.recall.coverage))
+      assert(stage.innerHTML.includes(`href="../../../${row.source}"`));
   });
 });
 

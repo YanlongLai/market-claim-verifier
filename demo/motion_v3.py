@@ -25,6 +25,7 @@ ROOT = Path(__file__).resolve().parents[1]
 STORY = 'demo/storyboard-v3.yaml'
 L4 = 'docs/evidence/eval-l4-2026-10-29'
 MM = 'docs/evidence/multimodal-2026-10-30'
+RECALL = 'docs/evidence/multimodal-2026-10-30b'
 OUT = 'demo/motion/v3'
 
 
@@ -47,22 +48,25 @@ def hover_source(repo: Path) -> str:
     # policies contains the real loop-duration setup, clamp/easing and facing map.
     phase = 'function phaseAt(' + between('function phaseAt(', 'function paintRobot(')
     robot = between('function paintRobot(age, card) {', 'if (!geometry) return { x: 0, y: 0 };')
-    lighting = between('function paintSpotlight(age, item, visor) {', 'let row = age >= COMPARE')
-    # Functions not involved in the adapter (localization, geometry and DOM) are excluded.
+    geometry = 'const emptyBox =' + between('const emptyBox =', 'function setBox(')
+    cone = 'function conePoints(' + between('function conePoints(', 'function paintSpotlight(')
+    lighting = between('function paintSpotlight(age, item, visor) {', 'const poolCenter = center(row);')
+    # Page measurement, localization and DOM painting are excluded.
     return ('// Generated from docs/site/script.js; run demo/motion_v3.py to refresh.\n'
             f'// Site SHA-256: {file_hash(repo / "docs/site/script.js")}\n'
             '(function(root) {\n"use strict";\n'
-            'function state(age, card, elapsed=age) {\n'
+            + geometry + cone + 'function state(age, card, elapsed=age, targets=null) {\n'
             'const cards=[card], poses=Object.fromEntries(["idle","inspect","reach","present",'
             '"point","think","stamp","stamp-down","approve","concern","shrug"]'
             '.map(name=>[name,{style:{}}]));\n'
             'const robot={style:{},dataset:{}};\n' + constants + policies + phase + robot +
-            '\nconst item={light:true}, motion={matches:false};\n' + lighting +
+            '\nconst item={light:targets||{post:emptyBox,row:emptyBox,compare:emptyBox,search:[emptyBox]}}, motion={matches:false};\n' + lighting +
             '\nreturn {phase:phaseAt(age,canCheck),pose,previous,blend,bob,dip,lean,'
             'transform:robot.style.transform,thruster:robot.dataset.thruster,'
             'visor:POSE_VISORS[pose],nozzle:POSE_ANCHORS[pose].nozzle,canvas:POSE_CANVAS,'
-            'facing:facing[pose],postAlpha,filingAlpha,yearAlpha,shade:compareIn*lift};\n}\n'
-            'const api={state}; if(typeof module==="object"&&module.exports)module.exports=api;'
+            'facing:facing[pose],postAlpha,filingAlpha,yearAlpha,shade:compareIn*lift,'
+            'finding,comparing,locked:age>=FIND_LOCK,row,filingTarget};\n}\n'
+            'const api={state,conePoints}; if(typeof module==="object"&&module.exports)module.exports=api;'
             'else root.HoverSource=api;\n})(globalThis);\n')
 
 
@@ -81,6 +85,9 @@ def waveform(path: Path, bins=64) -> list[float]:
 
 def evidence_data(repo: Path) -> dict:
     product = product_data(repo)
+    disclosure = re.search(r'^> (.+)$', (repo / 'demo/JUDGE_INTRO.md').read_text(), re.M)
+    if not disclosure:
+        raise BuildError('Complete JUDGE_INTRO disclosure is missing.')
     site = read_json(repo / 'docs/site/data/site.json')
     results = {r['id']: r for r in map(json.loads, (repo / L4 / 'results.jsonl').read_text().splitlines())}
     releases = []
@@ -100,7 +107,9 @@ def evidence_data(repo: Path) -> dict:
                              source=trace_path, checks=trace['program_checks']))
     inputs = {}
     for kind, channel in [('screenshot', 'image'), ('audio', 'audio'), ('text', 'text')]:
-        source = f'{MM}/{kind}/checks/{channel}/report.json'
+        # 30b reran the text control only; retain the original screenshot/audio runs.
+        folder = f'{RECALL if kind == "text" else MM}/{kind}'
+        source = f'{folder}/checks/{channel}/report.json'
         report = read_json(repo / source)
         candidates = [(claim, check) for claim in report['claims'] for check in claim['program_checks']
                       if re.search(r'\bEPS\b|earnings per share', check.get('text', ''), re.I)
@@ -108,16 +117,18 @@ def evidence_data(repo: Path) -> dict:
         if len(candidates) != 1:
             raise BuildError(f'{kind}: deliberate EPS check is ambiguous.')
         claim, check = candidates[0]
-        expected = 'insufficient_evidence' if kind == 'text' else 'contradicted'
-        if check['program_verdict'] != expected or claim['verdict'] != expected:
+        if check['program_verdict'] != 'contradicted' or claim['verdict'] != 'contradicted':
             raise BuildError(f'{kind}: retained EPS verdict changed.')
-        if kind != 'text' and (check['stated_value_used'], check['actual_value']) != (1.67, 1.57):
+        if (check['stated_value_used'], check['actual_value']) != (1.67, 1.57):
             raise BuildError(f'{kind}: retained EPS values changed.')
-        ingest = read_json(repo / f'{MM}/{kind}/ingest.json')
+        ingest_source = f'{folder}/ingest.json'
+        trace_source = f'{folder}/checks/{channel}/{claim["trace_path"]}'
+        ingest = read_json(repo / ingest_source)
         period = re.search(r'fiscal (Q[1-4]) (\d{4})', check['text'])
         if not period:
             raise BuildError(f'{kind}: EPS check lost its fiscal period.')
-        inputs[kind] = dict(source=source, quote=claim['quote'], check=check,
+        inputs[kind] = dict(source=source, ingest_source=ingest_source, trace_source=trace_source,
+                            evidence=claim['evidence'], quote=claim['quote'], check=check,
                             verdict=claim['verdict'], input=ingest['input'],
                             segments=ingest['channels'][0]['segments'],
                             period_label=f'FY{period[2]} {period[1]}')
@@ -126,6 +137,28 @@ def evidence_data(repo: Path) -> dict:
             if fragment not in claim['quote']:
                 raise BuildError('Synthetic audio exact EPS clause changed.')
             inputs[kind]['display_quote']=fragment
+    comparison_source = f'{RECALL}/before-after.json'
+    comparison = read_json(repo / comparison_source)
+    coverage = {}
+    for label, run, channel in [('live', 'long-call-r2', 'audio'),
+                                ('frozen_asr', 'long-call-frozen', 'text')]:
+        after = comparison['runs'][run]['after']
+        counts = after['channels'][channel]['recall']
+        source = f'{RECALL}/{run}/ingest.json'
+        ingest = read_json(repo / source)
+        if (after['status'] != ingest['status'] or after['status'] != 'completed'
+                or not 0 <= counts['accepted'] == counts['program_checked'] <= counts['expected']
+                or counts['expected'] <= 0):
+            raise BuildError(f'{run}: recorded guarded/program-checked coverage is inconsistent.')
+        coverage[label] = dict(source=source, comparison_source=comparison_source, channel=channel,
+                               guarded=counts['accepted'], program_checked=counts['program_checked'],
+                               expected=counts['expected'], status=after['status'])
+        if label == 'live':
+            limitation = next((line for line in ingest['limitations']
+                               if 'speaker labels are not names or roles' in line), None)
+            if not limitation:
+                raise BuildError('Long-call speaker-label limitation is missing.')
+            speaker_identity = dict(verified=False, source=source, limitation=limitation)
     fixture = repo / 'tests/fixtures/multimodal/example-post.png'
     audio = repo / 'tests/fixtures/multimodal/release-reading.wav'
     for kind, path in [('screenshot', fixture), ('audio', audio)]:
@@ -143,15 +176,20 @@ def evidence_data(repo: Path) -> dict:
                 raise BuildError('Original v2 counts disagree.')
             values.append(dict(correct=correct, total=n, percent=round(100*correct/n, 1)))
         scores.append(dict(provider=provider, label=label, alone=values[0], checked=values[1]))
-    source_paths = {f'{L4}/results.jsonl', f'{L4}/REPORT.md', f'{MM}/REPORT.md',
+    source_paths = {f'{L4}/results.jsonl', f'{L4}/REPORT.md', f'{MM}/REPORT.md', f'{RECALL}/REPORT.md',
+                    comparison_source, *(r['source'] for r in coverage.values()),
                     'demo/JUDGE_INTRO.md', 'docs/site/script.js',
                     'docs/site/img/auditor/H/manifest.json', 'tests/fixtures/multimodal/generation.json',
                     'tests/fixtures/multimodal/example-post.png', 'tests/fixtures/multimodal/release-reading.wav',
                     *(r['source'] for r in releases), *(r['source'] for r in inputs.values()),
-                    *(f'{MM}/{kind}/ingest.json' for kind in inputs)}
+                    *(r['ingest_source'] for r in inputs.values()),
+                    *(r['trace_source'] for r in inputs.values())}
     source_paths.update(p.relative_to(repo).as_posix() for p in (repo/'docs/site/img/auditor/H').glob('*.webp'))
     source_paths.update('docs/site/img/'+p for p in ('stamp-paper.webp', 'fx/beam-pool.webp', 'fx/lens-flare.webp'))
-    return dict(base=product, releases=releases, inputs=inputs, scores=scores,
+    return dict(base=product, disclosure=disclosure[1], releases=releases, inputs=inputs, scores=scores,
+                recall=dict(source=comparison_source, report_source=f'{RECALL}/REPORT.md',
+                            policy=comparison['policy'], coverage=coverage,
+                            speaker_identity=speaker_identity),
                 apple_check=read_json(repo/'demo/data/demo-thread.json')['claims'][2]['program_checks'][0],
                 apple_evidence_ids=[e['id'] for e in read_json(repo/'demo/data/demo-thread.json')['claims'][2]['evidence']],
                 waveform=waveform(audio),
@@ -193,12 +231,15 @@ def compile_data(repo: Path, story: dict, *, voices=None, analyze=None) -> dict:
     # The site's original robot clock is warped between these detected beat anchors.
     hover = next(s for s in timing['shots'] if s['id']=='v304-hover')
     events = {e['event']:e['t'] for e in cues['_events'][hover['id']]}
+    strike_index = beats.index(events['strike'])
     anchors = [(hover['start'], 0),
                (next_beat(beats, hover['start']+.4), 700),
                (next_beat(beats, hover['start']+.9), 1500),
-               (events['find'], 2300), (events['compare'], 3700),
-               (next_beat(beats, events['strike']-.5), 4500), (events['strike'], 4800),
-               (next_beat(beats, events['strike']+.5), 5300), (hover['end'], 6400)]
+               (events['find'], 2300),
+               (next_beat(beats, (events['find']+events['compare'])/2), 2900),
+               (events['compare'], 3700),
+               (beats[max(0, strike_index-2)], 4500), (events['strike'], 4800),
+               (beats[min(len(beats)-1, strike_index+2)], 5300), (hover['end'], 6400)]
     if any(b[0] <= a[0] for a,b in zip(anchors, anchors[1:])):
         raise BuildError('Hover narration cues leave no beat for its pose sequence; review the host timings.')
     qr = read_json(repo/'demo/motion/qr.json')

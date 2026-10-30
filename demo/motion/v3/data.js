@@ -6,11 +6,11 @@ window.MOTION_DATA = {
       "id": "v301-disclosure",
       "renderer": "disclosure",
       "target_start_s": 0,
-      "target_end_s": 18,
-      "target_s": 18,
-      "narration": "Nothing in this repository pre-existed the hackathon. All repository code and demo work were built during the Meta Global AI Developer Hackathon, beginning October 27, 2026. SEC public data and third-party tools are credited separately.",
-      "on_screen": "Nothing in this repository pre-existed the hackathon.",
-      "director_notes": "Product and its Apple claim are visible on frame zero; disclosure stays above the product, with the complete disclosure spoken and subtitled.",
+      "target_end_s": 6,
+      "target_s": 6,
+      "narration": "Built entirely during the Meta hackathon. Nothing here pre-existed.",
+      "on_screen": "Nothing in this repository pre-existed the hackathon. All repository code and demo work were built during the Meta Global AI Developer Hackathon, beginning October 27, 2026. SEC public data and third-party tools are credited separately.",
+      "director_notes": "Product and its Apple claim are visible on frame zero. The complete JUDGE_INTRO disclosure stays visible at readable size throughout the shot; the shortened disclosure is spoken and subtitled.",
       "evidence": [
         "demo/JUDGE_INTRO.md",
         "BUILD_LOG.md",
@@ -24,8 +24,8 @@ window.MOTION_DATA = {
     {
       "id": "v302-apple",
       "renderer": "apple",
-      "target_start_s": 18,
-      "target_end_s": 32,
+      "target_start_s": 6,
+      "target_end_s": 20,
       "target_s": 14,
       "narration": "Apple made four hundred sixteen billion in one quarter? That's the trap. Paste a finance post into Market Claim Verifier.",
       "on_screen": "Apple · $416.2B in one quarter?",
@@ -47,8 +47,8 @@ window.MOTION_DATA = {
     {
       "id": "v303-extract",
       "renderer": "extract",
-      "target_start_s": 32,
-      "target_end_s": 44,
+      "target_start_s": 20,
+      "target_end_s": 32,
       "target_s": 12,
       "narration": "Muse Spark extracts each checkable claim with its exact quote. Forecasts and opinions are labeled, not judged.",
       "on_screen": "Exact quote → checkable claim",
@@ -69,12 +69,12 @@ window.MOTION_DATA = {
     {
       "id": "v304-hover",
       "renderer": "hover",
-      "target_start_s": 44,
+      "target_start_s": 32,
       "target_end_s": 60,
-      "target_s": 16,
+      "target_s": 28,
       "narration": "Watch Hover follow the evidence. Apple is false. Four hundred sixteen point two billion was the whole year. The quarter was one hundred two point five billion. Four times too high.",
       "on_screen": "$416.2B year · $102.5B quarter · ≈4× too high",
-      "director_notes": "Reuse the site's Hover H poses, nozzle anchors, pose crossfades, dip, thruster and spotlight logic. A beam finds the filed quarter; both the year and quarter remain visible when FALSE stamps the real comparison. No slide cutaways.",
+      "director_notes": "Reuse the site's Hover H poses, nozzle anchors, pose crossfades, dip, thruster and spotlight logic. Give the beam search, lock-on, compare beams and strike the twelve seconds saved from the opening. A beam finds the filed quarter; both the year and quarter remain visible when FALSE stamps the real comparison. No slide cutaways.",
       "evidence": [
         "demo/data/demo-thread.json",
         "docs/site/script.js",
@@ -265,12 +265,17 @@ window.MOTION_DATA = {
       "target_start_s": 155,
       "target_end_s": 168,
       "target_s": 13,
-      "narration": "These are saved runs, not a guarantee. The text control misses the same error. Speaker attribution and long-clip recall remain limited. L4 is a regression test.",
-      "on_screen": "Saved runs · honest limits",
-      "director_notes": "Remain in the product report. Display the real text control's insufficient_evidence verdict, then the recorded attribution / recall limits and the L4 regression qualifier. No general error-rate claim.",
+      "narration": "These are saved runs, not a guarantee. The text, screenshot and audio checks all catch the same error. Long-call recall and speaker identity remain limited. L4 is a regression test.",
+      "on_screen": "Text / screenshot / audio: CONTRADICTED · long-call coverage: 44/60 live, 50/60 frozen ASR · speaker labels unverified · L4 regression test",
+      "director_notes": "Remain in the product report. Show text / screenshot / audio all contradicted with saved evidence links, long-call guarded/program-checked coverage of 44/60 live and 50/60 on frozen ASR, unverified speaker labels and the L4 regression qualifier. These are post-hoc development probes; frozen ASR is a text recheck, coverage is not verdict accuracy, and no general error rate is claimed.",
       "evidence": [
-        "docs/evidence/multimodal-2026-10-30/text/checks/text/report.json",
-        "docs/evidence/multimodal-2026-10-30/REPORT.md",
+        "docs/evidence/multimodal-2026-10-30b/text/checks/text/report.json",
+        "docs/evidence/multimodal-2026-10-30/screenshot/checks/image/report.json",
+        "docs/evidence/multimodal-2026-10-30/audio/checks/audio/report.json",
+        "docs/evidence/multimodal-2026-10-30b/before-after.json",
+        "docs/evidence/multimodal-2026-10-30b/long-call-r2/ingest.json",
+        "docs/evidence/multimodal-2026-10-30b/long-call-frozen/ingest.json",
+        "docs/evidence/multimodal-2026-10-30b/REPORT.md",
         "docs/evidence/eval-l4-2026-10-29/REPORT.md"
       ],
       "cue_events": [],
@@ -305,21 +310,21 @@ window.MOTION_DATA = {
       {
         "id": "v301-disclosure",
         "start": 0,
-        "end": 18.1348
+        "end": 6.1533
       },
       {
         "id": "v302-apple",
-        "start": 18.1348,
-        "end": 32.0667
+        "start": 6.1533,
+        "end": 20.4335
       },
       {
         "id": "v303-extract",
-        "start": 32.0667,
-        "end": 44.1876
+        "start": 20.4335,
+        "end": 32.0667
       },
       {
         "id": "v304-hover",
-        "start": 44.1876,
+        "start": 32.0667,
         "end": 60.2093
       },
       {
@@ -428,46 +433,46 @@ window.MOTION_DATA = {
         {
           "event": "paste",
           "cue": "Paste a finance post",
-          "cue_start": 26.089126891,
-          "cue_end": 28.329782353,
+          "cue_start": 14.315436134,
+          "cue_end": 16.614629412,
           "alignment": "sentence",
-          "t": 26.0296
+          "t": 14.5125
         }
       ],
       "v303-extract": [
         {
           "event": "opinion",
           "cue": "Forecasts and opinions",
-          "cue_start": 38.619872477,
-          "cue_end": 40.945191743,
+          "cue_start": 26.709265138,
+          "cue_end": 28.936149541,
           "alignment": "sentence",
-          "t": 38.5451
+          "t": 26.9119
         }
       ],
       "v304-hover": [
         {
           "event": "find",
           "cue": "the evidence",
-          "cue_start": 45.852442614,
-          "cue_end": 46.90392216,
+          "cue_start": 35.040048864,
+          "cue_end": 36.91795341,
           "alignment": "character-offset",
-          "t": 46.0219
+          "t": 35.2943
         },
         {
           "event": "compare",
           "cue": "Apple is false",
-          "cue_start": 46.991545455,
-          "cue_end": 48.218271591,
+          "cue_start": 37.074445455,
+          "cue_end": 39.265334091,
           "alignment": "sentence",
-          "t": 46.9739
+          "t": 37.1519
         },
         {
           "event": "strike",
           "cue": "Four times too high",
-          "cue_start": 57.856834091,
-          "cue_end": 59.521676705,
+          "cue_start": 56.479459091,
+          "cue_end": 59.452807955,
           "alignment": "sentence",
-          "t": 57.8873
+          "t": 56.4477
         }
       ],
       "v305-proof": [
@@ -575,74 +580,69 @@ window.MOTION_DATA = {
     },
     "v301-disclosure": [
       {
-        "text": "Nothing in this repository pre-existed the hackathon.",
+        "text": "Built entirely during the Meta hackathon.",
         "start": 0.0,
-        "end": 3.971557265
+        "end": 3.449777273
       },
       {
-        "text": "All repository code and demo work were built during the Meta Global AI Developer Hackathon, beginning October 27, 2026.",
-        "start": 3.971557265,
-        "end": 12.88882735
-      },
-      {
-        "text": "SEC public data and third-party tools are credited separately.",
-        "start": 12.88882735,
-        "end": 17.5348
+        "text": "Nothing here pre-existed.",
+        "start": 3.449777273,
+        "end": 5.5533
       }
     ],
     "v302-apple": [
       {
         "text": "Apple made four hundred sixteen billion in one quarter?",
-        "start": 18.1348,
-        "end": 24.296602521
+        "start": 6.1533,
+        "end": 12.476081513
       },
       {
         "text": "That's the trap.",
-        "start": 24.296602521,
-        "end": 26.089126891
+        "start": 12.476081513,
+        "end": 14.315436134
       },
       {
         "text": "Paste a finance post into Market Claim Verifier.",
-        "start": 26.089126891,
-        "end": 31.4667
+        "start": 14.315436134,
+        "end": 19.8335
       }
     ],
     "v303-extract": [
       {
         "text": "Muse Spark extracts each checkable claim with its exact quote.",
-        "start": 32.0667,
-        "end": 38.619872477
+        "start": 20.4335,
+        "end": 26.709265138
       },
       {
         "text": "Forecasts and opinions are labeled, not judged.",
-        "start": 38.619872477,
-        "end": 43.5876
+        "start": 26.709265138,
+        "end": 31.4667
       }
     ],
     "v304-hover": [
       {
         "text": "Watch Hover follow the evidence.",
-        "start": 44.1876,
-        "end": 46.991545455
+        "start": 32.0667,
+        "end": 37.074445455
       },
       {
         "text": "Apple is false.",
-        "start": 46.991545455,
-        "end": 48.305894886
+        "start": 37.074445455,
+        "end": 39.421826136
       },
       {
         "text": "Four hundred sixteen point two billion was the whole year.",
-        "start": 48.305894886,
-        "end": 53.388046023
+        "start": 39.421826136,
+        "end": 48.498364773
       },
       {
         "text": "The quarter was one hundred two point five billion.",
-        "start": 53.388046023,
-        "end": 57.856834091
+        "start": 48.498364773,
+        "end": 56.479459091
       },
       {
         "text": "Four times too high.",
-        "start": 57.856834091,
+        "start": 56.479459091,
         "end": 59.6093
       }
     ],
@@ -757,21 +757,21 @@ window.MOTION_DATA = {
       {
         "text": "These are saved runs, not a guarantee.",
         "start": 155.2486,
-        "end": 158.194447134
+        "end": 157.846903371
       },
       {
-        "text": "The text control misses the same error.",
-        "start": 158.194447134,
-        "end": 161.217816561
+        "text": "The text, screenshot and audio checks all catch the same error.",
+        "start": 157.846903371,
+        "end": 162.154616854
       },
       {
-        "text": "Speaker attribution and long-clip recall remain limited.",
-        "start": 161.217816561,
-        "end": 165.559064968
+        "text": "Long-call recall and speaker identity remain limited.",
+        "start": 162.154616854,
+        "end": 165.778566292
       },
       {
         "text": "L4 is a regression test.",
-        "start": 165.559064968,
+        "start": 165.778566292,
         "end": 167.4196
       }
     ],
@@ -1364,6 +1364,7 @@ window.MOTION_DATA = {
         "examples/posts/demo-thread.txt": "4bcc8f9590a0039773926ed4098381962d98846a06232360f485d09e45eb09df"
       }
     },
+    "disclosure": "Nothing in this repository pre-existed the hackathon. All repository code and demo work were built during the Meta Global AI Developer Hackathon, beginning October 27, 2026. SEC public data and third-party tools are credited separately.",
     "releases": [
       {
         "id": "L4-01",
@@ -1741,6 +1742,44 @@ window.MOTION_DATA = {
     "inputs": {
       "screenshot": {
         "source": "docs/evidence/multimodal-2026-10-30/screenshot/checks/image/report.json",
+        "ingest_source": "docs/evidence/multimodal-2026-10-30/screenshot/ingest.json",
+        "trace_source": "docs/evidence/multimodal-2026-10-30/screenshot/checks/image/traces/20261029T221545Z-64c59747.json",
+        "evidence": [
+          {
+            "ticker": "AAPL",
+            "entity": "Apple Inc.",
+            "metric": "eps_diluted",
+            "concept": "EarningsPerShareDiluted",
+            "value": 1.57,
+            "unit": "USD/shares",
+            "start": "2025-03-30",
+            "end": "2025-06-28",
+            "form": "10-Q",
+            "filed": "2026-07-31",
+            "accn": "0000320193-26-000020",
+            "frame": "CY2025Q2",
+            "fiscal_year": 2025,
+            "fiscal_period": "Q3",
+            "derived": false,
+            "filing_url": "https://www.sec.gov/Archives/edgar/data/320193/000032019326000020/",
+            "period": "FY2025Q3",
+            "provenance": {
+              "tier": "L2",
+              "audited": false,
+              "confirmations": 2,
+              "forms": [
+                "10-Q"
+              ],
+              "first_filed": "2025-08-01",
+              "latest_filed": "2026-07-31",
+              "restated": false,
+              "amended": false,
+              "strength": "medium"
+            },
+            "id": "E1",
+            "tier": "L2"
+          }
+        ],
         "quote": "Apple reported diluted EPS of $1.67 for fiscal Q3\n2025.",
         "check": {
           "text": "Apple diluted EPS for fiscal Q3 2025 is $1.67",
@@ -1802,6 +1841,114 @@ window.MOTION_DATA = {
       },
       "audio": {
         "source": "docs/evidence/multimodal-2026-10-30/audio/checks/audio/report.json",
+        "ingest_source": "docs/evidence/multimodal-2026-10-30/audio/ingest.json",
+        "trace_source": "docs/evidence/multimodal-2026-10-30/audio/checks/audio/traces/20261029T221555Z-8567ffa6.json",
+        "evidence": [
+          {
+            "ticker": "AAPL",
+            "entity": "Apple Inc.",
+            "metric": "eps_diluted",
+            "concept": "EarningsPerShareDiluted",
+            "value": 1.57,
+            "unit": "USD/shares",
+            "start": "2025-03-30",
+            "end": "2025-06-28",
+            "form": "10-Q",
+            "filed": "2026-07-31",
+            "accn": "0000320193-26-000020",
+            "frame": "CY2025Q2",
+            "fiscal_year": 2025,
+            "fiscal_period": "Q3",
+            "derived": false,
+            "filing_url": "https://www.sec.gov/Archives/edgar/data/320193/000032019326000020/",
+            "period": "FY2025Q3",
+            "provenance": {
+              "tier": "L2",
+              "audited": false,
+              "confirmations": 2,
+              "forms": [
+                "10-Q"
+              ],
+              "first_filed": "2025-08-01",
+              "latest_filed": "2026-07-31",
+              "restated": false,
+              "amended": false,
+              "strength": "medium"
+            },
+            "id": "E1",
+            "tier": "L2"
+          },
+          {
+            "ticker": "AAPL",
+            "entity": "Apple Inc.",
+            "metric": "eps_diluted",
+            "concept": "EarningsPerShareDiluted",
+            "value": 1.57,
+            "unit": "USD/shares",
+            "start": "2025-03-30",
+            "end": "2025-06-28",
+            "form": "10-Q",
+            "filed": "2026-07-31",
+            "accn": "0000320193-26-000020",
+            "frame": "CY2025Q2",
+            "fiscal_year": 2025,
+            "fiscal_period": "Q3",
+            "derived": false,
+            "filing_url": "https://www.sec.gov/Archives/edgar/data/320193/000032019326000020/",
+            "period": "FY2025Q3",
+            "provenance": {
+              "tier": "L2",
+              "audited": false,
+              "confirmations": 2,
+              "forms": [
+                "10-Q"
+              ],
+              "first_filed": "2025-08-01",
+              "latest_filed": "2026-07-31",
+              "restated": false,
+              "amended": false,
+              "strength": "medium"
+            },
+            "id": "E4",
+            "tier": "L2",
+            "role": "current"
+          },
+          {
+            "ticker": "AAPL",
+            "entity": "Apple Inc.",
+            "metric": "eps_diluted",
+            "concept": "EarningsPerShareDiluted",
+            "value": 1.4,
+            "unit": "USD/shares",
+            "start": "2024-03-31",
+            "end": "2024-06-29",
+            "form": "10-Q",
+            "filed": "2025-08-01",
+            "accn": "0000320193-25-000073",
+            "frame": "CY2024Q2",
+            "fiscal_year": 2024,
+            "fiscal_period": "Q3",
+            "derived": false,
+            "filing_url": "https://www.sec.gov/Archives/edgar/data/320193/000032019325000073/",
+            "period": "FY2024Q3",
+            "provenance": {
+              "tier": "L2",
+              "audited": false,
+              "confirmations": 2,
+              "forms": [
+                "10-Q"
+              ],
+              "first_filed": "2024-08-02",
+              "latest_filed": "2025-08-01",
+              "restated": false,
+              "amended": false,
+              "strength": "medium"
+            },
+            "id": "E4",
+            "tier": "L2",
+            "role": "comparison"
+          }
+        ],
         "quote": "Apple today announced financial results for its fiscal 2025 Q3 ended June 28, 2025. The company posted quarterly revenue of 94.0 billion dollars, up 10% year over year, and quarterly diluted earnings per share of 1.67 dollars, up 12% year over year.",
         "check": {
           "text": "Apple reported quarterly diluted earnings per share of $1.67 in fiscal Q3 2025",
@@ -1894,31 +2041,86 @@ window.MOTION_DATA = {
         "display_quote": "quarterly diluted earnings per share of 1.67 dollars"
       },
       "text": {
-        "source": "docs/evidence/multimodal-2026-10-30/text/checks/text/report.json",
+        "source": "docs/evidence/multimodal-2026-10-30b/text/checks/text/report.json",
+        "ingest_source": "docs/evidence/multimodal-2026-10-30b/text/ingest.json",
+        "trace_source": "docs/evidence/multimodal-2026-10-30b/text/checks/text/traces/20261030T003655Z-609098d6.json",
+        "evidence": [
+          {
+            "ticker": "AAPL",
+            "entity": "Apple Inc.",
+            "metric": "eps_diluted",
+            "concept": "EarningsPerShareDiluted",
+            "value": 1.57,
+            "unit": "USD/shares",
+            "start": "2025-03-30",
+            "end": "2025-06-28",
+            "form": "10-Q",
+            "filed": "2026-07-31",
+            "accn": "0000320193-26-000020",
+            "frame": "CY2025Q2",
+            "fiscal_year": 2025,
+            "fiscal_period": "Q3",
+            "derived": false,
+            "filing_url": "https://www.sec.gov/Archives/edgar/data/320193/000032019326000020/",
+            "period": "FY2025Q3",
+            "provenance": {
+              "tier": "L2",
+              "audited": false,
+              "confirmations": 2,
+              "forms": [
+                "10-Q"
+              ],
+              "first_filed": "2025-08-01",
+              "latest_filed": "2026-07-31",
+              "restated": false,
+              "amended": false,
+              "strength": "medium"
+            },
+            "id": "E1",
+            "tier": "L2"
+          }
+        ],
         "quote": "Apple reported diluted EPS of $1.67 for fiscal Q3 2025.",
         "check": {
           "text": "Apple diluted EPS for fiscal Q3 2025 was $1.67",
+          "claim_type": "value",
+          "stated_value": 1.67,
           "evidence_ids": [
-            "E1",
-            "E2"
+            "E1"
           ],
-          "evidence_valid": false,
-          "program_verdict": "insufficient_evidence",
-          "actual_value": null,
-          "actual_range": null,
-          "stated_value": null,
-          "stated_value_used": null,
-          "stated_range": null,
-          "tolerance": null,
-          "reason": "release_quote_issuer_metric_kind_unit_or_period_mismatch",
-          "disagreement": true,
-          "evidence_strength": "low",
-          "evidence_summary": "Evidence: unavailable",
-          "flags": [],
+          "evidence_valid": true,
+          "program_verdict": "contradicted",
+          "actual_value": 1.57,
+          "tolerance": 0.005,
+          "reason": "actual 1.57 is not consistent with stated 1.67 using eq tolerance 0.005",
+          "disagreement": false,
+          "precision": 0.005,
+          "stated_value_used": 1.67,
+          "comparator": "eq",
           "interpretations": [],
-          "period_ambiguous": false
+          "period_ambiguous": false,
+          "program_added_interpretation": false,
+          "program_evidence_ids": [],
+          "invalid_interpretations": false,
+          "deduplicated_evidence": [],
+          "stated_value_corrected": false,
+          "stated_text_unparsed": false,
+          "stated_sign_corrected": false,
+          "threshold_from_model": false,
+          "model_comparator": "eq",
+          "comparator_corrected": false,
+          "gap": {
+            "gap_kind": "relative",
+            "gap": 0.06369426751592348,
+            "direction_wrong": false,
+            "severity": "moderate",
+            "score": 87.2611464968153
+          },
+          "evidence_strength": "medium",
+          "evidence_summary": "Evidence: reviewed 10-Q, confirmed in 2 filings, not restated",
+          "restated_evidence": false
         },
-        "verdict": "insufficient_evidence",
+        "verdict": "contradicted",
         "input": {
           "file": "post.txt",
           "kind": "text",
@@ -1982,6 +2184,36 @@ window.MOTION_DATA = {
         }
       }
     ],
+    "recall": {
+      "source": "docs/evidence/multimodal-2026-10-30b/before-after.json",
+      "report_source": "docs/evidence/multimodal-2026-10-30b/REPORT.md",
+      "policy": "Numeric-assertion coverage, not semantic accuracy. A rewritten value and its guarded source quote must cover each expected financial mention. Source-window bounds apply when recorded. Repeated exact rewrites can share one verification; unmatched/failed assertions count as missed.",
+      "coverage": {
+        "live": {
+          "source": "docs/evidence/multimodal-2026-10-30b/long-call-r2/ingest.json",
+          "comparison_source": "docs/evidence/multimodal-2026-10-30b/before-after.json",
+          "channel": "audio",
+          "guarded": 44,
+          "program_checked": 44,
+          "expected": 60,
+          "status": "completed"
+        },
+        "frozen_asr": {
+          "source": "docs/evidence/multimodal-2026-10-30b/long-call-frozen/ingest.json",
+          "comparison_source": "docs/evidence/multimodal-2026-10-30b/before-after.json",
+          "channel": "text",
+          "guarded": 50,
+          "program_checked": 50,
+          "expected": 60,
+          "status": "completed"
+        }
+      },
+      "speaker_identity": {
+        "verified": false,
+        "source": "docs/evidence/multimodal-2026-10-30b/long-call-r2/ingest.json",
+        "limitation": "Audio timestamps describe ASR turns, not individual words; speaker labels are not names or roles."
+      }
+    },
     "apple_check": {
       "text": "Apple reported revenue of $416.2 billion in fiscal Q4 2025",
       "stated_value": 416200000000.0,
@@ -2075,11 +2307,18 @@ window.MOTION_DATA = {
       "docs/evidence/eval-l4-2026-10-29/traces/L4-27.json": "e6d2adf912e84eb36a6ad9d695b0e65ef9e9cb4fccca1c2b671a917b014d7c3e",
       "docs/evidence/multimodal-2026-10-30/REPORT.md": "7a16446c738b4ce4614280465711727a10ee8f8ad2e8238b487080a73e45511a",
       "docs/evidence/multimodal-2026-10-30/audio/checks/audio/report.json": "aaf91abdad2eb6d1643ea2a02c54a96eace46671dd8b3f038026da1a5ec4aea0",
+      "docs/evidence/multimodal-2026-10-30/audio/checks/audio/traces/20261029T221555Z-8567ffa6.json": "255d5dcbba3f5fab75850dd98fa3df957937918f0c38879d1bccde8b669d2ae1",
       "docs/evidence/multimodal-2026-10-30/audio/ingest.json": "8704498a7355e7ddcec3407ca66caf53bf89be1ac86446e2af5dea75ab19b714",
       "docs/evidence/multimodal-2026-10-30/screenshot/checks/image/report.json": "d06abd3ee98ef8b6395468055731d80145a25449e9275216f1e546cfd63a042a",
+      "docs/evidence/multimodal-2026-10-30/screenshot/checks/image/traces/20261029T221545Z-64c59747.json": "ab4493abfbc5da76e6ac69498990321f2e82640f838493642611f3aff6bd36df",
       "docs/evidence/multimodal-2026-10-30/screenshot/ingest.json": "733f6cc53a934df4f154b33e8c7683bec0a3970582f4dade009d4e622038efb9",
-      "docs/evidence/multimodal-2026-10-30/text/checks/text/report.json": "75cee91cb3cad7d347938969b8ffdd4deb4b6f4691b6c36a973f799deeef40cf",
-      "docs/evidence/multimodal-2026-10-30/text/ingest.json": "896f9dd98bcd29416a3d36bf0a59d0192afeeda81085a06a50d7074268d9a53c",
+      "docs/evidence/multimodal-2026-10-30b/REPORT.md": "9795f8a4ad731170291c2998dd5b7d9b4113d7d47fb80589c0453ef386b2eebb",
+      "docs/evidence/multimodal-2026-10-30b/before-after.json": "677237e588d3c2ec0bb03230c188b9e93f4e88b6018d6b4acadbeb9305ae7ec6",
+      "docs/evidence/multimodal-2026-10-30b/long-call-frozen/ingest.json": "3310038c44b4816b263f5c908f8b738ebde014285c5dab019b4dc9c37570087a",
+      "docs/evidence/multimodal-2026-10-30b/long-call-r2/ingest.json": "c0370c7ca9f4b756ef29d1b858a368bd74b1b6562ebf7492f265fef6ea3c5a0f",
+      "docs/evidence/multimodal-2026-10-30b/text/checks/text/report.json": "fe2d4bec187a4232fe12ed01c23055cf51aa6944e4a466bdf60ee68edd3df8cc",
+      "docs/evidence/multimodal-2026-10-30b/text/checks/text/traces/20261030T003655Z-609098d6.json": "edab883611266ce818fa80d07386cc14cfd20c777c9b011d8b20ef2ca76bc465",
+      "docs/evidence/multimodal-2026-10-30b/text/ingest.json": "ec8a12cee0004245e69a0f535f149e50ec17f179ff88450cda9e4c7abff430a6",
       "docs/site/img/auditor/H/approve.webp": "2854b60c153f8be796ca6f164d11df554cd3ad9587a677e7b33c5c32963ba40a",
       "docs/site/img/auditor/H/concern.webp": "7f5aa52e4cddf3b50fd471ec81aad845e2f1618df0b254d5866dec2cf28c5a93",
       "docs/site/img/auditor/H/idle.webp": "6f65b2a8d21e32dbad11ea6f32a9b1eb05ac4aca44a8faa5154efffa8e8229be",
@@ -2106,7 +2345,7 @@ window.MOTION_DATA = {
       "tests/fixtures/multimodal/example-post.png": "06fc3980cd17a30c665ae86eaedd501805e8e4ad25267dc0b7bb57e3bc43b557",
       "tests/fixtures/multimodal/generation.json": "bbfb8be8d07ce2b9689ef3fe90dcb4d7c45332377cb074a819ca7d57de953efa",
       "tests/fixtures/multimodal/release-reading.wav": "06dc5144bc0f3d3ebdf0509a679cb53ab76d523ec104a29c68d62997a991c122",
-      "demo/storyboard-v3.yaml": "e62aed28e4f0282a8e4586e35a7eb08b40ba0d16a87c785bc05404c9fad620ce"
+      "demo/storyboard-v3.yaml": "42c490bb3881655547e3a9af6cb11eb355fdfbdad348969fa427a9f4d1285235"
     }
   },
   "qr": {
@@ -2152,35 +2391,39 @@ window.MOTION_DATA = {
   },
   "hover_anchors": [
     [
-      44.1876,
+      32.0667,
       0
     ],
     [
-      44.652,
+      32.5311,
       700
     ],
     [
-      45.1396,
+      33.0188,
       1500
     ],
     [
-      46.0219,
+      35.2943,
       2300
     ],
     [
-      46.9739,
+      36.6643,
+      2900
+    ],
+    [
+      37.1519,
       3700
     ],
     [
-      57.4229,
+      55.4492,
       4500
     ],
     [
-      57.8873,
+      56.4477,
       4800
     ],
     [
-      58.8626,
+      57.4229,
       5300
     ],
     [
@@ -2191,62 +2434,62 @@ window.MOTION_DATA = {
   "keyframes": [
     {
       "shot": "v301-disclosure",
-      "t": 1.450784,
+      "t": 0.492264,
       "position": "opening"
     },
     {
       "shot": "v301-disclosure",
-      "t": 9.0674,
+      "t": 3.07665,
       "position": "middle"
     },
     {
       "shot": "v301-disclosure",
-      "t": 16.684016,
+      "t": 5.661036,
       "position": "end"
     },
     {
       "shot": "v302-apple",
-      "t": 19.249352,
+      "t": 7.295716,
       "position": "opening"
     },
     {
       "shot": "v302-apple",
-      "t": 25.10075,
+      "t": 13.2934,
       "position": "middle"
     },
     {
       "shot": "v302-apple",
-      "t": 30.952148,
+      "t": 19.291084,
       "position": "end"
     },
     {
       "shot": "v303-extract",
-      "t": 33.036372,
+      "t": 21.364156,
       "position": "opening"
     },
     {
       "shot": "v303-extract",
-      "t": 38.12715,
+      "t": 26.2501,
       "position": "middle"
     },
     {
       "shot": "v303-extract",
-      "t": 43.217928,
+      "t": 31.136044,
       "position": "end"
     },
     {
       "shot": "v304-hover",
-      "t": 45.469336,
+      "t": 34.318108,
       "position": "opening"
     },
     {
       "shot": "v304-hover",
-      "t": 52.19845,
+      "t": 46.138,
       "position": "middle"
     },
     {
       "shot": "v304-hover",
-      "t": 58.927564,
+      "t": 57.957892,
       "position": "end"
     },
     {
