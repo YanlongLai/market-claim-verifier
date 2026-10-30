@@ -4,6 +4,8 @@
 
 # Market Claim Verifier
 
+**English** | [繁體中文](README.zh-TW.md)
+
 **Financial claims in. SEC evidence and auditable verdicts out.**
 
 [🌐 Website](https://hackathon.dappgo.com/) · [🔎 Results explorer](https://hackathon.dappgo.com/explorer/) · [⚖️ Judge guide](JUDGES.md) · [🚀 Quick start](#run-it)
@@ -49,6 +51,8 @@ Meta Muse models find claims and retrieve evidence. Python checks numbers, perio
 | **Meta API · Spark 1.3** | **83.2%** (297/357) | 44.3% | 4/186 | **$0.026** | **39 s** |
 
 ¹ Non-supported reference claims incorrectly accepted as supported. [Report, confidence intervals and methodology](docs/evidence/eval-v2-2026-10-27/REPORT.md). Two reference labels were corrected; the [original report](docs/evidence/eval-v2-2026-10-27/REPORT-registered-gold.md) remains available. Later reruns are post-hoc.
+
+Baseten and Fireworks have the same total score but different correct cases. On the 266-claim held-out split alone, their scores are **240/266 = 90.2%** and **237/266 = 89.1%**, respectively. Equal overall accuracy does not imply identical behavior.
 
 ### 📊 Accuracy evidence by format and platform
 
@@ -567,3 +571,5 @@ Historical evidence selection: [verification policy and `--as-of`](docs/VERIFICA
 The masthead reuses Hover from the live website. [Robot art direction and generation history](docs/prompts/site/auditor-robot.md). AI artwork is illustrative; numerical charts use recorded data.
 
 </details>
+
+Batch local work with the [bounded queue and cost reports](docs/QUEUE_AND_COSTS.md): frozen evidence, per-job budget admission, integrity-checked successful-job reuse and explicit uncertain-outcome handling. This is not a provider Batch API.
