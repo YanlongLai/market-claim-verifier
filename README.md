@@ -1,20 +1,107 @@
+<p align="center">
+  <a href="https://hackathon.dappgo.com/"><img src="docs/site/img/auditor/H/present.webp" width="160" alt="Hover, the Market Claim Verifier robot, holding an evidence sheet"></a>
+</p>
+
 # Market Claim Verifier
 
-**Check US-equity financial claims against SEC evidence—with numbers, periods and citations checked by Python.**
+**Financial claims in. SEC evidence and auditable verdicts out.**
 
-Meta Muse models extract claims, choose tools and draft explanations. The program returns `supported`, `contradicted` or `insufficient_evidence`, with the source facts behind each decision. It checks financial assertions; it does not predict returns or prove that a forecast will happen.
+[🌐 Website](https://hackathon.dappgo.com/) · [🔎 Results explorer](https://hackathon.dappgo.com/explorer/) · [⚖️ Judge guide](JUDGES.md) · [🚀 Quick start](#run-it)
 
 [![Tests: offline suite](docs/badges/tests.svg)](.github/workflows/verify.yml)
 [![License: MIT](docs/badges/license.svg)](LICENSE)
 [![Built for the Meta AI hackathon](docs/badges/hackathon.svg)](BUILD_LOG.md)
 
-[Saved demo](https://hackathon.dappgo.com/) · [Explore 357 claims](https://hackathon.dappgo.com/explorer/) · [Judge guide](JUDGES.md) · [Quick start](#run-it)
+Meta Muse models find claims and retrieve evidence. Python checks numbers, periods, units and citations. Scope: **US equities**, with SEC XBRL and issuer earnings releases.
 
-<!-- figure:hero:start -->
-![Editorial illustration of a sentence connected to filing sheets](docs/figures/hero.png)
+> [!NOTE]
+> The website replays saved results. Local CLI checks can call live models. An uploaded document is a claim source—not automatically trusted financial evidence.
 
-*AI-generated illustration: a sentence being checked against filings.* The reusable prompt is recorded in [`docs/prompts/hero-image.md`](docs/prompts/hero-image.md).
-<!-- figure:hero:end -->
+**Jump to:** [Format support](#support-and-boundaries) · [Accuracy, cost & speed](#key-results) · [Media measurements](#media-cost-and-quality) · [API prices](#cost-speed-and-provider-choice) · [Run locally](#run-it) · [Limitations](#limitations)
+
+## Support and boundaries
+
+**Legend:** ✅ integrated · 🟡 limited / preprocessing required · — not integrated. These are **repository capabilities**, not every capability a vendor advertises.
+
+| Input format | Meta text checks | Baseten text checks | Fireworks text checks | What actually runs / limit |
+| --- | :---: | :---: | :---: | --- |
+| 📝 Text / Markdown | ✅ | ✅ | ✅ | English / Chinese financial assertions; extraction is not exhaustive |
+| 🖼️ PNG / JPEG / WebP | 🟡 | 🟡 + Meta key | 🟡 + Meta key | **Meta OCR → chosen text provider**; no image-authenticity check |
+| 📄 Native-text PDF | 🟡 | 🟡 | 🟡 | Local page extraction → text checks; max 100 pages; no cross-page context |
+| 📠 Scanned PDF | — | — | — | PDF OCR not implemented; unreadable pages remain unchecked |
+| 🎙️ Audio files | 🟡 | 🟡 + Meta key | 🟡 + Meta key | **Meta ASR → chosen text provider**; whole-turn timestamps, unverified speakers |
+| 🎬 Video files | 🟡 | 🟡 + Meta key | 🟡 + Meta key | Meta ASR + OCR of **three frames**; not full-video coverage |
+| 🔗 General webpage URL | — | — | — | No login, browser rendering or arbitrary HTML ingestion |
+| 📦 Provider-native batch | — | — | — | Parallel execution is not discounted vendor batch |
+
+**File limits:** 128 MiB; audio/video ≤2 hours. These are acceptance limits, not validated accuracy at that scale. [Extensions, vendor capabilities and endpoint caveats](docs/PROVIDERS.md#platform-capability-versus-integration).
+
+## Key results
+
+### 📝 Text: comparable recorded benchmark
+
+**Same 357-claim set · 23 companies · 91 development + 266 held-out.** Corrected reference labels; failed/incomplete predictions count as wrong. Costs and latency are historical agent means—not prices per document or SLAs.
+
+| Platform / Meta model | Agent accuracy | No-tool accuracy | False-supported¹ | Cost / claim | Mean time |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| **Baseten · Spark Open** | **90.5%** (323/357) | 20.7% | 1/186 | **$0.020** | **12 s** |
+| **Fireworks · Spark Open** | **90.5%** (323/357) | 19.9% | 1/186 | **$0.020** | **67 s** |
+| **Meta API · Spark 1.3** | **83.2%** (297/357) | 44.3% | 4/186 | **$0.026** | **39 s** |
+
+¹ Non-supported reference claims incorrectly accepted as supported. [Report, confidence intervals and methodology](docs/evidence/eval-v2-2026-10-27/REPORT.md). Two reference labels were corrected; the [original report](docs/evidence/eval-v2-2026-10-27/REPORT-registered-gold.md) remains available. Later reruns are post-hoc.
+
+### 📊 Accuracy evidence by format and platform
+
+| Format | Meta | Baseten | Fireworks |
+| --- | --- | --- | --- |
+| Text claims | **83.2%**, 357 claims | **90.5%**, 357 claims | **90.5%**, 357 claims |
+| Images | Development probes only | No comparable format benchmark | No comparable format benchmark |
+| Native-text PDF | No accuracy benchmark | No accuracy benchmark | No accuracy benchmark |
+| Audio | Development probes only | Development probes with Meta ASR | No comparable format benchmark |
+| Video | Development probes only | Development probes with Meta OCR/ASR | No comparable format benchmark |
+
+> [!IMPORTANT]
+> **Text accuracy does not transfer to PDF, images, audio or video.** Media quality also depends on reading/transcription and claim extraction. “No benchmark” means unmeasured, not 0% accuracy or unsupported.
+
+## Media cost and quality
+
+### 🧪 Recorded development examples—not platform rankings
+
+Entire-file workflow estimates from the [2026-10-30 hardening report](docs/evidence/multimodal-2026-10-30/REPORT.md). Different inputs and settings mean these rows are **not controlled provider comparisons**. Reservations on failed calls may remain charged in the estimate.
+
+| Format / recorded example | Pipeline | Total estimated cost | Wall time | Observed coverage / limitation |
+| --- | --- | ---: | ---: | --- |
+| 🖼️ Screenshot | Meta OCR + Meta text | **$0.0738** | **59.7 s** | 2/2 expected numeric mentions read; small synthetic control |
+| 🎙️ Short audio | Meta ASR + Baseten text | **$0.0791** | **56.4 s** | 5/5 expected numeric assertions program-checked |
+| 🎙️ Two-voice audio | Meta ASR + Meta text | **$0.0492** | **69.8 s** | Both voices merged into one speaker label |
+| 🎙️ 12-minute audio | Meta ASR + Baseten text | **$0.2405** | **258.8 s** | 19/60 assertions checked in this historical run |
+| 🎬 Row-only video | Meta OCR/ASR + Meta text | **$0.3359** | **312.1 s** | 8/9 assertions checked; only three frames sampled |
+| 🎬 Captioned video | Meta OCR/ASR + Baseten text | **$0.1554** | **106.6 s** | 9/9 assertions checked in this control |
+| 📄 PDF · all providers | Local parsing + text provider | **Not measured** | **Not measured** | Parser regression tests are not an accuracy benchmark |
+| 🖼️/🎙️/🎬 Fireworks | Meta preprocessing + Fireworks text | **No comparable recorded measurement** | **Not measured** | Supported routing does not establish measured quality |
+
+A [later long-audio follow-up](docs/evidence/multimodal-2026-10-30b/REPORT.md) increased program-checked coverage to 44/60; rechecking frozen ASR text reached 50/60. These are post-hoc coverage results on repeated synthetic facts, **not truth accuracy percentages**.
+
+## Cost, speed and provider choice
+
+### 💵 Published API rates
+
+USD per **1 million tokens**, checked **2026-10-30**. These are unit prices, separate from the workflow measurements above.
+
+| Platform | Model | Input | Cached input | Output |
+| --- | --- | ---: | ---: | ---: |
+| Meta API | Muse Spark 1.3 Standard | $1.25 | $0.15 | $4.25 |
+| Baseten | Muse Spark Open | $1.25 | $0.15 | $4.25 |
+| Fireworks | Muse Spark Open | $1.25 | $0.15 | $4.25 |
+
+| Additional stage | Cost basis | Applies to |
+| --- | --- | --- |
+| Meta image OCR | Token usage; no fixed per-image quote | Images and sampled video frames |
+| Meta ASR | **$0.18/hour · $0.003/minute** | Audio and video audio tracks |
+| Native PDF parsing | Local CPU; no model fee for extraction itself | Text PDFs; subsequent claim checks still cost tokens |
+| Extraction + verification | Every model turn, including applicable retries | All accepted formats |
+
+**Document cost = preprocessing + extraction + all claim-check calls.** A single file may contain dozens of claims. Ledger estimates are not invoices. Official rate links, Contributor-mode conditions and batch caveats are in the [provider comparison](docs/PROVIDERS.md#price-comparison).
 
 ## The problem
 
@@ -40,48 +127,6 @@ Then open [claim G0119](https://hackathon.dappgo.com/explorer/#G0119) to inspect
 <!-- figure:verdict-cards:end -->
 
 A completed run does not mean every assertion was found. Ingestion reports show accepted, program-checked, rejected and failed claim counts; full-content recall stays unknown without independently labeled input.
-
-## Support and boundaries
-
-| Input | Available today | Main boundary |
-| --- | --- | --- |
-| Text / Markdown | English and Chinese financial claims | Extraction may miss assertions; opinions are not factual verdicts |
-| Images | PNG, JPEG, WebP through Meta OCR | Reading a number does not authenticate it |
-| PDF | Native text, with page locations | No scanned-page OCR or cross-page period propagation; 100-page cap |
-| Audio | File transcription, then financial checks | Whole-turn timestamps; speaker labels are not verified identities |
-| Video | Audio plus three sampled frames | Not exhaustive visual coverage |
-| Web links | No general URL ingestion | Login pages and arbitrary HTML are deferred |
-
-Local files are limited to **128 MiB**; audio/video to **two hours**. Those are acceptance limits, not accuracy guarantees. See [input formats and provider capabilities](docs/PROVIDERS.md) for extensions and integration status.
-
-**Evidence is a separate input.** Current financial authority is SEC XBRL (L1–L3) and admitted SEC 8-K earnings releases (L4). An uploaded PDF or screenshot is not automatically trusted evidence. An issuer outlook establishes what the issuer stated, not its future outcome. [Source policy](docs/DATA_SOURCES.md) · [Evidence export contract](docs/EVIDENCE_RECORDS.md).
-
-## Key results
-
-Original v2 run: **357 claims across 23 companies**, including **91 development / 266 held-out** claims. All-case scores below use corrected labels, including two documented gold corrections. They compare the complete agent path with single-shot answers; they do not isolate individual rules.
-
-| Provider / Meta model | Agent accuracy | Single-shot accuracy | Mean agent cost / claim | Mean agent latency |
-| --- | ---: | ---: | ---: | ---: |
-| Baseten / Muse Spark Open | 323/357 · **90.5%** | 20.7% | **$0.020** | **12 s** |
-| Fireworks / Muse Spark Open | 323/357 · **90.5%** | 19.9% | **$0.020** | **67 s** |
-| Meta API / Muse Spark 1.3 | 297/357 · **83.2%** | 44.3% | **$0.026** | **39 s** |
-
-Historical measurements, not current service guarantees or prices per document. One document may contain many claims. [Full report and intervals](docs/evidence/eval-v2-2026-10-27/REPORT.md) · [Original registered labels](docs/evidence/eval-v2-2026-10-27/REPORT-registered-gold.md).
-
-The [later rerun](docs/evidence/eval-v2-2026-10-28-r2-posthoc/REPORT.md) followed failure inspection and is **post-hoc**. L4 and multimedia results are development regressions, not new held-out accuracy claims. Long-audio extraction still misses assertions; coverage is not verdict accuracy.
-
-## Cost, speed and provider choice
-
-| Work | Meta | Baseten | Fireworks |
-| --- | --- | --- | --- |
-| Text extraction and verification | Integrated | Integrated | Integrated |
-| Image OCR in this repo | Integrated | Not routed here | Not routed here |
-| Audio transcription in this repo | Separate Meta ASR | Uses Meta preprocessing | Uses Meta preprocessing |
-| Provider-native batch | Not integrated | Not integrated | Not integrated |
-
-Standard Spark rates checked **2026-10-30**: all three integrated text routes list **$1.25 input / $0.15 cached input / $4.25 output per million tokens**. Meta ASR lists **$0.18 per audio hour**, before extraction and verification costs. Ledger estimates can retain conservative reservations on failures; they are not provider invoices.
-
-Total cost includes OCR/ASR, claim extraction, every agent turn and retries. Concurrent requests do not automatically receive batch discounts. Fireworks advertises discounted batch service, but this repo has no batch adapter or validated model/account batch run. [Official source links, model capabilities, pricing and scale limits](docs/PROVIDERS.md).
 
 ## Run it
 
@@ -505,5 +550,18 @@ This display signal leaves the verdict unchanged; CAN'T CHECK has no score. Exis
 offline with `claimcheck.post.refresh_evidence(report_dir)`; `python docs/scripts/build_site.py --offline`
 rebuilds the cards from saved checks and trace metadata without modifying the source reports.
 
+
+</details>
+
+<details>
+<summary>🎨 Illustration, robot and reusable prompts</summary>
+
+<!-- figure:hero:start -->
+![Editorial illustration of a sentence connected to filing sheets](docs/figures/hero.png)
+
+*AI-generated illustration: a sentence being checked against filings.* The reusable prompt is recorded in [`docs/prompts/hero-image.md`](docs/prompts/hero-image.md).
+<!-- figure:hero:end -->
+
+The masthead reuses Hover from the live website. [Robot art direction and generation history](docs/prompts/site/auditor-robot.md). AI artwork is illustrative; numerical charts use recorded data.
 
 </details>
