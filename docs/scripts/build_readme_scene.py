@@ -2,7 +2,7 @@
 
 uv run --with playwright python docs/scripts/build_readme_scene.py
 Requires Chrome (or: uv run --with playwright playwright install chromium,
-then pass --channel chromium). Uses local saved evidence; no model API calls.
+then pass --channel chromium). Uses the website dark color scheme and local saved evidence; no model API calls.
 """
 import argparse
 import functools
@@ -33,7 +33,7 @@ def main():
     try:
         with sync_playwright() as p:
             browser = p.chromium.launch(channel=args.channel, headless=True)
-            page = browser.new_page(viewport={'width': 1100, 'height': 1000}, device_scale_factor=1)
+            page = browser.new_page(viewport={'width': 1100, 'height': 1000}, device_scale_factor=1, color_scheme='dark')
             page.goto(f'http://127.0.0.1:{server.server_port}/?stamp-t=0')
             page.wait_for_function('!!window.__stampScene')
             page.evaluate('document.fonts.ready')
