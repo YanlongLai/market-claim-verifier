@@ -3,6 +3,7 @@ from copy import deepcopy
 import json
 from pathlib import Path
 import re
+import shutil
 from types import SimpleNamespace
 
 import pytest
@@ -11,9 +12,10 @@ import yaml
 import motion_build
 import motion_v3 as v3
 import media
+import motion_media
 from motion_cues import review_frame_plan, sentence_subtitles
-from pipeline import BuildError, file_hash
-from motion_timing import motiontest_window
+from pipeline import BuildError, file_hash, read_json, write_json
+from motion_timing import motiontest_window, next_beat
 from PIL import ImageFont
 
 ROOT=v3.ROOT
@@ -240,3 +242,82 @@ def test_keyframe_manifest_and_host_routing(data):
     assert motion_build.motion_folder(builder)==ROOT/'demo/motion/v3'
     assert motion_build.renderer_args(builder)==['--entry','v3/index.html']
     assert data['qr']['url']==STORY['site_url']=='https://hackathon.dappgo.com/'
+
+
+def test_v3_full_render_and_motiontest_share_measured_audio_master_and_caption_timeline(tmp_path,monkeypatch):
+    """Exercise orchestration with measured synthetic durations, without host artifacts/browser."""
+    demo=tmp_path/'demo';motion=demo/'motion/v3';motion.mkdir(parents=True)
+    for name in ('motion_build.py','motion_media.py','motion_cues.py','motion_timing.py',
+                 'media.py','pipeline.py','motion_v3.py'):
+        shutil.copy2(ROOT/'demo'/name,demo/name)
+    storyboard=demo/'storyboard-v3.yaml';storyboard.write_text(yaml.safe_dump(STORY))
+    voice=demo/'synthetic-voice.wav';voice.write_bytes(b'synthetic narration, never licensed host audio')
+    music=demo/'bed-seed92.wav';music.write_bytes(b'synthetic stand-in for the locked bed')
+    voices=[dict(voice_s=s['target_s']-s.get('narration_lead_s',0)-.6,key=s['id'],engine='fixture',
+                 artifacts=dict(audio=dict(path=str(voice),sha256=file_hash(voice)))) for s in STORY['scenes']]
+    data=v3.compile_data(ROOT,STORY,voices=voices)
+    timing=data['timing']
+    write_json(motion/'timing.json',timing);write_json(motion/'beats.json',data['beats'])
+    write_json(motion/'cues.json',data['cues'])
+    def stage_dir(*parts):
+        folder=demo.joinpath('cache',*parts);folder.mkdir(parents=True,exist_ok=True);return folder
+    def alias(source,destination):
+        destination.parent.mkdir(parents=True,exist_ok=True);shutil.copy2(source,destination)
+    builder=SimpleNamespace(demo=demo,repo=ROOT,story=STORY,storyboard=storyboard,scenes=STORY['scenes'],
+                            args=SimpleNamespace(out=None,force=False,shot='v304-hover',len=2),
+                            require_voice=lambda scene:next(v for v in voices if v['key']==scene['id']),
+                            music=lambda:music,stage_dir=stage_dir,alias=alias,
+                            versions=lambda:dict(ffmpeg='synthetic fixture'),rel=lambda path:str(path))
+    monkeypatch.setattr(motion_build,'prepare',lambda b,**options:timing)
+    monkeypatch.setattr(media,'duration',lambda p:200)
+    renders=[];burns=[];mixes=[];normalizations=[];masters=[]
+    monkeypatch.setattr(media,'command',lambda args,*a:renders.append(args))
+    monkeypatch.setattr(motion_media,'encode_frames',lambda *a:None)
+    monkeypatch.setattr(motion_media,'burn_captions',lambda *a,**k:burns.append((a,k)))
+    def mix(*args,**options):
+        mixes.append((args,options));args[4].write_bytes(b'full mix')
+    def normalize(source,destination,seconds):
+        normalizations.append(seconds);destination.write_bytes(b'full normalized PCM')
+        destination.with_suffix('.m4a').write_bytes(b'full verified AAC')
+        return dict(integrated_gate=True,measured_lufs=-14,true_peak_dbtp=-1.5)
+    def master(video,audio,destination,seconds,**options):
+        masters.append((audio,seconds,options));destination.write_bytes(b'synthetic movie fixture')
+        return dict(integrated_gate=not options['preview'],measured_lufs=-16.03 if options['preview'] else -14,
+                    true_peak_dbtp=-2.1,momentary_max_lufs=-15.8,short_term_max_lufs=None)
+    monkeypatch.setattr(motion_media,'mix_audio',mix)
+    monkeypatch.setattr(media,'prepare_audio_master',normalize)
+    monkeypatch.setattr(media,'master',master)
+    monkeypatch.setattr(media,'validate_export',lambda path,seconds:dict(duration_s=seconds))
+    full=motion_build.render(builder)
+    preview=motion_build.render(builder,test=True)
+    assert len(mixes)==len(normalizations)==1  # Same cache, not two separately normalized mixes.
+    assert full['audio_master_cache_key']==preview['audio_master_cache_key']
+    assert masters[0][0]==masters[1][0]
+    assert masters[0][2]==dict(start_s=0,preview=False,reference=masters[1][2]['reference'])
+    assert masters[1][2]['start_s']==preview['window']['from'] and masters[1][2]['preview'] is True
+    assert full['loudness']['integrated_gate'] is True and preview['loudness']['integrated_gate'] is False
+    assert full['storyboard']['path']==str(storyboard) and full['storyboard_version']==2
+    for args in renders:
+        assert args[args.index('--entry')+1]=='v3/index.html'
+    assert float(renders[0][renders[0].index('--from')+1])==0
+    assert float(renders[0][renders[0].index('--to')+1])==timing['duration']
+    mix_args,mix_options=mixes[0]
+    assert mix_args[1]==timing['shots'] and mix_args[2]==music and mix_args[3]==-22
+    assert mix_options==dict(offset=9.4041,timeline_duration=timing['duration'])
+    hover=next(s for s in timing['shots'] if s['id']=='v304-hover')
+    lead=next(s['narration_lead_s'] for s in STORY['scenes'] if s['id']==hover['id'])
+    assert hover['voice_start']==next_beat(data['beats']['beats_s'],hover['start']+lead)
+    assert data['cues'][hover['id']][0]['start']>=hover['voice_start']
+    captions=burns[0][0][1]
+    assert ' '.join(c.text.replace('\n',' ') for c in captions)==' '.join(s['narration'] for s in STORY['scenes'])
+    assert all(len(c.text.splitlines())<=2 and max(map(len,c.text.splitlines()))<=42 for c in captions)
+    assert all(options==dict(font_size=56) for _,options in burns)
+    assert Path(full['subtitles']['path']).read_text().count(' --> ')==len(captions)
+    assert read_json(demo/'out/motiontest-v304-hover.json')['loudness']['measured_lufs']==-16.03
+
+
+def test_v3_two_line_caption_canvas_stays_in_bottom_zone_with_64_px_clearance(tmp_path):
+    canvas=motion_media.caption_canvas('The fiscal quarter is checked.\nThe exact filing stays attached.',tmp_path/'panel.png',font_size=56)
+    left,top,right,bottom=canvas.getbbox()
+    assert top==880 and bottom==1080-64
+    assert left>=64 and right<=1920-64

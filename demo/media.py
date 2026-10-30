@@ -17,6 +17,7 @@ FFPROBE = Path("/opt/homebrew/bin/ffprobe")
 SIZE = (1920, 1080)
 FPS = 30
 CROSSFADE = 0.4
+MIN_INTEGRATED_S = 10.0
 
 
 def command(args: list, log: Path | None = None) -> subprocess.CompletedProcess:
@@ -202,8 +203,8 @@ def mix_audio(voices: list[Path], timings: list[Timing], music: Path | None, gai
     ffmpeg(args, destination.parent / "mix.log")
 
 
-def loudness(path: Path, log: Path, target_tp: float = -1.5) -> dict:
-    result = ffmpeg(["-i", path, "-vn", "-af", f"loudnorm=I=-14:TP={target_tp}:LRA=11:print_format=json",
+def loudness(path: Path, log: Path, target_tp: float = -1.5, target_i: float = -14) -> dict:
+    result = ffmpeg(["-i", path, "-vn", "-af", f"loudnorm=I={target_i}:TP={target_tp}:LRA=11:print_format=json",
                      "-f", "null", "-"], log, verbose=True)
     matches = re.findall(r'\{\s*"input_i".*?\}', result.stderr, flags=re.S)
     if not matches:
@@ -214,27 +215,106 @@ def loudness(path: Path, log: Path, target_tp: float = -1.5) -> dict:
     return data
 
 
-def master(video: Path, audio: Path, destination: Path, total_s: float) -> dict:
-    """Two-pass loudnorm, then verify the encoded AAC's integrated level and true peak."""
+def loudness_report(path: Path, log: Path) -> dict:
+    """Read-only EBU R128 scan, including the 400 ms and 3 s loudness windows.
+
+    Missing windows (or silence) are null, rather than the scanner's -120 LUFS
+    warm-up value. Integrated loudness here is information, never a clip gate.
+    """
+    result = ffmpeg(["-i", path, "-vn", "-af", "ebur128=peak=true:metadata=1,ametadata=print",
+                     "-f", "null", "-"], log, verbose=True)
+    def maximum(name: str) -> float | None:
+        values = [float(v) for v in re.findall(rf"lavfi\.r128\.{name}=([-+\d.e]+)", result.stderr)]
+        return max((v for v in values if math.isfinite(v) and v > -120), default=None)
+    integrated = re.findall(r"\bI:\s*([-+\d.inf]+) LUFS", result.stderr)
+    peaks = re.findall(r"Peak:\s*([-+\d.inf]+) dBFS", result.stderr)
+    if not integrated or not peaks:
+        raise BuildError(f"ffmpeg did not return EBU R128 measurements. See {log}")
+    level, peak = float(integrated[-1]), float(peaks[-1])
+    return {"measured_lufs": level if math.isfinite(level) and level > -70 else None,
+            "momentary_max_lufs": maximum("M"), "short_term_max_lufs": maximum("S"),
+            "true_peak_dbtp": peak if math.isfinite(peak) else None,
+            "momentary_window_s": 0.4, "short_term_window_s": 3.0}
+
+
+def delivery_ok(measured: dict) -> bool:
+    integrated, peak = float(measured["input_i"]), float(measured["input_tp"])
+    return math.isfinite(integrated) and math.isfinite(peak) and peak <= -1 and abs(integrated + 14) <= 1
+
+
+def prepare_audio_master(audio: Path, destination: Path, total_s: float) -> dict:
+    """Normalize the entire mix once; retain lossless PCM and verified delivery AAC.
+
+    Excerpts must be cut AFTER this stage: both the ducking envelope and loudnorm
+    (which can fall back to dynamic mode) depend on the preceding full timeline.
+    """
+    if total_s < MIN_INTEGRATED_S:
+        raise BuildError("Integrated normalization needs the full mix (at least 10 s), not an excerpt.")
     target_tp = -1.5
+    target_i = -14.0
+    encoded = destination.with_suffix('.m4a')
     for attempt in range(3):
-        measured = loudness(audio, destination.parent / f"loudness-pass1-{attempt}.log", target_tp)
-        normalizer = (f"loudnorm=I=-14:TP={target_tp}:LRA=11:"
+        measured = loudness(audio, destination.parent / f"loudness-pass1-{attempt}.log", target_tp, target_i)
+        normalizer = (f"loudnorm=I={target_i}:TP={target_tp}:LRA=11:"
                       f"measured_I={measured['input_i']}:measured_TP={measured['input_tp']}:"
                       f"measured_LRA={measured['input_lra']}:measured_thresh={measured['input_thresh']}:"
                       f"offset={measured['target_offset']}:linear=true:print_format=json")
-        ffmpeg(["-i", video, "-i", audio, "-map", "0:v:0", "-map", "1:a:0", "-c:v", "copy", "-af", normalizer,
-                "-c:a", "aac", "-b:a", "192k", "-ar", "48000", "-ac", "2", "-t", f"{total_s:.9f}",
-                "-movflags", "+faststart", destination], destination.parent / f"loudness-pass2-{attempt}.log", verbose=True)
-        verified = loudness(destination, destination.parent / f"loudness-verify-{attempt}.log")
+        ffmpeg(["-i", audio, "-vn", "-af", normalizer + ",apad", "-t", f"{total_s:.9f}",
+                "-c:a", "pcm_s24le", "-ar", "48000", "-ac", "2", destination],
+               destination.parent / f"loudness-pass2-{attempt}.log", verbose=True)
+        ffmpeg(["-i", destination, "-c:a", "aac", "-b:a", "192k", "-ar", "48000", "-ac", "2",
+                "-t", f"{total_s:.9f}", "-movflags", "+faststart", encoded],
+               destination.parent / f"loudness-aac-{attempt}.log")
+        verified = loudness(encoded, destination.parent / f"loudness-verify-{attempt}.log")
         peak = float(verified["input_tp"])
         integrated = float(verified["input_i"])
-        # ±1 LU is the usual delivery tolerance; linear AAC encodes can land ~0.9 LU under target.
-        if peak <= -1.0 and abs(integrated + 14) <= 1.0:
+        if delivery_ok(verified):
             return {"target_lufs": -14, "measured_lufs": integrated, "true_peak_dbtp": peak,
-                    "two_pass": True, "pass1": measured, "verification": verified}
-        target_tp -= max(0.25, peak + 1.2)
+                    "two_pass": True, "pass1": measured, "verification": verified,
+                    "integrated_gate": True, "reference_duration_s": total_s,
+                    "normalizer": normalizer, "attempts": attempt + 1}
+        # Correct loudness separately from AAC peak overshoot; lowering the peak
+        # ceiling alone cannot repair an under-target integrated level.
+        target_i = min(-5, max(-70, target_i - 14 - integrated))
+        if peak > -1:
+            target_tp = max(-9, target_tp - max(0.25, peak + 1.2))
     raise BuildError(f"Encoded audio failed loudness verification: {integrated} LUFS, {peak} dBTP.")
+
+
+def master(video: Path, audio: Path, destination: Path, total_s: float, *,
+           start_s: float = 0, preview: bool = False, reference: dict | None = None) -> dict:
+    """Mux a full delivery or an informational excerpt, without releveling clips.
+
+    With a reference, audio is the full normalized PCM and its sibling .m4a is
+    the certified AAC. Full films copy that AAC; previews encode a PCM slice at
+    the identical master gains. A standalone short input keeps its source gain.
+    """
+    delivery = not preview and total_s >= MIN_INTEGRATED_S
+    if reference is None and delivery:
+        source = audio
+        audio = destination.parent / 'audio-master.wav'
+        reference = prepare_audio_master(source, audio, total_s)
+    if delivery and start_s != 0:
+        raise BuildError("A delivery master must start at zero; use preview=True for excerpts.")
+    source = audio.with_suffix('.m4a') if delivery else audio
+    args = ["-i", video, "-ss", f"{start_s:.9f}", "-i", source,
+            "-map", "0:v:0", "-map", "1:a:0", "-c:v", "copy"]
+    args += (["-c:a", "copy"] if delivery else
+             ["-c:a", "aac", "-b:a", "192k", "-ar", "48000", "-ac", "2"])
+    ffmpeg([*args, "-t", f"{total_s:.9f}", "-movflags", "+faststart", destination],
+           destination.parent / 'mux.log')
+    if delivery:
+        verified = loudness(destination, destination.parent / 'loudness-delivery.log')
+        if not delivery_ok(verified):
+            raise BuildError(f"Encoded audio failed loudness verification: {verified['input_i']} LUFS, "
+                             f"{verified['input_tp']} dBTP.")
+        return {**reference, "measured_lufs": float(verified['input_i']),
+                "true_peak_dbtp": float(verified['input_tp']), "verification": verified}
+    report = loudness_report(destination, destination.parent / 'loudness-preview.log')
+    return {**report, "integrated_gate": False,
+            "gate_reason": "motiontest" if preview else "duration < 10 s",
+            "normalization": "full_timeline_master" if reference else "source_gain",
+            "reference": reference, "audio_start_s": start_s}
 
 
 def validate_export(path: Path, expected_s: float) -> dict:

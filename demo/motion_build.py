@@ -11,8 +11,8 @@ from motion_cues import (MIN_SILENCE_S, NOISE_DB, cue_document, detect_silences,
                          phrase_cue, review_frame_plan, sentence_subtitles, split_phrases)
 from motion_data import product_data
 from motion_timing import keyframe_times, motiontest_window, presentation_timing, target_timing, video_beats
-from pipeline import (BuildError, append_build_log, cache_key, file_hash, make_run_record,
-                      next_version, previous_run, read_json, to_srt, write_json)
+from pipeline import (BuildError, append_build_log, cache_key, cached, file_hash, make_run_record,
+                      next_version, previous_run, read_json, receipt, to_srt, write_json)
 
 
 def require_v2(builder) -> None:
@@ -173,6 +173,26 @@ def review_frames(builder) -> None:
     print(f'Review frames: {output} ({len(index)} raw + {len(index)} captioned PNGs, index.json, evidence.json).',flush=True)
 
 
+def audio_master(builder, timing: dict, voices: list[dict], music: Path) -> tuple[Path, dict, str]:
+    """One full-timeline mix/master shared by motion tests and the final film."""
+    paths = [Path(v['artifacts']['audio']['path']) for v in voices]
+    duration = math.ceil(timing['duration']*media.FPS-1e-8)/media.FPS
+    gain = builder.story['music']['gain_db']
+    key = cache_key('motion-audio-master-v1', timing, [(v['key'],file_hash(p)) for v,p in zip(voices,paths)],
+                    file_hash(music), gain, builder.versions()['ffmpeg'],
+                    [file_hash(builder.demo/name) for name in ('motion_media.py','media.py')])
+    folder = builder.stage_dir('audio', 'full', key)
+    files = dict(mix=folder/'mix.wav', pcm=folder/'master.wav', aac=folder/'master.m4a')
+    saved = cached(folder/'receipt.json', key, files)
+    if builder.args.force or not saved:
+        (folder/'receipt.json').unlink(missing_ok=True)
+        motion_media.mix_audio(paths,timing['shots'],music,gain,files['mix'],offset=timing['music_offset_s'],
+                               timeline_duration=timing['duration'])
+        levels = media.prepare_audio_master(files['mix'],files['pcm'],duration)
+        saved = receipt(folder/'receipt.json',key,files,loudness=levels)
+    return files['pcm'], saved['loudness'], key
+
+
 def render(builder, *, test: bool = False) -> dict:
     timing=prepare(builder,require_voice=True)
     voices=[builder.require_voice(s) for s in builder.scenes]
@@ -203,6 +223,7 @@ def render(builder, *, test: bool = False) -> dict:
         evidence=product_data(builder.repo)['provenance']
     key=cache_key('motion-v2',source_hashes,implementation,evidence,start,end,[v['key'] for v in voices],file_hash(music),builder.story['music']['gain_db'])
     folder=builder.stage_dir('motion','test' if test else 'full',key)
+    audio,reference,audio_key=audio_master(builder,timing,voices,music)
     frames=folder/'frames'
     print(f"{'motiontest' if test else 'render'}: {start:.3f}–{end:.3f} s, host Chromium required",flush=True)
     # The renderer records its exact time/shot for every PNG. No screen recordings or v1 captures.
@@ -213,16 +234,18 @@ def render(builder, *, test: bool = False) -> dict:
     local=motion_media.window_subtitles(cues,start,length)
     motion_media.burn_captions(folder/'picture.mp4',local,folder/'captioned.mp4',length,
                               font_size=56 if builder.story.get('motion_variant')=='v3' else 50)
-    motion_media.mix_audio([Path(v['artifacts']['audio']['path']) for v in voices],timing['shots'],music,
-                           builder.story['music']['gain_db'],folder/'mix.wav',offset=timing['music_offset_s'],
-                           timeline_duration=timing['duration'],start=start,length=length)
-    loudness=media.master(folder/'captioned.mp4',folder/'mix.wav',folder/'master.mp4',length)
+    loudness=media.master(folder/'captioned.mp4',audio,folder/'master.mp4',length,
+                          start_s=start,preview=test,reference=reference)
     validation=media.validate_export(folder/'master.mp4',length)
     if test:
         builder.alias(folder/'master.mp4',output)
         output.with_suffix('.srt').write_text(to_srt(local))
-        report=dict(window=window,length=length,validation=validation,loudness=loudness,sha256=file_hash(output),cache_key=key)
+        report=dict(window=window,length=length,validation=validation,loudness=loudness,sha256=file_hash(output),
+                    cache_key=key,audio_master_cache_key=audio_key)
         write_json(output.with_suffix('.json'),report)
+        print(f"Preview loudness (information only): momentary max {loudness['momentary_max_lufs']} LUFS; "
+              f"short-term max {loudness['short_term_max_lufs']} LUFS (needs 3 s); "
+              f"true peak {loudness['true_peak_dbtp']} dBTP. Full-film integrated gate is not applied to clips.",flush=True)
         print(f'Motion test: {output}. Review gate 4 before full render.',flush=True)
         return report
     out=builder.demo/'out'; out.mkdir(parents=True,exist_ok=True)
@@ -238,7 +261,8 @@ def render(builder, *, test: bool = False) -> dict:
                                     narration={v['artifacts']['audio']['path']:v['artifacts']['audio']['sha256'] for v in voices},
                                     evidence=evidence),
                         versions=builder.versions(),output=output,subtitles=srt,previous=previous_run(builder.demo/'runs'),
-                        assembly_cache_key=key,loudness=loudness,validation=validation,storyboard_version=2,
+                        assembly_cache_key=key,audio_master_cache_key=audio_key,
+                        loudness=loudness,validation=validation,storyboard_version=2,
                         music_offset_s=timing['music_offset_s'],draft_only=any(v.get('draft_only') for v in voices),
                         timing_notes=timing['cut_rule']+'; hard cuts; subtitles share cues.json sentence timing and character offsets.')
     stamp=datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S%fZ')

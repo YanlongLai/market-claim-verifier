@@ -41,8 +41,11 @@ def test_real_h264_aac_1080p_crossfades_burned_captions_and_ducked_music(tmp_pat
     levels = media.master(picture,mixed,exported,total)
     verified = media.validate_export(exported,total)
     assert verified['duration_s'] == pytest.approx(4.8,abs=.04)
-    assert levels['measured_lufs'] == pytest.approx(-14,abs=.5)
-    assert levels['true_peak_dbtp'] <= -1
+    assert levels['integrated_gate'] is False
+    assert levels['normalization'] == 'source_gain'
+    assert levels['momentary_max_lufs'] is not None
+    assert levels['short_term_max_lufs'] is not None
+    assert levels['true_peak_dbtp'] is not None
     assert verified['video_codec']=='h264' and verified['audio_codec']=='aac'
     media.ffmpeg(['-ss','0.8','-i',exported,'-frames:v','1','-update','1',tmp_path/'burned-captions.png'])
     with Image.open(tmp_path/'burned-captions.png') as frame:

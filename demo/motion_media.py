@@ -27,6 +27,9 @@ def window_subtitles(cues: list[Subtitle], start: float, length: float) -> list[
 
 def caption_canvas(text: str, panel_path: Path, *, font_size: int = 50) -> Image.Image:
     """The same caption placement is used by the film and review stills."""
+    lines = text.splitlines()
+    if not lines or len(lines) > 2 or any(len(line) > 42 for line in lines):
+        raise BuildError('Captions must fit at most 2 lines of 42 characters.')
     panel_path.parent.mkdir(parents=True, exist_ok=True)
     media.text_panel(text, panel_path, font_size=font_size)
     with Image.open(panel_path) as panel:
@@ -87,32 +90,37 @@ def burn_captions(picture: Path, cues: list[Subtitle], destination: Path, length
 
 def mix_audio(voices: list[Path], shots: list[dict], music: Path, gain: float, destination: Path,
               *, offset: float, timeline_duration: float, start: float = 0, length: float | None = None) -> None:
+    """Mix in absolute film time, then optionally cut a window AFTER ducking/fade.
+
+    Seeking inputs to a preview boundary resets sidechaincompress's attack and
+    release and restarts a partial fade. Always process the preceding timeline.
+    Master normalization likewise belongs before the final excerpt cut.
+    """
     length=timeline_duration-start if length is None else length
+    if (len(voices) != len(shots) or not all(math.isfinite(t) for t in (offset,timeline_duration,start,length))
+            or offset < 0 or start < 0 or length <= 0 or start+length > timeline_duration+1e-8):
+        raise BuildError('Audio window must fit the full timeline with one voice per shot.')
     args, filters, labels = [], [], []
     for voice,shot in zip(voices,shots):
         voice_start=shot.get('voice_start',shot['start'])
-        a,b=max(start,voice_start),min(start+length,shot['voice_end'])
-        if b <= a:
-            continue
         index=len(labels); label=f'voice{index}'
-        args += ['-ss',f'{a-voice_start:.9f}','-t',f'{b-a:.9f}','-i',voice]
-        delay=round((a-start)*48000)
+        args += ['-t',f'{shot["voice_end"]-voice_start:.9f}','-i',voice]
+        delay=round(voice_start*48000)
         filters.append(f'[{index}:a]aresample=48000,aformat=sample_fmts=fltp:channel_layouts=stereo,'
-                       f'adelay={delay}S:all=1,apad,atrim=duration={length:.9f}[{label}]')
+                       f'asetpts=PTS-STARTPTS,adelay={delay}S:all=1,apad,atrim=duration={timeline_duration:.9f}[{label}]')
         labels.append(label)
     if labels:
         filters.append(''.join(f'[{label}]' for label in labels)+f'amix=inputs={len(labels)}:duration=longest:normalize=0[voice]')
     else:
-        # Lead-in review windows still play the music, with a silent sidechain.
-        filters.append(f'anullsrc=r=48000:cl=stereo,atrim=duration={length:.9f}[voice]')
+        filters.append(f'anullsrc=r=48000:cl=stereo,atrim=duration={timeline_duration:.9f}[voice]')
     music_index=len(labels)
-    args += ['-ss',f'{offset+start:.9f}','-t',f'{length:.9f}','-i',music]
-    fade_start=max(0,timeline_duration-2-start)
-    fade=(f',afade=t=out:st={fade_start:.9f}:d=2' if start+length>timeline_duration-2 else '')
+    args += ['-ss',f'{offset:.9f}','-t',f'{timeline_duration:.9f}','-i',music]
+    fade=f',afade=t=out:st={max(0,timeline_duration-2):.9f}:d={min(2,timeline_duration):.9f}'
     filters += ['[voice]asplit=2[narration][sidechain]',
                 f'[{music_index}:a]aresample=48000,aformat=sample_fmts=fltp:channel_layouts=stereo,'
-                f'volume={gain}dB,atrim=duration={length:.9f},asetpts=PTS-STARTPTS{fade}[bed]',
+                f'volume={gain}dB,atrim=duration={timeline_duration:.9f},asetpts=PTS-STARTPTS{fade}[bed]',
                 '[bed][sidechain]sidechaincompress=threshold=0.025:ratio=6:attack=30:release=400[ducked]',
-                '[narration][ducked]amix=inputs=2:duration=first:normalize=0[mixed]']
-    media.ffmpeg([*args,'-filter_complex',';'.join(filters),'-map','[mixed]','-t',f'{length:.9f}',
+                '[narration][ducked]amix=inputs=2:duration=first:normalize=0[mixed]',
+                f'[mixed]atrim=start={start:.9f}:duration={length:.9f},asetpts=PTS-STARTPTS[out]']
+    media.ffmpeg([*args,'-filter_complex',';'.join(filters),'-map','[out]','-t',f'{length:.9f}',
                   '-c:a','pcm_s24le','-ar','48000','-ac','2',destination],destination.parent/'mix.log')

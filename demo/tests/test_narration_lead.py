@@ -149,12 +149,9 @@ def test_genuinely_impossible_hover_windows_still_fail(change, events):
                          dict(find=5, compare=7, strike=11) | events, list(range(15)))
 
 
-@pytest.mark.parametrize('start,length,seek,clip,delay', [
-    (0, 18, 0, 3, 552000), (10, 3, 0, 1.5, 72000), (12.25, 2, .75, 2, 0),
-    (4, 3, None, None, None), (15, 2, None, None, None),
-])
+@pytest.mark.parametrize('start,length', [(0,18),(10,3),(12.25,2),(4,3),(15,2)])
 def test_mix_and_ducking_use_voice_origin_in_full_and_music_only_windows(
-        tmp_path, monkeypatch, start, length, seek, clip, delay):
+        tmp_path, monkeypatch, start, length):
     calls = []
     monkeypatch.setattr(media, 'ffmpeg', lambda args, log: calls.append(args))
     voice, bed = Path('voice.wav'), Path('bed.wav')
@@ -165,17 +162,15 @@ def test_mix_and_ducking_use_voice_origin_in_full_and_music_only_windows(
     graph = args[args.index('-filter_complex')+1]
     assert '[voice]asplit=2[narration][sidechain]' in graph
     assert '[bed][sidechain]sidechaincompress=' in graph
-    if seek is None:
-        assert voice not in args
-        assert 'anullsrc=r=48000:cl=stereo' in graph
-        music_index = 0
-    else:
-        assert args[:6] == ['-ss', f'{seek:.9f}', '-t', f'{clip:.9f}', '-i', voice]
-        assert f'adelay={delay}S:all=1' in graph
-        music_index = 1
+    # Retain the full absolute voice/sidechain history even in a music-only
+    # preview; seeking the inputs changes compressor attack/release at the cut.
+    assert args[:4] == ['-t','3.000000000','-i',voice]
+    assert 'adelay=552000S:all=1' in graph
     index = args.index(bed)
-    assert args[index-5:index] == ['-ss', f'{start+.5:.9f}', '-t', f'{length:.9f}', '-i']
-    assert f'[{music_index}:a]aresample=48000' in graph
+    assert args[index-5:index] == ['-ss','0.500000000','-t','18.000000000','-i']
+    assert '[1:a]aresample=48000' in graph
+    trim=f'[mixed]atrim=start={start:.9f}:duration={length:.9f},asetpts=PTS-STARTPTS[out]'
+    assert graph.endswith(trim)
 
 
 @pytest.mark.skipif(not media.FFMPEG.exists(), reason='Homebrew ffmpeg required')

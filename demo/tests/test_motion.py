@@ -294,7 +294,9 @@ def test_v2_synthetic_caption_burn_and_absolute_audio_window(tmp_path):
     exported=tmp_path/'fixture-only.mp4'
     levels=media.master(captioned,mix,exported,2)
     assert media.validate_export(exported,2)['video_codec']=='h264'
-    assert levels['measured_lufs']==pytest.approx(-14,abs=.5)
+    assert levels['integrated_gate'] is False
+    assert levels['momentary_max_lufs'] is not None
+    assert levels['short_term_max_lufs'] is None  # A 2 s clip cannot fill a 3 s window.
 
 
 def test_keyframes_map_to_current_shots_and_only_request_three_stills(tmp_path,monkeypatch):
@@ -312,7 +314,7 @@ def test_keyframes_map_to_current_shots_and_only_request_three_stills(tmp_path,m
     assert not (b.demo/'out/demo-v002.mp4').exists()
 
 
-def test_motiontest_renders_only_flip_window_and_mixes_matching_absolute_times(tmp_path,monkeypatch):
+def test_motiontest_renders_only_flip_window_with_the_full_audio_master(tmp_path,monkeypatch):
     b=preview_builder(tmp_path)
     timing=target_timing(b.scenes)
     for s in timing['shots']:
@@ -342,10 +344,14 @@ def test_motiontest_renders_only_flip_window_and_mixes_matching_absolute_times(t
     monkeypatch.setattr(media,'command',lambda args,log=None:calls.append(args))
     monkeypatch.setattr(motion_media,'encode_frames',lambda *a,**k:None)
     monkeypatch.setattr(motion_media,'burn_captions',lambda *a,**k:None)
-    mixes=[]
-    monkeypatch.setattr(motion_media,'mix_audio',lambda *a,**k:mixes.append(k))
-    def master(video,audio,dest,length):
-        dest.write_bytes(b'fixture test only');return {'measured_lufs':-14,'true_peak_dbtp':-2}
+    reference={'measured_lufs':-14,'true_peak_dbtp':-1.5,'integrated_gate':True}
+    monkeypatch.setattr(motion_build,'audio_master',lambda *a:(audio,reference,'shared-full-master'))
+    masters=[]
+    def master(video,audio,dest,length,**options):
+        masters.append((audio,length,options))
+        dest.write_bytes(b'fixture test only')
+        return dict(measured_lufs=-16.03,true_peak_dbtp=-2.1,integrated_gate=False,
+                    momentary_max_lufs=-15.5,short_term_max_lufs=None)
     monkeypatch.setattr(media,'master',master)
     monkeypatch.setattr(media,'validate_export',lambda p,length:{'duration_s':length})
     report=motion_build.render(b,test=True)
@@ -353,7 +359,10 @@ def test_motiontest_renders_only_flip_window_and_mixes_matching_absolute_times(t
     start=float(args[args.index('--from')+1]);end=float(args[args.index('--to')+1])
     assert end-start==pytest.approx(2)
     assert start<report['window']['event']<end
-    assert mixes[0]['start']==start and mixes[0]['length']==2 and mixes[0]['offset']==OFFSET
+    assert masters==[(audio,2,dict(start_s=start,preview=True,reference=reference))]
+    assert report['audio_master_cache_key']=='shared-full-master'
+    assert report['loudness']['measured_lufs']==-16.03
+    assert report['loudness']['integrated_gate'] is False
     assert (b.demo/'out/motiontest-m05-verdicts.mp4').exists()
     assert not list((b.demo/'out').glob('demo-v*.mp4'))
     assert not (b.demo/'runs').exists()
