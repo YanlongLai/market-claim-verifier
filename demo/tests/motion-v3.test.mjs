@@ -81,6 +81,15 @@ test('Hover uses real H assets, site pose clock, thruster and spotlight alphas',
 test('Hover searches before locking the quarter and reserves detected beats around the strike',()=>{
   const {window}=page(),a=window.MOTION_DATA.hover_anchors,
     find=a.find(([t,age])=>age===2300)[0],lock=a.find(([t,age])=>age===2900)[0];
+  const shot=window.timeline.shots.find(s=>s.id==='v304-hover'),
+    cues=window.MOTION_DATA.cues._events[shot.id];
+  assert(shot.voice_start>=shot.start+9);
+  assert(find<shot.voice_start&&shot.voice_start<lock);
+  assert.equal(lock,cues.find(e=>e.event==='find').t);
+  const opening=window.MOTION_DATA.keyframes.find(f=>f.shot===shot.id&&f.position==='opening');
+  assert(find<opening.t&&opening.t<shot.voice_start);
+  window.seek((find+shot.voice_start)/2);
+  assert(window.frame.hover.finding&&!window.frame.hover.locked);
   window.seek(find+.001);const first=JSON.stringify(window.frame.hover.row);
   assert(window.frame.hover.finding&&!window.frame.hover.locked);
   window.seek((find+lock)/2);

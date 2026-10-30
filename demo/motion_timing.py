@@ -25,6 +25,18 @@ def next_beat(beats: list[float], t: float) -> float:
     return beats[index]
 
 
+def narration_lead(scene: dict) -> float:
+    lead = scene.get('narration_lead_s', 0)
+    if type(lead) not in (int, float) or not math.isfinite(lead) or lead < 0:
+        raise BuildError(f"{scene['id']}: narration_lead_s must be a nonnegative, finite number.")
+    return float(lead)
+
+
+def narration_start(scene: dict, start: float, beats: list[float]) -> float:
+    lead = narration_lead(scene)
+    return next_beat(beats, start + lead) if lead else start
+
+
 def target_timing(scenes: list[dict]) -> dict:
     shots, start = [], 0.0
     for scene in scenes:
@@ -63,7 +75,8 @@ def presentation_timing(scenes: list[dict], durations: dict[str, float], beats: 
     shots, start = [], 0.
     for i, (scene, target) in enumerate(zip(scenes, targets['shots'])):
         voice_s = durations[scene['id']]
-        voice_end = round(start + voice_s, 9)
+        voice_start = narration_start(scene, start, beats)
+        voice_end = round(voice_start + voice_s, 9)
         earliest = next_beat(beats, voice_end + pad)
         end = next_beat(beats, max(voice_end + pad, target['end']))
         if focus and i + 1 < len(scenes) and scenes[i+1]['id'] == focus['shot']:
@@ -77,6 +90,8 @@ def presentation_timing(scenes: list[dict], durations: dict[str, float], beats: 
                 raise BuildError('Narration and the half-speed push cannot fit before the approved Apple frame.')
         shots.append(dict(id=scene['id'], start=start, end=end, voice_s=voice_s, voice_end=voice_end,
                           hold_s=round(end-voice_end, 9)))
+        if voice_start != start:
+            shots[-1]['voice_start'] = voice_start
         start = end
     measured.update(shots=shots, duration=start, presentation_holds=True)
     return measured

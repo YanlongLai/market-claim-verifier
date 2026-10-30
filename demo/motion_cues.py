@@ -108,8 +108,9 @@ def cue_document(scenes: list[dict], timing: dict, local: dict, analysis: dict,
     doc = dict(_version=1, _methods={}, _analysis=analysis, _events={})
     for scene, shot in zip(scenes, timing['shots']):
         cues, method = local[scene['id']]
-        absolute = [dict(text=c['text'], start=round(shot['start']+c['start'], 9),
-                         end=round(shot['start']+c['end'], 9)) for c in cues]
+        voice_start = shot.get('voice_start', shot['start'])
+        absolute = [dict(text=c['text'], start=round(voice_start+c['start'], 9),
+                         end=round(voice_start+c['end'], 9)) for c in cues]
         doc[shot['id']] = absolute
         doc['_methods'][shot['id']] = method
         events = []
@@ -117,7 +118,7 @@ def cue_document(scenes: list[dict], timing: dict, local: dict, analysis: dict,
             cue = phrase_cue(absolute, spec['cue'])
             event = dict(event=spec['event'], cue=spec['cue'], cue_start=cue['start'],
                          cue_end=cue['end'], alignment=cue['alignment'],
-                         t=snap_event(cue['start'], beats, shot['start'], shot['end']))
+                         t=snap_event(cue['start'], beats, voice_start, shot['end']))
             if spec.get('review_at_start'):
                 event['review_at_start'] = True
             events.append(event)

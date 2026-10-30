@@ -72,6 +72,7 @@ window.MOTION_DATA = {
       "target_start_s": 32,
       "target_end_s": 60,
       "target_s": 28,
+      "narration_lead_s": 9,
       "narration": "Watch Hover follow the evidence. Apple is false. Four hundred sixteen point two billion was the whole year. The quarter was one hundred two point five billion. Four times too high.",
       "on_screen": "$416.2B year · $102.5B quarter · ≈4× too high",
       "director_notes": "Reuse the site's Hover H poses, nozzle anchors, pose crossfades, dip, thruster and spotlight logic. Give the beam search, lock-on, compare beams and strike the twelve seconds saved from the opening. A beam finds the filed quarter; both the year and quarter remain visible when FALSE stamps the real comparison. No slide cutaways.",
@@ -310,67 +311,80 @@ window.MOTION_DATA = {
       {
         "id": "v301-disclosure",
         "start": 0,
-        "end": 6.1533
+        "end": 6.1533,
+        "voice_start": 0
       },
       {
         "id": "v302-apple",
         "start": 6.1533,
-        "end": 20.4335
+        "end": 20.4335,
+        "voice_start": 6.1533
       },
       {
         "id": "v303-extract",
         "start": 20.4335,
-        "end": 32.0667
+        "end": 32.0667,
+        "voice_start": 20.4335
       },
       {
         "id": "v304-hover",
         "start": 32.0667,
-        "end": 60.2093
+        "end": 60.2093,
+        "voice_start": 41.3547
       },
       {
         "id": "v305-proof",
         "start": 60.2093,
-        "end": 75.3023
+        "end": 75.3023,
+        "voice_start": 60.2093
       },
       {
         "id": "v306-program",
         "start": 75.3023,
-        "end": 87.0516
+        "end": 87.0516,
+        "voice_start": 75.3023
       },
       {
         "id": "v307-l4",
         "start": 87.0516,
-        "end": 112.1988
+        "end": 112.1988,
+        "voice_start": 87.0516
       },
       {
         "id": "v308-screenshot",
         "start": 112.1988,
-        "end": 125.1555
+        "end": 125.1555,
+        "voice_start": 112.1988
       },
       {
         "id": "v309-audio",
         "start": 125.1555,
-        "end": 138.1819
+        "end": 138.1819,
+        "voice_start": 125.1555
       },
       {
         "id": "v310-results",
         "start": 138.1819,
-        "end": 155.2486
+        "end": 155.2486,
+        "voice_start": 138.1819
       },
       {
         "id": "v311-limits",
         "start": 155.2486,
-        "end": 168.0196
+        "end": 168.0196,
+        "voice_start": 155.2486
       },
       {
         "id": "v312-cta",
         "start": 168.0196,
-        "end": 178.1899
+        "end": 178.1899,
+        "voice_start": 168.0196
       }
     ],
     "version": 2,
     "revision": "v007",
     "music_offset_s": 9.4041,
+    "voice_rule": "first detected beat >= scene start + narration_lead_s (default 0)",
     "cut_rule": "first detected beat >= max(absolute target end, narration end + 0.3 s)"
   },
   "cues": {
@@ -391,40 +405,52 @@ window.MOTION_DATA = {
     },
     "_analysis": {
       "v301-disclosure": {
-        "source": "target preview only"
+        "source": "target preview only",
+        "voice_start": 0
       },
       "v302-apple": {
-        "source": "target preview only"
+        "source": "target preview only",
+        "voice_start": 6.1533
       },
       "v303-extract": {
-        "source": "target preview only"
+        "source": "target preview only",
+        "voice_start": 20.4335
       },
       "v304-hover": {
-        "source": "target preview only"
+        "source": "target preview only",
+        "voice_start": 41.3547
       },
       "v305-proof": {
-        "source": "target preview only"
+        "source": "target preview only",
+        "voice_start": 60.2093
       },
       "v306-program": {
-        "source": "target preview only"
+        "source": "target preview only",
+        "voice_start": 75.3023
       },
       "v307-l4": {
-        "source": "target preview only"
+        "source": "target preview only",
+        "voice_start": 87.0516
       },
       "v308-screenshot": {
-        "source": "target preview only"
+        "source": "target preview only",
+        "voice_start": 112.1988
       },
       "v309-audio": {
-        "source": "target preview only"
+        "source": "target preview only",
+        "voice_start": 125.1555
       },
       "v310-results": {
-        "source": "target preview only"
+        "source": "target preview only",
+        "voice_start": 138.1819
       },
       "v311-limits": {
-        "source": "target preview only"
+        "source": "target preview only",
+        "voice_start": 155.2486
       },
       "v312-cta": {
-        "source": "target preview only"
+        "source": "target preview only",
+        "voice_start": 168.0196
       }
     },
     "_events": {
@@ -453,26 +479,26 @@ window.MOTION_DATA = {
         {
           "event": "find",
           "cue": "the evidence",
-          "cue_start": 35.040048864,
-          "cue_end": 36.91795341,
+          "cue_start": 43.325367046,
+          "cue_end": 44.569998864,
           "alignment": "character-offset",
-          "t": 35.2943
+          "t": 43.2588
         },
         {
           "event": "compare",
           "cue": "Apple is false",
-          "cue_start": 37.074445455,
-          "cue_end": 39.265334091,
+          "cue_start": 44.673718182,
+          "cue_end": 46.125788637,
           "alignment": "sentence",
-          "t": 37.1519
+          "t": 44.652
         },
         {
           "event": "strike",
           "cue": "Four times too high",
-          "cue_start": 56.479459091,
-          "cue_end": 59.452807955,
+          "cue_start": 57.534913636,
+          "cue_end": 59.505580682,
           "alignment": "sentence",
-          "t": 56.4477
+          "t": 57.8873
         }
       ],
       "v305-proof": [
@@ -622,27 +648,27 @@ window.MOTION_DATA = {
     "v304-hover": [
       {
         "text": "Watch Hover follow the evidence.",
-        "start": 32.0667,
-        "end": 37.074445455
+        "start": 41.3547,
+        "end": 44.673718182
       },
       {
         "text": "Apple is false.",
-        "start": 37.074445455,
-        "end": 39.421826136
+        "start": 44.673718182,
+        "end": 46.229507955
       },
       {
         "text": "Four hundred sixteen point two billion was the whole year.",
-        "start": 39.421826136,
-        "end": 48.498364773
+        "start": 46.229507955,
+        "end": 52.245228409
       },
       {
         "text": "The quarter was one hundred two point five billion.",
-        "start": 48.498364773,
-        "end": 56.479459091
+        "start": 52.245228409,
+        "end": 57.534913636
       },
       {
         "text": "Four times too high.",
-        "start": 56.479459091,
+        "start": 57.534913636,
         "end": 59.6093
       }
     ],
@@ -2345,7 +2371,7 @@ window.MOTION_DATA = {
       "tests/fixtures/multimodal/example-post.png": "06fc3980cd17a30c665ae86eaedd501805e8e4ad25267dc0b7bb57e3bc43b557",
       "tests/fixtures/multimodal/generation.json": "bbfb8be8d07ce2b9689ef3fe90dcb4d7c45332377cb074a819ca7d57de953efa",
       "tests/fixtures/multimodal/release-reading.wav": "06dc5144bc0f3d3ebdf0509a679cb53ab76d523ec104a29c68d62997a991c122",
-      "demo/storyboard-v3.yaml": "42c490bb3881655547e3a9af6cb11eb355fdfbdad348969fa427a9f4d1285235"
+      "demo/storyboard-v3.yaml": "1f1f955e6dae66d2b3beb27c02721be3ed62d6bb9a7ef78eeefb96ab0ebf7839"
     }
   },
   "qr": {
@@ -2395,35 +2421,35 @@ window.MOTION_DATA = {
       0
     ],
     [
-      32.5311,
+      34.412,
       700
     ],
     [
-      33.0188,
+      37.1519,
       1500
     ],
     [
-      35.2943,
+      39.5203,
       2300
     ],
     [
-      36.6643,
+      43.2588,
       2900
     ],
     [
-      37.1519,
+      44.652,
       3700
     ],
     [
-      55.4492,
+      56.9585,
       4500
     ],
     [
-      56.4477,
+      57.8873,
       4800
     ],
     [
-      57.4229,
+      58.8626,
       5300
     ],
     [
@@ -2479,17 +2505,17 @@ window.MOTION_DATA = {
     },
     {
       "shot": "v304-hover",
-      "t": 34.318108,
+      "t": 40.4375,
       "position": "opening"
     },
     {
       "shot": "v304-hover",
-      "t": 46.138,
+      "t": 44.952,
       "position": "middle"
     },
     {
       "shot": "v304-hover",
-      "t": 57.957892,
+      "t": 58.1873,
       "position": "end"
     },
     {

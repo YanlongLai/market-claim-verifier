@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import argparse
 import array
+from bisect import bisect_left
 import json
 import math
 from pathlib import Path
@@ -18,7 +19,7 @@ import yaml
 
 from motion_cues import cue_document, detect_silences, map_sentences
 from motion_data import product_data
-from motion_timing import next_beat, presentation_timing, video_beats
+from motion_timing import narration_start, next_beat, presentation_timing, video_beats
 from pipeline import BuildError, file_hash, read_json
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -196,10 +197,63 @@ def evidence_data(repo: Path) -> dict:
                 provenance={**product['provenance'], **{p:file_hash(repo/p) for p in sorted(source_paths)}})
 
 
-def keyframes(timing: dict) -> list[dict]:
-    return [dict(shot=s['id'], t=round(s['start']+(s['end']-s['start'])*fraction, 6),
-                 position=label)
-            for s in timing['shots'] for label, fraction in [('opening', .08), ('middle', .5), ('end', .92)]]
+def hover_anchors(shot: dict, events: dict, beats: list[float]) -> list[tuple[float, int]]:
+    """Spend the lead on reading/reaching/searching; lock on the spoken find cue.
+
+    Reserve distinct detected beats inside each window. Sparse grids may move a
+    pose from its preferred beat, but never reorder poses or move spoken events.
+    """
+    error = 'Hover narration cues leave no beat for its pose sequence; review the host timings.'
+
+    def between(start, end, count=1, targets=None):
+        available = [b for b in beats if start < b < end]
+        if len(available) < count:
+            raise BuildError(error)
+        targets = targets or [start+(end-start)*(i+1)/(count+1) for i in range(count)]
+        chosen, previous = [], -1
+        for i, target in enumerate(targets):
+            index = min(max(previous+1, bisect_left(available, target)), len(available)-count+i)
+            chosen.append(available[index])
+            previous = index
+        return chosen
+
+    voice_start = shot.get('voice_start', shot['start'])
+    if voice_start > shot['start']:
+        read, reach, find = between(shot['start'], voice_start, 3)
+        lock = events['find']
+    else:
+        read, reach = between(shot['start'], events['find'], 2)
+        find = events['find']
+        lock, = between(find, events['compare'])
+    strike_index = beats.index(events['strike'])
+    windup, = between(events['compare'], events['strike'],
+                      targets=[beats[max(0, strike_index-2)]])
+    react, = between(events['strike'], shot['end'],
+                     targets=[beats[min(len(beats)-1, strike_index+2)]])
+    anchors = [(shot['start'], 0), (read, 700), (reach, 1500), (find, 2300), (lock, 2900),
+               (events['compare'], 3700), (windup, 4500), (events['strike'], 4800),
+               (react, 5300), (shot['end'], 6400)]
+    if any(b[0] <= a[0] for a, b in zip(anchors, anchors[1:])):
+        raise BuildError(error)
+    return anchors
+
+
+def keyframes(timing: dict, anchors: list) -> list[dict]:
+    frames = []
+    poses = dict((age, t) for t, age in anchors)
+    hover = next(s for s in timing['shots'] if s['id']=='v304-hover')
+    search_end = hover.get('voice_start', hover['start'])
+    if search_end <= hover['start']:
+        search_end = poses[2900]
+    hover_times = [(poses[2300]+search_end)/2,
+                   poses[3700]+min(.3, (poses[4500]-poses[3700])/2),
+                   poses[4800]+min(.3, (poses[5300]-poses[4800])/2)]
+    for shot in timing['shots']:
+        times = (hover_times if shot['id']=='v304-hover' else
+                 [shot['start']+(shot['end']-shot['start'])*f for f in (.08, .5, .92)])
+        frames.extend(dict(shot=shot['id'], t=round(t, 6), position=label)
+                      for t, label in zip(times, ('opening', 'middle', 'end')))
+    return frames
 
 
 def compile_data(repo: Path, story: dict, *, voices=None, analyze=None) -> dict:
@@ -220,28 +274,21 @@ def compile_data(repo: Path, story: dict, *, voices=None, analyze=None) -> dict:
     if not 170 <= timing['duration'] <= min(180, story['max_total_s']):
         raise BuildError('v007 must fit 170–180 s. Review the script/holds on the host; never accelerate speech.')
     timing.update(version=2, revision='v007', music_offset_s=offset,
+                  voice_rule='first detected beat >= scene start + narration_lead_s (default 0)',
                   cut_rule='first detected beat >= max(absolute target end, narration end + 0.3 s)')
     local, analysis = {}, {}
     for i, (scene, shot) in enumerate(zip(scenes, timing['shots'])):
-        duration = voices[i]['voice_s'] if voices else shot['end']-shot['start']-.6
+        shot['voice_start'] = narration_start(scene, shot['start'], beats)
+        duration = voices[i]['voice_s'] if voices else shot['end']-shot['voice_start']-.6
         silences = analyze(scene, voices[i]) if voices and analyze else []
         local[scene['id']] = map_sentences(scene['narration'], duration, silences)
-        analysis[scene['id']] = dict(source='measured locked-clone audio' if voices else 'target preview only')
+        analysis[scene['id']] = dict(source='measured locked-clone audio' if voices else 'target preview only',
+                                    voice_start=shot['voice_start'])
     cues = cue_document(scenes, timing, local, analysis, beats)
     # The site's original robot clock is warped between these detected beat anchors.
     hover = next(s for s in timing['shots'] if s['id']=='v304-hover')
     events = {e['event']:e['t'] for e in cues['_events'][hover['id']]}
-    strike_index = beats.index(events['strike'])
-    anchors = [(hover['start'], 0),
-               (next_beat(beats, hover['start']+.4), 700),
-               (next_beat(beats, hover['start']+.9), 1500),
-               (events['find'], 2300),
-               (next_beat(beats, (events['find']+events['compare'])/2), 2900),
-               (events['compare'], 3700),
-               (beats[max(0, strike_index-2)], 4500), (events['strike'], 4800),
-               (beats[min(len(beats)-1, strike_index+2)], 5300), (hover['end'], 6400)]
-    if any(b[0] <= a[0] for a,b in zip(anchors, anchors[1:])):
-        raise BuildError('Hover narration cues leave no beat for its pose sequence; review the host timings.')
+    anchors = hover_anchors(hover, events, beats)
     qr = read_json(repo/'demo/motion/qr.json')
     if qr['url'] != story['site_url']:
         raise BuildError('QR URL differs from the v007 storyboard.')
@@ -249,7 +296,7 @@ def compile_data(repo: Path, story: dict, *, voices=None, analyze=None) -> dict:
     evidence['provenance'][STORY] = file_hash(repo/STORY)
     return dict(revision='v007', scenes=scenes, timing=timing, cues=cues,
                 beats=dict(beats_s=beats, music_offset_s=offset, source_sha256=file_hash(repo/story['music']['beats'])),
-                product=evidence, qr=qr, hover_anchors=anchors, keyframes=keyframes(timing))
+                product=evidence, qr=qr, hover_anchors=anchors, keyframes=keyframes(timing, anchors))
 
 
 def artifacts(repo: Path, story: dict, data: dict) -> dict[str, str]:

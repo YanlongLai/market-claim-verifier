@@ -1,7 +1,8 @@
 # v007 source revision — approved gate 1 edits
 
-**Gate 1 passed with the Owner's two edits applied.** No TTS, Chromium, MPS, key-frame capture, video render,
-upload or post was run for v007. The approved v006 is 160.433 s; its source timeline and narration remain intact.
+**Gate 1 passed with the Owner's two edits applied.** The later host voice pass cached the narration, then
+failed Hover's timing preparation. This source follow-up runs no TTS, Chromium, MPS, key-frame capture, full video
+render, upload or post. The approved v006 is 160.433 s; its source timeline and narration remain intact.
 [Shot list](SHOTLIST-v3.md), [storyboard](storyboard-v3.yaml), [narration](NARRATION-v007.txt).
 
 ## What changed
@@ -11,13 +12,26 @@ v2 results. New scenes show the complete opening disclosure, the site's real Hov
 META guidance, Adobe non-GAAP EPS, self-made screenshot/audio inputs, recorded recall limits, and the new CTA.
 The source compiler adapts the relevant expressions directly from `docs/site/script.js`, records its hash, uses
 its H pose/nozzle anchors, search/lock-on geometry and compare beams, and references the original WebP assets.
-Website/product source is unchanged. Strike windup and recovery use two actual detected beats on either side;
-subtracting half a second could select the strike beat itself on the newly allocated timeline.
+Website/product source is unchanged. Strike windup and recovery prefer two actual detected beats on either side,
+using a nearer interior beat when necessary; impossible pose windows still fail closed.
 
 Shot 1 now targets **6 s**, speaking exactly “Built entirely during the Meta hackathon. Nothing here pre-existed.”
 The complete disclosure is read from [JUDGE_INTRO](JUDGE_INTRO.md) and stays on screen at **64 px** throughout
 the opening, with the product and saved Apple claim visible at frame zero. Shot 4 receives all **12 saved seconds**
 and targets **28 s**. Shots 2 and 3 move earlier; shots 5–12 retain their original target boundaries.
+
+The optional per-scene `narration_lead_s` defaults to **0**. Hover sets it to **9**: its voice begins on the first
+detected beat at/after scene start +9 s. Audio placement, music ducking, sentence cues, cue events and subtitles
+share that voice origin; cuts still use narration end +0.3 s and the absolute target hold. Reading, reaching and
+beam-search poses use distinct beats across the lead window; the quarter locks on the spoken find cue, followed
+by compare and strike. Music-only review windows keep the bed audible. Hover's three keyframes sample the search,
+comparison and strike. Other scenes keep their original timing, narration and keyframe times.
+
+The failed host anchors were **32.067 / 33.019 / 34.412 / 41.819 / 60.209 s** (start / find / compare / strike /
+end); find collided with the old 1500 ms reach anchor. Regression tests retain these numbers and all twelve
+recorded clip lengths, verify the lead fixes the sequence and preserves every cut, and reject impossible grids.
+Using those lengths, Hover's voice starts at **41.3547 s**, ends at **52.3947 s**, and retains the scene's
+**32.0667–60.2093 s** boundaries. These are computed timing checks, not a rendered or listening approval.
 
 `storyboard-v3.yaml` uses `version: 2` for the existing clone/motion pipeline and `motion_variant: v3` to select
 `motion/v3/index.html`. `window.seek(t)` is synchronous and repeatable after arbitrary seeks; `?t=SECONDS` works.
@@ -58,7 +72,7 @@ the evidence directory names are recorded report labels, with actual timestamps 
 
 ## Key-frame times
 
-These are **preview seconds**, snapped to the committed detected beat grid. Preview length **178.1899 s**;
+These are **preview seconds**, derived from beat-snapped cuts and Hover pose anchors. Preview length **178.1899 s**;
 edit target **178 s**. Three times (opening / middle / settled end) for **every new or revised scene**:
 
 | Scene | Opening / middle / end (s) |
@@ -66,7 +80,7 @@ edit target **178 s**. Three times (opening / middle / settled end) for **every 
 | v301-disclosure | 0.492 / 3.077 / 5.661 |
 | v302-apple | 7.296 / 13.293 / 19.291 |
 | v303-extract | 21.364 / 26.250 / 31.136 |
-| v304-hover | 34.318 / 46.138 / 57.958 |
+| v304-hover | 40.438 / 44.952 / 58.187 |
 | v305-proof | 61.417 / 67.756 / 74.095 |
 | v306-program | 76.242 / 81.177 / 86.112 |
 | v307-l4 | 89.063 / 99.625 / 110.187 |
@@ -76,8 +90,8 @@ edit target **178 s**. Three times (opening / middle / settled end) for **every 
 | v311-limits | 156.270 / 161.634 / 166.998 |
 | v312-cta | 168.833 / 173.105 / 177.376 |
 
-Machine-readable: [keyframes.json](motion/v3/keyframes.json). After synthesis, `build.py keyframes` regenerates
-these times relative to each measured shot; use the regenerated manifest rather than the preview absolutes.
+Machine-readable: [keyframes.json](motion/v3/keyframes.json). After voice preparation, `build.py keyframes`
+regenerates these times from the measured timeline and Hover anchors; use that manifest rather than preview absolutes.
 Additional cue +0.3 s and midpoint samples come from `review-frames`. The busiest 2 s motion test is Hover's strike;
 its exact window is selected from measured `cues.json`, not from an invented BPM grid.
 
@@ -106,7 +120,8 @@ demo/.venv/bin/python demo/motion_v3.py --check
 demo/.venv/bin/python demo/motion_v3.py
 ```
 
-Synthesize the 12 paragraphs via the **locked Breeze clone**; measure cues/cuts and check one-voice consistency:
+Rerun voice preparation with the **locked Breeze clone**. The host already cached all twelve clips; the lead
+changes no voice keys, so this command reuses them without `--force`, then rebuilds cues/cuts. Check one-voice consistency:
 
 ```sh
 demo/.venv/bin/python demo/build.py voice --storyboard demo/storyboard-v3.yaml
@@ -169,12 +184,18 @@ disclosure throughout the opening, Hover search/lock-on/compare beams and beat s
 with evidence links, type and safe rectangles, final CTA, and rejection paths for the host DOM geometry guard.
 The existing Node entry imports the new suite, so the full offline verifier includes it.
 
-Both **`sh scripts/verify.sh`** and **`UV_OFFLINE=1 sh scripts/verify.sh`** passed for this revision:
+Before this narration follow-up, both **`sh scripts/verify.sh`** and **`UV_OFFLINE=1 sh scripts/verify.sh`** passed:
 **840 product, 100 demo and 53 Node tests** each; figure rebuild/check; all three explorer/site outputs
 byte-identical; local Markdown links/anchors; no model/SEC requests or credentials; source tree unchanged.
-The targeted v3 suites also passed (17 Python and 12 Node tests). These are source/test results.
+The targeted v3 suites also passed (17 Python and 12 Node tests).
 
-**Remaining review:** actual voice durations, real Chromium font geometry, decoded art appearance, phone readability,
+For the narration follow-up, **both commands passed again** with **840 product, 121 demo and 53 Node tests**
+each, plus the same figure, byte-identical rebuild, link and offline/source-integrity checks. Targeted narration/v3
+Python tests passed **38/38**. Added checks cover invalid leads before synthesis, cached voice reuse, unchanged
+scene cuts, shifted cues/captions, the recorded Hover collision, sparse/impossible grids, audio-window seeking,
+and synthetic WAV measurements of music during the lead and ducking at voice onset. No full video was rendered.
+
+**Remaining review:** host preparation with cached clips, real Chromium font geometry, decoded art appearance, phone readability,
 beat/word perception, final loudness and independent/Owner approval. Static and offline tests do not claim these passed.
 
 ## Local commit handoff
@@ -197,3 +218,15 @@ git show --stat FETCH_HEAD
 ```
 
 No push, merge, publication or Owner approval is implied by the bundle.
+
+### Narration follow-up bundle
+
+Staging the follow-up hit the same `index.lock` write restriction. The authorized replacement is
+`demo/out/v007-narration-lead.bundle`, based on **5179908** and containing the `demo/v007` commit with the exact
+co-author footer above. Source changes remain in this worktree; the existing branch reference is unchanged.
+
+```sh
+git bundle verify /Users/yan/git/market-claim-verifier-video/demo/out/v007-narration-lead.bundle
+git fetch /Users/yan/git/market-claim-verifier-video/demo/out/v007-narration-lead.bundle refs/heads/demo/v007
+git show --stat FETCH_HEAD
+```

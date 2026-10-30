@@ -188,7 +188,8 @@ def test_wrong_values_and_release_spans_fail_closed(monkeypatch):
 
 
 def test_measured_narration_replaces_preview_without_speedup_and_refuses_overrun(data):
-    voices=[dict(voice_s=s['target_s']-.6,key='locked-'+s['id']) for s in STORY['scenes']]
+    voices=[dict(voice_s=s['target_s']-s.get('narration_lead_s',0)-.6,key='locked-'+s['id'])
+            for s in STORY['scenes']]
     measured=v3.compile_data(ROOT,STORY,voices=voices)
     assert measured['timing']['source']=='narration'
     for shot,voice in zip(measured['timing']['shots'],voices):
@@ -201,7 +202,8 @@ def test_measured_narration_replaces_preview_without_speedup_and_refuses_overrun
 
 
 def test_all_spoken_words_have_wrapped_subtitles_and_review_cues(data):
-    data=v3.compile_data(ROOT,STORY,voices=[dict(voice_s=s['target_s']-.6,key=s['id']) for s in STORY['scenes']])
+    data=v3.compile_data(ROOT,STORY,voices=[
+        dict(voice_s=s['target_s']-s.get('narration_lead_s',0)-.6,key=s['id']) for s in STORY['scenes']])
     captions=sentence_subtitles(STORY['scenes'],data['timing'],data['cues'])
     assert ' '.join(c.text.replace('\n',' ') for c in captions)==' '.join(s['narration'] for s in STORY['scenes'])
     assert all(0<=c.start<c.end<=data['timing']['duration'] for c in captions)

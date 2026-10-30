@@ -90,18 +90,21 @@ def mix_audio(voices: list[Path], shots: list[dict], music: Path, gain: float, d
     length=timeline_duration-start if length is None else length
     args, filters, labels = [], [], []
     for voice,shot in zip(voices,shots):
-        a,b=max(start,shot['start']),min(start+length,shot['voice_end'])
+        voice_start=shot.get('voice_start',shot['start'])
+        a,b=max(start,voice_start),min(start+length,shot['voice_end'])
         if b <= a:
             continue
         index=len(labels); label=f'voice{index}'
-        args += ['-ss',f"{a-shot['start']:.9f}",'-t',f'{b-a:.9f}','-i',voice]
+        args += ['-ss',f'{a-voice_start:.9f}','-t',f'{b-a:.9f}','-i',voice]
         delay=round((a-start)*48000)
         filters.append(f'[{index}:a]aresample=48000,aformat=sample_fmts=fltp:channel_layouts=stereo,'
                        f'adelay={delay}S:all=1,apad,atrim=duration={length:.9f}[{label}]')
         labels.append(label)
-    if not labels:
-        raise BuildError('Selected motion window contains no narration; choose a window over the first flips.')
-    filters.append(''.join(f'[{label}]' for label in labels)+f'amix=inputs={len(labels)}:duration=longest:normalize=0[voice]')
+    if labels:
+        filters.append(''.join(f'[{label}]' for label in labels)+f'amix=inputs={len(labels)}:duration=longest:normalize=0[voice]')
+    else:
+        # Lead-in review windows still play the music, with a silent sidechain.
+        filters.append(f'anullsrc=r=48000:cl=stereo,atrim=duration={length:.9f}[voice]')
     music_index=len(labels)
     args += ['-ss',f'{offset+start:.9f}','-t',f'{length:.9f}','-i',music]
     fade_start=max(0,timeline_duration-2-start)
