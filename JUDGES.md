@@ -1,6 +1,8 @@
 # Market Claim Verifier — judge guide
 
 
+[Three-outcome judge walkthrough](docs/evidence/judge-walkthrough/REPORT.md): one official source, matching and changed numbers, and a wrong-period claim. Offline program checks; no live model execution.
+
 Day 5: [delivery plan](docs/DAY5_PLAN.md) · [provider capabilities and prices](docs/PROVIDERS.md). US equities only; planned features are not current capabilities.
 Checks financial sentences and posts against SEC filings, returning cited `supported`, `contradicted`, or `insufficient_evidence` verdicts ([agent](src/claimcheck/agent.py), [post checker](src/claimcheck/post.py)).
 Muse Spark chooses tools and drafts explanations; Python checks numbers, periods and evidence IDs ([checks](src/claimcheck/checks.py), [real trace](docs/evidence/2026-10-27/20261027T222758Z-8959a100.json)).

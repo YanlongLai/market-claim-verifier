@@ -45,3 +45,5 @@ The first/root commit is **`7c5670b84e6052db9fa67fd86606fb2ee11ee42c`**, authore
 - Added the versioned evidence export contract and SEC release connector, wired into verified L4 quotes. Includes source/text hashes, quote locators, fact ranges and authority boundaries, plus a no-network META fixture export example.
 
 - Explorer now defaults to English and offers Traditional Chinese with preserved claim deep links; recorded evidence remains unchanged.
+
+- Added a reproducible three-outcome judge walkthrough using one recorded META outlook: matching range, altered range and wrong period. Publishes exact source locators, raw/text hashes, full program checks and a zero-incremental-API-cost breakdown explicitly limited to offline execution.

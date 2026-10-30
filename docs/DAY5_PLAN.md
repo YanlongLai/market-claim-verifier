@@ -14,7 +14,7 @@ Check US-equity financial claims, show exact evidence and clearly disclose what 
 | 2 | Implemented in this iteration | Honest ingestion coverage summary | JSON and HTML show proposed, accepted, checked and failed claim counts; unknown full-content recall never becomes 100% |
 | 3 | Implemented in this iteration | Local PDF input | Page-scoped text and original-file hash; scanned/empty pages explicitly unsupported until OCR; limits and parser errors tested |
 | 4 | Implemented | Evidence record interface and one US issuer document connector | Immutable source snapshot, publisher, time, locator, units/period; arbitrary uploads do not become authoritative; original SEC regression unchanged |
-| 5 | Planned | Complete evidence-to-verdict judge example | One official US issuer document, one false claim, one supported claim and one insufficient-evidence case; clickable source locations and cost breakdown |
+| 5 | Implemented | Complete evidence-to-verdict judge example | One official US issuer document, one false claim, one supported claim and one insufficient-evidence case; clickable source locations and cost breakdown |
 | 6 | Planned | Versioned policy and as-of time | Exact entity/unit/period rules remain mandatory in every mode; historical/restated facts distinguished |
 | 7 | Planned | Cost breakdown and bounded job queue | Reserved versus estimated/billed amounts distinguished; cache keys include model/prompt/policy/evidence versions; resume without duplicate successful calls |
 | 8 | Planned | Independent evaluation and submission refresh | Freeze unseen issuers/documents before tuning; publish extraction recall, false-supported rate, abstention, p95 and cost; refresh judge docs and video only after results |
@@ -48,3 +48,7 @@ English is the primary language for judge-facing pages and documentation. The ex
 ### Milestone 4 verification — 2026-10-30
 
 `sh scripts/verify.sh` passed with 855 product tests, 149 demo Python tests and 55 Node tests. Fixture checks, figures, three byte-identical generated outputs and all 778 local links passed. The META offline export was repeated successfully with identical record identity. No model calls or live SEC retrievals were performed; this is source-integrity/regression validation, not a new accuracy benchmark.
+
+### Milestone 5 verification — 2026-10-30
+
+The [judge walkthrough](evidence/judge-walkthrough/REPORT.md) is implemented and linked from README/JUDGES. Its three predefined atomic claims produce supported, contradicted and insufficient_evidence through the existing checker. Generated artifacts rebuild byte for byte, and modified evidence bundles are rejected. `sh scripts/verify.sh` passed: 857 product tests, 149 demo Python tests, 55 Node tests; fixture/figure checks, three generated outputs and 786 local links passed. No live model or SEC calls were made. The $0 incremental API cost applies only to this offline walkthrough, not live verification.

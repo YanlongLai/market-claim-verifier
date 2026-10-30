@@ -1,6 +1,8 @@
 # Market Claim Verifier
 
 
+[Three-outcome judge walkthrough](docs/evidence/judge-walkthrough/REPORT.md): one official source, matching and changed numbers, and a wrong-period claim. Offline program checks; no live model execution.
+
 Day 5: [delivery plan](docs/DAY5_PLAN.md) · [provider capabilities and prices](docs/PROVIDERS.md). US equities only; planned features are not current capabilities.
 Check financial sentences against SEC filings with Meta Muse Spark and auditable Python checks ([agent](src/claimcheck/agent.py), [checks](src/claimcheck/checks.py)).
 
