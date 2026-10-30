@@ -83,7 +83,7 @@
       box(480,632,608,74,'Claim uses the full year','body muted',56)+
       box(1184,632,640,74,'Filed quarter','body coral',56)+
       box(448,742,672,122,cmp?n('≈'+Math.round(P.apple.claimed_b/P.apple.quarter_b)+'×',96)+' too high':'Compare periods','body amber',64)+
-      box(1152,744,704,120,cmp?verdict(P.apple.verdict):'SEC proof → program','status '+(cmp?'coral':'muted'),cmp?96:56)+
+      box(1152,744,704,120,struck?verdict(P.apple.verdict):cmp?'Program compares…':'SEC proof → program','status '+(struck?'coral':'muted'),struck?96:56)+
       `<svg class="spotlight" viewBox="0 0 1920 880" aria-hidden="true"><defs><linearGradient id="beam"><stop stop-color="#d9a74a" stop-opacity=".04"/><stop offset="1" stop-color="#d9a74a" stop-opacity=".2"/></linearGradient></defs>${beams}<rect data-find-lock="${state.locked}" x="${state.row.x-12}" y="${state.row.y-12}" width="${state.row.width+24}" height="${state.row.height+24}" rx="12" fill="none" stroke="#d9a74a" stroke-width="4" opacity="${state.filingAlpha}"/></svg>`+
       box(128,724,224,24,'','hover-shadow',64)+
       `<div class="abs" style="left:${x}px;top:${y}px;width:${w}px;height:${h}px;transform:${state.transform}">${images}</div>`+
@@ -177,8 +177,8 @@
     return chrome('Try the live demo')+title('Check before you share.')+
       box(64,374,1320,220,'https://<br>hackathon.dappgo.com/','body mint',88)+
       box(1472,344,384,384,qrSVG(),'qr',64)+
-      box(64,724,1792,70,'Built during the Meta Global AI Developer Hackathon','body',56)+
-      box(64,806,1792,64,'Muse Spark · Meta open weights','body muted',56);
+      box(64,716,1792,72,'Built during the Meta Global AI Developer Hackathon','body',56)+
+      box(64,796,1792,76,'Muse Spark · Meta open weights','body muted',56);
   }
   const renderers={disclosure,apple,extract,hover,proof,program,l4,
     screenshot:(t,s,e)=>input(t,s,e,false),audio:(t,s,e)=>input(t,s,e,true),results,limits,cta};

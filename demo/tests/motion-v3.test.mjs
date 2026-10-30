@@ -69,11 +69,13 @@ test('Hover uses real H assets, site pose clock, thruster and spotlight alphas',
   }
   window.seek(a.find(a=>a[1]===3700)[0]+.2);
   assert.equal(window.frame.hover.phase,'compare');
-  assert.match(stage.innerHTML,/416\.2B/);assert.match(stage.innerHTML,/102\.5B/);assert.match(stage.innerHTML,/FALSE/);
+  assert.match(stage.innerHTML,/416\.2B/);assert.match(stage.innerHTML,/102\.5B/);
+  assert(!/FALSE/.test(stage.innerHTML),'The verdict waits for the stamp');assert.match(stage.innerHTML,/Program compares/);
   assert(window.frame.hover.shade>0);assert.match(stage.innerHTML,/class="spotlight"/);
   assert(window.frame.hover.postAlpha>0&&window.frame.hover.filingAlpha>0&&window.frame.hover.yearAlpha>0);
   for(const name of ['filing','post','year'])assert(stage.innerHTML.includes(`data-beam="${name}"`));
   window.seek(a.find(a=>a[1]===4800)[0]+.01);
+  assert.match(stage.innerHTML,/FALSE/);
   assert.equal(window.frame.hover.pose,'stamp-down');assert.equal(window.frame.hover.thruster,'burst');
   assert(window.frame.hover.dip>0);assert.match(stage.innerHTML,/≈4×/);
 });
