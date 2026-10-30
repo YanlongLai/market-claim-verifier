@@ -257,7 +257,9 @@ def extract_claims(
         additions.append(f'Bounded extraction: return AT MOST {max_proposals} atomic claims in this window. '
             'For dense financial tables prioritize the latest explicitly labeled period and revenue, GAAP net income, '
             'diluted EPS and operating cash flow before other metrics. Preserve table units, period and GAAP/non-GAAP labels. '
-            'Do not enumerate every historical cell. A quote must still be an exact contiguous span of the original input. '
+            'Do not enumerate every historical cell. For a table, quote ONLY the exact row text. '
+            'Read period and units from the visible headers as context, but DO NOT concatenate a header with a nonadjacent row. '
+            'Do not add a title or omit intervening rows inside a quotation. A quote must still be an exact contiguous span of the original input. '
             'If a chart has no readable numeric value, do not estimate one from bar or line positions.')
     if additions:
         extra = '\n\n' + '\n'.join(additions)

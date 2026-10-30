@@ -11,10 +11,16 @@ from claimcheck.post import check_post
 from claimcheck.ingest import _InputLedger,attach_locations,coverage_summary,channel_stages,aggregate_stages,render_html
 from claimcheck.ingest_media import write_json,sha256
 from claimcheck.stock_review import build_stock_review
-OUT=ROOT/'docs/evidence/stock-context-posthoc-2026-10-30'
+BASE=ROOT/'docs/evidence/stock-context-posthoc-2026-10-30'
+OUT=BASE
 def offline(url):raise RuntimeError('No live SEC fetching in this post-hoc check')
 def main():
-    parser=argparse.ArgumentParser();parser.add_argument('--evidence-cache',type=Path,required=True);args=parser.parse_args()
+    global OUT
+    parser=argparse.ArgumentParser();parser.add_argument('--evidence-cache',type=Path,required=True);parser.add_argument('--attempt',type=int,choices=(1,2),default=1);args=parser.parse_args()
+    OUT=BASE if args.attempt==1 else BASE/'attempt-2'
+    OUT.mkdir(parents=True,exist_ok=True)
+    if args.attempt==2 and not all((BASE/f'REAL-TSLA-{n}/ingest.json').exists() for n in (4,5,23)):
+        raise ValueError('retain all first-attempt records before the second attempt')
     revision=subprocess.check_output(['git','rev-parse','HEAD'],cwd=ROOT,text=True).strip()
     files=[*sorted((ROOT/'src/claimcheck').glob('*.py')),Path(__file__).resolve(),ROOT/'docs/STOCK_DOCUMENT_CONTEXT.md']
     hashes={}
@@ -28,14 +34,14 @@ def main():
     prepared=[ROOT/'docs/evidence/fair-multimodal-v1/prepared'/f'REAL-TSLA-{n}'/'prepared.json' for n in (4,5,23)]
     hashes.update({str(p.relative_to(ROOT)):sha256(p) for p in prepared})
     freeze=OUT/'freeze.json'
-    proof={'revision':revision,'sha256':hashes,'provider':'baseten','ticker_hint':'TSLA','max_proposals_per_window':4,'max_output_tokens':4000,'extraction_reasoning_effort':'low','verification_reasoning_effort':'low','budget_usd':1,'scope':'Post-hoc product smoke check on known failures. Frozen Meta OCR reused; no new OCR/ASR and no independent accuracy claim. Primary benchmark unchanged.'}
+    proof={'attempt':args.attempt,'shared_ledger':str((BASE/'ledger.jsonl').relative_to(ROOT)),'revision':revision,'sha256':hashes,'provider':'baseten','ticker_hint':'TSLA','max_proposals_per_window':4,'max_output_tokens':4000,'extraction_reasoning_effort':'low','verification_reasoning_effort':'low','budget_usd':1,'scope':'Post-hoc product smoke check on known failures. Frozen Meta OCR reused; no new OCR/ASR and no independent accuracy claim. Primary benchmark unchanged.'}
     if freeze.exists():
         if json.loads(freeze.read_text())['sha256']!=hashes:raise ValueError('post-hoc frozen source changed')
     else:write_json(freeze,proof)
     s=load_settings(provider='baseten')
     if not s.model_api_key:raise ValueError('Baseten key missing')
     client=create_client('baseten',s.model_api_key).with_options(max_retries=0,timeout=120)
-    ledger=Ledger(OUT/'ledger.jsonl',budget_usd=1,provider_budgets={'baseten':1})
+    ledger=Ledger(BASE/'ledger.jsonl',budget_usd=1,provider_budgets={'baseten':1})
     reports=[]
     for path in prepared:
         source=json.loads(path.read_text());dest=OUT/source['case']['id'];target=dest/'ingest.json';reports.append(target)
@@ -55,5 +61,5 @@ def main():
         r={'schema_version':1,'input':{'file':source['case']['path'],'kind':source['kind'],'sha256':source['case']['sha256']},'provider':'baseten','model':s.model,'source_context':{'ticker_hint':'TSLA','authenticated':False},'channels':channels,'errors':errors,'status':'partial' if any(c.get('error') for c in channels) else 'completed','cost_usd':account.spent_total,'cost_breakdown':account.cost_summary(),'wall_clock_s':round(time.perf_counter()-start,3),'coverage':coverage_summary(channels),'stages':aggregate_stages(channels,'',source['kind']),'limitations':['Post-hoc known-failure product check; no independent accuracy denominator.','Reuses frozen Meta OCR; this does not retest OCR or ASR.','User-supplied TSLA context is not issuer authentication.','Bounded extraction selects at most four claims per window; unselected content remains unchecked.']}
         write_json(target,r,[s.model_api_key]);(dest/'ingest.html').write_text(render_html(r));print(source['case']['id'],r['status'],r['coverage'],flush=True)
     if not (OUT/'summary/stock-review.json').exists():build_stock_review('TSLA',reports,OUT/'summary')
-    write_json(OUT/'spend.json',{'baseten_estimated_or_reserved_usd':ledger.spent_for_provider('baseten'),'posthoc_cap_usd':1,'combined_admission_caps_usd':{'primary_baseten':35,'posthoc_baseten':1},'owner_total_baseten_cap_usd':40,'billed_usd':None})
+    write_json(OUT/'spend.json',{'baseten_estimated_or_reserved_usd':ledger.spent_for_provider('baseten'),'this_attempt_estimated_or_reserved_usd':sum(json.loads(p.read_text())['cost_usd'] for p in reports),'posthoc_cap_usd':1,'combined_admission_caps_usd':{'primary_baseten':35,'posthoc_baseten':1},'owner_total_baseten_cap_usd':40,'billed_usd':None})
 if __name__=='__main__':main()

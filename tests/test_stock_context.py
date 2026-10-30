@@ -19,6 +19,7 @@ def test_context_and_limit_never_modify_quotable_input(provider,tmp_path):
     content=request['input'][0]['content'] if provider=='meta' else request['messages'][1]['content']
     assert content==post
     assert 'AT MOST 4' in instructions and 'unauthenticated issuer hint' in instructions
+    assert 'quote ONLY the exact row text' in instructions and 'DO NOT concatenate' in instructions
     assert 'Preserve explicitly named other issuers' in instructions
     assert result[0]['ticker']=='AAPL' and result[0]['quote']==post
     assert (request['reasoning']['effort'] if provider=='meta' else request['reasoning_effort'])=='low'
