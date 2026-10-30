@@ -1,5 +1,5 @@
 <p align="center">
-  <a href="https://hackathon.dappgo.com/"><img src="docs/figures/review-process.gif" width="1012" alt="Saved review: input claim, SEC evidence, numeric comparison and verdict"></a>
+  <a href="https://hackathon.dappgo.com/"><img src="docs/figures/review-process-dark-v1.gif" width="1012" alt="Saved review: input claim, SEC evidence, numeric comparison and verdict"></a>
 </p>
 
 Replay of saved website examples—not a live check. Click to explore the interactive website. [Rebuild this animation](docs/scripts/build_readme_scene.py).

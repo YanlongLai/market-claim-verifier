@@ -55,7 +55,7 @@ def main():
         palette_sheet.paste(frame, (0, index * frame.height))
     palette = palette_sheet.quantize(colors=256)
     indexed = [frame.quantize(palette=palette, dither=Image.Dither.NONE) for frame in frames]
-    output = ROOT / 'docs/figures/review-process.gif'
+    output = ROOT / 'docs/figures/review-process-dark-v1.gif'
     indexed[0].save(output, save_all=True, append_images=indexed[1:],
                     duration=[120, 130] * 64, loop=0, optimize=True)
     with Image.open(output) as gif:

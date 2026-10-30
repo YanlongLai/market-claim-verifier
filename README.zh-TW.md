@@ -1,5 +1,5 @@
 <p align="center">
-  <a href="https://hackathon.dappgo.com/"><img src="docs/figures/review-process.gif" width="1012" alt="查核重播：輸入主張、SEC 證據、數字比對與判定"></a>
+  <a href="https://hackathon.dappgo.com/"><img src="docs/figures/review-process-dark-v1.gif" width="1012" alt="查核重播：輸入主張、SEC 證據、數字比對與判定"></a>
 </p>
 
 網站已儲存範例的流程重播，並非即時查核。點擊動畫可開啟互動網站。[動畫重建程式](docs/scripts/build_readme_scene.py)。
