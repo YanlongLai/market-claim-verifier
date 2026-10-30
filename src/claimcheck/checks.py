@@ -9,7 +9,7 @@ from datetime import date
 from typing import Any
 
 from .numbers import ParsedNumber, infer_comparator, parse_stated_number
-from .release import RELEASE_KINDS, requires_release
+from .release import RELEASE_KINDS, claim_number, claim_periods, infer_metric, requires_release
 
 
 CLAIM_TYPES = (
@@ -1608,6 +1608,37 @@ def evaluate_sub_claim(
     _allow_interpretations: bool = True,
 ) -> dict[str, Any]:
     """Evaluate one normalized model sub-claim against cited evidence."""
+
+    original = str(sub_claim.get("original_claim") or sub_claim.get("text") or "")
+    if sub_claim.get("claim_type") == "reported_in_release" and not requires_release(original):
+        # A failed release search is not a quote and must not hide a cited
+        # authoritative GAAP fact. Re-enter the normal value checker, retaining
+        # its issuer/metric/unit/period validation and original user wording.
+        kinds = getattr(runner, "evidence_kind", {})
+        cited = _normalise_evidence_ids(sub_claim.get("evidence_ids"))
+        metric = infer_metric(original)
+        stated = claim_number(original, metric) if metric else None
+        literal = str(sub_claim.get('stated_text') or '')
+        parsed = parse_stated_number(literal)
+        level_matches = (stated and stated['low'] == stated['high'] and literal and literal in original
+                         and parsed and math.isclose(parsed.value, stated['low'], rel_tol=1e-12, abs_tol=1e-10))
+        periods = claim_periods(original)
+        from .release_checks import _issuer_matches
+        facts = [eid for eid in cited if kinds.get(eid) == "lookup_fact"
+                 and isinstance(runner.evidence.get(eid), Mapping)
+                 and not runner.evidence[eid].get("error")
+                 and (runner.evidence[eid].get("provenance") or {}).get("tier") in {"L1", "L2"}
+                 and level_matches and stated['unit'] == runner.evidence[eid].get('unit')
+                 and metric == runner.evidence[eid].get('metric')
+                 and _issuer_matches(original, runner.evidence[eid])
+                 and periods == {runner.evidence[eid].get('period')}]
+        if facts and not any(kinds.get(eid) == "quote_release" for eid in cited):
+            result = evaluate_sub_claim(
+                {**sub_claim, "claim_type": "value", "evidence_ids": facts,
+                 "interpretations": [eid for eid in sub_claim.get("interpretations", []) if eid in facts]},
+                runner, related_sub_claims, _allow_interpretations=_allow_interpretations)
+            result["reported_release_xbrl_fallback"] = True
+            return result
 
     if requires_release(str(sub_claim.get("original_claim") or sub_claim.get("text") or "")) or sub_claim.get("claim_type") in RELEASE_KINDS or any(
         getattr(runner, "evidence_kind", {}).get(str(eid)) in {"find_earnings_release", "quote_release"}

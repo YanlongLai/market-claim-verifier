@@ -1,4 +1,4 @@
-"""Run one paid Meta-only probe with recorded SEC fixtures and a shared $13.69 cap.
+"""Run one paid Meta-model probe with recorded SEC fixtures and a shared cap.
 
 Example: .venv/bin/python scripts/multimodal/run_probe.py text post.txt
 Input paths are relative to tests/fixtures/multimodal unless absolute. Existing
@@ -41,19 +41,24 @@ def main() -> int:
     parser.add_argument("file", type=Path)
     parser.add_argument("--provider", choices=("meta", "baseten"), default="meta")
     parser.add_argument("--max-output-tokens", type=int, default=8000)
+    parser.add_argument("--out-root", type=Path, default=OUT)
+    parser.add_argument("--budget", type=float, default=8.0)
     args = parser.parse_args()
     if not args.name.replace("-", "").isalnum():
         parser.error("name must contain letters, digits and hyphens")
+    if not 0 < args.budget <= 8:
+        parser.error("this recall task permits at most $8 of new spend")
+    output = args.out_root.resolve()
     path = args.file if args.file.is_absolute() else MEDIA / args.file
-    dest = OUT / args.name
+    dest = output / args.name
     if dest.exists():
         parser.error("run already exists; choose a new name")
     meta = load_settings(provider="meta")
     text = meta if args.provider == "meta" else load_settings(provider="baseten")
     if not meta.model_api_key or not text.model_api_key:
         parser.error("required provider key is unavailable")
-    ledger = Ledger(OUT / "ledger.jsonl", budget_usd=13.69,
-                    provider_budgets={"meta": 8, "baseten": 5.69, "fireworks": 0})
+    partition = {"meta": args.budget / 2, "baseten": args.budget / 2, "fireworks": 0}
+    ledger = Ledger(output / "ledger.jsonl", budget_usd=args.budget, provider_budgets=partition)
     client = create_client(args.provider, text.model_api_key).with_options(max_retries=0, timeout=120)
     vision = client if args.provider == "meta" else create_client("meta", meta.model_api_key).with_options(max_retries=0, timeout=120)
     dest.mkdir(parents=True)
@@ -62,11 +67,13 @@ def main() -> int:
     protocol = {"started_at": datetime.now(timezone.utc).isoformat(), "kind": "exploratory development probe",
                 "input": str(path.relative_to(ROOT)), "input_sha256": sha256(path),
                 "provider": args.provider, "text_model": text.model, "vision_model": "muse-spark-1.3",
-                "asr_model": "muse-voice-transcribe-1.0", "total_budget_usd": 13.69,
-                "prior_spend_allowance_usd": 1.31, "combined_cap_usd": 15,
-                "partition_usd": {"meta": 8, "baseten": 5.69}, "sdk_retries": 0,
+                "asr_model": "muse-voice-transcribe-1.0", "total_budget_usd": args.budget,
+                "prior_spend_usd": 2.3002991, "combined_cap_usd": 20,
+                "partition_usd": partition, "sdk_retries": 0,
+                "claim_limit_policy": "8 unique checks per extraction window for inputs over 6000 chars; otherwise 8 per channel; exact rewrite checks reused with source quotes retained",
                 "transient_retry_policy": "at most 3 attempts for HTTP 500/502/503/504; 1s, 2s backoff; each attempt reserved and traced",
                 "max_output_tokens": args.max_output_tokens,
+                "extraction_reasoning_effort": "low for long inputs above 6000 characters; otherwise provider default",
                 "sec_policy": "committed SEC snapshots only; missing data fails closed; no SEC network",
                 "source_hashes": {str(p.relative_to(ROOT)): sha256(p) for p in sources}}
     write_json(dest / "protocol.json", protocol)

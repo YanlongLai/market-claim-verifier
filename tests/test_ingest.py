@@ -36,11 +36,12 @@ def offline_clients(tmp_path):
 
 
 class ReplayMeta:
-    def __init__(self, requests):
+    def __init__(self, requests, *, allow_extraction_context_update=False):
         self.requests = copy.deepcopy(requests)
         self.responses = self
         self.chat = SimpleNamespace(completions=self)
         self.calls = 0
+        self.allow_extraction_context_update = allow_extraction_context_update
 
     def create(self, **payload):
         expected = self.requests.pop(0)
@@ -57,7 +58,14 @@ class ReplayMeta:
         elif "input" in payload:
             assert payload["input"] == expected["request"]["input"]
         else:
-            assert payload["messages"] == expected["request"]["messages"]
+            if self.allow_extraction_context_update and payload['messages'][0]['content'].startswith(EXTRACTION_PROMPT):
+                # Archived long extraction put a stated period into a synthetic
+                # source prefix. Current requests keep it outside quoted text.
+                actual = payload['messages'][1]['content']
+                old = expected['request']['messages'][1]['content']
+                assert old == actual or old.endswith('\n\n' + actual)
+            else:
+                assert payload["messages"] == expected["request"]["messages"]
         if expected.get('status') == 'error':
             exc = RuntimeError(expected['raw_response']['message'])
             exc.status_code = expected['retry']['http_status']

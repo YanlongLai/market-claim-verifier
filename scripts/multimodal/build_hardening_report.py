@@ -51,12 +51,15 @@ def claim_recall(channel: dict, score: dict) -> dict:
         if not quote:
             continue
         pattern = r'\s+'.join(re.escape(w) for w in quote.split())
-        for match in re.finditer(pattern, source):
+        spans = claim.get('quote_spans')
+        if spans is None:
+            spans = [list(m.span()) for m in re.finditer(pattern, source)]
+        for start, end in spans:
             remaining = Counter(m['canonical_value'] for m in financial_numbers(claim['claim']))
             for i, number in enumerate(observed):
                 a, b = number['normalized_span']
                 key = number['canonical_value']
-                if a < match.end() and b > match.start() and remaining[key]:
+                if a < end and b > start and remaining[key]:
                     covered.add(i)
                     remaining[key] -= 1
                     if claim.get('program_checks'):

@@ -89,9 +89,12 @@ def attach_locations(channel: dict[str, Any], claims: list[dict[str, Any]]) -> N
         locations = []
         if claim.get("span") and claim.get("quote"):
             pattern = r"\s+".join(re.escape(w) for w in claim["quote"].split())
-            for match in re.finditer(pattern, normalized):
-                start = original_offset(match.start(), channel["number_normalizations"])
-                end = original_offset(match.end(), channel["number_normalizations"], end=True)
+            spans = claim.get('quote_spans')
+            if spans is None:
+                spans = [list(m.span()) for m in re.finditer(pattern, normalized)]
+            for a, b in spans:
+                start = original_offset(a, channel["number_normalizations"])
+                end = original_offset(b, channel["number_normalizations"], end=True)
                 sources = []
                 for segment in channel["segments"]:
                     a, b = segment["raw_span"]
@@ -226,6 +229,7 @@ def ingest_file(path: Path, *, client: Any, edgar: Any, ledger: Ledger, model: s
                     extraction_max_output_tokens=max_output_tokens or 4000, allow_long_input=True)
                 attach_locations(channel, result["claims"])
                 channel.update(claims=result["claims"], post_report=str((post_dir / "report.html").relative_to(out_dir)),
+                               extraction_windows=result['extraction_windows'], claim_limit=result['claim_limit'],
                                post_cost_usd=result["cost_usd"], extraction_trace=str((post_dir / result["extraction_trace"]).relative_to(out_dir)))
                 if any(c['status'] == 'failed' for c in result['claims']):
                     channel['error'] = 'one or more claims failed; see retained claim traces'

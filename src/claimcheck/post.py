@@ -44,6 +44,7 @@ Post:
 
 MAX_POST_CHARS = 6000
 MAX_EXTRACTION_TOKENS = 4000
+LONG_EXTRACTION_CHARS = 1400
 KINDS = {"reported_fact", "issuer_guidance", "forecast", "opinion", "other"}
 _DIGITS = re.compile(r"\d[\d,]*(?:\.\d+)?")
 
@@ -112,7 +113,7 @@ def numbers_preserved(claim: str, quote: str, context: str = "") -> tuple[bool, 
         key = _digit_key(raw)
         if key in quote_keys:
             continue
-        period_like = re.fullmatch(r"(19|20)\d\d|[1-4]", raw) is not None
+        period_like = re.fullmatch(r"(19|20)\d\d|[1-4]", raw.rstrip(',')) is not None
         if period_like and key in context_keys:
             continue
         missing.append(raw)
@@ -146,18 +147,22 @@ def screen_claims(post: str, proposed: Sequence[Mapping[str, Any]]) -> list[dict
     """Apply the program's acceptance rules to model-proposed claims."""
 
     screened: list[dict[str, Any]] = []
-    seen: set[str] = set()
+    seen: dict[tuple, dict[str, Any]] = {}
     for item in proposed:
         quote = str(item.get("quote") or "").strip()
         claim = normalize_scale_words(_normalize_space(str(item.get("claim") or "")))
         kind = str(item.get("kind") or "other")
         kind = kind if kind in KINDS else "other"
         ticker = item.get("ticker")
-        key = claim.casefold()
-        if not claim or key in seen:
+        ticker = ticker if isinstance(ticker, str) and ticker else None
+        if not claim:
             continue
-        seen.add(key)
-        span = locate_quote(post, quote)
+        # These bounds are assigned by check_post, never by the extractor.
+        # Resolve repeated quotes within their actual extraction window.
+        bounds = item.get("source_window")
+        left, right = bounds if bounds else (0, len(post))
+        local_span = locate_quote(post[left:right], quote)
+        span = (local_span[0] + left, local_span[1] + left) if local_span else None
         preserved, missing = numbers_preserved(claim, quote, post)
         if span is None:
             status, reason = "rejected", "quote is not an exact span of the post"
@@ -177,6 +182,14 @@ def screen_claims(post: str, proposed: Sequence[Mapping[str, Any]]) -> list[dict
         period_context = None
         if status == "to_verify" and span:
             claim, period_context = inherit_period(post, span, claim)
+        key = (claim.casefold(), _normalize_space(quote), kind, ticker, status == 'rejected')
+        if key in seen:
+            existing = seen[key]
+            if bounds and span and list(span) not in existing.get("quote_spans", []):
+                existing.setdefault("quote_spans", []).append(list(span))
+            if bounds and item["extraction_window"] not in existing.get("extraction_windows", []):
+                existing.setdefault("extraction_windows", []).append(item["extraction_window"])
+            continue
         screened.append(
             {
                 "index": len(screened) + 1,
@@ -188,8 +201,11 @@ def screen_claims(post: str, proposed: Sequence[Mapping[str, Any]]) -> list[dict
                 "status": status,
                 "screen_reason": reason,
                 **({"extracted_claim": extracted_claim, "period_context": period_context} if period_context else {}),
+                **({"quote_spans": [list(span)] if span else [],
+                    "extraction_windows": [item["extraction_window"]]} if bounds else {}),
             }
         )
+        seen[key] = screened[-1]
     return screened
 
 
@@ -220,10 +236,25 @@ def extract_claims(
     provider: str,
     recorder: TraceRecorder,
     max_output_tokens: int = MAX_EXTRACTION_TOKENS,
+    reasoning_effort: str | None = None,
+    source_period: str | None = None,
 ) -> list[dict[str, Any]]:
     adapter = get_provider(provider)
     request = _extraction_payload(adapter, post, model)
+    if source_period:
+        context = ('\n\nNearby source period (context only, outside the quoted post): ' + source_period
+                   + '. Use it only to resolve year/quarter. Every quote must come entirely from the post input; '
+                   'never prepend this context to a quote.')
+        if adapter.chat_completions:
+            request['messages'][0]['content'] += context
+        else:
+            request['instructions'] += context
     request["max_tokens" if adapter.chat_completions else "max_output_tokens"] = max_output_tokens
+    if reasoning_effort:
+        if adapter.chat_completions:
+            request['reasoning_effort'] = reasoning_effort
+        else:
+            request['reasoning'] = {'effort': reasoning_effort}
     attempt = 0
     while True:
         attempt += 1
@@ -339,20 +370,27 @@ def refresh_evidence(report_dir: Path) -> dict[str, Any]:
     return report
 
 
-def extraction_windows(post: str) -> list[tuple[int, int]]:
+def extraction_windows(post: str, *, max_chars: int = MAX_POST_CHARS - 200) -> list[tuple[int, int]]:
     """Bound extraction requests, retaining overlap without losing source offsets."""
     windows = []
     start = 0
     while start < len(post):
-        end = min(len(post), start + MAX_POST_CHARS - 200)
-        if end < len(post):
-            boundary = max(post.rfind('\n\n', start + 2800, end), post.rfind('. ', start + 2800, end))
+        end = min(len(post), start + max_chars)
+        if end < len(post) or max_chars == LONG_EXTRACTION_CHARS:
+            if max_chars == LONG_EXTRACTION_CHARS:
+                # One turn/paragraph at a time, with bounded overlap. A model
+                # otherwise consolidates repeated facts across a whole call.
+                boundary = post.find('\n\n', start + 400, end)
+                if boundary < 0:
+                    boundary = post.rfind('. ', start + 400, end)
+            else:
+                boundary = max(post.rfind('\n\n', start + 2800, end), post.rfind('. ', start + 2800, end))
             if boundary > start:
                 end = boundary + 1
         windows.append((start, end))
         if end == len(post):
             break
-        start = max(start + 1, end - 400)
+        start = max(start + 1, end - (200 if max_chars == LONG_EXTRACTION_CHARS else 400))
     return windows
 
 
@@ -380,31 +418,51 @@ def check_post(
     traces = out_dir / "traces"
     started = time.perf_counter()
     extraction_trace = TraceRecorder("[extraction] " + post[:200], model, provider=provider, secrets=secrets)
+    partitioned = allow_long_input and len(post) > MAX_POST_CHARS
+    windows = extraction_windows(post, max_chars=LONG_EXTRACTION_CHARS if partitioned else MAX_POST_CHARS - 200)
     try:
         proposed = []
-        for start, end in extraction_windows(post):
+        for window_index, (start, end) in enumerate(windows):
             window = post[start:end]
-            # Repeat only explicit nearby period introductions for later windows.
-            # Quotes are still screened against the full original source.
+            context = None
+            # Keep context separate from quotable source text. A synthetic
+            # prefix otherwise invites non-contiguous, fabricated quotes.
             if start:
                 from .period_context import period_mentions
                 mentions = period_mentions(post[max(0, start - 2400):start])
-                if len({m['period'] for m in mentions}) == 1:
-                    window = mentions[-1]['text'] + "\n\n" + window
-            proposed.extend(extract_claims(window, client=client, ledger=ledger, model=model, provider=provider,
-                                          recorder=extraction_trace, max_output_tokens=extraction_max_output_tokens))
+                if len({(m['period'], m['basis']) for m in mentions}) == 1:
+                    context = mentions[-1]['text']
+            extracted = extract_claims(window, client=client, ledger=ledger, model=model, provider=provider,
+                                       recorder=extraction_trace, max_output_tokens=extraction_max_output_tokens,
+                                       reasoning_effort='low' if partitioned else None, source_period=context)
+            proposed.extend({**item, "source_window": [start, end] if partitioned else None,
+                             "extraction_window": window_index} for item in extracted)
     finally:
         extraction_path = write_trace(traces, extraction_trace)
     claims = screen_claims(post, proposed)
     if on_progress:
         on_progress(claims)
     verified = 0
+    window_counts: dict[int, int] = {}
+    verification_cache: dict[tuple, dict[str, Any]] = {}
     for item in claims:
         if item["status"] != "to_verify":
             continue
-        if verified >= max_claims:
-            item.update(status="not_checked", screen_reason=f"over the {max_claims}-claim limit for one post")
+        cache_key = (item['claim'].casefold(), item['ticker'], item['kind'])
+        previous = verification_cache.get(cache_key)
+        if previous:
+            fields = ('status', 'verdict', 'summary', 'evidence_strength', 'flags', 'program_checks', 'evidence', 'trace_path')
+            item.update({key: previous[key] for key in fields})
+            item.update(verification_reused_from=previous['index'], cost_usd=0.0, latency_ms=0.0)
+            if on_progress:
+                on_progress(claims)
             continue
+        available = next((i for i in item.get('extraction_windows', [0]) if window_counts.get(i, 0) < max_claims), None)
+        if available is None:
+            scope = 'extraction window' if partitioned else 'post'
+            item.update(status="not_checked", screen_reason=f"over the {max_claims}-claim limit for one {scope}")
+            continue
+        window_counts[available] = window_counts.get(available, 0) + 1
         verified += 1
         recorder = TraceRecorder(item["claim"], model, provider=provider, secrets=secrets)
         try:
@@ -438,6 +496,7 @@ def check_post(
             latency_ms=summary.get("latency_ms"),
             trace_path=str(trace_path.relative_to(out_dir)),
         )
+        verification_cache[cache_key] = item
         if on_progress:
             on_progress(claims)
     extraction_cost = extraction_trace.summary().get("cost_usd") or 0.0
@@ -449,6 +508,11 @@ def check_post(
         "extraction_prompt_sha256": hashlib.sha256(EXTRACTION_PROMPT.encode()).hexdigest(),
         "extraction_trace": str(extraction_path.relative_to(out_dir)),
         "proposed_count": len(proposed),
+        "extraction_windows": [list(w) for w in windows],
+        "extraction_reasoning_effort": "low" if partitioned else None,
+        "claim_limit": {"per": "extraction_window" if partitioned else "post", "limit": max_claims,
+                        "verification_calls": verified,
+                        "reused": sum('verification_reused_from' in item for item in claims)},
         "claims": claims,
         "counts": {
             status: sum(item["status"] == status for item in claims)

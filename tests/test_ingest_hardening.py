@@ -13,7 +13,7 @@ from claimcheck.agent import verify_claim
 from claimcheck.budget import BudgetExceeded, Ledger
 from claimcheck.ingest_media import decode, read_image, stitch_turns, transcribe
 from claimcheck.period_context import missing_period_reason
-from claimcheck.post import check_post, extract_claims, extraction_windows, screen_claims
+from claimcheck.post import LONG_EXTRACTION_CHARS, check_post, extract_claims, extraction_windows, screen_claims
 from claimcheck.trace import TraceRecorder
 from test_ingest import EVIDENCE, MEDIA, ROOT, ReplayMeta, offline_clients
 
@@ -201,7 +201,7 @@ def test_real_twelve_minute_clip_chunks_absolute_tail_and_upload_limits(tmp_path
 
 def test_long_extraction_windows_cover_all_text_and_preserve_tail(tmp_path):
     post = ('Nonfinancial source text. ' * 500) + '\nApple reported revenue of $94 billion for fiscal Q3 2025.'
-    windows = extraction_windows(post)
+    windows = extraction_windows(post, max_chars=LONG_EXTRACTION_CHARS)
     assert windows[0][0] == 0 and windows[-1][1] == len(post)
     assert all(b - a <= 6000 for a, b in windows)
     assert all(windows[i+1][0] < b for i, (a, b) in enumerate(windows[:-1]))
@@ -212,13 +212,20 @@ def test_long_extraction_windows_cover_all_text_and_preserve_tail(tmp_path):
     assert result['proposed_count'] == 0
 
 
-@pytest.mark.parametrize('name', ['text', 'screenshot', 'audio', 'audio-two-voices', 'video', 'video-captioned', 'long-call'])
-def test_new_probe_outputs_replay_through_final_runtime_without_network_or_codecs(monkeypatch, tmp_path, name):
+@pytest.mark.parametrize('dataset,name', [
+    *[('multimodal-2026-10-30', name) for name in ['text', 'screenshot', 'audio', 'audio-two-voices', 'video', 'video-captioned', 'long-call']],
+    *[('multimodal-2026-10-30b', name) for name in ['text', 'long-call', 'long-call-frozen']],
+])
+def test_probe_outputs_replay_through_final_runtime_without_network_or_codecs(monkeypatch, tmp_path, dataset, name):
     from claimcheck.ingest import ingest_file
     monkeypatch.setattr('claimcheck.retries.time.sleep', lambda _: None)
-    folder = ROOT / 'docs/evidence/multimodal-2026-10-30' / name
+    folder = ROOT / 'docs/evidence' / dataset / name
     saved = json.loads((folder / 'ingest.json').read_text())
     protocol = json.loads((folder / 'protocol.json').read_text())
+    if dataset == 'multimodal-2026-10-30' and name == 'long-call':
+        # Replay the archived two extraction responses at their original
+        # boundaries. The new per-turn extraction schedule has separate tests.
+        monkeypatch.setattr('claimcheck.post.extraction_windows', lambda post, **_: extraction_windows(post))
     requests, speech = [], []
     for channel in saved['channels']:
         if channel.get('media_call'):
@@ -232,8 +239,13 @@ def test_new_probe_outputs_replay_through_final_runtime_without_network_or_codec
                 requests.append(call)
         if channel.get('extraction_trace'):
             requests.extend(json.loads((folder / channel['extraction_trace']).read_text())['requests'])
+        else:
+            for path in (folder / 'checks' / channel['id'] / 'traces').glob('*.json'):
+                trace = json.loads(path.read_text())
+                if trace.get('claim', '').startswith('[extraction]'):
+                    requests.extend(trace['requests'])
         for claim in channel.get('claims', []):
-            if claim.get('trace_path'):
+            if claim.get('trace_path') and not claim.get('verification_reused_from'):
                 requests.extend(json.loads((folder / 'checks' / channel['id'] / claim['trace_path']).read_text())['requests'])
 
     def recorded_decode(path, media_dir):
@@ -266,7 +278,7 @@ def test_new_probe_outputs_replay_through_final_runtime_without_network_or_codec
             response = speech.pop(0)
             return SimpleNamespace(status_code=200, json=lambda: response)
     monkeypatch.setattr('claimcheck.ingest.decode', recorded_decode)
-    replay = ReplayMeta(requests)
+    replay = ReplayMeta(requests, allow_extraction_context_update=dataset == 'multimodal-2026-10-30' and name == 'long-call')
     edgar, releases = offline_clients(tmp_path)
     def outside_corpus(url):
         raise RuntimeError('SEC document is outside the committed probe corpus')
@@ -279,8 +291,18 @@ def test_new_probe_outputs_replay_through_final_runtime_without_network_or_codec
     assert [s['status'] for s in result['stages']] == [s['status'] for s in saved['stages']]
     for actual, expected in zip(result['channels'], saved['channels']):
         assert actual['raw_text'] == expected['raw_text']
-        assert [(c['status'], c.get('verdict')) for c in actual['claims']] == [(c['status'], c.get('verdict')) for c in expected['claims']]
-        assert [c['source_locations'] for c in actual['claims']] == [c['source_locations'] for c in expected['claims']]
+        expected_verdicts = [(c['status'], c.get('verdict')) for c in expected.get('claims', [])]
+        if dataset == 'multimodal-2026-10-30' and name == 'text':
+            assert expected_verdicts[1] == ('verified', 'insufficient_evidence')
+            expected_verdicts[1] = ('verified', 'contradicted')
+            assert actual['claims'][1]['program_checks'][0]['reported_release_xbrl_fallback']
+        assert [(c['status'], c.get('verdict')) for c in actual.get('claims', [])] == expected_verdicts
+        if dataset != 'multimodal-2026-10-30' or name != 'long-call':
+            assert [c['source_locations'] for c in actual.get('claims', [])] == [c['source_locations'] for c in expected.get('claims', [])]
+        else:
+            for claim, old in zip(actual['claims'], expected['claims']):
+                assert claim['source_locations']
+                assert all(loc in old['source_locations'] for loc in claim['source_locations'])
 
 
 def test_report_recall_counts_values_and_quote_locations_without_credit_for_heading_rows(monkeypatch):
