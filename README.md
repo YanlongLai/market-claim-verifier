@@ -83,13 +83,13 @@ Baseten and Fireworks have the same total score but different correct cases. On 
 | Format | Meta | Baseten | Fireworks |
 | --- | --- | --- | --- |
 | Text claims | **83.2%**, 357 claims | **90.5%**, 357 claims | **90.5%**, 357 claims |
-| Images | Development probes only | No comparable format benchmark | No comparable format benchmark |
-| Native-text PDF | No accuracy benchmark | No accuracy benchmark | No accuracy benchmark |
-| Audio | Development probes only | Development probes with Meta ASR | No comparable format benchmark |
-| Video | Development probes only | Development probes with Meta OCR/ASR | No comparable format benchmark |
+| Images | Development probes only | JPEG probe with Meta OCR | WebP probe with Meta OCR |
+| Native-text PDF | Native-text probe; no accuracy benchmark | No accuracy benchmark | No accuracy benchmark |
+| Audio | Development probes only | Development probes with Meta ASR | MP3 probe with Meta ASR |
+| Video | Development probes only | Development probes with Meta OCR/ASR | Silent MP4 probe with three Meta OCR frames |
 
 > [!IMPORTANT]
-> **Text accuracy does not transfer to PDF, images, audio or video.** Media quality also depends on reading/transcription and claim extraction. “No benchmark” means unmeasured, not 0% accuracy or unsupported.
+> **Text accuracy does not transfer to PDF, images, audio or video.** Media quality also depends on reading/transcription and claim extraction. A development probe is not an accuracy benchmark. “No benchmark” means no measured benchmark accuracy, not 0% accuracy or unsupported.
 
 ## Media cost and quality
 
@@ -105,10 +105,32 @@ Entire-file workflow estimates from the [2026-10-30 hardening report](docs/evide
 | 🎙️ 12-minute audio | Meta ASR + Baseten text | **$0.2405** | **258.8 s** | 19/60 assertions checked in this historical run |
 | 🎬 Row-only video | Meta OCR/ASR + Meta text | **$0.3359** | **312.1 s** | 8/9 assertions checked; only three frames sampled |
 | 🎬 Captioned video | Meta OCR/ASR + Baseten text | **$0.1554** | **106.6 s** | 9/9 assertions checked in this control |
-| 📄 PDF · all providers | Local parsing + text provider | **Not measured** | **Not measured** | Parser regression tests are not an accuracy benchmark |
-| 🖼️/🎙️/🎬 Fireworks | Meta preprocessing + Fireworks text | **No comparable recorded measurement** | **Not measured** | Supported routing does not establish measured quality |
 
 A [later long-audio follow-up](docs/evidence/multimodal-2026-10-30b/REPORT.md) increased program-checked coverage to 44/60; rechecking frozen ASR text reached 50/60. These are post-hoc coverage results on repeated synthetic facts, **not truth accuracy percentages**.
+
+### Additional format probes — 2026-10-30
+
+[Six preselected synthetic examples](docs/evidence/input-formats-2026-10-30/REPORT.md) cost **$0.32767930 total** against a $3 cap. All **15 extracted claim rows** received program checks; each case caught the deliberately incorrect EPS. This is not a full-content recall or general accuracy score, and different inputs/pipelines do not establish a platform ranking.
+
+| Input | Pipeline | Checked / extracted | Estimated USD | Wall time |
+| --- | --- | ---: | ---: | ---: |
+| Markdown | Fireworks text | 2/2 | $0.031686 | 110.4 s |
+| JPEG | Meta OCR → Baseten text | 2/2 | $0.039148 | 18.9 s |
+| WebP | Meta OCR → Fireworks text | 2/2 | $0.034332 | 163.7 s |
+| MP3 | Meta ASR → Fireworks text | 3/3 | $0.079938 | 444.1 s |
+| Silent MP4 | Three Meta OCR frames → Fireworks text | 4/4 | $0.089863 | 463.6 s |
+| Native-text PDF | Local page extraction → Meta text | 2/2 | $0.052712 | 71.8 s |
+
+Five runs completed; silent MP4 retains `partial` because there is no audio track, although all four extracted visual claims were checked. Video remains limited to three sampled frames. PDF OCR, general URLs and native Baseten/Fireworks media endpoints were not tested or added. Costs are usage-based estimates, not invoices; displayed per-row amounts are rounded.
+
+**Reuse the evidence:** [record index and guide](docs/TEST_RECORDS.md) · [machine-readable run index](docs/evidence/input-formats-2026-10-30/runs.json) · [validation receipt and logs](docs/evidence/input-formats-2026-10-30/validation.json). Inputs/hashes, parameters, raw responses, traces, outcomes and costs are retained. Frozen OCR/ASR text can be reused for downstream checks without repeating media preprocessing; it does not retest extraction or attribution. Rebuilding the saved report is offline; a fresh live suite spends credits:
+
+```sh
+# Offline: rebuild the saved report and check input hashes / ledger totals.
+python3 scripts/multimodal/build_format_report.py
+# Paid: all six cases, shared $3 cap; requires a fresh output directory.
+.venv/bin/python scripts/multimodal/run_format_suite.py --out-root runs/formats-001
+```
 
 ## Cost, speed and provider choice
 
