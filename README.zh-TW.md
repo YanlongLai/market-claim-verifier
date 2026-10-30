@@ -317,6 +317,8 @@ PDF 使用 `ingest report.pdf` 與相同參數。保留頁碼與檔案 hash，�
 
 已加入 Microsoft FY2027 Q1 官方法說會 60 秒原始播出片段及其 WAV，三家各測聲音與影片，共六次。所有轉錄保留 11/11 個參考數值 token，**這不是準確率**。最終沒有 supported／contradicted；期間不足、表頭引用、OCR／供應商失敗均保留。
 
-[真實素材與完整結果](docs/evidence/real-av-v1/REPORT.md) · [中文問題分析](docs/evidence/real-av-v1/ANALYSIS.zh-TW.md)。這是一個場景的操作測試，聲音與畫面尚未自動對齊。新增費用約 $0.296171；包含先前測試的累計估算／保留額：Meta $4.45021510、Baseten $2.15855835、Fireworks $2.03641025，各低於 $40。
+[真實素材與完整結果](docs/evidence/real-av-v1/REPORT.md) · [中文問題分析](docs/evidence/real-av-v1/ANALYSIS.zh-TW.md)。這是一個場景的操作測試，聲音與畫面尚未自動對齊。新增費用約 $0.296171；截至該輪影音測試的小計估算／保留額：Meta $4.45021510、Baseten $2.15855835、Fireworks $2.03641025，各低於 $40。
 
 **真實影音後續修正：** 已加入明確事件期間、需完整年份錨點的 FY 短年份解析，以及由程式判定產生的最終摘要。[使用方式](docs/EVENT_CONTEXT.md) · [離線事後重播](docs/evidence/real-av-context-posthoc/REPORT.md)。20 筆原本拒絕的表頭提案可進入查核，不代表 20 筆財務事實已驗證；原始付費結果保留。
+
+**補齊期間後已完成實際查核：** 三家查核相同六項主張。Baseten、Fireworks 各有五項 supported 與一項缺少期間的對照；Meta 一項 supported、兩項證據不足、三項 HTTP 500 失敗。[結果與原始 trace](docs/evidence/real-av-context-live/REPORT.md)。這是事後驗證，不是準確率 benchmark。新增費用估算／保留額 $0.415169；目前追蹤工作的累計：Meta $4.75379365、Baseten $2.20323285、Fireworks $2.10332610。使用者確認本輪每家 $30 並遵守先前 credit 上限；實際執行仍限制每家 $2。

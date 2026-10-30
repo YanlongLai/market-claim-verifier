@@ -82,3 +82,7 @@ Added a real Microsoft CFO webcast clip and its audio track, preregistered six-c
 ## 2026-10-30 — reviewed event periods and program explanations
 
 Added optional reviewed event JSON to stock review, with queue identity and separate provenance. Resolve short fiscal-year headers only with a matching full-year anchor; retain invented-number and conflicting-context guards. Final summaries now follow program outcomes and preserve model prose separately. Real-AV offline replay retains all original paid results.
+
+## 2026-10-30 — live verification after period binding
+
+Published 18 recorded results for six identical context/control claims across three providers, including Meta HTTP 500 failures. Preserved program-versus-model summaries, 53 request records, source archive and spend reconciliation. Updated both READMEs and the delivery plan without changing earlier benchmark scores.

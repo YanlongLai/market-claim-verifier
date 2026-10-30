@@ -27,3 +27,7 @@ This command makes paid calls. The CLI is implemented; this exact live invocatio
 After program checks, `summary` is generated from the final program verdict and check reasons. Original model prose is retained in `model_summary` and the trace; it cannot declare a correction that the program did not validate. Numeric corrections still require valid evidence IDs and successful program comparisons. Re-rendering old ingest/post data uses program wording when checks exist, without editing archived JSON.
 
 The previously published HTML remains a historical record. New reports and the separate replay demonstrate the improved behavior; no old score, trace or paid result is overwritten.
+
+## Live follow-up evidence
+
+The [separate paid verification](evidence/real-av-context-live/REPORT.md) reuses six frozen proposal texts, including their context bindings, and calls each verifier directly. It does not rerun the CLI media pipeline or demonstrate complete document recall. Baseten and Fireworks support the four table values and revenue/growth statement; the unchanged missing-period control stays insufficient. Meta service errors remain recorded.

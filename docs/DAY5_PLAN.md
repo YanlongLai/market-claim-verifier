@@ -88,3 +88,7 @@ Added one genuine Microsoft FY27 Q1 webcast scene as 60-second WAV and MP4, with
 ## Reviewed period context and final explanation — 2026-10-30
 
 Implemented `review-stock --event-context`, separate provenance for relative-quarter binding, short-FY header resolution only with a matching explicit full-year anchor, and program-derived final summaries with raw model prose retained. [Usage and limits](EVENT_CONTEXT.md) · [offline replay](evidence/real-av-context-posthoc/REPORT.md). Rejected header proposals decrease 28 → 8; six audio occurrences receive conditional event metadata. These are admission improvements, not new verified facts. Next: separately budgeted verification of bound claims, accounting-basis evidence and independent held-out real cases.
+
+## Context-bound live validation completed
+
+[Six fixed claims × three providers](evidence/real-av-context-live/REPORT.md) now have live verification results, separate from extraction/admission replay. Baseten and Fireworks each support five claims and retain one missing-period control; Meta has one supported, two insufficient and three HTTP 500 failures. New estimates/reservations total $0.41516890. User confirmed $30/provider this round subject to prior credit ceilings; no execution-cap increase was needed. Next: expose validated evidence in the multi-file workflow, diagnose Meta tool-round failures separately, and test adjusted-metric evidence and new independent real inputs.

@@ -67,3 +67,7 @@ Keep the original evidence unchanged. Use a new directory for each run; compare 
 ## Event-context post-hoc replay
 
 [Period and summary regression](evidence/real-av-context-posthoc/REPORT.md) reuses real-AV extracted proposals without API calls. Before/after admission, exact quotes, context provenance, raw narrative and safe program explanation are retained separately from original financial verdicts. No new accuracy estimate.
+
+## Live event-context verification
+
+[Real-AV context live follow-up](evidence/real-av-context-live/REPORT.md) retains 18 results, 53 raw requests, source/input freeze, three ledgers and failures. Reuses prior media/extraction; same six inputs per verifier. No independent accuracy denominator and no replacement of prior failures.
