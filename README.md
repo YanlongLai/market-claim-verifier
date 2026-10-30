@@ -123,6 +123,17 @@ A [later long-audio follow-up](docs/evidence/multimodal-2026-10-30b/REPORT.md) i
 
 Five runs completed; silent MP4 retains `partial` because there is no audio track, although all four extracted visual claims were checked. Video remains limited to three sampled frames. PDF OCR, general URLs and native Baseten/Fireworks media endpoints were not tested or added. Costs are usage-based estimates, not invoices; displayed per-row amounts are rounded.
 
+**API spend by provider for these six probes (USD):**
+
+| Provider | Estimated API spend |
+| --- | ---: |
+| Meta | $0.07223290 |
+| Baseten | $0.03489420 |
+| Fireworks | $0.22055220 |
+| **Total** | **$0.32767930** |
+
+Based on the [per-request ledger](docs/evidence/input-formats-2026-10-30/ledger.jsonl). The total includes a $0.00240000 ASR reservation without a reconciliation event; it remains a conservative estimate. Meta's total includes OCR/ASR preprocessing used by other text providers and its own text checks. These are the **same costs** included in the per-input table, not extra charges. This is six-probe spend, not lifetime project spend or an official invoice.
+
 **Reuse the evidence:** [record index and guide](docs/TEST_RECORDS.md) · [machine-readable run index](docs/evidence/input-formats-2026-10-30/runs.json) · [validation receipt and logs](docs/evidence/input-formats-2026-10-30/validation.json). Inputs/hashes, parameters, raw responses, traces, outcomes and costs are retained. Frozen OCR/ASR text can be reused for downstream checks without repeating media preprocessing; it does not retest extraction or attribution. Rebuilding the saved report is offline; a fresh live suite spends credits:
 
 ```sh
