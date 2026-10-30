@@ -68,3 +68,7 @@ Original 266-claim held-out split, corrected labels; recorded run, not a fresh b
 ## Paired format evidence (2026-10-30)
 
 The [completed benchmark](evidence/fair-multimodal-v1/REPORT.md) compares identical nine-format inputs with shared frozen Meta preprocessing. Separate native PNG/JPEG/WebP probes completed six control images per format on every provider; native audio/video endpoints were not tested. Native image probes do not change the product adapter: all product image routes still require Meta OCR. [Official price cross-check](evidence/fair-multimodal-v1/RATE_CHECK.md) · [total task spend](evidence/fair-multimodal-v1/task-spend.json). No discounted provider Batch was used.
+
+## Real webcast smoke test
+
+[Real AV v1](evidence/real-av-v1/REPORT.md) exercises WAV and MP4 with all three verifier routes. Meta still provides ASR/OCR for all routes. Original slide webcast visuals are retained; three sampled frames cannot establish full video coverage. Period, quotation and accounting-basis gaps are reported separately from transcription numeric preservation.

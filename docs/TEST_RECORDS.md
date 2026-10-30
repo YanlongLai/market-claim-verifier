@@ -59,3 +59,7 @@ Keep the original evidence unchanged. Use a new directory for each run; compare 
 ## Chart diagnosis replay
 
 [Real Tesla chart investigation](evidence/chart-diagnosis-2026-10-30/REPORT.md) preserves original paid outputs and source hashes; new summary explains visual geometry and zero-extraction gaps. No new API calls or accuracy scores.
+
+## Real webcast audio and video
+
+[Microsoft real AV v1](evidence/real-av-v1/REPORT.md) retains the exact 60-second MP4 and derived WAV, official-source provenance, reference captions, six route attempts, all raw outputs and a separate ledger. Same underlying scene, fresh Meta preprocessing per route; no provider-native audio ranking or independent accuracy claim.

@@ -8,14 +8,14 @@ These are **real company materials**, separate from the previous synthetic Apple
 | Tesla Q3 2026 [operating table, page 5](images/tesla-q3-2026-05.png) | Source-faithful PNG, visually inspected | Operating metrics; unsupported metrics must not receive invented SEC evidence |
 | Tesla Q3 2026 [charts, page 23](images/tesla-q3-2026-23.png) | Source-faithful PNG, visually inspected | Axis/series/period extraction; graph-only values may need abstention |
 | Microsoft FY2027 Q1 [earnings slides](https://aka.ms/slidesfy27q1) | Official PPTX downloaded locally; container validated | Convert to PDF/images before ingestion; PPTX is not supported directly |
-| Microsoft FY2027 Q1 [call and transcript](https://www.microsoft.com/en-us/Investor/events/fy-2027/earnings-fy-2027-q1) | Official player and transcript page verified | Real speech, guidance versus reported facts; no recording downloaded yet |
+| Microsoft FY2027 Q1 [call and transcript](https://www.microsoft.com/en-us/Investor/events/fy-2027/earnings-fy-2027-q1) | Official player and transcript page verified | A real 60-second CFO excerpt is now retained as WAV and MP4; [six-run test](../real-av-v1/REPORT.md) |
 | Tesla Q3 2026 [webcast](https://ir.tesla.com/webcast-2026-10-21) | Official replay page verified | Real Q&A and speech; no recording downloaded yet |
 
 ## Provenance and reuse
 
 The three PNGs are unmodified page renderings from Tesla's [official Q3 2026 update PDF](https://assets-ir.tesla.com/tesla-contents/IR/TSLA-Q3-2026-Update.pdf), linked by its [IR results table](https://ir.tesla.com/). Original deck: 33 pages; raw PDF retained locally at `.cache/real-media-2026-10-30/tesla-q3-2026.pdf`. The catalogue records its SHA-256 and reproducible render commands. Tesla owns the slide content; these attributed test excerpts are not relicensed under the repository's MIT code license.
 
-The webcasts are source-discovery entries, **not local MP3/MP4 test files**. No login, stream extraction or browser automation was added. General URL ingestion remains unsupported. A player link or transcript is not evidence that an audio/video path was tested.
+The Microsoft webcast now has a retained 60-second excerpt obtained from its public HLS stream, with original speech and slide visuals. [Inputs and provenance](../../../eval/real-av-v1/README.md) and [results](../real-av-v1/REPORT.md) are separate from this initial catalogue. Tesla remains a link-only candidate. General URL ingestion remains unsupported; this manually prepared evaluation does not add a product web-downloader.
 
 ## Next independent accuracy evaluation gate
 

@@ -64,9 +64,9 @@ Meta Muse models find claims and retrieve evidence. Python checks numbers, perio
 | JPG | 6/6 | 6/6 | 6/6 |
 | WEBP | 6/6 | 6/6 | 6/6 |
 
-**API spend (USD, estimated/reserved)**
+**Paired benchmark and earlier product checks (USD, estimated/reserved; excludes subsequent real AV)**
 
-| Platform | Benchmark | Post-hoc product checks | Total task spend |
+| Platform | Benchmark | Post-hoc product checks | Study subtotal |
 | --- | ---: | ---: | ---: |
 | Meta | $4.236019 | $0.000000 | $4.236019 |
 | Baseten | $1.951966 | $0.147382 | $2.099348 |
@@ -82,7 +82,7 @@ Authorization: $40 per platform. All shared preprocessing is charged to Meta; fa
 
 **File limits:** 128 MiB; audio/video ≤2 hours. These are acceptance limits, not validated accuracy at that scale. [Extensions, vendor capabilities and endpoint caveats](docs/PROVIDERS.md#platform-capability-versus-integration).
 
-**Fresh data and real media:** [SEC snapshot fetched on 2026-10-30](docs/evidence/sec-refresh-2026-10-30/REPORT.md) covers 23 companies and 47 recorded responses; select it explicitly without changing frozen benchmark evidence. [Real issuer media candidates](docs/evidence/real-media-2026-10-30/README.md) include three Tesla slide images and official Microsoft/Tesla presentation/webcast links. Three Tesla pages now have separately recorded unscored diagnostics and post-hoc product checks; linked webcasts have not been evaluated.
+**Fresh data and real media:** [SEC snapshot fetched on 2026-10-30](docs/evidence/sec-refresh-2026-10-30/REPORT.md) covers 23 companies and 47 recorded responses; select it explicitly without changing frozen benchmark evidence. [Real issuer media candidates](docs/evidence/real-media-2026-10-30/README.md) include three Tesla slide images and official Microsoft/Tesla presentation/webcast links. Three Tesla pages now have separately recorded unscored diagnostics and post-hoc product checks; the Microsoft webcast now has a separate [real audio/video test](docs/evidence/real-av-v1/REPORT.md).
 
 ## Key results
 
@@ -676,3 +676,9 @@ The masthead captures the website review scene. The standalone Hover animation i
 Batch local work with the [bounded queue and cost reports](docs/QUEUE_AND_COSTS.md): frozen evidence, per-job budget admission, integrity-checked successful-job reuse and explicit uncertain-outcome handling. This is not a provider Batch API.
 
 **Chart coverage:** OCR retains visible text, not bar heights or series geometry. Reports now explain zero-claim and failed channels with next steps. [Real Tesla chart diagnosis and updated summary](docs/evidence/chart-diagnosis-2026-10-30/REPORT.md); automatic chart-value verification remains planned.
+
+## Real audio and video case
+
+A genuine 60-second Microsoft FY2027 Q1 webcast excerpt and its WAV audio now have six recorded route tests. All transcripts retain 11/11 reference numeric tokens; **this is not accuracy**. No claim received a supported/contradicted final program verdict; missing periods, header quotation failures, OCR and provider errors remain visible.
+
+[Real inputs and full results](docs/evidence/real-av-v1/REPORT.md) · [Chinese diagnosis](docs/evidence/real-av-v1/ANALYSIS.zh-TW.md). One-scene smoke test; audio and visuals are not automatically reconciled. New estimated/reserved spend: $0.296171. Including preceding work: Meta $4.45021510, Baseten $2.15855835, Fireworks $2.03641025; each below $40.

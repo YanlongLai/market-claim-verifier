@@ -64,9 +64,9 @@ Meta Muse 模型找出主張、選擇工具並擷取證據；Python 核對數字
 | JPG | 6/6 | 6/6 | 6/6 |
 | WEBP | 6/6 | 6/6 | 6/6 |
 
-**API 花費（USD，估算／保留額）**
+**配對 benchmark 與早期產品檢查費用（不含後續真實影音）**
 
-| 平台 | Benchmark | 事後產品驗證 | 本次工作合計 |
+| 平台 | Benchmark | 事後產品驗證 | 本輪小計 |
 | --- | ---: | ---: | ---: |
 | Meta | $4.236019 | $0.000000 | $4.236019 |
 | Baseten | $1.951966 | $0.147382 | $2.099348 |
@@ -82,7 +82,7 @@ Meta Muse 模型找出主張、選擇工具並擷取證據；Python 核對數字
 
 檔案上限 **128 MiB**；影音最長 **2 小時**。這是接受範圍，不是該規模下的準確度保證。[詳細格式與平台能力](docs/PROVIDERS.md)。
 
-**新資料與真實素材：** [2026-10-30 取得的 SEC 快照](docs/evidence/sec-refresh-2026-10-30/REPORT.md)涵蓋 23 家公司、47 份回應；需明確指定使用，不改寫舊評測證據。[真實公司素材目錄](docs/evidence/real-media-2026-10-30/README.md)包含三張 Tesla 財報簡報圖片，以及 Microsoft／Tesla 官方簡報、法說會入口。三張 Tesla 頁面已有獨立列示的診斷與事後產品驗證；連結中的法說會影音尚未評測。
+**新資料與真實素材：** [2026-10-30 取得的 SEC 快照](docs/evidence/sec-refresh-2026-10-30/REPORT.md)涵蓋 23 家公司、47 份回應；需明確指定使用，不改寫舊評測證據。[真實公司素材目錄](docs/evidence/real-media-2026-10-30/README.md)包含三張 Tesla 財報簡報圖片，以及 Microsoft／Tesla 官方簡報、法說會入口。三張 Tesla 頁面已有獨立列示的診斷與事後產品驗證；Microsoft 法說會已有另外保存的[真實聲音／影片測試](docs/evidence/real-av-v1/REPORT.md)。
 
 ## 準確度與平台比較
 
@@ -312,3 +312,9 @@ PDF 使用 `ingest report.pdf` 與相同參數。保留頁碼與檔案 hash，�
 **英文 README 是主要版本。** 此頁提供繁體中文導覽；原始主張、證據與模型輸出維持原文。[語言規範](docs/LANGUAGE.md)。
 
 **圖表查核限制：** OCR 保留文字，尚未驗證柱高及序列幾何關係。報告現在區分零主張、未讀到文字與處理錯誤，並提示補救方式。[Tesla 圖表診斷與新版摘要](docs/evidence/chart-diagnosis-2026-10-30/REPORT.md)；自動圖形數值查核仍待開發。
+
+## 真實聲音與影片個案
+
+已加入 Microsoft FY2027 Q1 官方法說會 60 秒原始播出片段及其 WAV，三家各測聲音與影片，共六次。所有轉錄保留 11/11 個參考數值 token，**這不是準確率**。最終沒有 supported／contradicted；期間不足、表頭引用、OCR／供應商失敗均保留。
+
+[真實素材與完整結果](docs/evidence/real-av-v1/REPORT.md) · [中文問題分析](docs/evidence/real-av-v1/ANALYSIS.zh-TW.md)。這是一個場景的操作測試，聲音與畫面尚未自動對齊。新增費用約 $0.296171；包含先前測試的累計估算／保留額：Meta $4.45021510、Baseten $2.15855835、Fireworks $2.03641025，各低於 $40。

@@ -33,7 +33,7 @@ def main():
                 rows=[r for r in s['native_images'] if r['provider']==p and r['format']==fmt and r['split']=='test']
                 counts.append(f"{sum(r['status']=='completed' for r in rows)}/{len(rows)}")
             lines.append('| '+fmt.upper()+' | '+' | '.join(counts)+' |')
-        lines+=['','**'+('API 花費（USD，估算／保留額）' if zh else 'API spend (USD, estimated/reserved)')+'**','', '| '+('平台 | Benchmark | 事後產品驗證 | 本次工作合計' if zh else 'Platform | Benchmark | Post-hoc product checks | Total task spend')+' |','| --- | ---: | ---: | ---: |']
+        lines+=['','**'+('配對 benchmark 與早期產品檢查費用（不含後續真實影音）' if zh else 'Paired benchmark and earlier product checks (USD, estimated/reserved; excludes subsequent real AV)')+'**','', '| '+('平台 | Benchmark | 事後產品驗證 | 本輪小計' if zh else 'Platform | Benchmark | Post-hoc product checks | Study subtotal')+' |','| --- | ---: | ---: | ---: |']
         for p in providers:lines.append(f"| {p.title()} | ${s['actual_estimated_or_reserved_spend_usd'][p]:.6f} | ${extra[p]:.6f} | ${totals[p]:.6f} |")
         if zh:
             lines+=['','每平台授權上限 $40；共用前處理全計入 Meta，失敗也保留。這不是帳單或剩餘 credit。詳細 [ledger／費用合計](docs/evidence/fair-multimodal-v1/task-spend.json)與[官方單價核對](docs/evidence/fair-multimodal-v1/RATE_CHECK.md)。','', '**同一股票多文件：** `review-stock` 可批次查核，`stock-summary` 可無新增模型費用重用報告。股票背景與表格引文修正的[真實 Tesla 摘要](docs/evidence/stock-context-posthoc-2026-10-30/attempt-2/summary/stock-review.html)保留三個 supported、五個 insufficient-evidence 主張及無可查核主張的圖表頁。這是[保留兩次嘗試的事後產品驗證](docs/evidence/stock-context-posthoc-2026-10-30/REPORT.md)，未替換 benchmark 分數，也不是獨立準確率。網頁上傳介面與 AI 敘述摘要仍在計畫中。']
@@ -46,8 +46,8 @@ def main():
         else:
             marker='**公平比較：**' if zh else '**Fair comparison:**'
             a=text.index('\n\n',text.index(marker));text=text[:a]+'\n\n'+'\n'.join(lines)+text[a:]
-        text=text.replace('These new real-media candidates have not been model-evaluated.','Three Tesla pages now have separately recorded unscored diagnostics and post-hoc product checks; linked webcasts have not been evaluated.')
-        text=text.replace('這批真實素材尚未進行模型評測。','三張 Tesla 頁面已有獨立列示的診斷與事後產品驗證；連結中的法說會影音尚未評測。')
+        text=text.replace('These new real-media candidates have not been model-evaluated.','Three Tesla pages now have separately recorded unscored diagnostics and post-hoc product checks; the Microsoft webcast now has a separately recorded real audio/video smoke test in docs/evidence/real-av-v1/REPORT.md.')
+        text=text.replace('這批真實素材尚未進行模型評測。','三張 Tesla 頁面已有獨立列示的診斷與事後產品驗證；Microsoft 法說會已另做真實聲音／影片操作測試，見 docs/evidence/real-av-v1/REPORT.md。')
         p.write_text(text)
     print(json.dumps({'total_task_estimated_or_reserved_usd':totals}))
 if __name__=='__main__':main()

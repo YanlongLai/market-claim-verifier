@@ -74,3 +74,7 @@ The first/root commit is **`7c5670b84e6052db9fa67fd86606fb2ee11ee42c`**, authore
 ## 2026-10-30 — explain unchecked chart content
 
 Added per-channel coverage diagnostics and actionable next steps to ingestion and stock summaries. Retained the real Tesla chart diagnosis and offline summary replay, without changing paid records or claiming chart geometry is verified.
+
+## 2026-10-30 — genuine webcast audio/video corpus
+
+Added a real Microsoft CFO webcast clip and its audio track, preregistered six-case test, retained API inputs/outputs and cost accounting. Coverage diagnostics now also flag unverified geometry in sampled video frames. Real-input period and table-header failures remain visible; no synthetic benchmark scores were replaced.
