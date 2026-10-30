@@ -1,14 +1,14 @@
 # Market Claim Verifier
 
+**Check US-equity financial claims against SEC evidence—with numbers, periods and citations checked by Python.**
 
-[Three-outcome judge walkthrough](docs/evidence/judge-walkthrough/REPORT.md): one official source, matching and changed numbers, and a wrong-period claim. Offline program checks; no live model execution.
-
-Day 5: [delivery plan](docs/DAY5_PLAN.md) · [provider capabilities and prices](docs/PROVIDERS.md). US equities only; planned features are not current capabilities.
-Check financial sentences against SEC filings with Meta Muse Spark and auditable Python checks ([agent](src/claimcheck/agent.py), [checks](src/claimcheck/checks.py)).
+Meta Muse models extract claims, choose tools and draft explanations. The program returns `supported`, `contradicted` or `insufficient_evidence`, with the source facts behind each decision. It checks financial assertions; it does not predict returns or prove that a forecast will happen.
 
 [![Tests: offline suite](docs/badges/tests.svg)](.github/workflows/verify.yml)
 [![License: MIT](docs/badges/license.svg)](LICENSE)
 [![Built for the Meta AI hackathon](docs/badges/hackathon.svg)](BUILD_LOG.md)
+
+[Saved demo](https://hackathon.dappgo.com/) · [Explore 357 claims](https://hackathon.dappgo.com/explorer/) · [Judge guide](JUDGES.md) · [Quick start](#run-it)
 
 <!-- figure:hero:start -->
 ![Editorial illustration of a sentence connected to filing sheets](docs/figures/hero.png)
@@ -16,41 +16,150 @@ Check financial sentences against SEC filings with Meta Muse Spark and auditable
 *AI-generated illustration: a sentence being checked against filings.* The reusable prompt is recorded in [`docs/prompts/hero-image.md`](docs/prompts/hero-image.md).
 <!-- figure:hero:end -->
 
+## The problem
+
+A plausible financial sentence can still use the wrong quarter, unit or comparison. This project grew out of a failed assertion check in DappGo's AI-written commentary. A fluent model explanation is not enough: each checkable number needs a source, a matching period and a reproducible comparison.
+
 ## Try it
 
-[Website / saved demo](https://hackathon.dappgo.com/) · [Results explorer](https://hackathon.dappgo.com/explorer/) · **Demo video: publication link pending** ([records and opening disclosure](demo/JUDGE_INTRO.md)). The [site source](docs/site/index.html) and [explorer data](docs/explorer/data.json) are included here.
+Start with the [three-outcome walkthrough](docs/evidence/judge-walkthrough/REPORT.md): one official issuer source, a matching claim, a changed-number claim and a wrong-period claim. It runs offline with deterministic checks; it is not a live model demonstration.
+
+Then open [claim G0119](https://hackathon.dappgo.com/explorer/#G0119) to inspect the original sentence, corrected reference label, six systems and the cited SEC filing. The explorer is a **saved replay**, with English by default and a Traditional Chinese switch. **Demo video publication is pending** ([record](demo/JUDGE_INTRO.md)).
+
+## What it does
+
+1. **Extract** individual assertions and preserve their original quotes.
+2. **Retrieve** SEC facts or admitted issuer-release quotes for the entity and period.
+3. **Check** numbers, units, precision, comparisons and evidence IDs in Python.
+4. **Explain** the verdict with source locations, limitations, cost and traces.
+
+<!-- figure:verdict-cards:start -->
+![Two real runs rendered as evidence-backed verdict cards](docs/figures/verdict-cards.svg)
+
+*Two real traces, run 2026-10-27; each card shows the program verdict and cited SEC evidence.*
+<!-- figure:verdict-cards:end -->
+
+A completed run does not mean every assertion was found. Ingestion reports show accepted, program-checked, rejected and failed claim counts; full-content recall stays unknown without independently labeled input.
+
+## Support and boundaries
+
+| Input | Available today | Main boundary |
+| --- | --- | --- |
+| Text / Markdown | English and Chinese financial claims | Extraction may miss assertions; opinions are not factual verdicts |
+| Images | PNG, JPEG, WebP through Meta OCR | Reading a number does not authenticate it |
+| PDF | Native text, with page locations | No scanned-page OCR or cross-page period propagation; 100-page cap |
+| Audio | File transcription, then financial checks | Whole-turn timestamps; speaker labels are not verified identities |
+| Video | Audio plus three sampled frames | Not exhaustive visual coverage |
+| Web links | No general URL ingestion | Login pages and arbitrary HTML are deferred |
+
+Local files are limited to **128 MiB**; audio/video to **two hours**. Those are acceptance limits, not accuracy guarantees. See [input formats and provider capabilities](docs/PROVIDERS.md) for extensions and integration status.
+
+**Evidence is a separate input.** Current financial authority is SEC XBRL (L1–L3) and admitted SEC 8-K earnings releases (L4). An uploaded PDF or screenshot is not automatically trusted evidence. An issuer outlook establishes what the issuer stated, not its future outcome. [Source policy](docs/DATA_SOURCES.md) · [Evidence export contract](docs/EVIDENCE_RECORDS.md).
+
+## Key results
+
+Original v2 run: **357 claims across 23 companies**, including **91 development / 266 held-out** claims. All-case scores below use corrected labels, including two documented gold corrections. They compare the complete agent path with single-shot answers; they do not isolate individual rules.
+
+| Provider / Meta model | Agent accuracy | Single-shot accuracy | Mean agent cost / claim | Mean agent latency |
+| --- | ---: | ---: | ---: | ---: |
+| Baseten / Muse Spark Open | 323/357 · **90.5%** | 20.7% | **$0.020** | **12 s** |
+| Fireworks / Muse Spark Open | 323/357 · **90.5%** | 19.9% | **$0.020** | **67 s** |
+| Meta API / Muse Spark 1.3 | 297/357 · **83.2%** | 44.3% | **$0.026** | **39 s** |
+
+Historical measurements, not current service guarantees or prices per document. One document may contain many claims. [Full report and intervals](docs/evidence/eval-v2-2026-10-27/REPORT.md) · [Original registered labels](docs/evidence/eval-v2-2026-10-27/REPORT-registered-gold.md).
+
+The [later rerun](docs/evidence/eval-v2-2026-10-28-r2-posthoc/REPORT.md) followed failure inspection and is **post-hoc**. L4 and multimedia results are development regressions, not new held-out accuracy claims. Long-audio extraction still misses assertions; coverage is not verdict accuracy.
+
+## Cost, speed and provider choice
+
+| Work | Meta | Baseten | Fireworks |
+| --- | --- | --- | --- |
+| Text extraction and verification | Integrated | Integrated | Integrated |
+| Image OCR in this repo | Integrated | Not routed here | Not routed here |
+| Audio transcription in this repo | Separate Meta ASR | Uses Meta preprocessing | Uses Meta preprocessing |
+| Provider-native batch | Not integrated | Not integrated | Not integrated |
+
+Standard Spark rates checked **2026-10-30**: all three integrated text routes list **$1.25 input / $0.15 cached input / $4.25 output per million tokens**. Meta ASR lists **$0.18 per audio hour**, before extraction and verification costs. Ledger estimates can retain conservative reservations on failures; they are not provider invoices.
+
+Total cost includes OCR/ASR, claim extraction, every agent turn and retries. Concurrent requests do not automatically receive batch discounts. Fireworks advertises discounted batch service, but this repo has no batch adapter or validated model/account batch run. [Official source links, model capabilities, pricing and scale limits](docs/PROVIDERS.md).
+
+## Run it
+
+Prerequisites: **Python 3.12–3.14**, **uv**, and **Node 22+** for the complete verifier. Audio/video additionally requires FFmpeg/ffprobe. Start from a local checkout.
+
+**1. Verify the repository without model credentials.**
 
 ```sh
 sh scripts/verify.sh
 ```
 
-One command runs the offline tests, rebuilds/checks figures, and checks that rebuilt site data is byte-identical ([verifier](scripts/verify.py)). [Prerequisites and expected output](AGENTS.md#offline-verification): Python 3.12–3.14, uv, Node 22+; first run installs locked dependencies.
+First use installs locked dependencies. Tests then run offline in a disposable copy, checking fixtures, Python/Node suites, figures, generated data and links. This verifies reproducibility, not live model accuracy. [Expected output](AGENTS.md#offline-verification).
 
-## Key results
+**2. Install and inspect a request without spending API credit.**
 
-Original v2 run, **357 claims / six systems**, scored against the corrected gold ([full report](docs/evidence/eval-v2-2026-10-27/REPORT.md), [registered-gold report](docs/evidence/eval-v2-2026-10-27/REPORT-registered-gold.md)):
+```sh
+uv sync
+uv run python -m claimcheck verify --provider baseten --dry-run \
+  'Meta Q2 2025 revenue was $47.5B'
+```
 
-| Meta model / provider | Agent | Single-shot, no tools |
-| --- | --- | --- |
-| Muse Spark Open · Baseten | **323/357 = 90.5%** | 74/357 = 20.7% |
-| Muse Spark Open · Fireworks | **323/357 = 90.5%** | 71/357 = 19.9% |
-| Muse Spark 1.3 · Meta Model API | **297/357 = 83.2%** | 158/357 = 44.3% |
+**3. Run a bounded live check.** Set the selected provider credential outside the repository: `MODEL_API_KEY`, `BASETEN_API_KEY` or `FIREWORKS_API_KEY`.
 
-This includes development claims; **266** claims are held out. The [later agent rerun](docs/evidence/eval-v2-2026-10-28-r2-posthoc/REPORT.md) is post-hoc, after failure analysis. [Scope, corrections and limitations](JUDGES.md#limits-to-keep-in-view).
+```sh
+uv run python -m claimcheck verify --provider baseten --budget 1 \
+  'Meta Q2 2025 revenue was $47.5B'
+```
 
-**How Meta models are used.** Muse Spark 1.3 via Meta Model API and open-weight Muse Spark Open via Baseten/Fireworks decompose claims, choose SEC tools and draft cited verdicts; Python checks the numbers and evidence ([provider/model record](docs/evidence/eval-v2-2026-10-27/manifest.json), [program checks](src/claimcheck/checks.py)). [Media-production credits](CREDITS.md#media-and-dependencies) describe the separate offline asset tooling.
+Live checks require network access and may incur charges. Trace and budget records are saved under `runs/`. Use `--help` for model, reasoning and token limits.
 
-**Judges: [start with JUDGES.md](JUDGES.md)** for the four criteria, evidence links and build-window disclosure. AI readers: [llms.txt](llms.txt) and [AGENTS.md](AGENTS.md). [MIT license](LICENSE) · [SEC/data credits](CREDITS.md) · [Changelog](CHANGELOG.md) · [Planned roadmap](ROADMAP.md).
+## Check a whole post
 
-## Project overview
+```sh
+uv run python -m claimcheck post examples/posts/bigtech-thread.txt \
+  --provider baseten --budget 1
+```
 
-`market-claim-verifier` turns a financial sentence into atomic sub-claims, retrieves the relevant SEC EDGAR XBRL facts, and uses Muse Spark to draft a cited verdict. Python then rechecks the cited numbers and returns `supported`, `contradicted`, or `insufficient_evidence`. Built during the Meta Global AI Developer Hackathon starting 2026-10-27.
+The output includes `report.json` and `report.html`, original quotes and links to program checks. Extraction is bounded; do not assume every financial assertion was found. [Recorded English and Chinese examples](docs/evidence/posts-2026-10-28/).
 
-## The problem
+## Other inputs
 
-- DappGo's AI-written stock commentary on 2026-10-26 failed its internal fact-assertion check; this repository is the focused response.
-- One sentence can contain several atomic assertions: a value, a period-to-period change, and a record or first-time claim.
-- A model can draft the explanation, but numbers, comparators, evidence IDs, budget reservations, and the final verdict need an auditable program path.
+```sh
+uv run python -m claimcheck ingest tests/fixtures/multimodal/example-post.png \
+  --provider baseten --budget 1 --out runs/example-input
+```
+
+Media preprocessing additionally requires Meta credentials, even when text verification uses another provider. Outputs are `ingest.json` and `ingest.html`; existing output directories are not overwritten. Consult [supported inputs](docs/PROVIDERS.md#current-repository-input-contract) before running your own file.
+
+## Local PDF input
+
+Use `ingest report.pdf` with the same provider/budget flags. Native text retains page locations and the file hash. Encrypted files are rejected; blank/scanned pages remain visibly unchecked. Limits are 100 pages, 100,000 extracted characters per page and 1,000,000 per document. Tables and reading order require review.
+
+## Limitations
+
+- SEC tagging errors, amended filings and fiscal calendars can affect the evidence; source provenance is part of the result.
+- Missing periods, unsupported metrics and unresolved evidence can yield `insufficient_evidence`.
+- Multimedia tests use a small set of development controls, not a general real-call benchmark.
+- Three video frames do not cover every slide. Speaker labels do not establish who spoke.
+- This hackathon scope is US equities; Taiwan data and general web scraping are outside it.
+
+## Extend and contribute
+
+Read the [extension guide](docs/EXTENDING.md), [evidence record contract](docs/EVIDENCE_RECORDS.md) and [prioritized delivery plan](docs/DAY5_PLAN.md). New sources need authority rules, immutable snapshots, exact locators and independent evaluation—not only a new prompt. [Roadmap](ROADMAP.md) · [Changelog](CHANGELOG.md).
+
+## Built during the hackathon
+
+All repository code and demo work were created for the event; no repository code pre-existed. [Build log](BUILD_LOG.md) · [dated history](CHANGELOG.md) · [MIT code license](LICENSE) · [data and media credits](CREDITS.md).
+
+## Language policy
+
+English is primary. Chinese supplementary explanations are welcome; original evidence and model outputs keep their recorded language. [Language policy](docs/LANGUAGE.md). 中文補充：介面與文件以英文為主；證據保持原文，避免翻譯改變查核含義。
+
+## Technical reference
+
+The following expandable sections retain detailed rules, historical experiments and reproducible diagrams. They are supporting material, not additional current benchmark claims.
+
+<details>
+<summary>L4 earnings-release evidence</summary>
 
 ## L4 earnings-release evidence
 
@@ -60,73 +169,11 @@ The [source and comparison rules](docs/DATA_SOURCES.md#l4-parsing-and-decision-r
 
 The [registered L4 run](docs/evidence/eval-l4-2026-10-29/ANALYSIS.md) scored **31/32 (96.9%; Wilson 95% CI 84.3–99.4%)**, with **0/19 false-supported** results, for **$0.7157**. This is a fixture-based regression benchmark; the one routing miss and post-run changes are retained and explained.
 
-## Other inputs
 
-```sh
-python -m claimcheck ingest tests/fixtures/multimodal/example-post.png --budget 1 --out runs/example-input
-```
+</details>
 
-`ingest <file>` accepts UTF-8 text, PNG/JPEG/WebP screenshots, audio and video. In a linked worktree using the shared `.venv`, run `PYTHONPATH=src .venv/bin/python -m claimcheck ingest ...` to use this checkout. Outputs are `ingest.json` and `ingest.html`, with six stage outcomes, source quotes/offsets, cost, latency and links to the existing post-check reports. An existing ingest output is never overwritten.
-
-Meta's API **accepted images** in the [13-run probe](docs/evidence/multimodal-2026-10-29/REPORT.md). Muse Spark reads screenshots; `muse-voice-transcribe-1.0` supplies whole-turn timestamps and unverified speaker labels, with an English language bias. Video uses ffmpeg/ffprobe to extract mono PCM audio and three sampled frames; speech and frames are checked separately. Numbers remain **heard/read input values** until Python normalizes them, and financial verdicts still require SEC L1–L4 evidence. `--provider baseten` uses Meta Muse Spark Open for text checks and Meta's API for OCR/ASR. Budget is cumulative in `runs/ingest-ledger.jsonl`; mixed-provider runs split it equally between Meta and Baseten.
-
-The [seven-run hardening probe](docs/evidence/multimodal-2026-10-30/REPORT.md) retains document/turn periods and slide headings during extraction. A unique nearby stated period can be attached with source spans; a numeric financial claim without a dated period now receives `insufficient_evidence` with `missing_period` rather than a guessed latest quarter. The number guard still rejects values or date days absent from the selected quote. Transient HTTP 500/502/503/504 errors get at most three reserved, traced attempts with 1s/2s backoff; exhausted failures remain failures.
-
-The known FY2025 Q3 growth error remains fixed. Earlier numeric-assertion coverage rose from **1/5 to 5/5** on short audio and **2/9 to 8/9** on row-only video. The [recall follow-up](docs/evidence/multimodal-2026-10-30b/REPORT.md) fixes the text control's deliberate **$1.67 EPS** error: the program now returns `contradicted`. The 12-minute full-media control improves guarded/program-checked coverage **19/60 → 44/60**; its ASR recovers **55/60** expected mentions with nine extras. A final text recheck of that exact frozen ASR transcript reaches **50/60** guarded/program-checked numeric assertions. These repeats contain only a few distinct facts; coverage is not accuracy or verified speaker identity. The first follow-up media attempt exhausted its extraction output limit and remains a recorded failure; insufficient-evidence verdicts and remaining recall misses are retained. New estimated spend is **$1.55712625**, combined multimodal spend **$3.85742535**, within the **$8 new / $20 total** caps.
-
-Limits: **128 MiB** local input and **two hours** of audio/video. The default is eight unique checks per channel for inputs up to 6,000 characters; longer inputs get eight per extraction window under the shared dollar cap. Long extraction prefers turns/paragraphs within **1,400 characters**, with **200-character overlap**, stated period context outside quotable text, and low reasoning effort. Distinct quotes survive; overlapping duplicates merge and identical rewrites reuse one verification. Semantic paraphrases can still be checked separately. Audio over ten minutes uses <=600-second PCM uploads with **10-second overlaps**, absolute whole-turn timestamps and chunk-scoped speaker labels. Exact overlap words are deduplicated; unresolved overlaps remain marked. ffmpeg/ffprobe are required for decoding. No word timestamps, verified CFO identity, real-call benchmark or exhaustive video coverage; the earlier two-voice control still merged both voices into A. Test media is self-made; sandboxed macOS `say` produced empty audio, so the probe explicitly used an [offline formant-synthesis fallback](tests/fixtures/multimodal/generation.json). The [720-second fixture](tests/fixtures/multimodal/long-generation.json) repeats that narration with silence. No real earnings-call media was downloaded.
-
-## What it does
-
-<!-- diagram:how-a-claim-is-checked:start -->
-```mermaid
-flowchart LR
-    C["Claim text"] --> D["Muse Spark decomposes<br/>into sub-claims"]
-    D --> T["Tool calls:<br/>lookup_fact · compute_change<br/>history_rank · list_periods"]
-    T --> E["SEC EDGAR XBRL facts<br/>(cached, SHA-256)"]
-    E --> M["Muse Spark drafts<br/>cited verdict"]
-    M --> P["Program check:<br/>stated number + precision<br/>comparator, tolerance, sign,<br/>evidence IDs"]
-    P --> V["Final verdict:<br/>supported · contradicted<br/>· insufficient_evidence"]
-    B["Budget ledger<br/>reserve-before-call"] -. reserve .-> D
-    B -. reserve .-> M
-    D --> R["Trace file:<br/>requests, tools, usage,<br/>cost, latency"]
-    T --> R
-    M --> R
-    P --> R
-
-    classDef neutral fill:#e8edf2,stroke:#52606d,color:#1f2933;
-    classDef model fill:#dfeaf3,stroke:#466a83,color:#1f2933;
-    classDef source fill:#e8eef3,stroke:#617487,color:#1f2933;
-    classDef program fill:#f3eadc,stroke:#9b7a4d,color:#1f2933;
-    classDef audit fill:#e6e9ed,stroke:#66727e,color:#1f2933;
-    class C,D,T neutral;
-    class M model;
-    class E source;
-    class P,V program;
-    class B,R audit;
-```
-<!-- diagram:how-a-claim-is-checked:end -->
-
-The model selects tools and drafts the explanation. The program owns the numeric comparison, evidence validity, and claim-level aggregation. The product view is the verdict card:
-
-<!-- figure:verdict-cards:start -->
-![Two real runs rendered as evidence-backed verdict cards](docs/figures/verdict-cards.svg)
-
-*Two real traces, run 2026-10-27; each card shows the program verdict and cited SEC evidence.*
-<!-- figure:verdict-cards:end -->
-
-See the [flow source](docs/diagrams/how-a-claim-is-checked.mmd).
-
-### Gap score
-
-Each program check includes a deterministic gap assessment: relative error for levels, one-sided shortfall or
-overshoot for thresholds, and percentage-point error for percent changes. Within tolerance is **Exact (100)**.
-Otherwise the bands are **Minor** (<2% / <1 pp), **Moderate** (2–<10% / 1–<5 pp), **Major** (10–50% / 5–20 pp,
-or wrong direction), and **Severe** (>50% / >20 pp). Otherwise the score is `max(0, 100 − 200 × relative_gap)`
-or `max(0, 100 − 4 × pp_gap)`, with another 30 points deducted for wrong direction (floor 0).
-This display signal leaves the verdict unchanged; CAN'T CHECK has no score. Existing reports can be updated
-offline with `claimcheck.post.refresh_evidence(report_dir)`; `python docs/scripts/build_site.py --offline`
-rebuilds the cards from saved checks and trace metadata without modifying the source reports.
+<details>
+<summary>Real results</summary>
 
 ## Real results
 
@@ -150,7 +197,7 @@ rebuilds the cards from saved checks and trace metadata without modifying the so
 *Evaluation: n = 357 all claims, run 2026-10-28.*
 <!-- figure:eval-summary:end -->
 
-- **Tools plus program checks are what make the model reliable.** On the same claims, agent accuracy beats single-shot by:
+- **The complete agent path outperformed single-shot on this recorded set.** On the same claims, agent accuracy beats single-shot by:
   - Meta API: **+38 points** (95% paired bootstrap CI +33 to +44).
   - Baseten: **+70** (+65 to +74).
   - Fireworks: **+70** (+65 to +76).
@@ -254,6 +301,12 @@ sequenceDiagram
 
 This sequence is the committed [`20261027T222758Z-8959a100.json`](docs/evidence/2026-10-27/20261027T222758Z-8959a100.json) run. Full source: [`docs/diagrams/real-run-sequence.mmd`](docs/diagrams/real-run-sequence.mmd).
 
+
+</details>
+
+<details>
+<summary>How Meta models are used</summary>
+
 ## How Meta models are used
 
 The agent loop is provider-neutral. Both paths record the same tool calls, evidence IDs, usage, cost, latency, and final program checks.
@@ -293,6 +346,12 @@ flowchart LR
 
 Full source: [`docs/diagrams/providers.mmd`](docs/diagrams/providers.mmd).
 
+
+</details>
+
+<details>
+<summary>Why you can trust a verdict</summary>
+
 ## Why you can trust a verdict
 
 The model must cite the numeric evidence it used. Python parses the stated number and precision, applies direction words such as “fell” or “up,” checks the comparator, and rejects missing or ambiguous evidence. Any contradicted sub-claim makes the overall result contradicted; all supported sub-claims make it supported; otherwise the result is insufficient evidence.
@@ -331,6 +390,12 @@ flowchart LR
 
 Full source: [`docs/diagrams/model-vs-program.mmd`](docs/diagrams/model-vs-program.mmd).
 
+
+</details>
+
+<details>
+<summary>Evidence you can audit</summary>
+
 ## Evidence you can audit
 
 Every number in a verdict carries its provenance ([`docs/DATA_SOURCES.md`](docs/DATA_SOURCES.md), [`sources/registry.yaml`](sources/registry.yaml)):
@@ -351,40 +416,11 @@ Each fact also reports how many filings confirm it, whether a later filing revis
 *Data-quality checks per issuer, SEC companyfacts snapshot 2026-10-27.*
 <!-- figure:data-quality:end -->
 
-## Built during the hackathon
 
-[`BUILD_LOG.md`](BUILD_LOG.md) is the dated record of the work. No code in this repository predates 2026-10-27; the log covers the EDGAR client, agent loop, three providers, deterministic checks, evaluation harness, provenance and data-quality checks, and the documentation and visuals in this submission.
+</details>
 
-## Run it
-
-```bash
-uv sync
-.venv/bin/python -m claimcheck edgar META revenue 2025Q2
-.venv/bin/python -m claimcheck verify --dry-run 'Meta Q2 2025 revenue was $47.5B, up 22% YoY'
-.venv/bin/python -m claimcheck verify --provider baseten --dry-run 'Meta Q2 2025 revenue was $47.5B'
-```
-
-For a live run, keep the model key outside the repository (`MODEL_API_KEY` for Meta, `BASETEN_API_KEY` for Baseten, `FIREWORKS_API_KEY` for Fireworks). Keys are never written to traces or the append-only budget ledger. A live run writes its trace and ledger under `runs/`.
-
-`verify` also accepts `--model`, `--budget`, `--max-output-tokens`, and `--reasoning-effort`. Tool turns default to 4,000 output tokens and the final verdict to 3,000; the CLI flag or environment setting can override both.
-
-## Check a whole post
-
-Paste a social post or article (English or Chinese); every financial claim in it is found and checked:
-
-```bash
-.venv/bin/python -m claimcheck post examples/posts/bigtech-thread.txt --provider baseten
-```
-
-- **The model extracts.** Muse Spark lists each claim twice: the exact quote from the post, and a standalone English sentence.
-- **The program decides what gets checked.** It rejects a claim unless its quote is an exact span of the post and every number in the rewritten sentence appears in that quote. Unit rescaling is allowed (7,597 億 = 759.7 billion). Years and quarters may come from a headline elsewhere in the post.
-- **Forecasts and opinions are labeled, not verified.**
-- **Reported facts go through the same agent and program checks as above.** The output is `report.json` plus `report.html`: the post with every claim highlighted by verdict, linked to a card showing the stated number, the SEC value, the tolerance, and the filing on SEC EDGAR.
-
-Example runs are in [`docs/evidence/posts-2026-10-28/`](docs/evidence/posts-2026-10-28/).
-
-- **The English thread (Baseten), 4 of 4 checkable claims right.** These include NVIDIA "more than double" (true) and Tesla "grew 3% in 2025" (false). The forecast and the valuation opinion were skipped.
-- **The Chinese post (Meta API).** Microsoft FY2024 $245.1B, +16%: supported. Coca-Cola "over 500 億": contradicted, actual $47.1B. Meta 2024 net income "623 億": contradicted, because the filed $62.36B rounds to 624 億.
+<details>
+<summary>Evaluation</summary>
 
 ## Evaluation
 
@@ -409,6 +445,12 @@ Each run records a manifest (code commit, model, prompts with SHA-256, data snap
 
 `--dry-run` prints the plan and worst-case budget without a key or network. A failed or budget-stopped pair counts as wrong and is never silently retried.
 
+
+</details>
+
+<details>
+<summary>Technical notes</summary>
+
 ## Technical notes
 
 `lookup_fact` returns period type and duration. Additive flows can be derived from annual minus nine-month YTD or from YTD differences, with source components retained; EPS and share counts are not derived. Calendar labels (`2025Q3`) use SEC frames when present and dates otherwise; fiscal labels (`FY2027Q1`) are derived from each period's dates and the issuer's fiscal year-end, because SEC `fy`/`fp` describe the filing rather than the period. A quarter whose value equals its covering annual value is treated as a tagging error and excluded. The EDGAR client reads local cache files when available, sends the configured contact User-Agent for a cache miss, and records the source SHA-256 in evidence.
@@ -417,14 +459,51 @@ Tool turns reserve worst-case cost before every model call, then reconcile actua
 
 This project is not investment advice.
 
-## Local PDF input
 
-`python -m claimcheck ingest report.pdf --help` lists the same provider and budget options as other local inputs. Native text is extracted page by page, with page numbers in claim source locations and the original file hash in the ingestion report. Limits: 100 pages, 128 MiB, 100,000 extracted characters per page and 1,000,000 per document. Encrypted PDFs are rejected. Blank/scanned pages remain visibly unchecked; tables and reading order need review, and period context does not cross page boundaries. Uploaded PDFs are claims, not automatically authoritative financial evidence.
+</details>
 
-To adapt the project, read [Building your own verifier](docs/EXTENDING.md); the guide distinguishes reusable modules from the planned connector contract.
+<details>
+<summary>Architecture and claim-processing details</summary>
 
-Versioned evidence: [record contract and offline US-issuer export](docs/EVIDENCE_RECORDS.md). SEC release quotes now carry an immutable-format audit record; numeric verdict authority remains with the existing program checks.
+<!-- diagram:how-a-claim-is-checked:start -->
+```mermaid
+flowchart LR
+    C["Claim text"] --> D["Muse Spark decomposes<br/>into sub-claims"]
+    D --> T["Tool calls:<br/>lookup_fact · compute_change<br/>history_rank · list_periods"]
+    T --> E["SEC EDGAR XBRL facts<br/>(cached, SHA-256)"]
+    E --> M["Muse Spark drafts<br/>cited verdict"]
+    M --> P["Program check:<br/>stated number + precision<br/>comparator, tolerance, sign,<br/>evidence IDs"]
+    P --> V["Final verdict:<br/>supported · contradicted<br/>· insufficient_evidence"]
+    B["Budget ledger<br/>reserve-before-call"] -. reserve .-> D
+    B -. reserve .-> M
+    D --> R["Trace file:<br/>requests, tools, usage,<br/>cost, latency"]
+    T --> R
+    M --> R
+    P --> R
 
-## Language policy
+    classDef neutral fill:#e8edf2,stroke:#52606d,color:#1f2933;
+    classDef model fill:#dfeaf3,stroke:#466a83,color:#1f2933;
+    classDef source fill:#e8eef3,stroke:#617487,color:#1f2933;
+    classDef program fill:#f3eadc,stroke:#9b7a4d,color:#1f2933;
+    classDef audit fill:#e6e9ed,stroke:#66727e,color:#1f2933;
+    class C,D,T neutral;
+    class M model;
+    class E source;
+    class P,V program;
+    class B,R audit;
+```
+<!-- diagram:how-a-claim-is-checked:end -->
 
-Public documentation and the results explorer use English by default. The explorer offers a Traditional Chinese version and preserves the selected claim when switching languages. Original claims, quotations, model outputs and recorded evidence are not translated or rewritten. Chinese supplementary explanations may accompany English documentation.
+### Gap score
+
+Each program check includes a deterministic gap assessment: relative error for levels, one-sided shortfall or
+overshoot for thresholds, and percentage-point error for percent changes. Within tolerance is **Exact (100)**.
+Otherwise the bands are **Minor** (<2% / <1 pp), **Moderate** (2–<10% / 1–<5 pp), **Major** (10–50% / 5–20 pp,
+or wrong direction), and **Severe** (>50% / >20 pp). Otherwise the score is `max(0, 100 − 200 × relative_gap)`
+or `max(0, 100 − 4 × pp_gap)`, with another 30 points deducted for wrong direction (floor 0).
+This display signal leaves the verdict unchanged; CAN'T CHECK has no score. Existing reports can be updated
+offline with `claimcheck.post.refresh_evidence(report_dir)`; `python docs/scripts/build_site.py --offline`
+rebuilds the cards from saved checks and trace metadata without modifying the source reports.
+
+
+</details>
