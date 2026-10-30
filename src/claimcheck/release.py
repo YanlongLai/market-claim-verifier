@@ -344,4 +344,7 @@ class ReleaseService:
             raise ReleaseError("span failed deterministic re-extraction")
         value = {**stored, **valid[0], "span_verified": True}
         value["value"] = value["low"] if value["low"] == value["high"] else None
+        from .evidence import SecReleaseConnector
+        value["evidence_record"] = SecReleaseConnector().export(
+            quote=value, raw=raw, text=doc.text, metadata=meta).to_dict()
         return value

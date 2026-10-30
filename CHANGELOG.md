@@ -41,3 +41,7 @@ The first/root commit is **`7c5670b84e6052db9fa67fd86606fb2ee11ee42c`**, authore
 - Ingestion JSON/HTML now separates proposed, accepted, program-checked, rejected and failed claims. Full-content recall remains explicitly unknown rather than inferred from extracted rows.
 
 - Added local native-text PDF ingestion with page provenance, explicit unreadable-page errors and encrypted/malformed input rejection. No general URL ingestion or PDF OCR is claimed.
+
+- Added the versioned evidence export contract and SEC release connector, wired into verified L4 quotes. Includes source/text hashes, quote locators, fact ranges and authority boundaries, plus a no-network META fixture export example.
+
+- Explorer now defaults to English and offers Traditional Chinese with preserved claim deep links; recorded evidence remains unchanged.

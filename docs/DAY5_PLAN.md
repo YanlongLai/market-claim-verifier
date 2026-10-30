@@ -13,7 +13,7 @@ Check US-equity financial claims, show exact evidence and clearly disclose what 
 | 1 | Implemented in this iteration | Public provider/modality/pricing comparison | Official source links, dated prices, platform capability separate from repository integration; no credit balance claims |
 | 2 | Implemented in this iteration | Honest ingestion coverage summary | JSON and HTML show proposed, accepted, checked and failed claim counts; unknown full-content recall never becomes 100% |
 | 3 | Implemented in this iteration | Local PDF input | Page-scoped text and original-file hash; scanned/empty pages explicitly unsupported until OCR; limits and parser errors tested |
-| 4 | Planned | Evidence record interface and one US issuer document connector | Immutable source snapshot, publisher, time, locator, units/period; arbitrary uploads do not become authoritative; original SEC regression unchanged |
+| 4 | Implemented | Evidence record interface and one US issuer document connector | Immutable source snapshot, publisher, time, locator, units/period; arbitrary uploads do not become authoritative; original SEC regression unchanged |
 | 5 | Planned | Complete evidence-to-verdict judge example | One official US issuer document, one false claim, one supported claim and one insufficient-evidence case; clickable source locations and cost breakdown |
 | 6 | Planned | Versioned policy and as-of time | Exact entity/unit/period rules remain mandatory in every mode; historical/restated facts distinguished |
 | 7 | Planned | Cost breakdown and bounded job queue | Reserved versus estimated/billed amounts distinguished; cache keys include model/prompt/policy/evidence versions; resume without duplicate successful calls |
@@ -35,8 +35,16 @@ Full-content recall has no ground-truth denominator on arbitrary user inputs. Cl
 
 ## Contributor handoff
 
-The [extension guide](EXTENDING.md) describes a future connector contract and the existing reusable modules. It is documentation, not a completed evidence-plugin SDK.
+The [extension guide](EXTENDING.md) describes reusable modules. The [evidence contract and first SEC connector](EVIDENCE_RECORDS.md) are implemented; a general plugin registry and non-SEC sources remain planned.
 
 ## Verification receipt — 2026-10-30
 
 `sh scripts/verify.sh` passed: 846 product tests, 149 demo Python tests, 55 Node tests; fixture hashes, figure rebuild/check, three byte-identical generated outputs and Markdown links passed. The extension guide was added during the isolated run; a subsequent link check covered all 101 Markdown files and 770 local links/anchors. No model calls, paid inference or SEC fetches were used. This is offline regression verification, not a new PDF financial-accuracy benchmark.
+
+## Language and presentation
+
+English is the primary language for judge-facing pages and documentation. The explorer retains a Traditional Chinese switch with claim deep links. Preserve original evidence and model outputs in their recorded language; optional Chinese explanations must not replace English documentation.
+
+### Milestone 4 verification — 2026-10-30
+
+`sh scripts/verify.sh` passed with 855 product tests, 149 demo Python tests and 55 Node tests. Fixture checks, figures, three byte-identical generated outputs and all 778 local links passed. The META offline export was repeated successfully with identical record identity. No model calls or live SEC retrievals were performed; this is source-integrity/regression validation, not a new accuracy benchmark.

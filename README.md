@@ -420,3 +420,9 @@ This project is not investment advice.
 `python -m claimcheck ingest report.pdf --help` lists the same provider and budget options as other local inputs. Native text is extracted page by page, with page numbers in claim source locations and the original file hash in the ingestion report. Limits: 100 pages, 128 MiB, 100,000 extracted characters per page and 1,000,000 per document. Encrypted PDFs are rejected. Blank/scanned pages remain visibly unchecked; tables and reading order need review, and period context does not cross page boundaries. Uploaded PDFs are claims, not automatically authoritative financial evidence.
 
 To adapt the project, read [Building your own verifier](docs/EXTENDING.md); the guide distinguishes reusable modules from the planned connector contract.
+
+Versioned evidence: [record contract and offline US-issuer export](docs/EVIDENCE_RECORDS.md). SEC release quotes now carry an immutable-format audit record; numeric verdict authority remains with the existing program checks.
+
+## Language policy
+
+Public documentation and the results explorer use English by default. The explorer offers a Traditional Chinese version and preserves the selected claim when switching languages. Original claims, quotations, model outputs and recorded evidence are not translated or rewritten. Chinese supplementary explanations may accompany English documentation.

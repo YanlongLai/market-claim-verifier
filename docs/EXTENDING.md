@@ -1,12 +1,12 @@
 # Building your own verifier
 
-The current product checks US-equity financial claims against SEC evidence. Changing a system prompt alone does not make it a reliable verifier in another domain. The extension interfaces below are a design contract, not an already implemented plugin SDK.
+The current product checks US-equity financial claims against SEC evidence. Changing a system prompt alone does not make it a reliable verifier in another domain. The [common evidence export interface and SEC connector](EVIDENCE_RECORDS.md) are implemented. A general plugin SDK and new non-SEC source integration remain planned.
 
 ## Start with an explicit question
 
 Choose a narrow claim family, such as whether a US issuer reported a revenue value for a particular fiscal quarter. Specify the entity identifier, metric, units, period, supported comparisons and authoritative source. Distinguish “the issuer said this” from “this is true” and from “this forecast will happen.”
 
-## Proposed evidence contract
+## Evidence contract
 
 Every connector should emit a versioned record containing:
 
