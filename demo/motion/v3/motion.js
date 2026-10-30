@@ -63,7 +63,8 @@
       targets={post:year,row:year,quarter,compare:{x:1184,y:632,width:640,height:74},
         search:[year,{x:1184,y:354,width:640,height:74},quarter]};
     const age=siteAge(t),state=H.state(age,{excerpt:true,status:'verified',verdict:P.apple.verdict},(t-s.start)*1000,targets);
-    const struck=show(t,e,'strike'),cmp=show(t,e,'compare');
+    const struck=show(t,e,'strike'),cmp=show(t,e,'compare'),
+      ratio=show(t,e,'ratio')||(e.ratio===undefined&&struck); // Older committed preview has no ratio event.
     const x=64,y=356,w=352,h=372, visor={x:x+w*state.visor[0],y:y+h*state.visor[1]};
     const images=[state.previous,state.pose].map((pose,i)=>`<img class="hover-pose" src="${ASSET}auditor/H/${pose}.webp" alt="" style="opacity:${i?state.blend:1-state.blend};transform:scaleX(${pose==='stamp'||pose==='stamp-down'||pose==='inspect'?-1:1})">`).join('');
     const thruster=state.thruster==='burst'?'burst':state.thruster;
@@ -79,11 +80,11 @@
       box(480,354,608,74,'Apple · full FY2025','body muted',56)+
       box(1184,354,640,74,'Apple · fiscal Q4 2025','body muted',56)+
       box(480,464,608,138,n(dollars(P.apple.full_year_b)),'muted',112)+
-      box(1184,464,640,138,n(dollars(P.apple.quarter_b)),'coral',112)+
+      box(1184,464,640,138,n(dollars(P.apple.quarter_b)),'mint',112)+
       box(480,632,608,74,'Claim uses the full year','body muted',56)+
-      box(1184,632,640,74,'Filed quarter','body coral',56)+
-      box(448,742,672,122,cmp?n('≈'+Math.round(P.apple.claimed_b/P.apple.quarter_b)+'×',96)+' too high':'Compare periods','body amber',64)+
-      box(1152,744,704,120,struck?verdict(P.apple.verdict):cmp?'Program compares…':'SEC proof → program','status '+(struck?'coral':'muted'),struck?96:56)+
+      box(1184,632,640,74,'Filed quarter','body mint',56)+
+      box(448,742,672,122,ratio?n('≈'+Math.round(P.apple.claimed_b/P.apple.quarter_b)+'×',96)+' too high':'Compare periods','body amber',64)+
+      box(1152,744,704,120,struck?'Claim: '+verdict(P.apple.verdict):cmp?'Program compares…':'SEC proof → program','status '+(struck?'claim-verdict coral':'muted'),struck?80:56)+
       `<svg class="spotlight" viewBox="0 0 1920 880" aria-hidden="true"><defs><linearGradient id="beam"><stop stop-color="#d9a74a" stop-opacity=".04"/><stop offset="1" stop-color="#d9a74a" stop-opacity=".2"/></linearGradient></defs>${beams}<rect data-find-lock="${state.locked}" x="${state.row.x-12}" y="${state.row.y-12}" width="${state.row.width+24}" height="${state.row.height+24}" rx="12" fill="none" stroke="#d9a74a" stroke-width="4" opacity="${state.filingAlpha}"/></svg>`+
       box(128,724,224,24,'','hover-shadow',64)+
       `<div class="abs" style="left:${x}px;top:${y}px;width:${w}px;height:${h}px;transform:${state.transform}">${images}</div>`+
@@ -102,11 +103,11 @@
     return chrome('Program audit')+title('Model proposes. Program decides.')+
       surface(64,332,1792,532)+
       box(96,368,330,116,'Number','body muted',64)+
-      box(440,344,1384,142,checked?n(dollars(P.apple.claimed_b))+' ≠ '+n(dollars(P.apple.quarter_b)):'Reading source number…','body coral',64)+
+      box(440,344,1384,142,checked?'<span class="coral">'+n(dollars(P.apple.claimed_b))+'</span> ≠ <span class="mint">'+n(dollars(P.apple.quarter_b))+'</span>':'Reading source number…','body',64)+
       box(96,514,330,112,'Period','body muted audit-row',64)+
       box(440,514,1384,112,'FY2025 · fiscal Q4','body audit-row',64)+
-      box(96,680,330,112,'Citations','body muted audit-row',64)+
-      box(440,660,1384,154,n(D.product.apple_evidence_ids.join(' · '))+' · '+(show(t,e,'verdict')?verdict(P.apple.verdict):'program checks'),'body coral',80);
+      box(96,680,848,112,'Citations: '+esc(D.product.apple_evidence_ids.join(' · ')),'body muted audit-row',64)+
+      box(992,680,832,112,show(t,e,'verdict')?'Claim: '+verdict(P.apple.verdict):'Program checks…','status '+(show(t,e,'verdict')?'claim-verdict coral':'muted'),80);
   }
   function l4(t,s,e) {
     const r=D.product.releases[show(t,e,'adobe')?1:0],meta=r.kind==='guidance',src=r.excerpt.source_evidence;
@@ -126,13 +127,15 @@
       html+=`<svg class="abs" style="left:64px;top:324px;width:1792px;height:96px" viewBox="0 0 1792 96" aria-label="Waveform measured from the self-made eSpeak test WAV">${bars}</svg>`;
       html+=box(64,432,1792,204,quote(D.product.inputs.audio.display_quote),'source-text',64);
     } else {
-      html+=box(64,328,1792,232,quote(R.quote),'source-text',64)+
-        `<img class="abs source-thumb" style="left:64px;top:564px;width:400px;height:248px" src="../../../tests/fixtures/multimodal/example-post.png" alt="Self-made source screenshot; exact OCR quote enlarged above">`;
+      html+=box(64,328,1792,72,'Apple · fiscal Q3 2025 · EPS source crop','body muted',56)+
+        // Original 1000×620 PNG, source rectangle (244,306)..(692,354), enlarged 4×.
+        // Its 29 px source type becomes 116 px; unrelated revenue text is outside the viewport.
+        `<div class="abs source-crop" data-source-font-size="29" data-source-number="$1.67" style="left:64px;top:420px;width:1792px;height:192px"><img style="left:-976px;top:-1224px;width:4000px;height:2480px" src="../../../tests/fixtures/multimodal/example-post.png" alt="Magnified self-made source: diluted EPS of $1.67 for fiscal Q3"></div>`;
     }
-    const x=audio?64:512,w=audio?1792:1344,y=audio?636:564;
-    html+=surface(x,y,w,audio?152:166)+
-      box(x+24,y+12,w-48,audio?140:138,n('$'+R.check.stated_value_used.toFixed(2))+' → '+(checked?n('$'+R.check.actual_value.toFixed(2)):'SEC check…'),'body '+(checked?'coral':'muted'),80)+
-      box(x, audio?796:756,w,68,esc(R.period_label)+' · '+(audio?'eSpeak test · speaker unverified':(show(t,e,'verdict')?'CONTRADICTED':'OCR quote → program check')),'body '+(checked?'coral':'muted'),56);
+    const x=64,w=1792,y=636;
+    html+=surface(x,y,w,152)+
+      box(x+24,y+12,w-48,140,'<span class="coral">'+n('$'+R.check.stated_value_used.toFixed(2))+'</span> → '+(checked?'<span class="mint">'+n('$'+R.check.actual_value.toFixed(2))+'</span>':'SEC check…'),'body',80)+
+      box(x,796,w,68,esc(R.period_label)+' · '+(audio?'eSpeak test · speaker unverified':(show(t,e,'verdict')?'CONTRADICTED':'OCR quote → program check')),'body '+(checked?'coral':'muted'),56);
     return html;
   }
   function results(t,s,e) {
@@ -158,15 +161,18 @@
       surface(64,332,1792,532);
     for(const [i,kind] of ['text','screenshot','audio'].entries()) {
       const row=D.product.inputs[kind],x=96+i*576;
-      html+=box(x,348,552,80,kind==='text'?'Text control':kind==='audio'?'Audio':'Screenshot','body',64)+
-        box(x,432,552,68,`<a href="../../../${esc(row.source)}">${esc(row.verdict.toUpperCase())}</a>`,'body coral',56);
+      html+=box(x,340,552,80,kind==='text'?'Text control':kind==='audio'?'Audio':'Screenshot','body',64)+
+        box(x,420,552,68,`<a href="../../../${esc(row.source)}">${esc(row.verdict.toUpperCase())}</a>`,'body coral',56);
     }
     return html+
-      box(96,512,1728,68,'Long-call coverage · guarded / checked','body muted',56)+
-      box(96,588,848,116,`<a href="../../../${esc(live.source)}">${n(live.program_checked+'/'+live.expected,96)} live</a>`,'body amber',64)+
-      box(976,588,848,116,`<a href="../../../${esc(frozen.source)}">${n(frozen.program_checked+'/'+frozen.expected,96)} frozen ASR</a>`,'body amber',56)+
-      box(96,716,1728,80,'Speaker labels: '+(R.speaker_identity.verified?'verified':'unverified'),'body',64)+
-      box(96,800,1728,68,'L4: regression test · not held out','body muted',56);
+      box(96,488,1728,68,'Long-call coverage · guarded / checked','body muted',56)+
+      box(96,556,848,116,`<a href="../../../${esc(live.source)}">${n(live.program_checked+'/'+live.expected,96)}</a>`,'body amber',96)+
+      box(96,672,848,68,'· full-media audio','body amber',56)+
+      box(976,556,848,116,`<a href="../../../${esc(frozen.source)}">${n(frozen.program_checked+'/'+frozen.expected,96)}</a>`,'body amber',96)+
+      box(976,672,848,68,'· frozen-ASR text recheck','body amber',56)+
+      box(96,740,1728,68,'Post-hoc development probe · coverage ≠ verdict accuracy','body muted',56)+
+      box(96,808,800,68,'Speaker labels: '+(R.speaker_identity.verified?'verified':'unverified'),'body',56)+
+      box(920,808,904,68,'L4: regression test · not held out','body muted',56);
   }
   function qrSVG() {
     const {matrix,quiet_zone:q}=D.qr,size=matrix.length+2*q;
@@ -174,8 +180,8 @@
     return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${size} ${size}" aria-label="QR code for ${esc(D.qr.url)}" shape-rendering="crispEdges"><rect width="${size}" height="${size}" fill="#fff"/><path d="${d}" fill="#000"/></svg>`;
   }
   function cta() {
-    return chrome('Try the live demo')+title('Check before you share.')+
-      box(64,374,1320,220,'https://<br>hackathon.dappgo.com/','body mint',88)+
+    return chrome('Explore the saved demo')+title('Check before you share.')+
+      box(64,428,1344,112,esc(D.qr.url),'body mint',80,'white-space:nowrap')+
       box(1472,344,384,384,qrSVG(),'qr',64)+
       box(64,716,1792,72,'Built during the Meta Global AI Developer Hackathon','body',56)+
       box(64,796,1792,76,'Muse Spark · Meta open weights','body muted',56);

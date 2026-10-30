@@ -6,11 +6,13 @@ import {parseArgs} from '../motion/render.mjs';
 import {assertV3Layout} from '../motion/v3/layout-checks.mjs';
 const read=p=>readFileSync(new URL(p,import.meta.url),'utf8');
 const plain=html=>html.replace(/<[^>]*>/g,' ').replace(/\s+/g,' ');
-function page(search='') {
+function page(search='',editData=()=>{}) {
   const stage={dataset:{},style:{},innerHTML:''};
   const context={document:{getElementById:()=>stage},URLSearchParams,location:{search}};
   context.window=context;context.globalThis=context;vm.createContext(context);
-  for(const file of ['logic.js','v3/hover-source.js','v3/data.js','v3/motion.js']) vm.runInContext(read('../motion/'+file),context);
+  for(const file of ['logic.js','v3/hover-source.js','v3/data.js']) vm.runInContext(read('../motion/'+file),context);
+  editData(context.MOTION_DATA);
+  vm.runInContext(read('../motion/v3/motion.js'),context);
   return {window:context,stage};
 }
 function at(scene,fn) {
@@ -77,7 +79,29 @@ test('Hover uses real H assets, site pose clock, thruster and spotlight alphas',
   window.seek(a.find(a=>a[1]===4800)[0]+.01);
   assert.match(stage.innerHTML,/FALSE/);
   assert.equal(window.frame.hover.pose,'stamp-down');assert.equal(window.frame.hover.thruster,'burst');
-  assert(window.frame.hover.dip>0);assert.match(stage.innerHTML,/≈4×/);
+  assert(window.frame.hover.dip>0);assert.match(stage.innerHTML,/Claim: FALSE/);
+  const quarter=window.frame.boxes.find(b=>b.text==='$102.5B');
+  assert.equal(quarter.className,'mint');
+  assert.equal(window.frame.boxes.find(b=>b.text==='Filed quarter').className,'body mint');
+});
+
+test('Hover gates Claim: FALSE to the physical strike and holds the ratio for its later cue',()=>{
+  // Exercise the new event contract with the committed preview as well as host data.
+  let strike,ratio;
+  const {window,stage}=page('',data=>{
+    const events=data.cues._events['v304-hover'];
+    strike=events.find(e=>e.event==='strike').t;
+    ratio=data.beats.beats_s.find(b=>b>strike+1);
+    data.cues._events['v304-hover']=events.filter(e=>e.event!=='ratio').concat({event:'ratio',t:ratio});
+  });
+  window.seek(strike-.001);assert(!/FALSE|≈4×/.test(stage.innerHTML));
+  window.seek(strike+.01);
+  assert.equal(window.frame.hover.pose,'stamp-down');assert(window.frame.hover.struck);
+  assert.match(stage.innerHTML,/Claim: FALSE/);assert(!/≈4×/.test(stage.innerHTML));
+  window.seek(ratio-.001);assert(!/≈4×/.test(stage.innerHTML));
+  window.seek(ratio);assert.match(stage.innerHTML,/≈4×/);assert.match(stage.innerHTML,/Claim: FALSE/);
+  window.seek(window.timeline.shots.find(s=>s.id==='v304-hover').end-.001);
+  assert.match(stage.innerHTML,/≈4×/);assert.match(stage.innerHTML,/Claim: FALSE/);
 });
 
 test('Hover searches before locking the quarter and reserves detected beats around the strike',()=>{
@@ -86,7 +110,7 @@ test('Hover searches before locking the quarter and reserves detected beats arou
   const shot=window.timeline.shots.find(s=>s.id==='v304-hover'),
     cues=window.MOTION_DATA.cues._events[shot.id];
   assert(shot.voice_start>=shot.start+9);
-  assert(find<shot.voice_start&&shot.voice_start<lock);
+  assert(find<shot.voice_start&&shot.voice_start<=lock);
   assert.equal(lock,cues.find(e=>e.event==='find').t);
   const opening=window.MOTION_DATA.keyframes.find(f=>f.shot===shot.id&&f.position==='opening');
   assert(find<opening.t&&opening.t<shot.voice_start);
@@ -100,9 +124,20 @@ test('Hover searches before locking the quarter and reserves detected beats arou
   assert(window.frame.hover.locked);assert.equal(window.frame.hover.row.x,1184);
   assert.equal(window.frame.hover.row.y,464);
   const strike=a.find(([t,age])=>age===4800)[0],i=window.MOTION_DATA.beats.beats_s.indexOf(strike);
-  assert.equal(a.find(([t,age])=>age===4500)[0],window.MOTION_DATA.beats.beats_s[i-2]);
+  const compare=a.find(([t,age])=>age===3700)[0],beats=window.MOTION_DATA.beats.beats_s;
+  assert.equal(a.find(([t,age])=>age===4500)[0],beats[Math.max(beats.indexOf(compare)+1,i-2)]);
   assert.equal(a.find(([t,age])=>age===5300)[0],window.MOTION_DATA.beats.beats_s[i+2]);
 });
+
+test('program audit separates the claim verdict from neutral E1 citations and filed evidence',()=>at('program',(window,stage)=>{
+  const citations=window.frame.boxes.find(b=>b.text==='Citations: E1');
+  assert(citations);assert(!citations.className.includes('coral'));
+  assert(!/FALSE|CONTRADICTED/.test(citations.text));
+  const badge=window.frame.boxes.find(b=>b.text==='Claim: FALSE');
+  assert(badge&&badge.className.includes('status')&&badge.className.includes('coral'));
+  assert.match(stage.innerHTML,/<span class="coral"><span class="number"[^>]*>\$416\.2B<\/span><\/span>/);
+  assert.match(stage.innerHTML,/<span class="mint"><span class="number"[^>]*>\$102\.5B<\/span><\/span>/);
+}));
 
 test('new L4 scene retains raw values, fiscal period and unaudited regression labels',()=>{
   const {window,stage}=page(),shot=window.timeline.shots.find(s=>s.id==='v307-l4');
@@ -119,8 +154,17 @@ for(const scene of ['screenshot','audio']) test(`${scene} shows its self-made in
   const html=plain(stage.innerHTML);assert.match(html,/Self-made test media/);
   assert.match(html,/1\.67/);assert.match(html,/\$1\.57/);
   assert.match(html,/FY2025 Q3/);
+  const correction=window.frame.boxes.find(b=>b.text.includes('→')&&b.text.includes('$1.57')),
+    period=window.frame.boxes.find(b=>b.text.includes('FY2025 Q3'));
+  assert(correction&&period&&correction.y+correction.h<=period.y);
   if(scene==='audio') {assert.match(html,/speaker unverified/);assert.match(stage.innerHTML,/Waveform measured/);}
-  else {assert.match(html,/CONTRADICTED/);assert.match(stage.innerHTML,/tests\/fixtures\/multimodal\/example-post.png/);}
+  else {
+    assert.match(html,/CONTRADICTED/);assert.match(stage.innerHTML,/tests\/fixtures\/multimodal\/example-post.png/);
+    assert.match(stage.innerHTML,/class="abs source-crop"/);assert(!/source-thumb/.test(stage.innerHTML));
+    assert.match(stage.innerHTML,/data-source-font-size="29" data-source-number="\$1\.67"/);
+    assert.match(stage.innerHTML,/left:-976px;top:-1224px;width:4000px;height:2480px/);
+    assert.match(html,/fiscal Q3 2025 · EPS source crop/);
+  }
 }));
 
 test('v007 original results and recall limits retain recorded corrections and evidence links',()=>{
@@ -136,7 +180,13 @@ test('v007 original results and recall limits retain recorded corrections and ev
     assert(!/INSUFFICIENT|missed/.test(html));
     assert.match(html,/Saved development probes/);assert.match(html,/not held out/);
     assert.match(html,/Speaker labels: unverified/);assert.match(html,/guarded \/ checked/);
-    assert.match(html,/44\/60 live/);assert.match(html,/50\/60 frozen ASR/);
+    assert.match(html,/44\/60 · full-media audio/);assert.match(html,/50\/60 · frozen-ASR text recheck/);
+    const qualifier=window.frame.boxes.find(b=>b.text==='Post-hoc development probe · coverage ≠ verdict accuracy');
+    assert(qualifier&&qualifier.size>=56&&qualifier.y+qualifier.h<=880);
+    for(const label of ['Speaker labels: unverified','L4: regression test · not held out']) {
+      const box=window.frame.boxes.find(b=>b.text===label);
+      assert(box&&box.size>=56&&box.y+box.h<=880);
+    }
     for(const row of Object.values(window.MOTION_DATA.product.inputs))
       assert(stage.innerHTML.includes(`href="../../../${row.source}"`));
     for(const row of Object.values(window.MOTION_DATA.product.recall.coverage))
@@ -146,7 +196,10 @@ test('v007 original results and recall limits retain recorded corrections and ev
 
 test('CTA remains visible on the last frame, with matching new QR and required credits',()=>{
   const {window,stage}=page();window.seek(window.timeline.duration);
-  assert.match(plain(stage.innerHTML),/https:\/\/ hackathon\.dappgo\.com\//);
+  assert.match(plain(stage.innerHTML),/Explore the saved demo/);
+  assert.match(plain(stage.innerHTML),/https:\/\/hackathon\.dappgo\.com\//);
+  const url=window.frame.boxes.find(b=>b.text==='https://hackathon.dappgo.com/');
+  assert(url&&url.size>=56);assert(!/<br>/.test(stage.innerHTML));
   assert.match(stage.innerHTML,/QR code for https:\/\/hackathon\.dappgo\.com\//);
   assert.match(plain(stage.innerHTML),/Built during the Meta Global AI Developer Hackathon/);
   assert.match(plain(stage.innerHTML),/Muse Spark · Meta open weights/);
@@ -165,11 +218,16 @@ test('no autonomous playback or network, and all CSS type constants are readable
 
 test('host geometry guard rejects clipping, small numbers and subtitle collisions',()=>{
   const good={text:[{text:'Claim',fontSize:64,left:64,right:1856,top:332,bottom:500,
-    textLeft:64,textRight:600,textTop:332,textBottom:420}],numbers:[{text:'1.67',fontSize:112}]};
+    textLeft:64,textRight:600,textTop:332,textBottom:420}],numbers:[{text:'1.67',fontSize:112}],
+    sourceCrops:[{text:'$1.67',fontSize:116,left:64,right:1856,top:420,bottom:612,
+      imageLeft:-912,imageRight:3088,imageTop:-804,imageBottom:1676}]};
   assert.equal(assertV3Layout(good).subtitleTop,880);
   for(const change of [m=>m.text[0].textRight=1857,m=>m.text[0].textBottom=501,
                       m=>m.text[0].bottom=881,m=>m.text[0].fontSize=55,m=>m.numbers[0].fontSize=95,
-                      m=>m.text.push({...m.text[0],text:'Overlapping label'})]) {
+                      m=>m.text.push({...m.text[0],text:'Overlapping label'}),
+                      m=>m.sourceCrops[0].fontSize=95,m=>m.sourceCrops[0].fontSize=Infinity,
+                      m=>m.sourceCrops[0].bottom=881,
+                      m=>m.sourceCrops[0].imageLeft=65]) {
     const bad=structuredClone(good);change(bad);assert.throws(()=>assertV3Layout(bad));
   }
 });

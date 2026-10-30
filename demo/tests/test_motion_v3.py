@@ -27,9 +27,20 @@ def data():
     return v3.compile_data(ROOT,STORY)
 
 
-def test_v007_preview_artifacts_rebuild_exactly_without_local_media(data):
-    for relative, expected in v3.artifacts(ROOT,STORY,data).items():
-        assert (ROOT/relative).read_text()==expected, relative
+def test_v007_preview_compiles_without_replacing_host_timing(data):
+    # Saved preview/host outputs are not source snapshots: voice regenerates them.
+    # Exercise the current compiler in memory without overwriting measured narration.
+    before={relative:(ROOT/relative).read_bytes() for relative in v3.artifacts(ROOT,STORY,data)}
+    outputs=v3.artifacts(ROOT,STORY,data)
+    assert outputs==v3.artifacts(ROOT,STORY,v3.compile_data(ROOT,STORY))
+    compiled=json.loads(outputs[f'{v3.OUT}/data.js'].split('window.MOTION_DATA = ',1)[1].rstrip(';\n'))
+    assert compiled['timing']==json.loads(outputs[f'{v3.OUT}/timing.json'])
+    assert compiled['keyframes']==json.loads(outputs[f'{v3.OUT}/keyframes.json'])
+    assert [e['cue'] for e in compiled['cues']['_events']['v304-hover']]==[
+        'Watch Hover follow','the evidence','Apple is false','Four times too high']
+    for relative in ('demo/NARRATION-v007.txt',f'{v3.OUT}/hover-source.js'):
+        assert (ROOT/relative).read_text()==outputs[relative]
+    assert before=={relative:(ROOT/relative).read_bytes() for relative in before}
     assert 'narration unmeasured' in data['timing']['source']
     assert all('voice_s' not in shot for shot in data['timing']['shots'])
 
@@ -230,14 +241,17 @@ def test_all_spoken_words_have_wrapped_subtitles_and_review_cues(data):
 
 
 def test_keyframe_manifest_and_host_routing(data):
-    frames=json.loads((ROOT/'demo/motion/v3/keyframes.json').read_text())
-    assert frames==data['keyframes']
+    frames=data['keyframes']
     assert len(frames)==36
-    revision=(ROOT/'demo/REVISION-v007.md').read_text()
     for shot in data['timing']['shots']:
         selected=[f for f in frames if f['shot']==shot['id']]
         assert len(selected)==3 and all(shot['start']<f['t']<shot['end'] for f in selected)
-        assert all(f'{f["t"]:.3f}' in revision for f in selected)
+        assert [f['position'] for f in selected]==['opening','middle','end']
+    poses={age:t for t,age in data['hover_anchors']}
+    hover=[f['t'] for f in frames if f['shot']=='v304-hover']
+    assert poses[2300]<hover[0]<poses[2900]
+    assert poses[3700]<hover[1]<poses[4500]
+    assert poses[4800]<hover[2]<poses[5300]
     builder=SimpleNamespace(story=STORY,demo=ROOT/'demo')
     assert motion_build.motion_folder(builder)==ROOT/'demo/motion/v3'
     assert motion_build.renderer_args(builder)==['--entry','v3/index.html']

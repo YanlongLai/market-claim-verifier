@@ -95,10 +95,14 @@ def phrase_cue(cues: list[dict], phrase: str) -> dict:
     return matches[0]
 
 
-def snap_event(cue_start: float, beats: list[float], shot_start: float, shot_end: float) -> float:
-    event = next_beat(beats, max(shot_start, cue_start - .10))
+def snap_event(cue_start: float, beats: list[float], shot_start: float, shot_end: float,
+               *, cue_end: float | None = None) -> float:
+    # Verdict impacts must land inside the spoken phrase, not on an earlier beat.
+    event = next_beat(beats, max(shot_start, cue_start if cue_end is not None else cue_start - .10))
     if event >= shot_end - 1e-9:
         raise BuildError('Cue event falls beyond its shot; extend the presentation hold.')
+    if cue_end is not None and event >= cue_end:
+        raise BuildError('No detected beat inside the cue phrase; review the host narration timing.')
     return event
 
 
@@ -118,7 +122,8 @@ def cue_document(scenes: list[dict], timing: dict, local: dict, analysis: dict,
             cue = phrase_cue(absolute, spec['cue'])
             event = dict(event=spec['event'], cue=spec['cue'], cue_start=cue['start'],
                          cue_end=cue['end'], alignment=cue['alignment'],
-                         t=snap_event(cue['start'], beats, voice_start, shot['end']))
+                         t=snap_event(cue['start'], beats, voice_start, shot['end'],
+                                      cue_end=cue['end'] if spec.get('within_cue') else None))
             if spec.get('review_at_start'):
                 event['review_at_start'] = True
             events.append(event)
@@ -182,8 +187,13 @@ def sentence_subtitles(scenes: list[dict], timing: dict, document: dict) -> list
             for i, (c, start) in enumerate(zip(raw, starts))]
 
 
-def review_frame_plan(timing: dict, events: dict) -> list[dict]:
+def review_frame_plan(timing: dict, events: dict, *, include_boundaries: bool = False) -> list[dict]:
     plan = []
+    if include_boundaries:
+        first = timing['shots'][0]
+        plan.extend([dict(shot=first['id'], t=0., cue='frame zero'),
+                     dict(shot=first['id'], t=min(3., (first['start']+first['end'])/2),
+                          cue='opening within three seconds')])
     for shot in timing['shots']:
         plan.append(dict(shot=shot['id'], t=round((shot['start']+shot['end'])/2, 9), cue='midpoint'))
         for event in events[shot['id']]:
@@ -194,4 +204,8 @@ def review_frame_plan(timing: dict, events: dict) -> list[dict]:
             if t >= shot['end']:
                 raise BuildError(f"{shot['id']}: event + 0.3 s crosses a shot cut.")
             plan.append(dict(shot=shot['id'], t=t, cue=event['cue'], event=event['event']))
+    if include_boundaries:
+        # Match encode_frames exactly, including a fractional final frame interval.
+        last = (math.ceil(timing['duration']*media.FPS-1e-8)-1)/media.FPS
+        plan.append(dict(shot=timing['shots'][-1]['id'], t=last, cue='last encoded frame'))
     return plan

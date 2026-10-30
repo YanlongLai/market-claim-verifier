@@ -55,6 +55,7 @@ def test_lead_edit_reuses_cached_clip_in_host_voice_step(tmp_path, monkeypatch):
     story['scenes'] = [story['scenes'][3]]
     scene = story['scenes'][0]
     scene.pop('narration_lead_s')
+    scene['cue_events'] = [dict(event='strike', cue='Four times too high')]
     story['voice']['ref_audio'] = 'demo/ref.wav'
     (demo/'ref.wav').write_bytes(b'synthetic hash fixture; no licensed audio')
     (demo/'storyboard.yaml').write_text(yaml.safe_dump(story))
@@ -69,6 +70,8 @@ def test_lead_edit_reuses_cached_clip_in_host_voice_step(tmp_path, monkeypatch):
     monkeypatch.setattr(builder, 'prepare_motion', lambda: prepared.append(True))
     monkeypatch.setattr(media, 'command', lambda *a, **k: pytest.fail('Cached voice must not invoke TTS'))
     builder.scenes[0]['narration_lead_s'] = 9
+    # Cue-only edits also reuse the narration; voice still calls motion preparation.
+    builder.scenes[0]['cue_events'] = deepcopy(STORY['scenes'][3]['cue_events'])
     assert builder.voice_spec(builder.scenes[0])[1] == key
     builder.voice()
     assert prepared == [True]

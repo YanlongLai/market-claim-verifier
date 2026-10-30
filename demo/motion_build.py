@@ -138,7 +138,8 @@ def review_frames(builder) -> None:
     # An old completed index must not make a new plan or failed render look reviewed.
     (output/'index.json').unlink(missing_ok=True)
     (output/'evidence.json').unlink(missing_ok=True)
-    plan=review_frame_plan(timing,cues['_events'])
+    plan=review_frame_plan(timing,cues['_events'],
+                           include_boundaries=builder.story.get('motion_variant')=='v3')
     write_json(output/'plan.json',plan)
     subtitles=narration_subtitles(builder.scenes,timing,cues)
     srt=output/'subtitles.srt'
