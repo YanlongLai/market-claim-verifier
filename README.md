@@ -2,8 +2,6 @@
   <a href="https://hackathon.dappgo.com/"><img src="docs/figures/review-process-dark-v1.gif" width="1012" alt="Saved review: input claim, SEC evidence, numeric comparison and verdict"></a>
 </p>
 
-Replay of saved website examples—not a live check. Click to explore the interactive website. [Rebuild this animation](docs/scripts/build_readme_scene.py).
-
 # Market Claim Verifier
 
 **English** | [繁體中文](README.zh-TW.md)
