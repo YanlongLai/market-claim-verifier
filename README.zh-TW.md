@@ -1,5 +1,5 @@
 <p align="center">
-  <a href="https://hackathon.dappgo.com/"><img src="docs/figures/review-process-dark-v1.gif" width="1012" alt="查核重播：輸入主張、SEC 證據、數字比對與判定"></a>
+  <a href="https://hackathon.dappgo.com/"><img src="docs/figures/review-process-dark-2x-v2.gif" width="1012" alt="查核重播：輸入主張、SEC 證據、數字比對與判定"></a>
 </p>
 
 # Market Claim Verifier

@@ -33,7 +33,7 @@ def main():
     try:
         with sync_playwright() as p:
             browser = p.chromium.launch(channel=args.channel, headless=True)
-            page = browser.new_page(viewport={'width': 1100, 'height': 1000}, device_scale_factor=1, color_scheme='dark')
+            page = browser.new_page(viewport={'width': 1100, 'height': 1000}, device_scale_factor=2, color_scheme='dark')
             page.goto(f'http://127.0.0.1:{server.server_port}/?stamp-t=0')
             page.wait_for_function('!!window.__stampScene')
             page.evaluate('document.fonts.ready')
@@ -55,7 +55,7 @@ def main():
         palette_sheet.paste(frame, (0, index * frame.height))
     palette = palette_sheet.quantize(colors=256)
     indexed = [frame.quantize(palette=palette, dither=Image.Dither.NONE) for frame in frames]
-    output = ROOT / 'docs/figures/review-process-dark-v1.gif'
+    output = ROOT / 'docs/figures/review-process-dark-2x-v2.gif'
     indexed[0].save(output, save_all=True, append_images=indexed[1:],
                     duration=[120, 130] * 64, loop=0, optimize=True)
     with Image.open(output) as gif:
