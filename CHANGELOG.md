@@ -33,3 +33,11 @@ The first/root commit is **`7c5670b84e6052db9fa67fd86606fb2ee11ee42c`**, authore
 - Removed test dependencies on ignored SEC caches, Git metadata, narrator audio and local subtitle exports using [committed SEC fixtures](tests/fixtures/sec-offline/README.md), [metadata injection](tests/test_eval_recording.py), [synthetic test references](demo/tests/test_motion.py) and [frozen subtitle text](demo/tests/fixtures/README.md). Added [narrow secret-scan exceptions](.gitleaks.toml) for recorded SHA-256 media cache identifiers.
 - Added the required [pre-existing-work opening disclosure](demo/JUDGE_INTRO.md) for presentation/publication. The video publication link remains pending; no upload is recorded.
 - Added L4 evidence: SEC 8-K Item 2.02 earnings releases (Ex 99.1, HTML Ex 99.2) for guidance and non-GAAP claims, with program-verified quote offsets and XBRL precedence; froze a 32-claim gold set before the run; Baseten agent scored 31/32 with 0/19 false-supported for $0.7157 ([analysis](docs/evidence/eval-l4-2026-10-29/ANALYSIS.md), [release checks](src/claimcheck/release_checks.py)).
+
+## Day 5 iteration — 2026-10-30
+
+- Added the US-equity-only [delivery plan](docs/DAY5_PLAN.md) with ordered acceptance gates; general web pages and Taiwan are outside current scope.
+- Published [provider modalities, integration boundaries, pricing and recorded quality](docs/PROVIDERS.md). No account balance or untested endpoint support is claimed.
+- Ingestion JSON/HTML now separates proposed, accepted, program-checked, rejected and failed claims. Full-content recall remains explicitly unknown rather than inferred from extracted rows.
+
+- Added local native-text PDF ingestion with page provenance, explicit unreadable-page errors and encrypted/malformed input rejection. No general URL ingestion or PDF OCR is claimed.

@@ -1,5 +1,7 @@
 # Market Claim Verifier
 
+
+Day 5: [delivery plan](docs/DAY5_PLAN.md) · [provider capabilities and prices](docs/PROVIDERS.md). US equities only; planned features are not current capabilities.
 Check financial sentences against SEC filings with Meta Muse Spark and auditable Python checks ([agent](src/claimcheck/agent.py), [checks](src/claimcheck/checks.py)).
 
 [![Tests: offline suite](docs/badges/tests.svg)](.github/workflows/verify.yml)
@@ -412,3 +414,9 @@ Each run records a manifest (code commit, model, prompts with SHA-256, data snap
 Tool turns reserve worst-case cost before every model call, then reconcile actual usage. Incomplete responses are retried once with a doubled limit; Baseten plain JSON is schema-validated and repaired once when needed. Prompt source files live in [`prompts/`](prompts/), and the figure builder is [`docs/scripts/make_figures.py`](docs/scripts/make_figures.py).
 
 This project is not investment advice.
+
+## Local PDF input
+
+`python -m claimcheck ingest report.pdf --help` lists the same provider and budget options as other local inputs. Native text is extracted page by page, with page numbers in claim source locations and the original file hash in the ingestion report. Limits: 100 pages, 128 MiB, 100,000 extracted characters per page and 1,000,000 per document. Encrypted PDFs are rejected. Blank/scanned pages remain visibly unchecked; tables and reading order need review, and period context does not cross page boundaries. Uploaded PDFs are claims, not automatically authoritative financial evidence.
+
+To adapt the project, read [Building your own verifier](docs/EXTENDING.md); the guide distinguishes reusable modules from the planned connector contract.

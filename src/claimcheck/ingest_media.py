@@ -34,6 +34,7 @@ OCR_PROMPT = (
 )
 EXTENSIONS = {
     "text": {".txt", ".md"},
+    "pdf": {".pdf"},
     "image": {".png", ".jpg", ".jpeg", ".webp"},
     "audio": {".wav", ".mp3", ".m4a", ".flac", ".aiff", ".aif", ".aac", ".ogg"},
     "video": {".mp4", ".mov", ".webm", ".mkv"},
@@ -57,7 +58,7 @@ def input_kind(path: Path) -> str:
     for kind, extensions in EXTENSIONS.items():
         if path.suffix.lower() in extensions:
             return kind
-    raise IngestError("unsupported extension; use text, PNG/JPEG/WebP, audio, or video")
+    raise IngestError("unsupported extension; use text, PDF, PNG/JPEG/WebP, audio, or video")
 
 
 def _run(args: list[str]) -> bytes:
@@ -96,6 +97,40 @@ def image_png(path: Path, dest: Path) -> dict[str, Any]:
         return {"width": image.width, "height": image.height, "sha256": sha256(dest)}
 
 
+def read_pdf(path: Path) -> list[dict[str, Any]]:
+    """Native page text only. No OCR, links, scripts or attachments are executed."""
+    from pypdf import PdfReader
+    try:
+        reader = PdfReader(path)
+        if reader.is_encrypted:
+            raise IngestError("encrypted PDFs are not supported; provide an unencrypted local copy")
+        if not 0 < len(reader.pages) <= 100:
+            raise IngestError("PDF must contain 1–100 pages; split larger documents explicitly")
+        channels = []
+        total_chars = 0
+        for number, page in enumerate(reader.pages, 1):
+            channel = {"id": f"page-{number}", "kind": "text", "decoded": False, "page": number}
+            try:
+                text = page.extract_text() or ""
+                total_chars += len(text)
+                if len(text) > 100_000 or total_chars > 1_000_000:
+                    raise IngestError("PDF extracted text exceeds page/document limits")
+                if text.strip():
+                    channel.update(decoded=True, segments=[{"id": f"page-{number}", "page": number, "text": text}])
+                else:
+                    channel["error"] = "no native page text; blank or scanned page not checked (PDF OCR unavailable)"
+            except IngestError:
+                raise
+            except Exception:
+                channel["error"] = "PDF page text extraction failed; page not checked"
+            channels.append(channel)
+        return channels
+    except IngestError:
+        raise
+    except Exception as exc:
+        raise IngestError("could not parse PDF") from exc
+
+
 def decode(path: Path, media_dir: Path) -> tuple[str, list[dict[str, Any]]]:
     """Decode locally before any upload. Video channels can fail independently."""
     if not path.is_file() or not 0 < path.stat().st_size <= MAX_BYTES:
@@ -109,6 +144,8 @@ def decode(path: Path, media_dir: Path) -> tuple[str, list[dict[str, Any]]]:
             raise IngestError("text input is empty")
         return kind, [{"id": "text", "kind": "text", "decoded": True,
                        "segments": [{"id": "text-1", "text": text}]}]
+    if kind == "pdf":
+        return kind, read_pdf(path)
     if kind == "image":
         dest = media_dir / "image.png"
         info = image_png(path, dest)

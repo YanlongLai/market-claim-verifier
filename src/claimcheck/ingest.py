@@ -99,7 +99,7 @@ def attach_locations(channel: dict[str, Any], claims: list[dict[str, Any]]) -> N
                 for segment in channel["segments"]:
                     a, b = segment["raw_span"]
                     if start < b and end > a:
-                        source = {key: segment[key] for key in ("id", "start_ms", "end_ms", "speaker", "sample_ms", "timing") if key in segment}
+                        source = {key: segment[key] for key in ("id", "start_ms", "end_ms", "speaker", "sample_ms", "timing", "page") if key in segment}
                         source.update(segment_span=segment["raw_span"], overlap_span=[max(a, start), min(b, end)])
                         if "speaker" in source:
                             source["identity"] = "unverified session-scoped diarization label"
@@ -112,7 +112,7 @@ def attach_locations(channel: dict[str, Any], claims: list[dict[str, Any]]) -> N
             start = original_offset(a, channel['number_normalizations'])
             end = original_offset(b, channel['number_normalizations'], end=True)
             context.update(raw_span=[start, end], heard_or_read=raw[start:end],
-                sources=[{k: s[k] for k in ('id', 'start_ms', 'end_ms', 'speaker', 'sample_ms', 'timing') if k in s}
+                sources=[{k: s[k] for k in ('id', 'start_ms', 'end_ms', 'speaker', 'sample_ms', 'timing', 'page') if k in s}
                          for s in channel['segments'] if start < s['raw_span'][1] and end > s['raw_span'][0]])
 
 
@@ -139,6 +139,29 @@ def channel_stages(channel: dict[str, Any]) -> list[dict[str, Any]]:
         status = "reached" if timed and len(timed) == len(accepted) else "partial" if timed else "not_reached"
         stages.append(_stage(6, status, f"{len(timed)}/{len(accepted)} claims mapped to labeled ASR turns; names/roles unverified; no word timestamps"))
     return stages
+
+
+def coverage_summary(channels: list[dict[str, Any]]) -> dict[str, Any]:
+    """Operational counts, never an estimate of unknown input-claim recall."""
+    claims = [claim for channel in channels for claim in channel.get("claims", [])]
+    accepted = [claim for claim in claims if claim.get("status") != "rejected"
+                and claim.get("kind") in {"reported_fact", "issuer_guidance"}]
+    checked = [claim for claim in accepted if claim.get("program_checks")]
+    return {
+        "channels": len(channels),
+        "channels_with_errors": sum(bool(c.get("error")) for c in channels),
+        "proposed_claims": len(claims),
+        "accepted_claims": len(accepted),
+        "program_checked_claims": len(checked),
+        "accepted_without_program_checks": len(accepted) - len(checked),
+        "rejected_claims": sum(c.get("status") == "rejected" for c in claims),
+        "failed_claims": sum(c.get("status") == "failed" for c in claims),
+        "insufficient_evidence_claims": sum(c.get("verdict") == "insufficient_evidence" for c in accepted),
+        "full_content_recall": None,
+        "note": "Counts describe extracted claim rows, not unique facts or all input assertions. "
+                "Full-content recall is unknown without an independently labeled denominator. "
+                "Program-checked includes insufficient-evidence verdicts and does not mean supported.",
+    }
 
 
 def aggregate_stages(channels: list[dict[str, Any]], error: str = "", kind: str | None = None) -> list[dict[str, Any]]:
@@ -174,12 +197,14 @@ def ingest_file(path: Path, *, client: Any, edgar: Any, ledger: Ledger, model: s
         "limitations": ["Heard/read numbers are input claims, never filing evidence.",
             "Audio timestamps describe ASR turns, not individual words; speaker labels are not names or roles.",
             "Video samples three frames at 1/6, 1/2 and 5/6 of duration; unsampled visuals can be missed.",
-            "Audio and frame claims are checked independently; no cross-modal identity or truth inference."]}
+            "Audio and frame claims are checked independently; no cross-modal identity or truth inference.",
+            "PDF uses native page text only; reading order/table fidelity is not guaranteed, scanned pages are not checked, and context is not propagated across pages."]}
 
     def save() -> None:
         for channel in report["channels"]:
             channel["stages"] = channel_stages(channel)
         report["stages"] = aggregate_stages(report["channels"], "; ".join(report["errors"]), report["input"].get("kind"))
+        report["coverage"] = coverage_summary(report["channels"])
         report["cost_usd"] = round(ledger.spent_total - spent_before, 8)
         report["reservation_ids"] = list(ledger.amounts)
         report["wall_clock_s"] = round(time.perf_counter() - started, 3)
@@ -269,6 +294,16 @@ def _time(ms: int) -> str:
 def render_html(report: dict[str, Any]) -> str:
     esc = lambda value: html.escape(str(value))
     rows = "".join(f"<tr><td>{s['stage']}. {esc(s['name'])}</td><td>{esc(s['status'])}</td><td>{esc(s['reason'])}</td></tr>" for s in report.get("stages", []))
+    coverage = coverage_summary(report["channels"])
+    coverage_html = (
+        f"<section><h2>What was checked</h2><p>{coverage['proposed_claims']} proposed · "
+        f"{coverage['accepted_claims']} accepted · {coverage['program_checked_claims']} program-checked · "
+        f"{coverage['accepted_without_program_checks']} accepted without program checks · "
+        f"{coverage['failed_claims']} failed · {coverage['rejected_claims']} rejected.</p>"
+        f"<p>{coverage['channels_with_errors']} channels have errors. "
+        f"{coverage['insufficient_evidence_claims']} accepted claims have insufficient evidence.</p>"
+        f"<p><strong>Full-content recall: unknown.</strong> {esc(coverage['note'])}</p></section>"
+    )
     blocks = []
     for channel in report["channels"]:
         claims = []
@@ -281,6 +316,8 @@ def render_html(report: dict[str, Any]) -> str:
                         labels.append(f"speaker {source.get('speaker', 'unknown')} (unverified), {_time(source['start_ms'])}–{_time(source['end_ms'])}; whole turn")
                     elif "sample_ms" in source:
                         labels.append(f"frame sampled at {_time(source['sample_ms'])}; speaker unknown")
+                    elif "page" in source:
+                        labels.append(f"PDF page {source['page']}; extracted-text characters {loc['raw_span'][0]}–{loc['raw_span'][1]}")
                     else:
                         labels.append(f"source characters {loc['raw_span'][0]}–{loc['raw_span'][1]}")
                 sources.append(f"<p>{esc('; '.join(labels))}</p><blockquote>{esc(loc['heard_or_read_quote'])}</blockquote>")
@@ -295,4 +332,4 @@ def render_html(report: dict[str, Any]) -> str:
 <style>body{{max-width:1000px;margin:32px auto;padding:0 20px;font:16px/1.5 system-ui;color:#18212b;background:#f8f8f5}}table{{border-collapse:collapse;width:100%}}td,th{{padding:10px;text-align:left;border:1px solid #ccc}}pre{{white-space:pre-wrap}}section{{margin:32px 0}}blockquote{{border-left:3px solid #789;padding-left:16px}}li{{margin:20px 0}}</style>
 <h1>Input probe: {esc(report['input']['file'])}</h1><p>{esc(report['status'])} · ${report.get('cost_usd', 0):.6f} · {report.get('wall_clock_s', 0)} s</p>
 <p>Read/heard values require SEC evidence. Speaker labels are unverified, session-scoped labels. Timestamps cover whole turns, not individual words.</p>
-<table><tr><th>Stage</th><th>Outcome</th><th>Reason</th></tr>{rows}</table>{''.join(blocks)}<p>{esc('; '.join(report['errors']))}</p></html>"""
+{coverage_html}<table><tr><th>Stage</th><th>Outcome</th><th>Reason</th></tr>{rows}</table>{''.join(blocks)}<p>{esc('; '.join(report['errors']))}</p></html>"""

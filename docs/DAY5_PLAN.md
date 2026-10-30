@@ -1,0 +1,42 @@
+# Day 5 product completion plan
+
+Owner scope, 2026-10-30 (America/Los_Angeles). “Day 5” is the Owner's iteration label, not a claim that five calendar days have elapsed since the first commit.
+
+## Product promise
+
+Check US-equity financial claims, show exact evidence and clearly disclose what was not checked. Prioritize a reproducible judge journey over adding unsupported formats. Taiwan is outside this hackathon scope. Preserve Meta-family runtime models and the existing recorded benchmarks.
+
+## Delivery order and acceptance gates
+
+| Order | Status | Deliverable | Acceptance gate |
+|---|---|---|---|
+| 1 | Implemented in this iteration | Public provider/modality/pricing comparison | Official source links, dated prices, platform capability separate from repository integration; no credit balance claims |
+| 2 | Implemented in this iteration | Honest ingestion coverage summary | JSON and HTML show proposed, accepted, checked and failed claim counts; unknown full-content recall never becomes 100% |
+| 3 | Implemented in this iteration | Local PDF input | Page-scoped text and original-file hash; scanned/empty pages explicitly unsupported until OCR; limits and parser errors tested |
+| 4 | Planned | Evidence record interface and one US issuer document connector | Immutable source snapshot, publisher, time, locator, units/period; arbitrary uploads do not become authoritative; original SEC regression unchanged |
+| 5 | Planned | Complete evidence-to-verdict judge example | One official US issuer document, one false claim, one supported claim and one insufficient-evidence case; clickable source locations and cost breakdown |
+| 6 | Planned | Versioned policy and as-of time | Exact entity/unit/period rules remain mandatory in every mode; historical/restated facts distinguished |
+| 7 | Planned | Cost breakdown and bounded job queue | Reserved versus estimated/billed amounts distinguished; cache keys include model/prompt/policy/evidence versions; resume without duplicate successful calls |
+| 8 | Planned | Independent evaluation and submission refresh | Freeze unseen issuers/documents before tuning; publish extraction recall, false-supported rate, abstention, p95 and cost; refresh judge docs and video only after results |
+| 9 | Deferred until core gates pass | Direct readable URL ingestion | Public HTTPS plain text/Markdown only initially; explicit content type/size/time limits, network destination validation; no authentication, cookies, browser rendering or arbitrary HTML |
+| 10 | Deferred | Adaptive video sampling, speaker identity, provider batch, custom domain pack | Evaluate separately; no universal video accuracy or batch discount claims without model-specific validation |
+
+## Working agreement
+
+Make milestone-sized commits with actual implementation and test results. Update this table, CHANGELOG and judge-facing references as each milestone finishes; never manufacture progress or rewrite recorded evaluations. Publish only tested changes. No video upload until the Owner chooses a final cut. Winning is a goal, not a promised result.
+
+## Judge value
+
+The demonstration should answer: what was claimed, where it appeared, what source supports the check, why the numeric result follows, what remains unchecked, and what it cost. A saved replay must remain labeled as a replay; live API execution must not be implied.
+
+## Current limitations
+
+Full-content recall has no ground-truth denominator on arbitrary user inputs. Claim-processing counts are operational coverage, not accuracy. Local native-text PDF ingestion is implemented; user-supplied authoritative evidence is not. PDF has a 100-page limit, no OCR and no cross-page context propagation. General web browsing, login pages and Taiwan data are out of the current delivery scope.
+
+## Contributor handoff
+
+The [extension guide](EXTENDING.md) describes a future connector contract and the existing reusable modules. It is documentation, not a completed evidence-plugin SDK.
+
+## Verification receipt — 2026-10-30
+
+`sh scripts/verify.sh` passed: 846 product tests, 149 demo Python tests, 55 Node tests; fixture hashes, figure rebuild/check, three byte-identical generated outputs and Markdown links passed. The extension guide was added during the isolated run; a subsequent link check covered all 101 Markdown files and 770 local links/anchors. No model calls, paid inference or SEC fetches were used. This is offline regression verification, not a new PDF financial-accuracy benchmark.

@@ -79,7 +79,7 @@ def _parser() -> argparse.ArgumentParser:
     post.add_argument("--reasoning-effort")
     post.add_argument("--out", type=Path, help="output directory (default runs/posts/<UTC time>)")
 
-    ingest = subparsers.add_parser("ingest", help="decode text, screenshot, audio or video and check its claims")
+    ingest = subparsers.add_parser("ingest", help="decode text, PDF, screenshot, audio or video and check its claims")
     ingest.add_argument("file", type=Path)
     ingest.add_argument("--provider", choices=PROVIDERS)
     ingest.add_argument("--model")
