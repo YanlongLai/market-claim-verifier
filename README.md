@@ -1,5 +1,5 @@
 <p align="center">
-  <a href="https://hackathon.dappgo.com/"><img src="docs/site/img/auditor/H/present.webp" width="160" alt="Hover, the Market Claim Verifier robot, holding an evidence sheet"></a>
+  <a href="https://hackathon.dappgo.com/"><img src="docs/figures/hover-readme.gif" width="160" alt="Hover, the Market Claim Verifier robot, holding an evidence sheet"></a>
 </p>
 
 # Market Claim Verifier
@@ -590,7 +590,7 @@ Historical evidence selection: [verification policy and `--as-of`](docs/VERIFICA
 *AI-generated illustration: a sentence being checked against filings.* The reusable prompt is recorded in [`docs/prompts/hero-image.md`](docs/prompts/hero-image.md).
 <!-- figure:hero:end -->
 
-The masthead reuses Hover from the live website. [Robot art direction and generation history](docs/prompts/site/auditor-robot.md). AI artwork is illustrative; numerical charts use recorded data.
+The animated masthead reuses Hover from the live website. [Rebuild the looping GIF](docs/scripts/build_readme_robot.py); [static version](docs/site/img/auditor/H/present.webp). [Robot art direction and generation history](docs/prompts/site/auditor-robot.md). AI artwork is illustrative; numerical charts use recorded data.
 
 </details>
 
