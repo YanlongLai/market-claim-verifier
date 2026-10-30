@@ -40,3 +40,8 @@ def test_summary_replays_gaps_without_changing_input(tmp_path):
     html=(tmp_path/'summary/stock-review.html').read_text()
     assert '&lt;image&gt;' in html and '<image>' not in html
     assert 'no_claims_extracted' in html and 'underlying table' in html
+
+
+def test_sampled_video_frame_also_discloses_geometry_gap():
+    result=coverage_diagnostics([{'kind':'frame','raw_text':'Revenue 1','claims':[{}]}])
+    assert result[0]['code']=='visual_geometry_unverified'

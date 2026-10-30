@@ -5,7 +5,7 @@ from __future__ import annotations
 def coverage_diagnostics(channels: list[dict]) -> list[dict]:
     findings = []
     for channel in channels:
-        visual = channel.get('kind') == 'ocr'
+        visual = channel.get('kind') in {'ocr', 'frame'}
         text = channel.get('normalized_text') or channel.get('raw_text') or ''
         common = {'channel_id': channel.get('id'), 'basis': 'recorded_pipeline_state'}
         if visual:
