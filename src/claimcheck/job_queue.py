@@ -190,5 +190,6 @@ def cli_worker(settings, config: dict):
                 model=config['model'], provider=settings.provider, out_dir=target,
                 max_claims=config['max_claims'], max_output_tokens=config['max_output_tokens'],
                 reasoning_effort=config['reasoning_effort'],
+                **({'source_ticker': config['source_ticker']} if config.get('source_ticker') else {}),
                 secrets=[k for k in (settings.model_api_key, meta.model_api_key) if k])
     return work

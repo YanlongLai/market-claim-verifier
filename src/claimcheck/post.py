@@ -238,9 +238,33 @@ def extract_claims(
     max_output_tokens: int = MAX_EXTRACTION_TOKENS,
     reasoning_effort: str | None = None,
     source_period: str | None = None,
+    source_ticker: str | None = None,
+    max_proposals: int | None = None,
 ) -> list[dict[str, Any]]:
     adapter = get_provider(provider)
     request = _extraction_payload(adapter, post, model)
+    additions = []
+    if source_ticker:
+        if not re.fullmatch(r'[A-Z][A-Z0-9.-]{0,9}', source_ticker):
+            raise PostError('invalid source ticker context')
+        additions.append('User-supplied document ticker context: ' + source_ticker
+            + '. This is an unauthenticated issuer hint, not part of the quoted source and not financial evidence. '
+            'Use it only when the document has no explicit issuer. Preserve explicitly named other issuers; '
+            'never relabel their claims to match the hint. Never include this context in a quote.')
+    if max_proposals is not None:
+        if type(max_proposals) is not int or max_proposals < 1:
+            raise PostError('max_proposals must be a positive integer')
+        additions.append(f'Bounded extraction: return AT MOST {max_proposals} atomic claims in this window. '
+            'For dense financial tables prioritize the latest explicitly labeled period and revenue, GAAP net income, '
+            'diluted EPS and operating cash flow before other metrics. Preserve table units, period and GAAP/non-GAAP labels. '
+            'Do not enumerate every historical cell. A quote must still be an exact contiguous span of the original input. '
+            'If a chart has no readable numeric value, do not estimate one from bar or line positions.')
+    if additions:
+        extra = '\n\n' + '\n'.join(additions)
+        if adapter.chat_completions:
+            request['messages'][0]['content'] += extra
+        else:
+            request['instructions'] += extra
     if source_period:
         context = ('\n\nNearby source period (context only, outside the quoted post): ' + source_period
                    + '. Use it only to resolve year/quarter. Every quote must come entirely from the post input; '
@@ -411,6 +435,9 @@ def check_post(
     on_progress: Callable[[list[dict[str, Any]]], None] | None = None,
     extraction_max_output_tokens: int = MAX_EXTRACTION_TOKENS,
     allow_long_input: bool = False,
+    source_ticker: str | None = None,
+    bounded_extraction: bool = False,
+    extraction_reasoning_effort: str | None = None,
 ) -> dict[str, Any]:
     if len(post) > MAX_POST_CHARS and not allow_long_input:
         raise PostError(f"post is longer than {MAX_POST_CHARS} characters; paste one article section at a time")
@@ -421,7 +448,10 @@ def check_post(
     extraction_trace = TraceRecorder("[extraction] " + post[:200], model, provider=provider, secrets=secrets)
     from .policy import policy_for
     extraction_trace.verification_policy = policy_for(edgar).to_dict()
+    extraction_effort = extraction_reasoning_effort
     partitioned = allow_long_input and len(post) > MAX_POST_CHARS
+    if extraction_effort is None and partitioned:
+        extraction_effort = 'low'
     windows = extraction_windows(post, max_chars=LONG_EXTRACTION_CHARS if partitioned else MAX_POST_CHARS - 200)
     try:
         proposed = []
@@ -437,7 +467,9 @@ def check_post(
                     context = mentions[-1]['text']
             extracted = extract_claims(window, client=client, ledger=ledger, model=model, provider=provider,
                                        recorder=extraction_trace, max_output_tokens=extraction_max_output_tokens,
-                                       reasoning_effort='low' if partitioned else None, source_period=context)
+                                       reasoning_effort=extraction_effort, source_period=context,
+                                       **({'source_ticker': source_ticker} if source_ticker else {}),
+                                       **({'max_proposals': max_claims} if bounded_extraction else {}))
             proposed.extend({**item, "source_window": [start, end] if partitioned else None,
                              "extraction_window": window_index} for item in extracted)
     finally:
@@ -515,7 +547,10 @@ def check_post(
         "extraction_trace": str(extraction_path.relative_to(out_dir)),
         "proposed_count": len(proposed),
         "extraction_windows": [list(w) for w in windows],
-        "extraction_reasoning_effort": "low" if partitioned else None,
+        "extraction_reasoning_effort": extraction_effort,
+        "source_context": {"ticker_hint": source_ticker, "authenticated": False} if source_ticker else None,
+        "extraction_scope": {"bounded": bounded_extraction, "requested_max_per_window": max_claims if bounded_extraction else None,
+                             "full_content_recall": "unknown", "selection": "latest explicit period and core financial metrics" if bounded_extraction else "all proposed claims"},
         "claim_limit": {"per": "extraction_window" if partitioned else "post", "limit": max_claims,
                         "verification_calls": verified,
                         "reused": sum('verification_reused_from' in item for item in claims)},
