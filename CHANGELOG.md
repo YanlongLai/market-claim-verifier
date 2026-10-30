@@ -51,3 +51,10 @@ The first/root commit is **`7c5670b84e6052db9fa67fd86606fb2ee11ee42c`**, authore
 - Added `us-financial-v1` policy identity and `--as-of` for edgar/verify/post/ingest. Filters SEC facts before normalization/derivation and release evidence before admission/reuse, records policy in reports/traces, and preserves no-cutoff model replay payloads. Historical archive and intraday reconstruction remain out of scope.
 
 - Added a bounded serial ingestion queue with frozen source/input snapshots, versioned execution identity, successful-job reuse, crash/partial-result review states and conservative per-job admission caps. Added stage/attempt cost estimates and retained-reservation reporting; provider billed amounts remain unknown.
+
+## Input-format evidence refresh — 2026-10-30
+
+- Clarified README support symbols: integration is separate from accuracy, full-content coverage and vendor-native modalities.
+- Added six preselected paid format probes with a shared $3 cap: Markdown, JPEG, WebP, MP3, silent MP4 and native-text PDF. [Results, per-provider spend, limits and raw reports](docs/evidence/input-formats-2026-10-30/REPORT.md) remain auditable; no failed attempt is discarded.
+- Extended the existing probe runner to Fireworks text verification, with three equal provider budget partitions; removed stale prior-run budget metadata. Added an offline format-report builder that checks input hashes and cost reconciliation.
+- Added the [test-record index and reuse contract](docs/TEST_RECORDS.md), frozen raw/normalized per-channel text, and a suite runner that records command/log/exit-code history without overwriting prior runs.

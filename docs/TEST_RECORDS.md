@@ -1,0 +1,47 @@
+# Test records and reuse
+
+Retain every paid attempt, including failed extraction, provider errors, abstentions and budget stops. Never overwrite an earlier run or silently replace it with a better result. Saved outputs are replay evidence, not a fresh live run.
+
+## Evidence index
+
+| Record | Purpose and boundary |
+|---|---|
+| [Original 357-claim evaluation](evidence/eval-v2-2026-10-27/REPORT.md) | Six systems; retained requests, outputs, gold and manifests |
+| [Post-hoc evaluation](evidence/eval-v2-2026-10-28-r2-posthoc/REPORT.md) | Same claims after fixes; not a new held-out benchmark |
+| [Aborted early evaluation](evidence/eval-2026-10-27-aborted-partial/) | Incomplete attempts remain available |
+| [L4 issuer-release evaluation](evidence/eval-l4-2026-10-29/REPORT.md) | 32 claims; retained miss and cost |
+| [Initial media probes](evidence/multimodal-2026-10-29/) | Original synthetic fixtures and baseline outputs |
+| [Media hardening probes](evidence/multimodal-2026-10-30/REPORT.md) | PNG, text, WAV, video and long audio; stage and coverage limits |
+| [Long-audio follow-up](evidence/multimodal-2026-10-30b/REPORT.md) | Failed extraction and adaptive repeats retained; frozen ASR comparison |
+| [Additional input formats](evidence/input-formats-2026-10-30/REPORT.md) | Markdown, JPEG, WebP, MP3, silent MP4 and native-text PDF |
+| [Offline judge walkthrough](evidence/judge-walkthrough/REPORT.md) | Deterministic evidence-to-verdict checks; no model calls |
+
+## What to retain for each new paid suite
+
+- Before execution: case selection, expected outcomes or explicit unknown ground truth, original inputs or permitted reproducible fixtures, SHA-256 hashes, provider/model, output-token limit, budget partitions and retry policy.
+- During execution: per-attempt requests/responses, extraction and verification traces, source quotes/locations, frozen evidence references, errors and reservation/reconciliation ledger events. Credentials must be redacted; account balances stay private.
+- After execution: every outcome, operational coverage (separate from recall/accuracy), wall time, estimated cost, source hashes and validation commands/results. Preserve failed attempts before starting a separately named adaptive repeat.
+- For new executions through the format-suite wrapper: command arguments, start/end timestamps, exit codes and stdout/stderr logs. The initial format run used the single-case runner: its protocol and structured reports are the retained execution evidence, not a fabricated historical console log.
+
+Derived WAVs or decoded frames may be omitted when the original input is retained and the protocol records their reconstruction. Original media, OCR/ASR responses and verification traces are not interchangeable: keep their roles explicit.
+
+## Reuse without more credits
+
+Read the saved HTML/JSON, rebuild reports and use recorded-response replay tests. The new [format index](evidence/input-formats-2026-10-30/runs.json) also links frozen raw and normalized text for each channel. Rechecking that text with a live verifier costs text tokens but skips another OCR/ASR request; it does **not** test media extraction, timestamps, speaker labels or cross-modal alignment again.
+
+```sh
+python3 scripts/multimodal/build_format_report.py
+sh scripts/verify.sh
+```
+
+The verifier is isolated from provider credentials and blocks network access. New fixture hashes are checked by the format-report builder. Input files for the additional formats are retained under `tests/fixtures/multimodal/format-probes/`; silent video reuses `tests/fixtures/multimodal/slides-silent.mp4`.
+
+## Repeat the live format suite
+
+This command makes paid calls, shares a $3 cap across cases ($1 per provider), validates the registered input hashes and refuses an existing output directory:
+
+```sh
+.venv/bin/python scripts/multimodal/run_format_suite.py --out-root runs/formats-001
+```
+
+Keep the original evidence unchanged. Use a new directory for each run; compare model/prompt/policy/source/input hashes before interpreting changes. Do not publish a best-of score or treat small synthetic examples as a general accuracy benchmark.

@@ -26,6 +26,10 @@ Sources: [Baseten model library](https://www.baseten.co/library/muse-spark-open/
 
 Accepted duration is a decoder limit, not a demonstrated accuracy guarantee. Media read/heard text remains a claim, not financial evidence.
 
+## Recorded input-format probes
+
+The [2026-10-30 format report](evidence/input-formats-2026-10-30/REPORT.md) adds six preselected paid smoke probes across all three text providers: Markdown, JPEG, WebP, MP3, silent MP4 and local native-text PDF. Per-case completion, claim counts, verdicts, latency and ledger costs are public. One example is evidence for that path, not exhaustive codec, language, provider or accuracy validation. Media still uses Meta OCR/ASR before text-provider routing; no native Baseten/Fireworks media endpoint was tested. Unsupported URLs and scanned PDFs remain deferred.
+
 ## Price comparison
 
 USD per million tokens; published standard rates, not credit-adjusted prices.

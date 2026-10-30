@@ -23,7 +23,7 @@ Meta Muse models find claims and retrieve evidence. Python checks numbers, perio
 
 ## Support and boundaries
 
-**Legend:** ✅ integrated · 🟡 limited / preprocessing required · — not integrated. These are **repository capabilities**, not every capability a vendor advertises.
+**Legend:** ✅ integrated · 🟡 limited / preprocessing required · — not integrated. These symbols describe **repository integration**, not accuracy, complete-content coverage, or every capability a vendor advertises. 🟡 paths run today with the listed preprocessing/limits; they are not merely planned.
 
 | Input format | Meta text checks | Baseten text checks | Fireworks text checks | What actually runs / limit |
 | --- | :---: | :---: | :---: | --- |
@@ -35,6 +35,8 @@ Meta Muse models find claims and retrieve evidence. Python checks numbers, perio
 | 🎬 Video files | 🟡 | 🟡 + Meta key | 🟡 + Meta key | Meta ASR + OCR of **three frames**; not full-video coverage |
 | 🔗 General webpage URL | — | — | — | No login, browser rendering or arbitrary HTML ingestion |
 | 📦 Provider-native batch | — | — | — | Parallel execution is not discounted vendor batch |
+
+[Test-record index and reuse guide](docs/TEST_RECORDS.md) · **Live evidence:** [six additional format probes](docs/evidence/input-formats-2026-10-30/REPORT.md) record Markdown → Fireworks, JPEG → Meta OCR → Baseten, WebP → Meta OCR → Fireworks, MP3 → Meta ASR → Fireworks, silent MP4 → three Meta OCR frames → Fireworks, and native-text PDF → Meta. Each combination has one retained attempt with verdicts, coverage, latency and estimated cost. These small synthetic smoke tests are not a full format × provider benchmark. [Earlier PNG/WAV/video and long-audio probes](docs/evidence/multimodal-2026-10-30/REPORT.md) remain available.
 
 **File limits:** 128 MiB; audio/video ≤2 hours. These are acceptance limits, not validated accuracy at that scale. [Extensions, vendor capabilities and endpoint caveats](docs/PROVIDERS.md#platform-capability-versus-integration).
 

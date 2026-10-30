@@ -99,3 +99,7 @@ The first commit is `7c5670b84e6052db9fa67fd86606fb2ee11ee42c`, authored **2026-
 | [planned work](ROADMAP.md), [license](LICENSE), [credits](CREDITS.md) | Public product plans, MIT code license and SEC attribution |
 
 Check local Markdown links with `python3 scripts/check_links.py`; `--external` additionally fetches HTTP links and separately reports blocked/unverifiable responses ([checker](scripts/check_links.py)). Do not use live evaluation, SEC fetches, synthesis or media-render commands to verify offline claims. Preserve recorded evidence, numbers, prompt files and product code when maintaining this documentation.
+
+## Retain test records for reuse
+
+Owner preference, 2026-10-30: retain all test-run evidence, including failed/partial paid attempts, so future work can reuse it. Follow [the test-record guide](docs/TEST_RECORDS.md): freeze cases and budgets before paid execution; retain input/source hashes, parameters, raw redacted responses, traces, verdicts, coverage, ledger costs and validation logs. Do not overwrite previous runs or select only successes. Prefer offline replay or frozen-transcript rechecks when they answer the question. Explicitly label rechecks that do not retest OCR/ASR. Never commit credentials or private account balances.

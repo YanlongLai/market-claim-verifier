@@ -60,3 +60,7 @@ The [judge walkthrough](evidence/judge-walkthrough/REPORT.md) is implemented and
 ### Milestone 7 verification — 2026-10-30
 
 [Cost accounting and bounded queue](QUEUE_AND_COSTS.md) are implemented as a serial, job-level resume workflow with frozen SEC evidence. Twelve new queue/cost tests cover admission limits, successful-job reuse, unknown outcomes, partial results, source/input/model changes, artifact tampering, process locks, duplicate inputs and cost overruns. `sh scripts/verify.sh` passed: 880 product tests, 149 demo Python tests, 55 Node tests; fixtures, figures, three byte-identical generated outputs and local links passed. No paid model calls or live SEC requests were used. Provider bills, per-channel retry/resume, parallel workers and native discounted Batch APIs remain unimplemented.
+
+### Input-format validation follow-up — 2026-10-30
+
+Owner-authorized paid format probes supplement milestones 1–3: Markdown, JPEG, WebP, MP3, silent MP4 and native-text PDF, with a $3 shared cap and retained failures. [Registered cases and measured results](evidence/input-formats-2026-10-30/REPORT.md) distinguish live-tested routes from repository integration. These known synthetic examples do not satisfy milestone 8’s independent-evaluation gate. URL ingestion, PDF OCR and native provider media adapters remain deferred.

@@ -39,7 +39,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("name")
     parser.add_argument("file", type=Path)
-    parser.add_argument("--provider", choices=("meta", "baseten"), default="meta")
+    parser.add_argument("--provider", choices=("meta", "baseten", "fireworks"), default="meta")
     parser.add_argument("--max-output-tokens", type=int, default=8000)
     parser.add_argument("--out-root", type=Path, default=OUT)
     parser.add_argument("--budget", type=float, default=8.0)
@@ -54,10 +54,10 @@ def main() -> int:
     if dest.exists():
         parser.error("run already exists; choose a new name")
     meta = load_settings(provider="meta")
-    text = meta if args.provider == "meta" else load_settings(provider="baseten")
+    text = meta if args.provider == "meta" else load_settings(provider=args.provider)
     if not meta.model_api_key or not text.model_api_key:
         parser.error("required provider key is unavailable")
-    partition = {"meta": args.budget / 2, "baseten": args.budget / 2, "fireworks": 0}
+    partition = {provider: args.budget / 3 for provider in ("meta", "baseten", "fireworks")}
     ledger = Ledger(output / "ledger.jsonl", budget_usd=args.budget, provider_budgets=partition)
     client = create_client(args.provider, text.model_api_key).with_options(max_retries=0, timeout=120)
     vision = client if args.provider == "meta" else create_client("meta", meta.model_api_key).with_options(max_retries=0, timeout=120)
@@ -68,7 +68,7 @@ def main() -> int:
                 "input": str(path.relative_to(ROOT)), "input_sha256": sha256(path),
                 "provider": args.provider, "text_model": text.model, "vision_model": "muse-spark-1.3",
                 "asr_model": "muse-voice-transcribe-1.0", "total_budget_usd": args.budget,
-                "prior_spend_usd": 2.3002991, "combined_cap_usd": 20,
+                "budget_scope": "all runs sharing this output root; three equal provider caps",
                 "partition_usd": partition, "sdk_retries": 0,
                 "claim_limit_policy": "8 unique checks per extraction window for inputs over 6000 chars; otherwise 8 per channel; exact rewrite checks reused with source quotes retained",
                 "transient_retry_policy": "at most 3 attempts for HTTP 500/502/503/504; 1s, 2s backoff; each attempt reserved and traced",
