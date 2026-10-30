@@ -244,6 +244,8 @@ def ingest_file(path: Path, *, client: Any, edgar: Any, ledger: Ledger, model: s
             channel["stages"] = channel_stages(channel)
         report["stages"] = aggregate_stages(report["channels"], "; ".join(report["errors"]), report["input"].get("kind"))
         report["coverage"] = coverage_summary(report["channels"])
+        from .coverage_diagnostics import coverage_diagnostics
+        report["coverage_diagnostics"] = coverage_diagnostics(report["channels"])
         report["cost_breakdown"] = ledger.cost_summary()
         report["cost_usd"] = round(ledger.spent_total - spent_before, 8)
         report["reservation_ids"] = list(ledger.amounts)
@@ -342,6 +344,10 @@ def render_html(report: dict[str, Any]) -> str:
     costs = report.get("cost_breakdown", {})
     cost_html = "<section><h2>Cost breakdown (USD)</h2><ul>" + "".join(
         f"<li>{esc(stage)}: ${amount:.6f}</li>" for stage, amount in costs.get("by_stage_usd", {}).items()) + "</ul><p>Provider bill: not reconciled. Estimates include retained reservations and retries.</p></section>"
+    from .coverage_diagnostics import coverage_diagnostics
+    diagnostic_html = "<section><h2>Coverage gaps and next steps</h2>" + "".join(
+        f"<p><strong>{esc(d['channel_id'])}: {esc(d['code'])}</strong> — {esc(d['message'])} {esc(d['next_step'])}</p>"
+        for d in coverage_diagnostics(report["channels"])) + "</section>"
     coverage = coverage_summary(report["channels"])
     coverage_html = (
         f"<section><h2>What was checked</h2><p>{coverage['proposed_claims']} proposed · "
@@ -380,4 +386,4 @@ def render_html(report: dict[str, Any]) -> str:
 <style>body{{max-width:1000px;margin:32px auto;padding:0 20px;font:16px/1.5 system-ui;color:#18212b;background:#f8f8f5}}table{{border-collapse:collapse;width:100%}}td,th{{padding:10px;text-align:left;border:1px solid #ccc}}pre{{white-space:pre-wrap}}section{{margin:32px 0}}blockquote{{border-left:3px solid #789;padding-left:16px}}li{{margin:20px 0}}</style>
 <h1>Input probe: {esc(report['input']['file'])}</h1><p>{esc(report['status'])} · ${report.get('cost_usd', 0):.6f} · {report.get('wall_clock_s', 0)} s</p>
 <p>Read/heard values require SEC evidence. Speaker labels are unverified, session-scoped labels. Timestamps cover whole turns, not individual words.</p>
-{policy_description}{cost_html}{coverage_html}<p>{esc("; ".join(report.get("limitations", [])))}</p><table><tr><th>Stage</th><th>Outcome</th><th>Reason</th></tr>{rows}</table>{''.join(blocks)}<p>{esc('; '.join(report['errors']))}</p></html>"""
+{policy_description}{cost_html}{coverage_html}{diagnostic_html}<p>{esc("; ".join(report.get("limitations", [])))}</p><table><tr><th>Stage</th><th>Outcome</th><th>Reason</th></tr>{rows}</table>{''.join(blocks)}<p>{esc('; '.join(report['errors']))}</p></html>"""

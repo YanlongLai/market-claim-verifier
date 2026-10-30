@@ -49,3 +49,7 @@ Uploaded files are **claims to verify**, not automatically trusted evidence. Tod
 `review-stock` now passes the selected ticker as an **unauthenticated source hint**, never as quotable evidence or an override of another explicitly named issuer. Table extraction requests contiguous row quotations and bounded proposals; it must not assemble a quotation from separated headers and cells. Exact ticker identity and share-class alias support remain separate concerns. See the [context protocol](STOCK_DOCUMENT_CONTEXT.md).
 
 The [retained Tesla example](evidence/stock-context-posthoc-2026-10-30/attempt-2/summary/stock-review.html) reviews three real slide images: eight claim occurrences, three supported, five insufficient, and one chart page without checked target claims. The live smoke check used four proposals per window, as in the command above; the default of eight was not separately live-validated. Both [post-hoc attempts](evidence/stock-context-posthoc-2026-10-30/REPORT.md), including failed quotations, are public. This is a known-failure product check with reused OCR, not a new accuracy benchmark.
+
+## Chart coverage diagnostics
+
+Ingestion and stock summaries now expose observed coverage gaps and suggested next steps. OCR channels always disclose unverified visual geometry, even when text claims were checked. Zero extraction, empty text and processing errors are distinct. The [Tesla diagnosis](evidence/chart-diagnosis-2026-10-30/REPORT.md) reuses retained reports with no API cost; it does not add chart verdicts.

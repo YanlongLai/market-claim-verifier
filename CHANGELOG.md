@@ -70,3 +70,7 @@ The first/root commit is **`7c5670b84e6052db9fa67fd86606fb2ee11ee42c`**, authore
 - Published same-input nine-format results, native-image probes, full input/output artifacts, frozen source archives and spend audits; corrected English/Chinese support tables.
 - Added bounded stock context and contiguous table quotation rules to multi-file review; retained both real Tesla follow-up attempts and an evidence-linked summary.
 - Final offline verification passed 901 product, 149 demo Python and 55 Node tests. Upload UI, validated AI narrative and real-recording accuracy evaluation remain planned.
+
+## 2026-10-30 — explain unchecked chart content
+
+Added per-channel coverage diagnostics and actionable next steps to ingestion and stock summaries. Retained the real Tesla chart diagnosis and offline summary replay, without changing paid records or claiming chart geometry is verified.

@@ -674,3 +674,5 @@ The masthead captures the website review scene. The standalone Hover animation i
 </details>
 
 Batch local work with the [bounded queue and cost reports](docs/QUEUE_AND_COSTS.md): frozen evidence, per-job budget admission, integrity-checked successful-job reuse and explicit uncertain-outcome handling. This is not a provider Batch API.
+
+**Chart coverage:** OCR retains visible text, not bar heights or series geometry. Reports now explain zero-claim and failed channels with next steps. [Real Tesla chart diagnosis and updated summary](docs/evidence/chart-diagnosis-2026-10-30/REPORT.md); automatic chart-value verification remains planned.

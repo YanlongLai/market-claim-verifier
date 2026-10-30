@@ -55,3 +55,7 @@ Keep the original evidence unchanged. Use a new directory for each run; compare 
 - [Nine-format final benchmark](evidence/fair-multimodal-v1/REPORT.md): 319 expected artifact records audited, identical per-case inputs across platforms, raw requests/responses and retained failures; [offline reuse](evidence/fair-multimodal-v1/REUSE.md).
 - [Real Tesla context follow-ups](evidence/stock-context-posthoc-2026-10-30/REPORT.md): both attempts retained, 41 recorded requests, Baseten only, frozen OCR reused. These known-failure checks do not replace the primary results.
 - [Combined task spend](evidence/fair-multimodal-v1/task-spend.json): separate primary and post-hoc estimates/reservations, each provider below its $40 authorization.
+
+## Chart diagnosis replay
+
+[Real Tesla chart investigation](evidence/chart-diagnosis-2026-10-30/REPORT.md) preserves original paid outputs and source hashes; new summary explains visual geometry and zero-extraction gaps. No new API calls or accuracy scores.

@@ -76,3 +76,7 @@ Published the [nine-format paired study](evidence/fair-multimodal-v1/REPORT.md),
 Shipped bounded single-stock multi-file review, unauthenticated ticker context and evidence-linked deterministic summaries. Both real-document repair attempts remain public; the final [Tesla example](evidence/stock-context-posthoc-2026-10-30/attempt-2/summary/stock-review.html) has three supported and five insufficient occurrences, with the chart unchecked. Verification: 901 product tests, 149 demo Python tests and 55 Node tests passed, plus figures, byte-identical outputs and Markdown links.
 
 Next: (1) multi-file ticker upload UI using the existing queue and budget gates; (2) independently labeled real tables and recordings plus cash-flow/KPI evidence coverage; (3) optional AI narrative with validated citations/numbers and an explicit budget; (4) native audio/video adapters, long-media continuation and vendor Batch. These remain planned, not shipped. See the [delivery plan](FAIR_BENCHMARK_AND_STOCK_REVIEW_PLAN.md).
+
+## Chart follow-up — 2026-10-30
+
+Shipped per-channel coverage diagnostics in ingestion and stock summaries; retained a no-cost [Tesla chart replay and detailed roadmap](evidence/chart-diagnosis-2026-10-30/REPORT.md). The image is readable but unlabeled bar values and geometry are absent from OCR. Next chart priorities: confirmed companion-table links and cash-flow/KPI evidence, then structured vision/geometry with uncertainty and independently labeled held-out charts. Automatic chart verification is not shipped.

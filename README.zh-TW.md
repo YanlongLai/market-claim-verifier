@@ -310,3 +310,5 @@ PDF 使用 `ingest report.pdf` 與相同參數。保留頁碼與檔案 hash，�
 頂部動畫直接擷取網站審查場景；另保留 Hover 獨立動畫的[重建程式](docs/scripts/build_readme_robot.py)、[靜態版本](docs/site/img/auditor/H/present.webp)；[設計與生成歷程](docs/prompts/site/auditor-robot.md)。[AI 主視覺的可重用 prompt](docs/prompts/hero-image.md)另有記錄；AI 圖片是示意，數值圖表使用實測資料。
 
 **英文 README 是主要版本。** 此頁提供繁體中文導覽；原始主張、證據與模型輸出維持原文。[語言規範](docs/LANGUAGE.md)。
+
+**圖表查核限制：** OCR 保留文字，尚未驗證柱高及序列幾何關係。報告現在區分零主張、未讀到文字與處理錯誤，並提示補救方式。[Tesla 圖表診斷與新版摘要](docs/evidence/chart-diagnosis-2026-10-30/REPORT.md)；自動圖形數值查核仍待開發。
