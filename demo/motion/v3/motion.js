@@ -166,13 +166,13 @@
     }
     return html+
       box(96,488,1728,68,'Long-call coverage · guarded / checked','body muted',56)+
-      box(96,556,848,96,`<a href="../../../${esc(live.source)}">${n(live.program_checked+'/'+live.expected,96)}</a>`,'body amber',96)+
-      box(96,652,848,68,'· full-media audio','body amber',56)+
-      box(976,556,848,96,`<a href="../../../${esc(frozen.source)}">${n(frozen.program_checked+'/'+frozen.expected,96)}</a>`,'body amber',96)+
-      box(976,652,848,68,'· frozen-ASR text recheck','body amber',56)+
-      box(96,720,1728,68,'Post-hoc development probe · coverage ≠ verdict accuracy','body muted',56)+
-      box(96,788,800,68,'Speaker labels: '+(R.speaker_identity.verified?'verified':'unverified'),'body',56)+
-      box(920,788,904,68,'L4: regression test · not held out','body muted',56);
+      box(96,556,848,88,`<a href="../../../${esc(live.source)}">${esc(live.program_checked+'/'+live.expected)}</a>`,'body amber',72)+
+      box(96,644,848,68,'· full-media audio','body amber',56)+
+      box(976,556,848,88,`<a href="../../../${esc(frozen.source)}">${esc(frozen.program_checked+'/'+frozen.expected)}</a>`,'body amber',72)+
+      box(976,644,848,68,'· frozen-ASR text recheck','body amber',56)+
+      box(96,712,1728,68,'Post-hoc development probe · coverage ≠ verdict accuracy','body muted',56)+
+      box(96,780,800,68,'Speaker labels: '+(R.speaker_identity.verified?'verified':'unverified'),'body',56)+
+      box(920,780,904,68,'L4: regression test · not held out','body muted',56);
   }
   function qrSVG() {
     const {matrix,quiet_zone:q}=D.qr,size=matrix.length+2*q;
