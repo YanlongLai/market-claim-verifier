@@ -417,6 +417,7 @@ def check_post(
     out_dir.mkdir(parents=True, exist_ok=True)
     traces = out_dir / "traces"
     started = time.perf_counter()
+    ledger.stage = "claim_extraction"
     extraction_trace = TraceRecorder("[extraction] " + post[:200], model, provider=provider, secrets=secrets)
     from .policy import policy_for
     extraction_trace.verification_policy = policy_for(edgar).to_dict()
@@ -444,6 +445,7 @@ def check_post(
     claims = screen_claims(post, proposed)
     if on_progress:
         on_progress(claims)
+    ledger.stage = "claim_verification"
     verified = 0
     window_counts: dict[int, int] = {}
     verification_cache: dict[tuple, dict[str, Any]] = {}
@@ -526,6 +528,11 @@ def check_post(
             verdict: sum(item.get("verdict") == verdict for item in claims)
             for verdict in ("supported", "contradicted", "insufficient_evidence")
         },
+        "cost_breakdown": {"currency": "USD", "billed_usd": None,
+                           "estimated_or_reserved_usd": total_cost,
+                           "by_stage_usd": {"claim_extraction": extraction_cost,
+                                            "claim_verification": total_cost - extraction_cost},
+                           "basis": "Trace ledger estimates, including retained reservations; not a provider invoice."},
         "cost_usd": round(total_cost, 6),
         "wall_clock_s": round(time.perf_counter() - started, 1),
     }
@@ -633,6 +640,7 @@ mark.n{{background:var(--hl);color:inherit;padding:0 2px;border-radius:2px;font-
 .steps .key{{outline:2px solid var(--accent)}} .ev{{font-size:12.5px;overflow-wrap:anywhere}} a{{color:var(--accent)}}
 </style></head><body><main>
 <h1>Post check</h1>{policy_description}
+<p>Cost stages (USD): {html.escape(str((report.get('cost_breakdown') or {}).get('by_stage_usd', 'not recorded')))}. Provider bill not reconciled; estimates may include retained reservations.</p>
 <p class="meta">{len(report["claims"])} claims found · {counts["verified"]} verified ({verdicts["supported"]} supported, {verdicts["contradicted"]} contradicted, {verdicts["insufficient_evidence"]} insufficient) · {counts["not_checked"]} not checkable · {counts["rejected"]} rejected · {html.escape(str(report["provider"]))} {html.escape(str(report["model"]))} · ${report["cost_usd"]:.4f} · {report["wall_clock_s"]} s</p>
 <div class="post">{"".join(pieces)}</div>
 {"".join(cards)}

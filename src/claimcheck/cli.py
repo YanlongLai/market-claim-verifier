@@ -89,6 +89,19 @@ def _parser() -> argparse.ArgumentParser:
     ingest.add_argument("--reasoning-effort")
     ingest.add_argument("--out", type=Path, help="output directory (default runs/ingest/<UTC time>)")
 
+    queue = subparsers.add_parser("queue", help="run/resume a bounded serial ingestion queue against frozen SEC evidence")
+    queue.add_argument("files", nargs="+", type=Path)
+    queue.add_argument("--out", type=Path, required=True)
+    queue.add_argument("--evidence-cache", type=Path, required=True)
+    queue.add_argument("--budget", type=float, required=True)
+    queue.add_argument("--per-job-budget", type=float, required=True)
+    queue.add_argument("--max-jobs", type=_positive_int, default=10)
+    queue.add_argument("--provider", choices=PROVIDERS)
+    queue.add_argument("--model")
+    queue.add_argument("--max-claims", type=_positive_int, default=8)
+    queue.add_argument("--max-output-tokens", type=_positive_int)
+    queue.add_argument("--reasoning-effort")
+
     evaluation = subparsers.add_parser("eval", help="run or report the labeled evaluation")
     evaluation_subparsers = evaluation.add_subparsers(dest="eval_action", required=True)
 
@@ -113,7 +126,7 @@ def _parser() -> argparse.ArgumentParser:
     prompts_subparsers = prompts.add_subparsers(dest="prompts_action", required=True)
     prompts_subparsers.add_parser("export", help="write prompts/*.md from the code prompts")
     from .policy import parse_as_of
-    for command_parser in (edgar, verify, post, ingest):
+    for command_parser in (edgar, verify, post, ingest, queue):
         command_parser.add_argument('--as-of', type=parse_as_of, metavar='YYYY-MM-DD',
                                     help='include only evidence filed on or before this date (inclusive)')
     return parser
@@ -161,7 +174,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         # EDGAR, evaluation reports, and dry runs do not need to inspect a key file.
         reads_key = (
-            args.command in {"verify", "post", "ingest"} and not getattr(args, "dry_run", False)
+            args.command in {"verify", "post", "ingest", "queue"} and not getattr(args, "dry_run", False)
         ) or (
             args.command == "eval"
             and args.eval_action == "run"
@@ -319,6 +332,26 @@ def main(argv: Sequence[str] | None = None) -> int:
             return 1
         _print_json(manifest)
         return 0
+
+    if args.command == "queue":
+        from .job_queue import run_queue, cli_worker
+        from .policy import VerificationPolicy
+        config = {"provider": settings.provider, "model": args.model or settings.model,
+                  "as_of": args.as_of, "policy": VerificationPolicy(as_of=args.as_of).to_dict(),
+                  "budget_usd": args.budget, "per_job_budget_usd": args.per_job_budget,
+                  "max_claims": args.max_claims,
+                  "max_output_tokens": args.max_output_tokens or settings.max_output_tokens,
+                  "reasoning_effort": args.reasoning_effort or settings.reasoning_effort}
+        try:
+            state = run_queue(args.files, args.evidence_cache, args.out, config,
+                              cli_worker(settings, config), max_jobs=args.max_jobs)
+        except (ValueError, OSError) as exc:
+            print(f"Queue refused: {exc}", file=sys.stderr)
+            return 2
+        _print_json({"out": str(args.out), "status": state["status"],
+                     "admitted_budget_usd": state["admitted_budget_usd"],
+                     "jobs": [{"id": j["id"], "status": j["status"]} for j in state["jobs"]]})
+        return 0 if state['status'] == 'completed' else 1
 
     if args.command == "post":
         return _run_post(args, settings)

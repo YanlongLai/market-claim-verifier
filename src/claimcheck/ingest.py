@@ -39,6 +39,9 @@ class _InputLedger:
     def __init__(self, parent: Ledger) -> None:
         self.parent = parent
         self.amounts: dict[str, float] = {}
+        self.cost_records: dict[str, dict[str, Any]] = {}
+        self.stage = "unclassified"
+
 
     @property
     def spent_total(self) -> float:
@@ -47,17 +50,45 @@ class _InputLedger:
     def reserve(self, *args: Any, **kwargs: Any) -> Any:
         reservation = self.parent.reserve(*args, **kwargs)
         self.amounts[reservation.reservation_id] = reservation.amount
+        self.cost_records[reservation.reservation_id] = {
+            "stage": self.stage, "provider": reservation.provider, "model": reservation.model,
+            "reserved_usd": reservation.amount, "estimated_usd": reservation.amount,
+            "basis": "retained_reservation"}
         return reservation
 
     def reserve_audio(self, duration_s: float) -> Any:
         reservation = self.parent.reserve_audio(duration_s)
         self.amounts[reservation.reservation_id] = reservation.amount
+        self.cost_records[reservation.reservation_id] = {
+            "stage": self.stage, "provider": reservation.provider, "model": reservation.model,
+            "reserved_usd": reservation.amount, "estimated_usd": reservation.amount,
+            "basis": "retained_reservation"}
         return reservation
 
     def reconcile(self, reservation: Any, usage: Any = None) -> float:
         amount = self.parent.reconcile(reservation, usage)
         self.amounts[reservation.reservation_id] = amount
+        record = self.cost_records[reservation.reservation_id]
+        record["estimated_usd"] = amount
+        # Consult the authoritative reconciliation event, not amount differences.
+        events = self.parent._events()
+        event = next((e for e in reversed(events) if e.get("event") == "reconcile"
+                      and e.get("reservation_id") == reservation.reservation_id), None)
+        record["basis"] = "usage_estimate" if event and not event.get("usage_missing") else "retained_reservation"
         return amount
+
+    def cost_summary(self) -> dict[str, Any]:
+        stages: dict[str, float] = {}
+        for record in self.cost_records.values():
+            stages[record["stage"]] = stages.get(record["stage"], 0.0) + record["estimated_usd"]
+        return {"currency": "USD", "billed_usd": None,
+                "estimated_or_reserved_usd": self.spent_total,
+                "original_reservations_usd": sum(r["reserved_usd"] for r in self.cost_records.values()),
+                "by_stage_usd": stages, "attempts": self.cost_records,
+                "price_basis": "Configured ledger rates; not a provider invoice. Failed/usage-less reservations retained; retries included.",
+                "asr_reserved_usd_per_hour": 0.18,
+                "rates": {str(k): dict(v) for k, v in self.parent.model_prices.items()}}
+
 
 
 def _stage(number: int, status: str, reason: str) -> dict[str, Any]:
@@ -207,6 +238,7 @@ def ingest_file(path: Path, *, client: Any, edgar: Any, ledger: Ledger, model: s
             channel["stages"] = channel_stages(channel)
         report["stages"] = aggregate_stages(report["channels"], "; ".join(report["errors"]), report["input"].get("kind"))
         report["coverage"] = coverage_summary(report["channels"])
+        report["cost_breakdown"] = ledger.cost_summary()
         report["cost_usd"] = round(ledger.spent_total - spent_before, 8)
         report["reservation_ids"] = list(ledger.amounts)
         report["wall_clock_s"] = round(time.perf_counter() - started, 3)
@@ -228,6 +260,7 @@ def ingest_file(path: Path, *, client: Any, edgar: Any, ledger: Ledger, model: s
             try:
                 if not channel["decoded"]:
                     continue
+                ledger.stage = "asr" if channel["kind"] == "transcript" else "ocr"
                 if channel["kind"] == "transcript":
                     if not meta_api_key or asr_http is None:
                         raise IngestError("Meta ASR key/client unavailable")
@@ -298,6 +331,9 @@ def render_html(report: dict[str, Any]) -> str:
     rows = "".join(f"<tr><td>{s['stage']}. {esc(s['name'])}</td><td>{esc(s['status'])}</td><td>{esc(s['reason'])}</td></tr>" for s in report.get("stages", []))
     from .policy import policy_html
     policy_description = policy_html(report)
+    costs = report.get("cost_breakdown", {})
+    cost_html = "<section><h2>Cost breakdown (USD)</h2><ul>" + "".join(
+        f"<li>{esc(stage)}: ${amount:.6f}</li>" for stage, amount in costs.get("by_stage_usd", {}).items()) + "</ul><p>Provider bill: not reconciled. Estimates include retained reservations and retries.</p></section>"
     coverage = coverage_summary(report["channels"])
     coverage_html = (
         f"<section><h2>What was checked</h2><p>{coverage['proposed_claims']} proposed · "
@@ -336,4 +372,4 @@ def render_html(report: dict[str, Any]) -> str:
 <style>body{{max-width:1000px;margin:32px auto;padding:0 20px;font:16px/1.5 system-ui;color:#18212b;background:#f8f8f5}}table{{border-collapse:collapse;width:100%}}td,th{{padding:10px;text-align:left;border:1px solid #ccc}}pre{{white-space:pre-wrap}}section{{margin:32px 0}}blockquote{{border-left:3px solid #789;padding-left:16px}}li{{margin:20px 0}}</style>
 <h1>Input probe: {esc(report['input']['file'])}</h1><p>{esc(report['status'])} · ${report.get('cost_usd', 0):.6f} · {report.get('wall_clock_s', 0)} s</p>
 <p>Read/heard values require SEC evidence. Speaker labels are unverified, session-scoped labels. Timestamps cover whole turns, not individual words.</p>
-{policy_description}{coverage_html}<table><tr><th>Stage</th><th>Outcome</th><th>Reason</th></tr>{rows}</table>{''.join(blocks)}<p>{esc('; '.join(report['errors']))}</p></html>"""
+{policy_description}{cost_html}{coverage_html}<table><tr><th>Stage</th><th>Outcome</th><th>Reason</th></tr>{rows}</table>{''.join(blocks)}<p>{esc('; '.join(report['errors']))}</p></html>"""
