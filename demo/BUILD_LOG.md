@@ -188,3 +188,41 @@ Validation: `UV_OFFLINE=1 sh scripts/verify.sh` passed: 817 product tests, 94 de
 Node tests, figure rebuild/check, three byte-identical explorer/site outputs and Markdown links/anchors.
 The final scene and documentation checks also pass. Actual host font geometry, voice/cue listening, final
 duration/loudness and visual approval remain unclaimed; no v007 export version was consumed.
+
+## v007 — 2026-10-30T04:11:52.349441+00:00
+
+Length: 178.200 s. Scenes >25% over budget: none.
+
+Changed scene cache keys: v301-disclosure: render, voice; v302-apple: render, voice; v303-extract: render, voice; v304-hover: render, voice; v305-proof: render, voice; v306-program: render, voice; v307-l4: render, voice; v308-screenshot: render, voice; v309-audio: render, voice; v310-results: render, voice; v311-limits: render, voice; v312-cta: render, voice; m08-results: removed; m02-spread: removed; m05-verdicts: removed; m03-baseline: removed; m04-extract: removed; m01-open: removed; m07-program: removed; m06-proof: removed; m10-cta: removed; m09-chinese: removed.
+
+Changed global cache keys: assembly_cache_key, audio_master_cache_key.
+
+Output: `/Users/yan/git/market-claim-verifier-video/demo/out/demo-v007.mp4`; SHA-256 `ccf1e25f17a946d32957e17254177fb00d16280427b1dc6d27087e0416bd33e3`.
+
+## v008 — 2026-10-30T04:50:02.022385+00:00
+
+Length: 178.200 s. Scenes >25% over budget: none.
+
+Changed scene cache keys: v301-disclosure: render; v302-apple: render; v303-extract: render; v304-hover: render; v305-proof: render; v306-program: render; v307-l4: render; v308-screenshot: render; v309-audio: render; v310-results: render; v311-limits: render; v312-cta: render.
+
+Changed global cache keys: assembly_cache_key.
+
+Output: `/Users/yan/git/market-claim-verifier-video/demo/out/demo-v008.mp4`; SHA-256 `52b2a3fc211e1b00e33605e4c4ee5a342a0fb1ce37c7a5dbccd89f8ac78f862e`.
+
+## v009 — 2026-10-30T05:14:05.061783+00:00
+
+Length: 178.200 s. Scenes >25% over budget: none.
+
+Changed scene cache keys: v301-disclosure: render; v302-apple: render; v303-extract: render; v304-hover: render; v305-proof: render; v306-program: render; v307-l4: render; v308-screenshot: render; v309-audio: render; v310-results: render; v311-limits: render; v312-cta: render.
+
+Changed global cache keys: assembly_cache_key.
+
+Output: `/Users/yan/git/market-claim-verifier-video/demo/out/demo-v009.mp4`; SHA-256 `5ef16ffdfc7ec5f4297485c3013690dd326465087d5e2d98fa1108331e4f551f`.
+
+## 2026-10-30 UTC — Owner approved v009 as the final submission video
+
+`demo/out/demo-v009.mp4` (v007 shot list after both independent AI2 review rounds): 178.200 s, 1920×1080 30 fps,
+integrated −14.17 LUFS, true peak −1.27 dBTP, SHA-256 prefix `5ef16ffdfc7ec5f4`. Round 1 (overall FAIL, six fixes)
+and round 2 (five fixed; limits-card border collision) reports are in the local review folders; the remaining
+collision was fixed in `2f0bbf2` and checked on the v009 review frame. The narrator audio is Breeze-TTS-2 output
+(research/non-commercial licence) and the film is not committed; host-measured timing files remain local outputs.
