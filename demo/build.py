@@ -178,8 +178,8 @@ class Builder:
         result = cached(folder / "receipt.json", key, files)
         if not result:
             if self.story.get("version") == 2:
-                raise BuildError(f"{scene['id']}: narration cache is missing or stale. Run voice for all ten "
-                                 "v2 shots on the host with the locked clone reference.")
+                raise BuildError(f"{scene['id']}: narration cache is missing or stale. Run voice for all "
+                                 "motion shots on the host with the locked clone reference.")
             raise BuildError(f"{scene['id']}: narration cache is missing or stale. Run voice (with the same "
                              "--voice-fallback option), or run all without --only.")
         return result

@@ -86,9 +86,9 @@ def font_path() -> Path:
     raise BuildError("No suitable system font. Install Arial Unicode or set up a system font before assembling.")
 
 
-def text_panel(text: str, destination: Path, *, lower_third: bool = False) -> None:
+def text_panel(text: str, destination: Path, *, lower_third: bool = False, font_size: int | None = None) -> None:
     """Transparent, tightly cropped typography for the top label and bottom subtitles."""
-    font = ImageFont.truetype(str(font_path()), 42 if lower_third else 50)
+    font = ImageFont.truetype(str(font_path()), font_size if font_size is not None else (42 if lower_third else 50))
     measure = ImageDraw.Draw(Image.new("RGBA", (1, 1)))
     lines = text.splitlines()
     widths = [measure.textlength(line, font=font) for line in lines]
@@ -106,7 +106,15 @@ def text_panel(text: str, destination: Path, *, lower_third: bool = False) -> No
         draw.rounded_rectangle((0, 0, 5, height - 1), radius=2, fill=(61, 220, 151, 255))
     for line, line_width, index in zip(lines, widths, range(len(lines))):
         x = 32 if lower_third else (width - line_width) / 2
-        draw.text((x, pad // 2 + index * line_height), line, fill="white", font=font, stroke_width=0)
+        y = pad // 2 + index * line_height
+        if font_size is not None and font_size >= 56:
+            # Arial Unicode's ascender offset otherwise clips 56 px descenders.
+            # Center actual glyphs inside the existing 60 px caption line box.
+            bounds = font.getbbox(line)
+            y += (line_height - (bounds[3] - bounds[1])) / 2
+            draw.text((x, y), line, fill="white", font=font, stroke_width=0, anchor="lt")
+        else:
+            draw.text((x, y), line, fill="white", font=font, stroke_width=0)
     panel.save(destination)
 
 

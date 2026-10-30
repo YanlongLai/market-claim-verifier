@@ -25,10 +25,10 @@ def window_subtitles(cues: list[Subtitle], start: float, length: float) -> list[
             for c in cues if c.end > start and c.start < start+length]
 
 
-def caption_canvas(text: str, panel_path: Path) -> Image.Image:
+def caption_canvas(text: str, panel_path: Path, *, font_size: int = 50) -> Image.Image:
     """The same caption placement is used by the film and review stills."""
     panel_path.parent.mkdir(parents=True, exist_ok=True)
-    media.text_panel(text, panel_path)
+    media.text_panel(text, panel_path, font_size=font_size)
     with Image.open(panel_path) as panel:
         if panel.height > 136:
             raise BuildError('Caption does not fit the reserved bottom 200 px with a 64 px safe margin.')
@@ -45,7 +45,7 @@ def caption_at(cues: list[Subtitle], time: float) -> str | None:
                  < math.ceil(c.end*media.FPS-1e-8)), None)
 
 
-def caption_review_frame(source: Path, destination: Path, cues: list[Subtitle], time: float) -> str | None:
+def caption_review_frame(source: Path, destination: Path, cues: list[Subtitle], time: float, *, font_size: int = 50) -> str | None:
     text = caption_at(cues, time)
     destination.parent.mkdir(parents=True, exist_ok=True)
     with Image.open(source) as image:
@@ -53,12 +53,12 @@ def caption_review_frame(source: Path, destination: Path, cues: list[Subtitle], 
             raise BuildError('Review frame must be 1920×1080.')
         frame = image.convert('RGBA')
     if text:
-        frame.alpha_composite(caption_canvas(text, destination.parent/'panels'/destination.name))
+        frame.alpha_composite(caption_canvas(text, destination.parent/'panels'/destination.name, font_size=font_size))
     frame.convert('RGB').save(destination)
     return text
 
 
-def burn_captions(picture: Path, cues: list[Subtitle], destination: Path, length: float) -> None:
+def burn_captions(picture: Path, cues: list[Subtitle], destination: Path, length: float, *, font_size: int = 50) -> None:
     """One transparent PNG stream avoids opening every cue as a looping video input."""
     folder = destination.parent/'captions'; folder.mkdir(parents=True,exist_ok=True)
     blank = folder/'blank.png'; Image.new('RGBA',media.SIZE).save(blank)
@@ -72,7 +72,7 @@ def burn_captions(picture: Path, cues: list[Subtitle], destination: Path, length
         if last <= first:
             continue
         hold('blank.png',first-cursor)
-        caption_canvas(cue.text, folder/f'panel-{i:03}.png').save(folder/f'cue-{i:03}.png')
+        caption_canvas(cue.text, folder/f'panel-{i:03}.png', font_size=font_size).save(folder/f'cue-{i:03}.png')
         hold(f'cue-{i:03}.png',last-first)
         cursor=last
     hold('blank.png',total_frames-cursor)

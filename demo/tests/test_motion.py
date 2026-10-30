@@ -211,7 +211,7 @@ def test_source_entities_are_decoded_once_at_data_load(monkeypatch):
 
 def preview_builder(tmp_path, durations=None):
     demo=tmp_path/'demo';(demo/'motion').mkdir(parents=True)
-    shutil.copy2(DEMO/'motion/qr.json',demo/'motion/qr.json')
+    shutil.copy2(DEMO/'motion/qr-v006.json',demo/'motion/qr-v006.json')
     audio=demo/'fixture.wav';tone(audio)
     def voice(scene):
         if durations is None:raise BuildError('Voice not generated yet')

@@ -107,6 +107,6 @@ def motiontest_window(timing: dict, beats: list[float], prefix: str = 'm05', len
     local = [b for b in beats if b >= shot['start']-1e-9 and b < shot['end']-1e-9]
     event = local[min(4, len(local)-1)]
     if cue_events:
-        event = next((e['t'] for e in cue_events[shot['id']] if e['event'] == 'flips.0'), event)
+        event = next((e['t'] for e in cue_events[shot['id']] if e['event'] in ('flips.0', 'strike')), event)
     start = max(shot['start'], math.floor(min(event-.2, shot['end']-length)*fps)/fps)
     return dict(shot=shot['id'], event=event, **{'from':start, 'to':start+length})

@@ -20,8 +20,19 @@ def require_v2(builder) -> None:
         raise BuildError('This command needs storyboard v2. The v1 capture/assemble path remains available.')
 
 
+def motion_folder(builder) -> Path:
+    return builder.demo / ('motion/v3' if builder.story.get('motion_variant') == 'v3' else 'motion')
+
+
+def renderer_args(builder) -> list:
+    return (['--entry', 'v3/index.html'] if builder.story.get('motion_variant') == 'v3' else [])
+
+
 def prepare(builder, *, require_voice: bool = False) -> dict:
     require_v2(builder)
+    if builder.story.get('motion_variant') == 'v3':
+        from motion_v3 import prepare as prepare_v3
+        return prepare_v3(builder, require_voice=require_voice)
     folder=builder.demo/'motion'; folder.mkdir(parents=True,exist_ok=True)
     config=builder.story['music']; source=builder.repo/config['beats']
     grid=read_json(source); offset,beats=video_beats(grid)
@@ -71,7 +82,7 @@ def prepare(builder, *, require_voice: bool = False) -> dict:
     cues=cue_document(builder.scenes,timing,local,analysis,beats)
     data=dict(timing=timing,beats=beat_data,cues=cues,scenes=builder.scenes,
               presentation_focus=builder.story.get('presentation_focus'),
-              product=product_data(builder.repo),qr=read_json(folder/'qr.json'))
+              product=product_data(builder.repo),qr=read_json(folder/'qr-v006.json'))
     if data['qr']['url']!=builder.story['site_url']:
         raise BuildError('Precomputed QR URL differs from the storyboard CTA. Regenerate its matrix locally.')
     write_json(folder/'timing.json',timing); write_json(folder/'beats.json',beat_data)
@@ -100,11 +111,14 @@ def output_path(builder, default: Path) -> Path:
 
 def keyframes(builder) -> None:
     timing=prepare(builder,require_voice=True)
-    times=builder.args.t or keyframe_times(timing,builder.scenes)
+    if builder.story.get('motion_variant') == 'v3':
+        times=builder.args.t or [f['t'] for f in read_json(motion_folder(builder)/'keyframes.json')]
+    else:
+        times=builder.args.t or keyframe_times(timing,builder.scenes)
     if any(not math.isfinite(t) or t<0 or t>timing['duration'] for t in times):
         raise BuildError('Keyframe time must be finite and within the timeline.')
-    output=output_path(builder,builder.demo/'out/keyframes-v2')
-    args=['node',builder.demo/'motion/render.mjs']
+    output=output_path(builder,builder.demo/('out/keyframes-v007' if builder.story.get('motion_variant')=='v3' else 'out/keyframes-v2'))
+    args=['node',builder.demo/'motion/render.mjs',*renderer_args(builder)]
     for t in times:
         args += ['--t',f'{t:.9f}']
     print(f"keyframes: {timing['source']} timing; seconds {', '.join(f'{t:.3f}' for t in times)}",flush=True)
@@ -118,8 +132,8 @@ def narration_subtitles(scenes: list[dict], timing: dict, cues: dict):
 
 def review_frames(builder) -> None:
     timing=prepare(builder,require_voice=True)
-    cues=read_json(builder.demo/'motion/cues.json')
-    output=output_path(builder,builder.demo/'out/review-v4')
+    cues=read_json(motion_folder(builder)/'cues.json')
+    output=output_path(builder,builder.demo/('out/review-v007' if builder.story.get('motion_variant')=='v3' else 'out/review-v4'))
     output.mkdir(parents=True,exist_ok=True)
     # An old completed index must not make a new plan or failed render look reviewed.
     (output/'index.json').unlink(missing_ok=True)
@@ -133,7 +147,7 @@ def review_frames(builder) -> None:
         print(f'Review plan: {output}/plan.json ({len(plan)} stills); full-length SRT: {srt}. '
               'Host Chromium renders PNGs; the same command without --prepare-only adds captioned/ stills.',flush=True)
         return
-    args=['node',builder.demo/'motion/render.mjs']
+    args=['node',builder.demo/'motion/render.mjs',*renderer_args(builder)]
     for frame in plan:
         args+=['--t',f"{frame['t']:.9f}"]
     media.command([*args,'--out',output],builder.cache/'review-v4.log')
@@ -145,12 +159,13 @@ def review_frames(builder) -> None:
         if actual['shot']!=expected['shot'] or abs(actual['t']-expected['t'])>1e-8 or not (output/actual['file']).is_file():
             raise BuildError('Review frame time, shot or PNG differs from its plan.')
         captioned='captioned/'+actual['file']
-        subtitle=motion_media.caption_review_frame(output/actual['file'],output/captioned,subtitles,actual['t'])
+        subtitle=motion_media.caption_review_frame(output/actual['file'],output/captioned,subtitles,actual['t'],
+                                                  font_size=56 if builder.story.get('motion_variant')=='v3' else 50)
         index.append({**expected,'file':actual['file'],'captioned_file':captioned,'subtitle':subtitle})
     write_json(output/'index.json',index)
     write_json(output/'evidence.json',dict(status='rendered',duration=timing['duration'],
                subtitles=dict(file=srt.name,sha256=file_hash(srt)),
-               inputs={p.name:file_hash(p) for p in (builder.demo/'motion').iterdir()
+               inputs={p.relative_to(builder.demo).as_posix():file_hash(p) for p in (builder.demo/'motion').rglob('*')
                        if p.suffix in ('.js','.css','.html','.mjs','.json')},
                frames=[dict(file=row['file'],sha256=file_hash(output/row['file']),
                             captioned_file=row['captioned_file'],captioned_sha256=file_hash(output/row['captioned_file']))
@@ -167,8 +182,8 @@ def render(builder, *, test: bool = False) -> dict:
     if media.duration(music)+1e-8 < timing['music_offset_s']+timing['duration']:
         raise BuildError('Music ends before the detected timeline. No looping/extrapolated beats are substituted.')
     if test:
-        window=motiontest_window(timing,read_json(builder.demo/'motion/beats.json')['beats_s'],builder.args.shot,builder.args.len,
-                                 cue_events=read_json(builder.demo/'motion/cues.json')['_events'])
+        window=motiontest_window(timing,read_json(motion_folder(builder)/'beats.json')['beats_s'],builder.args.shot,builder.args.len,
+                                 cue_events=read_json(motion_folder(builder)/'cues.json')['_events'])
         start,end=window['from'],window['to']
         output=output_path(builder,builder.demo/'out'/f"motiontest-{window['shot']}.mp4")
     else:
@@ -176,21 +191,28 @@ def render(builder, *, test: bool = False) -> dict:
             raise BuildError('Full render uses versioned demo/out/demo-vNNN.mp4; --out is for keyframes/motiontest.')
         start,end=0.,timing['duration']
     length=math.ceil((end-start)*30-1e-8)/30
-    source_hashes={p.name:file_hash(p) for p in (builder.demo/'motion').iterdir() if p.suffix in ('.js','.css','.html','.mjs','.json')}
+    source_hashes={p.relative_to(builder.demo).as_posix():file_hash(p) for p in (builder.demo/'motion').rglob('*') if p.suffix in ('.js','.css','.html','.mjs','.json')}
     implementation={p.name:file_hash(p) for p in [builder.demo/'motion_build.py',builder.demo/'motion_media.py',
                                                 builder.demo/'motion_cues.py',builder.demo/'motion_timing.py',
                                                 builder.demo/'media.py',builder.demo/'pipeline.py']}
-    key=cache_key('motion-v2',source_hashes,implementation,start,end,[v['key'] for v in voices],file_hash(music),builder.story['music']['gain_db'])
+    if builder.story.get('motion_variant') == 'v3':
+        from motion_v3 import evidence_data
+        implementation['motion_v3.py']=file_hash(builder.demo/'motion_v3.py')
+        evidence=evidence_data(builder.repo)['provenance']
+    else:
+        evidence=product_data(builder.repo)['provenance']
+    key=cache_key('motion-v2',source_hashes,implementation,evidence,start,end,[v['key'] for v in voices],file_hash(music),builder.story['music']['gain_db'])
     folder=builder.stage_dir('motion','test' if test else 'full',key)
     frames=folder/'frames'
     print(f"{'motiontest' if test else 'render'}: {start:.3f}–{end:.3f} s, host Chromium required",flush=True)
     # The renderer records its exact time/shot for every PNG. No screen recordings or v1 captures.
-    media.command(['node',builder.demo/'motion/render.mjs','--from',str(start),'--to',str(end),
+    media.command(['node',builder.demo/'motion/render.mjs',*renderer_args(builder),'--from',str(start),'--to',str(end),
                    '--fps','30','--out',frames],folder/'frames.log')
     motion_media.encode_frames(frames,folder/'picture.mp4',end-start)
-    cues=narration_subtitles(builder.scenes,timing,read_json(builder.demo/'motion/cues.json'))
+    cues=narration_subtitles(builder.scenes,timing,read_json(motion_folder(builder)/'cues.json'))
     local=motion_media.window_subtitles(cues,start,length)
-    motion_media.burn_captions(folder/'picture.mp4',local,folder/'captioned.mp4',length)
+    motion_media.burn_captions(folder/'picture.mp4',local,folder/'captioned.mp4',length,
+                              font_size=56 if builder.story.get('motion_variant')=='v3' else 50)
     motion_media.mix_audio([Path(v['artifacts']['audio']['path']) for v in voices],timing['shots'],music,
                            builder.story['music']['gain_db'],folder/'mix.wav',offset=timing['music_offset_s'],
                            timeline_duration=timing['duration'],start=start,length=length)
@@ -214,7 +236,7 @@ def render(builder, *, test: bool = False) -> dict:
     run=make_run_record(version=version,storyboard=builder.storyboard,scenes=records,total_s=validation['duration_s'],
                         inputs=dict(motion=source_hashes,implementation=implementation,music={builder.rel(music):file_hash(music)},
                                     narration={v['artifacts']['audio']['path']:v['artifacts']['audio']['sha256'] for v in voices},
-                                    evidence=product_data(builder.repo)['provenance']),
+                                    evidence=evidence),
                         versions=builder.versions(),output=output,subtitles=srt,previous=previous_run(builder.demo/'runs'),
                         assembly_cache_key=key,loudness=loudness,validation=validation,storyboard_version=2,
                         music_offset_s=timing['music_offset_s'],draft_only=any(v.get('draft_only') for v in voices),

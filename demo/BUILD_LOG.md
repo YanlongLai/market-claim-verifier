@@ -167,3 +167,24 @@ as before. Lesson: move or check ignored outputs before removing a worktree; nev
 
 demo-v006.mp4 (= v005, SHA-256 30bbf433…2149a, 160.4 s) approved by the Owner as the final hackathon demo video.
 Not uploaded or posted anywhere yet; the Breeze-TTS-2 non-commercial licence note was given to the Owner before approval.
+
+## 2026-10-29 — v007 gate 1 source proposal
+
+Prepared SHOTLIST-v3.md, storyboard-v3.yaml and NARRATION-v007.txt on demo/v007. Target 178 s;
+beat-snapped preview 178.1899 s. Kept the approved v006 entry, data and narration; the new timeline lives in
+motion/v3/. Added the complete spoken opening disclosure over the visible product, the site's Hover H poses
+and adapted pose/spotlight expressions, META guidance / Adobe non-GAAP release checks, the recorded self-made
+screenshot and synthetic-audio EPS error, original v2 results with corrected-gold/development labels, honest
+limits, and the new https://hackathon.dappgo.com/ URL/QR. Previous QR preserved as motion/qr-v006.json.
+
+REVISION-v007.md lists three key-frame times per scene, evidence contracts and host commands. The locked Breeze
+clone reference and measured music bed are reused. No TTS, Chromium, MPS, v007 frames, video render, upload or
+post was run. This is a source proposal awaiting Owner shot-list approval, not a new video export or approval.
+The explicit v007 brief authorizes a local source commit (or a bundle if Git metadata is read-only); no push.
+The worktree's shared Git metadata rejected `index.lock` creation, so the local commit is delivered as
+`demo/out/v007-source.bundle`, with the exact requested Claude Opus 5.5 co-author footer.
+
+Validation: `UV_OFFLINE=1 sh scripts/verify.sh` passed: 817 product tests, 94 demo tests and 52 standalone
+Node tests, figure rebuild/check, three byte-identical explorer/site outputs and Markdown links/anchors.
+The final scene and documentation checks also pass. Actual host font geometry, voice/cue listening, final
+duration/loudness and visual approval remain unclaimed; no v007 export version was consumed.

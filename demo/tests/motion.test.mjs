@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {createRequire} from 'node:module';
 import vm from 'node:vm';
+import './motion-v3.test.mjs';
 import {parseArgs,sampleTimes,frameName} from '../motion/render.mjs';
 const require=createRequire(import.meta.url), L=require('../motion/logic.js');
 const read=p=>readFileSync(new URL(p,import.meta.url),'utf8');
@@ -283,7 +284,7 @@ test('CTA has the explicit hackathon line, model credits, correct URL and origin
   assert(plain(stage.innerHTML).includes('Built during the Meta Global AI Developer Hackathon'));
   assert(plain(stage.innerHTML).includes('Muse Spark · Meta open weights'));
   assert.match(stage.innerHTML,/<svg[^>]*aria-label="QR code for https:\/\/yanlonglai\.github\.io\/market-claim-verifier\/site\/"/);
-  assert.deepEqual(JSON.parse(JSON.stringify(window.MOTION_DATA.qr)),json('../motion/qr.json'));
+  assert.deepEqual(JSON.parse(JSON.stringify(window.MOTION_DATA.qr)),json('../motion/qr-v006.json'));
   assert.equal(styles(stage.innerHTML,'hackathon-credit')[0]['font-size'],'56px');
 });
 test('renderer CLI supports exact stills and end-exclusive integer-indexed sequences',()=>{
@@ -314,5 +315,5 @@ test('precomputed QR independently decodes to the exact live-demo URL (v4 M byte
   const stream=payload.flatMap(v=>Array.from({length:8},(_,i)=>(v>>(7-i))&1));let cursor=0;
   const take=n=>{let result=0;for(let i=0;i<n;i++)result=result*2+stream[cursor++];return result;};
   assert.equal(take(4),4);const length=take(8);const decoded=String.fromCharCode(...Array.from({length},()=>take(8)));
-  assert.equal(decoded,'https://yanlonglai.github.io/market-claim-verifier/site/');assert.equal(decoded,qr.url);
+  assert.equal(decoded,'https://hackathon.dappgo.com/');assert.equal(decoded,qr.url);
 });

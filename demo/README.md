@@ -1,5 +1,11 @@
 # Reproducible demo video
 
+**v007 gate 1 proposal:** [SHOTLIST-v3.md](SHOTLIST-v3.md),
+[storyboard-v3.yaml](storyboard-v3.yaml), [narration](NARRATION-v007.txt) and
+[revision / host commands](REVISION-v007.md). Its separate [seekable entry](motion/v3/index.html)
+is a 178.1899 s target preview, with no v007 narration or frames rendered. Owner approval is pending.
+The Owner-approved v006 (160.433 s) remains the baseline; the default v2 files below are historical production sources.
+
 The default `storyboard.yaml` is now v2. Start with [v2 motion workflow](#v2-motion-workflow) below.
 The following original pipeline notes and commands describe **v1**, preserved in `storyboard-v1.yaml`.
 The old v002 capture-fix proposal is historical and was superseded by the approved v2 motion plan.

@@ -157,7 +157,7 @@ def test_review_command_requests_only_stills_and_writes_an_index_after_rendering
                                        '_events': {'s': [dict(event='flips.0', cue='Apple', t=3.)]}})
     monkeypatch.setattr(motion_build, 'prepare', lambda *args, **kwargs: timing)
     args = parser().parse_args(['review-frames'] + (['--prepare-only'] if prepare_only else []))
-    builder = SimpleNamespace(demo=demo, cache=demo/'cache', args=args,
+    builder = SimpleNamespace(demo=demo, cache=demo/'cache', args=args, story={},
                               scenes=[dict(id='s', narration='Apple, 102.5 billion.')])
     output = demo/'out/review-v4'
     write_json(output/'index.json', [dict(shot='stale', t=0, cue='old render')])
@@ -198,7 +198,7 @@ def test_failed_review_render_never_publishes_a_completed_index(tmp_path, monkey
     write_json(demo/'motion/cues.json', {'s': [dict(text='Apple, 102.5 billion.', start=2., end=6.)],
                                        '_events': {'s': []}})
     monkeypatch.setattr(motion_build, 'prepare', lambda *args, **kwargs: timing)
-    builder = SimpleNamespace(demo=demo, cache=demo/'cache', args=parser().parse_args(['review-frames']),
+    builder = SimpleNamespace(demo=demo, cache=demo/'cache', args=parser().parse_args(['review-frames']), story={},
                               scenes=[dict(id='s', narration='Apple, 102.5 billion.')])
     output = demo/'out/review-v4'
     write_json(output/'index.json', [dict(shot='stale', t=0, cue='old render')])

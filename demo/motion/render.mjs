@@ -5,13 +5,18 @@ import path from 'node:path';
 import {fileURLToPath, pathToFileURL} from 'node:url';
 import {launch, restrictNetwork} from '../capture/browser.mjs';
 import {checkLayout} from './layout-checks.mjs';
+import {checkV3Layout} from './v3/layout-checks.mjs';
 
 export function parseArgs(args) {
   const out={times:[],fps:30};
   for(let i=0;i<args.length;i++) {
     const flag=args[i], value=args[++i];
-    if(!['--t','--from','--to','--fps','--out'].includes(flag)||value===undefined) throw new Error('Usage: node render.mjs --t 3 --t 65 --t 155 --out dir | --from A --to B --fps 30 --out dir');
+    if(!['--t','--from','--to','--fps','--out','--entry'].includes(flag)||value===undefined) throw new Error('Usage: node render.mjs [--entry v3/index.html] --t 3 --out dir | --from A --to B --fps 30 --out dir');
     if(flag==='--out') out.out=path.resolve(value);
+    else if(flag==='--entry') {
+      if(!['index.html','v3/index.html'].includes(value)) throw new Error('Choose index.html or v3/index.html.');
+      out.entry=value;
+    }
     else {
       const n=Number(value); if(!Number.isFinite(n)) throw new Error('Times/fps must be finite');
       if(flag==='--t') out.times.push(n); else out[flag.slice(2)]=n;
@@ -31,7 +36,7 @@ export function frameName(i,t,sequence) {
   return sequence?`frame-${String(i).padStart(6,'0')}.png`:`keyframe-${String(i+1).padStart(2,'0')}-${t.toFixed(3).replace('.','p')}s.png`;
 }
 export async function renderFrames(options) {
-  const times=sampleTimes(options), entry=path.join(path.dirname(fileURLToPath(import.meta.url)),'index.html');
+  const times=sampleTimes(options), entry=path.join(path.dirname(fileURLToPath(import.meta.url)),options.entry||'index.html');
   await mkdir(options.out,{recursive:true});
   const browser=await launch();
   try {
@@ -47,8 +52,10 @@ export async function renderFrames(options) {
     for(let i=0;i<times.length;i++) {
       const t=times[i];
       const state=await page.evaluate(t=>window.seek(t),t); // seek is synchronous; screenshot flushes layout.
+      await page.evaluate(async()=>{await Promise.all([...document.images].map(image=>image.decode()));});
       if(errors.length) throw new Error(errors.join('\n'));
       const layout=await checkLayout(page);
+      if(options.entry==='v3/index.html') layout.v3=await checkV3Layout(page);
       const name=frameName(i,t,options.sequence);
       await page.screenshot({path:path.join(options.out,name),type:'png',animations:'disabled',fullPage:false});
       frames.push({file:name,t,shot:state.shot,layout});
