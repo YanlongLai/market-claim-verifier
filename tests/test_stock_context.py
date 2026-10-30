@@ -61,3 +61,15 @@ def test_zero_checked_stock_documents_are_visible(tmp_path):
     report=build_stock_review('TSLA',[src],tmp_path/'summary')
     assert report['documents_without_target_program_checks']==1
     assert 'not verified as a whole' in (tmp_path/'summary/stock-review.html').read_text()
+
+
+def test_table_row_quote_uses_visible_header_without_stitching():
+    from claimcheck.post import screen_claims
+    header='($ in millions, except per share data) Q3-2025 Q3-2026'
+    row='Total revenues 28095 28046'
+    post=header+'\nOther revenue 20000 21000\n'+row
+    claim={'claim':'Tesla reported total revenues of $28,046 million in Q3-2026.','ticker':'TSLA','kind':'reported_fact'}
+    proper=screen_claims(post,[{**claim,'quote':row}])[0]
+    stitched=screen_claims(post,[{**claim,'quote':header+'\n'+row}])[0]
+    assert proper['status']=='to_verify' and post[slice(*proper['span'])]==row
+    assert stitched['status']=='rejected' and stitched['span'] is None
