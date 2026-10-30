@@ -8,7 +8,9 @@ uv run python -m claimcheck review-stock TSLA notes.txt table.png call.mp3 \
   --as-of 2026-10-30 --budget 3 --per-job-budget 1 --max-jobs 3 --out runs/tsla-review
 ```
 
-This makes paid verification calls. Media requires Meta OCR/ASR credentials as well as the chosen text provider. Budgets include preprocessing; the queue admits full job caps before calls. Unsupported or uncertain jobs stay visible. Repeat the exact command to resume pending jobs; completed jobs are hash-verified and reused, unknown outcomes do not auto-retry. Each invocation writes a new `summary-NNN/stock-review.html` and JSON so previous partial summaries remain available.
+This makes paid verification calls. Media requires Meta OCR/ASR credentials as well as the chosen text provider. Budgets include preprocessing; the queue admits full job caps before calls. Unsupported or uncertain jobs stay visible. Repeat the exact command to resume jobs left by the per-invocation job limit when admission budget remains; completed jobs are hash-verified and reused, unknown outcomes do not auto-retry. Budget-blocked jobs do not become runnable just by repeating the command. Changing inputs or budget requires a new review directory and deliberate budget allocation. Each invocation writes a new `summary-NNN/stock-review.html` and JSON so previous partial summaries remain available.
+
+**Batch limits:** 1–100 input files; the default processes at most 10 jobs per invocation (`--max-jobs`). `--max-claims` defaults to 8 per post/extraction window, not an assurance that every statement in a long document is checked. Ingestion retains its 128 MiB file limit, two-hour media limit, 100-page native-text PDF limit and three sampled video frames. The report must be read with its partial/unchecked coverage.
 
 ## Reuse results without another API call
 

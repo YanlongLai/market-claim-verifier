@@ -17,7 +17,7 @@ Owner authorization: 2026-10-30, up to **$40 of new spend per provider** (Meta, 
 - Primary pipeline: decode/OCR/ASR once and freeze all channel text and source locations; each provider receives the **same prepared text**. This isolates text verification while including measured extraction failures in end-to-end scoring. It does not compare three vendors' audio/video encoders.
 - Supplemental native-image contract/reading study: same images and verbatim-reading instructions on each provider's native API. PNG/JPEG/WebP are separate rows. No unsupported audio/video request shapes are guessed. Untested native endpoints are labeled untested, never unsupported because the repository lacks an adapter.
 - Meta uses closed Muse Spark 1.3; Baseten and Fireworks use pinned Muse Spark Open models. Model/serving/profile differences are reported; this is not a pure hardware benchmark.
-- Two development issuer documents, two profiles (default reasoning and low reasoning), text and PNG. Choose by strict gold correctness, then fewer false-supported, then lower recorded cost. The test split is not used to choose settings or repair prompts.
+- Two development issuer documents, two verification-reasoning profiles (default and low), text and PNG. Choose by strict gold correctness, then fewer false-supported, then lower recorded cost. The test split is not used to choose settings or repair prompts.
 - Six new issuer documents, four atomic assertions each; formats TXT, Markdown, native-text PDF, PNG, JPEG, WebP, WAV, MP3 and MP4. Each includes supported facts, a deliberately changed number and an unavailable future period. Gold is derived directly from recorded raw SEC facts, not verifier outputs. Synthetic speech is clearly labeled, not a real executive's voice.
 - Format encodings are repeated measures of **24 underlying test assertions / six issuer documents**, not 216 independent truths. Publish per-format denominators and cluster-level uncertainty; no pooled confidence interval treating encodings as independent samples.
 - Real Tesla pages are diagnostic candidates with no general accuracy denominator until fully annotated; do not mix them into the controlled score.
@@ -44,3 +44,7 @@ The first summary is deterministic and evidence-linked. Optional AI narrative is
 - Raw artifact inventory and ledger totals reconcile. Every planned cell has a result or explicit failure/not-run reason.
 - README English/Traditional Chinese distinguish integration, endpoint testing and measured quality.
 - Full offline verification and final data/link checks pass before publication. Never change historical benchmarks to make the new study look better.
+
+### Request-level profile clarification
+
+The retained requests show that the two profiles change verification reasoning. The frozen short-input extractor keeps the repository default reasoning; partitioned long-input extraction uses low. Native-image calls explicitly use the selected profile. The separate stock-context product follow-up adds explicit low extraction reasoning and bounded proposals; it does not alter the frozen study.
