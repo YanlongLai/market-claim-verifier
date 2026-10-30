@@ -63,3 +63,7 @@ Keep the original evidence unchanged. Use a new directory for each run; compare 
 ## Real webcast audio and video
 
 [Microsoft real AV v1](evidence/real-av-v1/REPORT.md) retains the exact 60-second MP4 and derived WAV, official-source provenance, reference captions, six route attempts, all raw outputs and a separate ledger. Same underlying scene, fresh Meta preprocessing per route; no provider-native audio ranking or independent accuracy claim.
+
+## Event-context post-hoc replay
+
+[Period and summary regression](evidence/real-av-context-posthoc/REPORT.md) reuses real-AV extracted proposals without API calls. Before/after admission, exact quotes, context provenance, raw narrative and safe program explanation are retained separately from original financial verdicts. No new accuracy estimate.

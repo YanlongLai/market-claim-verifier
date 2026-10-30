@@ -84,3 +84,7 @@ Shipped per-channel coverage diagnostics in ingestion and stock summaries; retai
 ## Real audio/video follow-up — 2026-10-30
 
 Added one genuine Microsoft FY27 Q1 webcast scene as 60-second WAV and MP4, with six planned provider-route tests, frozen source/input hashes and retained failures. [Results and Chinese diagnosis](evidence/real-av-v1/REPORT.md). New priorities from real inputs: explicit reviewed event-period context, safe FY27 table-header binding, then GAAP/adjusted cross-modal alignment. This is not a held-out accuracy score.
+
+## Reviewed period context and final explanation — 2026-10-30
+
+Implemented `review-stock --event-context`, separate provenance for relative-quarter binding, short-FY header resolution only with a matching explicit full-year anchor, and program-derived final summaries with raw model prose retained. [Usage and limits](EVENT_CONTEXT.md) · [offline replay](evidence/real-av-context-posthoc/REPORT.md). Rejected header proposals decrease 28 → 8; six audio occurrences receive conditional event metadata. These are admission improvements, not new verified facts. Next: separately budgeted verification of bound claims, accounting-basis evidence and independent held-out real cases.

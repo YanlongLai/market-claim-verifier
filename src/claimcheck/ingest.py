@@ -137,6 +137,8 @@ def attach_locations(channel: dict[str, Any], claims: list[dict[str, Any]]) -> N
                         sources.append(source)
                 locations.append({"raw_span": [start, end], "heard_or_read_quote": raw[start:end], "sources": sources})
         claim["source_locations"] = locations
+        for binding in claim.get("header_period_bindings", []):
+            binding["raw_header_spans"] = [[original_offset(a, channel["number_normalizations"]), original_offset(b, channel["number_normalizations"], end=True)] for a,b in binding["header_spans"]]
         context = claim.get('period_context')
         if context:
             a, b = context['span']
@@ -212,7 +214,10 @@ def ingest_file(path: Path, *, client: Any, edgar: Any, ledger: Ledger, model: s
                 provider: str, out_dir: Path, vision_client: Any = None, asr_http: Any = None,
                 meta_api_key: str | None = None, max_claims: int = 8, secrets: Sequence[str] = (),
                 max_output_tokens: int | None = None, reasoning_effort: str | None = None,
-                release_client: Any = None, source_ticker: str | None = None) -> dict[str, Any]:
+                release_client: Any = None, source_ticker: str | None = None, event_context: dict | None = None) -> dict[str, Any]:
+    if event_context is not None:
+        from .event_context import validate_event_context
+        event_context = validate_event_context(event_context, source_ticker)
     if model not in META_MODELS.get(provider, set()):
         raise IngestError("ingest permits only the configured Meta Muse model IDs")
     if source_ticker and not re.fullmatch(r'[A-Z][A-Z0-9.-]{0,9}', source_ticker):
@@ -233,6 +238,7 @@ def ingest_file(path: Path, *, client: Any, edgar: Any, ledger: Ledger, model: s
             "Audio and frame claims are checked independently; no cross-modal identity or truth inference.",
             "PDF uses native page text only; reading order/table fidelity is not guaranteed, scanned pages are not checked, and context is not propagated across pages."]}
 
+    report["event_context"] = event_context
     if source_ticker:
         report['source_context'] = {'ticker_hint': source_ticker, 'authenticated': False}
         report['limitations'].append(f'User-supplied ticker hint {source_ticker} is not issuer authentication. Extraction selects at most {max_claims} claims per window; unselected content remains unchecked.')
@@ -294,6 +300,7 @@ def ingest_file(path: Path, *, client: Any, edgar: Any, ledger: Ledger, model: s
                     model=model, provider=provider, out_dir=post_dir, max_claims=max_claims, secrets=all_secrets,
                     max_output_tokens=max_output_tokens, reasoning_effort=reasoning_effort,
                     release_client=release_client, on_progress=progress,
+                    **({"event_context": event_context} if event_context else {}),
                     extraction_max_output_tokens=max_output_tokens or 4000, allow_long_input=True,
                     **({'source_ticker': source_ticker, 'bounded_extraction': True, 'extraction_reasoning_effort': 'low'} if source_ticker else {}))
                 attach_locations(channel, result["claims"])
@@ -378,7 +385,11 @@ def render_html(report: dict[str, Any]) -> str:
             trace = f"<a href='checks/{esc(channel['id'])}/{esc(claim['trace_path'])}'>model/tool trace</a>" if claim.get("trace_path") else ""
             context = claim.get('period_context')
             context_html = f"<p>Period context ({esc(context['scope'])}): {esc(context['heard_or_read'])}; source characters {context['raw_span'][0]}–{context['raw_span'][1]}</p>" if context and 'raw_span' in context else ''
-            reason = claim.get('summary') or claim.get('screen_reason') or claim.get('error') or ''
+            provenance = {k: claim[k] for k in ('event_period_context','header_period_bindings') if claim.get(k)}
+            if provenance:
+                context_html += '<details><summary>Separate period context (not spoken text or financial evidence)</summary><pre>' + esc(json.dumps(provenance, ensure_ascii=False, indent=2)) + '</pre></details>'
+            from .program_summary import program_summary
+            reason = (program_summary(claim.get('verdict'), claim['program_checks']) if claim.get('program_checks') else claim.get('summary')) or claim.get('screen_reason') or claim.get('error') or ''
             claims.append(f"<li><b>{esc(claim.get('verdict') or claim['status'])}</b>: {esc(claim['claim'])}<p>{esc(reason)}</p>{context_html}{''.join(sources)}{trace}</li>")
         link = f"<p><a href='{esc(channel['post_report'])}'>SEC evidence and program checks</a></p>" if channel.get("post_report") else ""
         blocks.append(f"<section><h2>{esc(channel['id'])}</h2><p>{esc(channel.get('error', ''))}</p><details><summary>Original heard/read text</summary><pre>{esc(channel.get('raw_text', ''))}</pre></details><ul>{''.join(claims)}</ul>{link}</section>")

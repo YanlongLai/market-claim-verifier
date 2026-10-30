@@ -119,6 +119,7 @@ def _parser() -> argparse.ArgumentParser:
     review.add_argument("--max-claims", type=_positive_int, default=8)
     review.add_argument("--max-output-tokens", type=_positive_int)
     review.add_argument("--reasoning-effort")
+    review.add_argument("--event-context", type=Path, help="reviewed event metadata JSON; separate from quoted input")
 
     evaluation = subparsers.add_parser("eval", help="run or report the labeled evaluation")
     evaluation_subparsers = evaluation.add_subparsers(dest="eval_action", required=True)
@@ -378,6 +379,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         if args.command == "review-stock":
             config["source_ticker"] = args.ticker.strip().upper()
         try:
+            if args.command == 'review-stock' and args.event_context:
+                from .event_context import validate_event_context
+                config['event_context'] = validate_event_context(json.loads(args.event_context.read_text()), config['source_ticker'])
             queue_out = args.out / "queue" if args.command == "review-stock" else args.out
             state = run_queue(args.files, args.evidence_cache, queue_out, config,
                               cli_worker(settings, config), max_jobs=args.max_jobs)

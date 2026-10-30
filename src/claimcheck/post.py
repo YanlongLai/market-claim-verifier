@@ -99,7 +99,7 @@ def numbers_in(text: str) -> list[str]:
     return [match.group(0) for match in _DIGITS.finditer(text)]
 
 
-def numbers_preserved(claim: str, quote: str, context: str = "") -> tuple[bool, list[str]]:
+def numbers_preserved(claim: str, quote: str, context: str = "", *, header_bindings: list[dict] | None = None) -> tuple[bool, list[str]]:
     """Every number in the rewritten claim must appear in the quote (ignoring unit scaling such as 億 vs billion).
 
     Years and quarter digits may come from elsewhere in the post (a headline often states the period once), but
@@ -109,7 +109,10 @@ def numbers_preserved(claim: str, quote: str, context: str = "") -> tuple[bool, 
     quote_keys = {_digit_key(raw) for raw in numbers_in(quote)}
     context_keys = {_digit_key(raw) for raw in numbers_in(context)}
     missing = []
-    for raw in numbers_in(claim):
+    for match in _DIGITS.finditer(claim):
+        raw = match[0]
+        if any(b["claim_span"][0] <= match.start() and match.end() <= b["claim_span"][1] for b in header_bindings or []):
+            continue
         key = _digit_key(raw)
         if key in quote_keys:
             continue
@@ -143,9 +146,12 @@ def parse_extraction(raw_text: str) -> list[dict[str, Any]]:
     return [item for item in claims if isinstance(item, Mapping)]
 
 
-def screen_claims(post: str, proposed: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
+def screen_claims(post: str, proposed: Sequence[Mapping[str, Any]], *, event_context: dict | None = None) -> list[dict[str, Any]]:
     """Apply the program's acceptance rules to model-proposed claims."""
 
+    from .event_context import fiscal_header_bindings, bind_event_period, validate_event_context
+    if event_context is not None:
+        event_context = validate_event_context(event_context)
     screened: list[dict[str, Any]] = []
     seen: dict[tuple, dict[str, Any]] = {}
     for item in proposed:
@@ -163,7 +169,8 @@ def screen_claims(post: str, proposed: Sequence[Mapping[str, Any]]) -> list[dict
         left, right = bounds if bounds else (0, len(post))
         local_span = locate_quote(post[left:right], quote)
         span = (local_span[0] + left, local_span[1] + left) if local_span else None
-        preserved, missing = numbers_preserved(claim, quote, post)
+        bindings = fiscal_header_bindings(claim, post, event_context if event_context and ticker == event_context["ticker"] else None)
+        preserved, missing = numbers_preserved(claim, quote, post, header_bindings=bindings)
         if span is None:
             status, reason = "rejected", "quote is not an exact span of the post"
         elif not numbers_in(quote):
@@ -180,8 +187,14 @@ def screen_claims(post: str, proposed: Sequence[Mapping[str, Any]]) -> list[dict
             status, reason = "to_verify", ""
         extracted_claim = claim
         period_context = None
+        event_binding = None
         if status == "to_verify" and span:
+            for binding in reversed(bindings):
+                a,b = binding['claim_span'];p = binding['period']
+                claim = claim[:a] + f'fiscal Q{p[-1]} {p[:4]}' + claim[b:]
             claim, period_context = inherit_period(post, span, claim)
+            if kind == 'reported_fact':
+                claim, event_binding = bind_event_period(claim, quote, ticker, event_context)
         key = (claim.casefold(), _normalize_space(quote), kind, ticker, status == 'rejected')
         if key in seen:
             existing = seen[key]
@@ -200,6 +213,8 @@ def screen_claims(post: str, proposed: Sequence[Mapping[str, Any]]) -> list[dict
                 "kind": kind,
                 "status": status,
                 "screen_reason": reason,
+                **({"event_period_context": event_binding, "extracted_claim": extracted_claim} if event_binding else {}),
+                **({"header_period_bindings": bindings, "extracted_claim": extracted_claim} if bindings and status != "rejected" else {}),
                 **({"extracted_claim": extracted_claim, "period_context": period_context} if period_context else {}),
                 **({"quote_spans": [list(span)] if span else [],
                     "extraction_windows": [item["extraction_window"]]} if bounds else {}),
@@ -439,8 +454,12 @@ def check_post(
     allow_long_input: bool = False,
     source_ticker: str | None = None,
     bounded_extraction: bool = False,
+    event_context: dict | None = None,
     extraction_reasoning_effort: str | None = None,
 ) -> dict[str, Any]:
+    if event_context is not None:
+        from .event_context import validate_event_context
+        event_context = validate_event_context(event_context, source_ticker)
     if len(post) > MAX_POST_CHARS and not allow_long_input:
         raise PostError(f"post is longer than {MAX_POST_CHARS} characters; paste one article section at a time")
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -476,7 +495,7 @@ def check_post(
                              "extraction_window": window_index} for item in extracted)
     finally:
         extraction_path = write_trace(traces, extraction_trace)
-    claims = screen_claims(post, proposed)
+    claims = screen_claims(post, proposed, event_context=event_context)
     if on_progress:
         on_progress(claims)
     ledger.stage = "claim_verification"
@@ -489,7 +508,7 @@ def check_post(
         cache_key = (item['claim'].casefold(), item['ticker'], item['kind'])
         previous = verification_cache.get(cache_key)
         if previous:
-            fields = ('status', 'verdict', 'summary', 'evidence_strength', 'flags', 'program_checks', 'evidence', 'trace_path')
+            fields = ('status', 'verdict', 'summary', 'model_summary', 'evidence_strength', 'flags', 'program_checks', 'evidence', 'trace_path')
             item.update({key: previous[key] for key in fields})
             item.update(verification_reused_from=previous['index'], cost_usd=0.0, latency_ms=0.0)
             if on_progress:
@@ -526,6 +545,7 @@ def check_post(
             status="verified",
             verdict=result.get("verdict"),
             summary=result.get("summary"),
+            model_summary=result.get("model_summary"),
             evidence_strength=result.get("evidence_strength"),
             flags=result.get("flags") or [],
             program_checks=result.get("program_checks") or [],
@@ -550,6 +570,7 @@ def check_post(
         "proposed_count": len(proposed),
         "extraction_windows": [list(w) for w in windows],
         "extraction_reasoning_effort": extraction_effort,
+        "event_context": event_context,
         "source_context": {"ticker_hint": source_ticker, "authenticated": False} if source_ticker else None,
         "extraction_scope": {"bounded": bounded_extraction, "requested_max_per_window": max_claims if bounded_extraction else None,
                              "full_content_recall": "unknown", "selection": "latest explicit period and core financial metrics" if bounded_extraction else "all proposed claims"},
@@ -645,7 +666,12 @@ def render_html(report: Mapping[str, Any]) -> str:
             + "</div>"
             for ev in item.get("evidence") or []
         )
-        note = html.escape(item.get("screen_reason") or item.get("summary") or "")
+        from .program_summary import program_summary
+        explanation = program_summary(item.get('verdict'), item['program_checks']) if item.get('program_checks') else item.get('summary') or ''
+        note = html.escape(item.get("screen_reason") or explanation)
+        provenance = {k: item[k] for k in ('event_period_context','header_period_bindings') if item.get(k)}
+        if provenance:
+            note += '<details><summary>Separate period context; conditional, not financial evidence</summary><pre>' + html.escape(json.dumps(provenance, indent=2)) + '</pre></details>'
         cards.append(
             f'<article id="c{item["index"]}" class="card s-{state}">'
             f'<header><span class="idx">{item["index"]}</span><span class="badge">{label}</span></header>'

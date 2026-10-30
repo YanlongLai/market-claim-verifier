@@ -947,6 +947,9 @@ def verify_claim(
     verdict["model_verdict"] = model_verdict
     verdict["verdict"] = program_verdict
     verdict["program_checks"] = checks
+    from .program_summary import program_summary
+    verdict["model_summary"] = verdict.get("summary", "")
+    verdict["summary"] = program_summary(program_verdict, checks)
     strength_order = {"low": 0, "medium": 1, "high": 2}
     strengths = [
         str(check.get("evidence_strength"))

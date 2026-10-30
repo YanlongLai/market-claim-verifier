@@ -53,3 +53,7 @@ The [retained Tesla example](evidence/stock-context-posthoc-2026-10-30/attempt-2
 ## Chart coverage diagnostics
 
 Ingestion and stock summaries now expose observed coverage gaps and suggested next steps. OCR channels always disclose unverified visual geometry, even when text claims were checked. Zero extraction, empty text and processing errors are distinct. The [Tesla diagnosis](evidence/chart-diagnosis-2026-10-30/REPORT.md) reuses retained reports with no API cost; it does not add chart verdicts.
+
+## Optional event period metadata
+
+Use `--event-context PATH.json` to supply an explicitly reviewed event period with source quote and URL. [Schema and command example](EVENT_CONTEXT.md). Original quotations remain unchanged; conditional context is separately visible and included in queue identity. The raw model explanation is retained, while final summaries follow program verdicts. Historical paid outputs are not rewritten.

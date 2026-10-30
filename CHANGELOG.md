@@ -78,3 +78,7 @@ Added per-channel coverage diagnostics and actionable next steps to ingestion an
 ## 2026-10-30 — genuine webcast audio/video corpus
 
 Added a real Microsoft CFO webcast clip and its audio track, preregistered six-case test, retained API inputs/outputs and cost accounting. Coverage diagnostics now also flag unverified geometry in sampled video frames. Real-input period and table-header failures remain visible; no synthetic benchmark scores were replaced.
+
+## 2026-10-30 — reviewed event periods and program explanations
+
+Added optional reviewed event JSON to stock review, with queue identity and separate provenance. Resolve short fiscal-year headers only with a matching full-year anchor; retain invented-number and conflicting-context guards. Final summaries now follow program outcomes and preserve model prose separately. Real-AV offline replay retains all original paid results.
