@@ -102,6 +102,24 @@ def _parser() -> argparse.ArgumentParser:
     queue.add_argument("--max-output-tokens", type=_positive_int)
     queue.add_argument("--reasoning-effort")
 
+    stock = subparsers.add_parser("stock-summary", help="summarize retained ingestion reports for one ticker without model calls")
+    stock.add_argument("ticker")
+    stock.add_argument("reports", nargs="+", type=Path)
+    stock.add_argument("--out", type=Path, required=True)
+    review = subparsers.add_parser("review-stock", help="check multiple local files and summarize one stock")
+    review.add_argument("ticker")
+    review.add_argument("files", nargs="+", type=Path)
+    review.add_argument("--out", type=Path, required=True)
+    review.add_argument("--evidence-cache", type=Path, required=True)
+    review.add_argument("--budget", type=float, required=True)
+    review.add_argument("--per-job-budget", type=float, required=True)
+    review.add_argument("--max-jobs", type=_positive_int, default=10)
+    review.add_argument("--provider", choices=PROVIDERS)
+    review.add_argument("--model")
+    review.add_argument("--max-claims", type=_positive_int, default=8)
+    review.add_argument("--max-output-tokens", type=_positive_int)
+    review.add_argument("--reasoning-effort")
+
     evaluation = subparsers.add_parser("eval", help="run or report the labeled evaluation")
     evaluation_subparsers = evaluation.add_subparsers(dest="eval_action", required=True)
 
@@ -126,7 +144,7 @@ def _parser() -> argparse.ArgumentParser:
     prompts_subparsers = prompts.add_subparsers(dest="prompts_action", required=True)
     prompts_subparsers.add_parser("export", help="write prompts/*.md from the code prompts")
     from .policy import parse_as_of
-    for command_parser in (edgar, verify, post, ingest, queue):
+    for command_parser in (edgar, verify, post, ingest, queue, review):
         command_parser.add_argument('--as-of', type=parse_as_of, metavar='YYYY-MM-DD',
                                     help='include only evidence filed on or before this date (inclusive)')
     return parser
@@ -174,7 +192,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         # EDGAR, evaluation reports, and dry runs do not need to inspect a key file.
         reads_key = (
-            args.command in {"verify", "post", "ingest", "queue"} and not getattr(args, "dry_run", False)
+            args.command in {"verify", "post", "ingest", "queue", "review-stock"} and not getattr(args, "dry_run", False)
         ) or (
             args.command == "eval"
             and args.eval_action == "run"
@@ -333,7 +351,22 @@ def main(argv: Sequence[str] | None = None) -> int:
         _print_json(manifest)
         return 0
 
-    if args.command == "queue":
+    if args.command == "stock-summary":
+        from .stock_review import build_stock_review
+        try:
+            report = build_stock_review(args.ticker, args.reports, args.out)
+        except (ValueError, OSError) as exc:
+            print(f"Stock summary refused: {exc}", file=sys.stderr)
+            return 2
+        _print_json({"out": str(args.out), "summary": report["summary"], "incremental_api_cost_usd": 0})
+        return 0
+
+    if args.command in ("queue", "review-stock"):
+        if args.command == "review-stock":
+            import re
+            if not re.fullmatch(r"[A-Z][A-Z0-9.-]{0,9}", args.ticker.strip().upper()):
+                print("Invalid US ticker; no jobs started.", file=sys.stderr)
+                return 2
         from .job_queue import run_queue, cli_worker
         from .policy import VerificationPolicy
         config = {"provider": settings.provider, "model": args.model or settings.model,
@@ -343,8 +376,19 @@ def main(argv: Sequence[str] | None = None) -> int:
                   "max_output_tokens": args.max_output_tokens or settings.max_output_tokens,
                   "reasoning_effort": args.reasoning_effort or settings.reasoning_effort}
         try:
-            state = run_queue(args.files, args.evidence_cache, args.out, config,
+            queue_out = args.out / "queue" if args.command == "review-stock" else args.out
+            state = run_queue(args.files, args.evidence_cache, queue_out, config,
                               cli_worker(settings, config), max_jobs=args.max_jobs)
+            if args.command == "review-stock":
+                from .stock_review import build_stock_review
+                reports = [queue_out / job["out"] / "ingest.json" for job in state["jobs"]
+                           if (queue_out / job["out"] / "ingest.json").exists()]
+                pending = [{"input": {"file": state["identity"]["inputs"][job["id"]]["name"]},
+                            "status": job["status"], "reason": job.get("reason", "No ingestion report available")}
+                           for job in state["jobs"] if not (queue_out / job["out"] / "ingest.json").exists()]
+                # Each invocation preserves the previous partial summary.
+                n = len(list(args.out.glob("summary-*"))) + 1
+                build_stock_review(args.ticker, reports, args.out / f"summary-{n:03d}", pending_documents=pending)
         except (ValueError, OSError) as exc:
             print(f"Queue refused: {exc}", file=sys.stderr)
             return 2

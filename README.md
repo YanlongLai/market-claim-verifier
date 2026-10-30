@@ -23,20 +23,20 @@ Meta Muse models find claims and retrieve evidence. Python checks numbers, perio
 
 ## Support and boundaries
 
-**Legend:** ✅ integrated, with a retained live probe for the example named in the cell · 🟡 integrated, but no retained live probe yet for that format/provider combination · — not integrated. Symbols describe repository routes and available test evidence, not accuracy or complete-content coverage. A tested example does not validate every extension or input in its format family.
+**Legend:** ✅ integrated route · — not integrated. Every platform column lists the **same supported formats**; it does not name a single test sample or imply a native vendor media endpoint. Quality is reported separately in the benchmark, not by checkmarks.
 
-| Input format | Meta text route: tested example | Baseten text route: tested example | Fireworks text route: tested example | Pipeline, dependencies and limits |
-| --- | --- | --- | --- | --- |
-| 📝 Text / Markdown | ✅ Text | ✅ Text | ✅ [Markdown](docs/evidence/input-formats-2026-10-30/markdown/ingest.html) | English / Chinese financial assertions; extraction is not exhaustive |
-| 🖼️ PNG / JPEG / WebP | ✅ [PNG](docs/evidence/multimodal-2026-10-30/screenshot/ingest.html) | ✅ [JPEG](docs/evidence/input-formats-2026-10-30/jpeg/ingest.html) | ✅ [WebP](docs/evidence/input-formats-2026-10-30/webp/ingest.html) | **Meta OCR → chosen text provider**; every route needs a Meta key; no image-authenticity check |
-| 📄 Native-text PDF | ✅ [PDF](docs/evidence/input-formats-2026-10-30/pdf/ingest.html) | 🟡 Integrated; not live-probed | 🟡 Integrated; not live-probed | Local page extraction → text checks; max 100 pages; no OCR or cross-page context |
-| 📠 Scanned PDF | — | — | — | PDF OCR not implemented; unreadable pages remain unchecked |
-| 🎙️ Audio files | ✅ [WAV](docs/evidence/multimodal-2026-10-30/audio-two-voices/ingest.html) | ✅ [WAV](docs/evidence/multimodal-2026-10-30/audio/ingest.html) | ✅ [MP3](docs/evidence/input-formats-2026-10-30/mp3/ingest.html) | **Meta ASR → chosen text provider**; every route needs a Meta key; turn-level timestamps, unverified speaker identity |
-| 🎬 Video files | ✅ [MP4](docs/evidence/multimodal-2026-10-30/video/ingest.html) | ✅ [Captioned MP4](docs/evidence/multimodal-2026-10-30/video-captioned/ingest.html) | ✅ [Silent MP4†](docs/evidence/input-formats-2026-10-30/silent-video/ingest.html) | Meta ASR when audio exists + OCR of **three frames**; every route needs a Meta key; no full-video coverage |
-| 🔗 General webpage URL | — | — | — | No login, browser rendering or arbitrary HTML ingestion |
-| 📦 Provider-native batch | — | — | — | The local job queue is not a discounted vendor Batch API |
+| Input format | Meta text route | Baseten text route | Fireworks text route | Actual pipeline / boundary |
+| --- | :---: | :---: | :---: | --- |
+| Text / Markdown | ✅ | ✅ | ✅ | Local text → chosen verifier |
+| PNG / JPEG / WebP | ✅ | ✅ | ✅ | Meta OCR → chosen verifier; Meta key required on every route |
+| Native-text PDF | ✅ | ✅ | ✅ | Local page text → chosen verifier; no PDF OCR or cross-page context |
+| Audio files | ✅ | ✅ | ✅ | Meta ASR → chosen verifier; unverified speaker identity |
+| Video files | ✅ | ✅ | ✅ | Meta ASR + three sampled OCR frames → chosen verifier; incomplete visual coverage |
+| Scanned PDF | — | — | — | No PDF OCR |
+| General webpage URL | — | — | — | No arbitrary HTML/login ingestion |
+| Native vendor Batch | — | — | — | Local queue is not discounted Batch API |
 
-† Silent MP4 retained `partial` because the fixture has no audio track; all four extracted visual claims were program-checked. This demonstrates the sampled-visual route, not audio or whole-video verification. Preprocessing is automatic in the CLI; green media cells do **not** mean native Baseten/Fireworks media endpoints are integrated.
+**Fair comparison:** [preregistered paired benchmark](eval/multimodal-v1/README.md) separates shared-preprocessing verification from native-image endpoint reading, uses the same inputs per provider, and retains failures. Earlier one-format-per-provider examples below are unpaired development probes, not platform rankings. [Plan](docs/FAIR_BENCHMARK_AND_STOCK_REVIEW_PLAN.md) · [single-stock multi-file review](docs/STOCK_REVIEW.md).
 
 [Test-record index and reuse guide](docs/TEST_RECORDS.md) · **Live evidence:** [six additional format probes](docs/evidence/input-formats-2026-10-30/REPORT.md) record Markdown → Fireworks, JPEG → Meta OCR → Baseten, WebP → Meta OCR → Fireworks, MP3 → Meta ASR → Fireworks, silent MP4 → three Meta OCR frames → Fireworks, and native-text PDF → Meta. Each combination has one retained attempt with verdicts, coverage, latency and estimated cost. These small synthetic smoke tests are not a full format × provider benchmark. [Earlier PNG/WAV/video and long-audio probes](docs/evidence/multimodal-2026-10-30/REPORT.md) remain available.
 

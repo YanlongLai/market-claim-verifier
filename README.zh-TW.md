@@ -23,20 +23,20 @@ Meta Muse 模型找出主張、選擇工具並擷取證據；Python 核對數字
 
 ## 格式支援
 
-**符號說明：** ✅ 已接入，且格內所列案例有保留即時 API 實測紀錄 · 🟡 已接入，但尚無該格式／平台組合的即時實測紀錄 · — 未接入。符號表示本專案的流程與測試證據，不代表準確率或全文覆蓋率；測過一個案例不等於驗證同類所有副檔名與內容。
+**符號說明：** ✅ 已整合流程 · — 未整合。三個平台欄位代表**同一組可接受格式**，不再用單一測試檔名表示支援，也不表示供應商原生影音端點已接入。品質由獨立 benchmark 呈現，不用綠勾代表準確率。
 
-| 輸入格式 | Meta 文字路徑：已測案例 | Baseten 文字路徑：已測案例 | Fireworks 文字路徑：已測案例 | 流程、依賴與限制 |
-| --- | --- | --- | --- | --- |
-| 📝 文字／Markdown | ✅ 文字 | ✅ 文字 | ✅ [Markdown](docs/evidence/input-formats-2026-10-30/markdown/ingest.html) | 中英文金融主張；不保證找出全部主張 |
-| 🖼️ PNG／JPEG／WebP | ✅ [PNG](docs/evidence/multimodal-2026-10-30/screenshot/ingest.html) | ✅ [JPEG](docs/evidence/input-formats-2026-10-30/jpeg/ingest.html) | ✅ [WebP](docs/evidence/input-formats-2026-10-30/webp/ingest.html) | **Meta OCR → 指定文字平台**；所有路徑皆需要 Meta 金鑰；不鑑定圖片真偽 |
-| 📄 原生文字 PDF | ✅ [PDF](docs/evidence/input-formats-2026-10-30/pdf/ingest.html) | 🟡 已接入，尚無即時實測 | 🟡 已接入，尚無即時實測 | 本機逐頁解析 → 文字查核；最多 100 頁；無 OCR、不跨頁傳遞語境 |
-| 📠 掃描 PDF | — | — | — | 尚未實作 PDF OCR；無法讀取的頁面標為未查核 |
-| 🎙️ 聲音檔案 | ✅ [WAV](docs/evidence/multimodal-2026-10-30/audio-two-voices/ingest.html) | ✅ [WAV](docs/evidence/multimodal-2026-10-30/audio/ingest.html) | ✅ [MP3](docs/evidence/input-formats-2026-10-30/mp3/ingest.html) | **Meta ASR → 指定文字平台**；所有路徑皆需要 Meta 金鑰；時間戳涵蓋整段發言，講者身分未驗證 |
-| 🎬 影片 | ✅ [MP4](docs/evidence/multimodal-2026-10-30/video/ingest.html) | ✅ [字幕 MP4](docs/evidence/multimodal-2026-10-30/video-captioned/ingest.html) | ✅ [無聲 MP4†](docs/evidence/input-formats-2026-10-30/silent-video/ingest.html) | 有音軌時用 Meta ASR，加上**三張抽樣畫面**的 OCR；所有路徑皆需要 Meta 金鑰；不是完整影片覆蓋 |
-| 🔗 一般網頁 URL | — | — | — | 不處理登入、瀏覽器渲染或任意 HTML |
-| 📦 供應商原生 Batch | — | — | — | 本機工作佇列不等於供應商折扣 Batch API |
+| 輸入格式 | Meta 文字流程 | Baseten 文字流程 | Fireworks 文字流程 | 實際流程／限制 |
+| --- | :---: | :---: | :---: | --- |
+| 文字／Markdown | ✅ | ✅ | ✅ | 本機文字 → 指定 verifier |
+| PNG／JPEG／WebP | ✅ | ✅ | ✅ | Meta OCR → 指定 verifier；所有流程均需 Meta 金鑰 |
+| 原生文字 PDF | ✅ | ✅ | ✅ | 本機逐頁文字 → 指定 verifier；無 PDF OCR、不跨頁傳遞語境 |
+| 聲音檔案 | ✅ | ✅ | ✅ | Meta ASR → 指定 verifier；講者身分未驗證 |
+| 影片檔案 | ✅ | ✅ | ✅ | Meta ASR＋三張畫面 OCR → 指定 verifier；不保證完整畫面覆蓋 |
+| 掃描 PDF | — | — | — | 尚無 PDF OCR |
+| 一般網頁 URL | — | — | — | 不處理任意 HTML／登入頁 |
+| 供應商原生 Batch | — | — | — | 本機佇列不是折扣 Batch API |
 
-† 無聲 MP4 因測試檔沒有音軌保留 `partial`；四個抽出的畫面主張皆已經程式查核。這只驗證抽樣畫面流程，不代表聲音或整部影片查核。CLI 會自動執行前處理；多媒體綠勾**不代表**已接入 Baseten／Fireworks 原生影音端點。
+**公平比較：** [事先登記的配對 benchmark](eval/multimodal-v1/README.md)把共用前處理的查核與原生圖片端點辨識分開，讓各平台使用相同輸入並保留失敗。下方舊有「一家測一種格式」案例僅為非配對開發測試，不是平台排名。[完整計畫](docs/FAIR_BENCHMARK_AND_STOCK_REVIEW_PLAN.md) · [同一股票多文件查核](docs/STOCK_REVIEW.md)。
 
 [測試紀錄索引與 reuse 指南](docs/TEST_RECORDS.md) · [新增六種格式實測](docs/evidence/input-formats-2026-10-30/REPORT.md)保留各案例的判定、覆蓋、耗時及費用；下方提供摘要。這些小型合成案例不代表完整的「格式 × 平台」評測。
 
