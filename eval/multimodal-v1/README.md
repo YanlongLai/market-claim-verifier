@@ -26,3 +26,5 @@ $35/platform admission ceilings leave a $5 buffer below each $40 authorization; 
 [Scorer safety checks](harness-tests.log) cover missing/wrong-ticker/wrong-period claims, conflicting duplicates, ambiguous alignment, summary source boundaries and existing budget/queue safeguards. [Precommit refusal](precommit-refusal.log) records a successful safety check: no ledger or API call was created when corpus/code were not yet committed.
 
 Three existing real Tesla slide PNGs are additional diagnostic inputs shared across providers, including native image reading. They have no complete independent gold annotation and never contribute to accuracy/recall denominators. Development media outside TXT/PNG are committed for reuse but are not executed during profile selection.
+
+The archived generator records the authoring environment and uses macOS Arial plus `/tmp/claimcheck-mm-espeak/bin/espeak-ng`; it is not a portable installation script. For verification, reuse the committed bytes. For a new corpus, copy the generator to a new version, configure local font/speech paths and publish new hashes rather than replacing v1.

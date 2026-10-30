@@ -64,3 +64,7 @@ The [judge walkthrough](evidence/judge-walkthrough/REPORT.md) is implemented and
 ### Input-format validation follow-up — 2026-10-30
 
 Owner-authorized paid format probes supplement milestones 1–3: Markdown, JPEG, WebP, MP3, silent MP4 and native-text PDF, with a $3 shared cap and retained failures. [Registered cases and measured results](evidence/input-formats-2026-10-30/REPORT.md) distinguish live-tested routes from repository integration. These known synthetic examples do not satisfy milestone 8’s independent-evaluation gate. URL ingestion, PDF OCR and native provider media adapters remain deferred.
+
+### Paired benchmark and stock-review milestone — 2026-10-30
+
+The [new delivery plan](FAIR_BENCHMARK_AND_STOCK_REVIEW_PLAN.md) replaces one-format-per-provider examples with a frozen same-input comparison. [Corpus and scorer](../eval/multimodal-v1/README.md) were committed in `d58bd53` before paid execution, with $40 authorized per provider and $35 admission ceilings. Results must distinguish shared Meta preprocessing, native image reading and unscored real issuer diagnostics. A [single-stock multi-file CLI and deterministic summary](STOCK_REVIEW.md) is implemented; the upload UI and optional citation-validated AI narrative remain next priorities.

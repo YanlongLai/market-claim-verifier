@@ -14,6 +14,8 @@ Retain every paid attempt, including failed extraction, provider errors, abstent
 | [Media hardening probes](evidence/multimodal-2026-10-30/REPORT.md) | PNG, text, WAV, video and long audio; stage and coverage limits |
 | [Long-audio follow-up](evidence/multimodal-2026-10-30b/REPORT.md) | Failed extraction and adaptive repeats retained; frozen ASR comparison |
 | [Additional input formats](evidence/input-formats-2026-10-30/REPORT.md) | Markdown, JPEG, WebP, MP3, silent MP4 and native-text PDF |
+| [Paired multimodal corpus/protocol](../eval/multimodal-v1/README.md) | Same-input comparison; frozen code, shared preprocessing, native image reading and retained failures |
+| [Single-stock saved summary](evidence/stock-review-example/stock-review.html) | Reuses three reports, no new calls; repeated occurrences are not independent facts |
 | [Offline judge walkthrough](evidence/judge-walkthrough/REPORT.md) | Deterministic evidence-to-verdict checks; no model calls |
 
 [2026-10-30 SEC refresh](evidence/sec-refresh-2026-10-30/REPORT.md) retains compressed raw snapshots for offline restoration. [Real issuer media catalogue](evidence/real-media-2026-10-30/README.md) distinguishes prepared images from link-only webcast candidates; neither is a new accuracy benchmark.

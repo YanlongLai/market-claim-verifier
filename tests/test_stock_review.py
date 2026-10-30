@@ -39,3 +39,42 @@ def test_duplicate_reports_refused_before_output(tmp_path):
     src=fixture(tmp_path/'a.json',[])
     with pytest.raises(ValueError,match='duplicate'):build_stock_review('TSLA',[src,src],tmp_path/'out')
     assert not (tmp_path/'out').exists()
+
+
+def test_review_stock_cli_resumes_queue_and_preserves_pending_summary(tmp_path, monkeypatch):
+    from claimcheck import cli, job_queue
+    from claimcheck.config import load_settings
+    settings=load_settings(read_key=False,provider='meta')
+    monkeypatch.setattr(cli,'load_settings',lambda **kwargs:settings)
+    cache=tmp_path/'cache';cache.mkdir();(cache/'company_tickers.json').write_text('{}')
+    inputs=[tmp_path/'a.txt',tmp_path/'b.txt']
+    for i,p in enumerate(inputs):p.write_text(f'input {i}')
+    calls=[]
+    def worker(source,target,frozen,cap):
+        calls.append(source.name)
+        target.mkdir(parents=True,exist_ok=True)
+        result={'status':'completed','cost_usd':0,'input':{'file':str(source)},'channels':[]}
+        (target/'ingest.json').write_text(json.dumps(result))
+        return result
+    monkeypatch.setattr(job_queue,'cli_worker',lambda *args:worker)
+    out=tmp_path/'review'
+    args=['review-stock','TSLA',*[str(p) for p in inputs],'--out',str(out),'--evidence-cache',str(cache),'--budget','2','--per-job-budget','1','--max-jobs','1']
+    assert cli.main(args)==1
+    first=json.loads((out/'summary-001/stock-review.json').read_text())
+    assert first['document_count']==2 and first['incomplete_documents']==1
+    original=(out/'summary-001/stock-review.json').read_bytes()
+    assert cli.main(args)==0
+    second=json.loads((out/'summary-002/stock-review.json').read_text())
+    assert second['document_count']==2 and second['incomplete_documents']==0
+    assert len(calls)==2 and (out/'summary-001/stock-review.json').read_bytes()==original
+
+
+def test_stock_summary_cli_never_reads_credentials(tmp_path,monkeypatch):
+    from claimcheck import cli
+    from claimcheck.config import load_settings
+    def settings(**kwargs):
+        assert kwargs['read_key'] is False
+        return load_settings(read_key=False)
+    monkeypatch.setattr(cli,'load_settings',settings)
+    src=fixture(tmp_path/'source.json',[])
+    assert cli.main(['stock-summary','TSLA',str(src),'--out',str(tmp_path/'out')])==0
