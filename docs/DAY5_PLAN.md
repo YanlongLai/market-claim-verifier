@@ -15,7 +15,7 @@ Check US-equity financial claims, show exact evidence and clearly disclose what 
 | 3 | Implemented in this iteration | Local PDF input | Page-scoped text and original-file hash; scanned/empty pages explicitly unsupported until OCR; limits and parser errors tested |
 | 4 | Implemented | Evidence record interface and one US issuer document connector | Immutable source snapshot, publisher, time, locator, units/period; arbitrary uploads do not become authoritative; original SEC regression unchanged |
 | 5 | Implemented | Complete evidence-to-verdict judge example | One official US issuer document, one false claim, one supported claim and one insufficient-evidence case; clickable source locations and cost breakdown |
-| 6 | Planned | Versioned policy and as-of time | Exact entity/unit/period rules remain mandatory in every mode; historical/restated facts distinguished |
+| 6 | Implemented | Versioned policy and as-of time | Exact entity/unit/period rules remain mandatory in every mode; historical/restated facts distinguished |
 | 7 | Planned | Cost breakdown and bounded job queue | Reserved versus estimated/billed amounts distinguished; cache keys include model/prompt/policy/evidence versions; resume without duplicate successful calls |
 | 8 | Planned | Independent evaluation and submission refresh | Freeze unseen issuers/documents before tuning; publish extraction recall, false-supported rate, abstention, p95 and cost; refresh judge docs and video only after results |
 | 9 | Deferred until core gates pass | Direct readable URL ingestion | Public HTTPS plain text/Markdown only initially; explicit content type/size/time limits, network destination validation; no authentication, cookies, browser rendering or arbitrary HTML |
@@ -52,3 +52,7 @@ English is the primary language for judge-facing pages and documentation. The ex
 ### Milestone 5 verification — 2026-10-30
 
 The [judge walkthrough](evidence/judge-walkthrough/REPORT.md) is implemented and linked from README/JUDGES. Its three predefined atomic claims produce supported, contradicted and insufficient_evidence through the existing checker. Generated artifacts rebuild byte for byte, and modified evidence bundles are rejected. `sh scripts/verify.sh` passed: 857 product tests, 149 demo Python tests, 55 Node tests; fixture/figure checks, three generated outputs and 786 local links passed. No live model or SEC calls were made. The $0 incremental API cost applies only to this offline walkthrough, not live verification.
+
+### Milestone 6 verification — 2026-10-30
+
+[Policy versioning and filing-date cutoffs](VERIFICATION_POLICY.md) are implemented for edgar/verify/post/ingest. Eleven new policy regressions cover prior versus later filings, date validation, missing dates, derived/history/latest selection, release revalidation and early-abstention audit metadata. Existing recorded media replay passes with unchanged default tool payloads. `sh scripts/verify.sh` passed: 868 product tests, 149 demo Python tests, 55 Node tests; source/figure integrity, three byte-identical data outputs and local Markdown links passed. No live model or SEC requests were used. This is filing-date filtering of available data, not a historical SEC archive or intraday reconstruction.

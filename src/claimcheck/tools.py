@@ -558,6 +558,8 @@ class ToolRunner:
     """Dispatch tools and assign stable evidence IDs for one verification run."""
 
     def __init__(self, edgar: EdgarClient, release_client: Any = None) -> None:
+        from .policy import policy_for
+        self.policy = policy_for(edgar)
         self.edgar = edgar
         self._release_client = release_client
         self.release_service: ReleaseService | None = None
@@ -585,6 +587,8 @@ class ToolRunner:
             evidence_id = f"E{self._next_evidence}"
             self._next_evidence += 1
         numbered["evidence_id"] = evidence_id
+        if self.policy.as_of is not None:
+            numbered["verification_policy"] = self.policy.to_dict()
         self.evidence[evidence_id] = numbered
         if kind is not None:
             self.evidence_kind[evidence_id] = kind

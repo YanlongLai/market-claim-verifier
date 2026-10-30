@@ -723,15 +723,19 @@ def verify_claim(
 ) -> dict[str, Any]:
     """Run the model/tool loop, then apply program checks to its verdict."""
 
+    from .policy import policy_for
+    active_policy = policy_for(edgar).to_dict()
     active_provider = get_provider(provider)
     recorder = trace or TraceRecorder(claim, model, provider=active_provider.name)
     recorder.provider = active_provider.name
+    recorder.verification_policy = active_policy
     reason = missing_period_reason(claim)
     if reason:
         check = {"text": claim, "claim_type": "unresolved_period", "program_verdict": "insufficient_evidence",
                  "reason": reason, "evidence_ids": [], "flags": ["missing_period"], "evidence_strength": "low"}
         result = {"verdict": "insufficient_evidence", "summary": reason, "sub_claims": [],
                   "program_checks": [check], "flags": ["missing_period"], "evidence_strength": "low"}
+        result["verification_policy"] = active_policy
         recorder.finish(result)
         return result
     runner = ToolRunner(edgar, release_client=release_client)
@@ -771,7 +775,10 @@ def verify_claim(
             fallback_previous_context=None,
         )
         if not completed:
-            return _incomplete_response_result(recorder, response)
+            result = _incomplete_response_result(recorder, response)
+            result["verification_policy"] = active_policy
+            recorder.finish(result)
+            return result
         turns += 1
         if active_provider.name == "meta" and response.output_items:
             meta_history.extend(copy.deepcopy(response.output_items))
@@ -838,6 +845,7 @@ def verify_claim(
             "sub_claims": [],
             "program_checks": [],
         }
+        result["verification_policy"] = active_policy
         recorder.finish(result)
         return result
 
@@ -882,7 +890,10 @@ def verify_claim(
             fallback_previous_context=None,
         )
         if not completed:
-            return _incomplete_response_result(recorder, final_response)
+            result = _incomplete_response_result(recorder, final_response)
+            result["verification_policy"] = active_policy
+            recorder.finish(result)
+            return result
 
     if active_provider.chat_completions:
         verdict = _parse_strict_verdict(_response_text(final_response))
@@ -970,5 +981,6 @@ def verify_claim(
         model_verdict != program_verdict
         or any(check.get("disagreement") for check in checks)
     )
+    verdict["verification_policy"] = active_policy
     recorder.finish(verdict)
     return verdict

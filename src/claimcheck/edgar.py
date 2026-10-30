@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import hashlib
 import json
 import re
@@ -12,6 +13,7 @@ from typing import Any, Callable, Iterable, Mapping
 
 import httpx
 
+from .policy import VerificationPolicy
 from .fiscal import normalize_fiscal_labels
 from .sec_transport import sec_get
 
@@ -699,7 +701,9 @@ class EdgarClient:
         fetcher: Fetcher | None = None,
         user_agent: str = "DappGo market-claim-verifier admin@dappgo.com",
         timeout: float = 20.0,
+        as_of: str | None = None,
     ) -> None:
+        self.policy = VerificationPolicy(as_of=as_of)
         self.cache_dir = Path(cache_dir)
         self.user_agent = user_agent
         self.timeout = timeout
@@ -803,6 +807,12 @@ class EdgarClient:
         filename = f"companyfacts-CIK{cik}.json"
         url = f"{SEC_DATA_BASE}/api/xbrl/companyfacts/CIK{cik}.json"
         document, digest = self._load_document(filename, url)
+        if self.policy.as_of is not None:
+            document = copy.deepcopy(document)
+            for namespace in document.get("facts", {}).values():
+                for concept in namespace.values():
+                    for unit, rows in concept.get("units", {}).items():
+                        concept["units"][unit] = [row for row in rows if self.policy.admits(row.get("filed"))]
         return normalize_fiscal_labels(document), digest
 
     @staticmethod
@@ -1787,6 +1797,8 @@ class EdgarClient:
         self, ticker: str, metric: str, period: str
     ) -> dict[str, Any]:
         result = self._lookup_fact(ticker, metric, period)
+        if self.policy.as_of is not None:
+            result["verification_policy"] = self.policy.to_dict()
         excluded = [
             item
             for item in self._excluded_facts.get(str(metric or "").strip().lower(), {}).values()

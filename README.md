@@ -553,6 +553,8 @@ rebuilds the cards from saved checks and trace metadata without modifying the so
 
 </details>
 
+Historical evidence selection: [verification policy and `--as-of`](docs/VERIFICATION_POLICY.md). Cutoffs use inclusive SEC filing dates, not archived historical API state.
+
 <details>
 <summary>🎨 Illustration, robot and reusable prompts</summary>
 

@@ -125,6 +125,7 @@ class TraceRecorder:
         provider: str = "meta",
         secrets: Iterable[str] = (),
     ) -> None:
+        self.verification_policy: dict[str, Any] | None = None
         self.claim = claim
         self.model = model
         self.provider = provider
@@ -220,6 +221,8 @@ class TraceRecorder:
         self.tool_calls.append(entry)
 
     def finish(self, verdict: dict[str, Any]) -> None:
+        if self.verification_policy is not None:
+            verdict["verification_policy"] = self.verification_policy
         self.final_verdict = redact(model_dump(verdict), self.secrets)
         self.program_checks = list(verdict.get("program_checks", []))
 
@@ -260,6 +263,7 @@ class TraceRecorder:
         total_cost = self.total_cost
         total_latency_ms = self.total_latency_ms
         return {
+            **({"verification_policy": self.verification_policy} if self.verification_policy is not None else {}),
             "claim": self.claim,
             "model": self.model,
             "provider": self.provider,

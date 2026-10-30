@@ -418,6 +418,8 @@ def check_post(
     traces = out_dir / "traces"
     started = time.perf_counter()
     extraction_trace = TraceRecorder("[extraction] " + post[:200], model, provider=provider, secrets=secrets)
+    from .policy import policy_for
+    extraction_trace.verification_policy = policy_for(edgar).to_dict()
     partitioned = allow_long_input and len(post) > MAX_POST_CHARS
     windows = extraction_windows(post, max_chars=LONG_EXTRACTION_CHARS if partitioned else MAX_POST_CHARS - 200)
     try:
@@ -501,7 +503,9 @@ def check_post(
             on_progress(claims)
     extraction_cost = extraction_trace.summary().get("cost_usd") or 0.0
     total_cost = extraction_cost + sum(float(item.get("cost_usd") or 0) for item in claims)
+    from .policy import policy_for
     report = {
+        "verification_policy": policy_for(edgar).to_dict(),
         "post": post,
         "provider": provider,
         "model": model,
@@ -557,6 +561,8 @@ def _state(item: Mapping[str, Any]) -> str:
 
 
 def render_html(report: Mapping[str, Any]) -> str:
+    from .policy import policy_html
+    policy_description = policy_html(report)
     post = str(report["post"])
     spans = sorted((item for item in report["claims"] if item.get("span")), key=lambda item: item["span"][0])
     pieces, cursor = [], 0
@@ -626,7 +632,7 @@ mark.n{{background:var(--hl);color:inherit;padding:0 2px;border-radius:2px;font-
 .steps div{{background:var(--bg);border-radius:4px;padding:6px 8px;display:grid}} .steps span{{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.05em}}
 .steps .key{{outline:2px solid var(--accent)}} .ev{{font-size:12.5px;overflow-wrap:anywhere}} a{{color:var(--accent)}}
 </style></head><body><main>
-<h1>Post check</h1>
+<h1>Post check</h1>{policy_description}
 <p class="meta">{len(report["claims"])} claims found · {counts["verified"]} verified ({verdicts["supported"]} supported, {verdicts["contradicted"]} contradicted, {verdicts["insufficient_evidence"]} insufficient) · {counts["not_checked"]} not checkable · {counts["rejected"]} rejected · {html.escape(str(report["provider"]))} {html.escape(str(report["model"]))} · ${report["cost_usd"]:.4f} · {report["wall_clock_s"]} s</p>
 <div class="post">{"".join(pieces)}</div>
 {"".join(cards)}

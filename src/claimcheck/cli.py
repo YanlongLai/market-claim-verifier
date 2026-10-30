@@ -112,6 +112,10 @@ def _parser() -> argparse.ArgumentParser:
     prompts = subparsers.add_parser("prompts", help="export versioned prompt source files")
     prompts_subparsers = prompts.add_subparsers(dest="prompts_action", required=True)
     prompts_subparsers.add_parser("export", help="write prompts/*.md from the code prompts")
+    from .policy import parse_as_of
+    for command_parser in (edgar, verify, post, ingest):
+        command_parser.add_argument('--as-of', type=parse_as_of, metavar='YYYY-MM-DD',
+                                    help='include only evidence filed on or before this date (inclusive)')
     return parser
 
 
@@ -175,8 +179,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         edgar = EdgarClient(
             cache_dir=settings.cache_dir,
             user_agent=settings.sec_user_agent,
+            as_of=getattr(args, "as_of", None),
         )
         result = edgar.lookup_fact(args.ticker, args.metric, args.period)
+        result["verification_policy"] = edgar.policy.to_dict()
         _print_json(result)
         return 0 if "error" not in result else 1
 
@@ -364,7 +370,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         except (BudgetExceeded, UnknownModel) as exc:
             print(f"Dry-run refused: {exc}", file=sys.stderr)
             return 2
-        _print_json({"request": request, "reservation": reservation.as_dict()})
+        from .policy import VerificationPolicy
+        _print_json({"request": request, "reservation": reservation.as_dict(),
+                     "verification_policy": VerificationPolicy(as_of=getattr(args, "as_of", None)).to_dict()})
         return 0
 
     if not settings.model_api_key:
@@ -381,6 +389,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         edgar = EdgarClient(
             cache_dir=settings.cache_dir,
             user_agent=settings.sec_user_agent,
+            as_of=getattr(args, "as_of", None),
         )
         recorder = TraceRecorder(
             args.claim,
@@ -427,7 +436,7 @@ def _run_post(args: argparse.Namespace, settings: object) -> int:
         report = check_post(
             text,
             client=create_client(provider, settings.model_api_key),
-            edgar=EdgarClient(cache_dir=settings.cache_dir, user_agent=settings.sec_user_agent),
+            edgar=EdgarClient(cache_dir=settings.cache_dir, user_agent=settings.sec_user_agent, as_of=getattr(args, "as_of", None)),
             ledger=ledger,
             model=model,
             provider=provider,
@@ -479,7 +488,7 @@ def _run_ingest(args: argparse.Namespace, settings: object) -> int:
     try:
         with httpx.Client(timeout=120) as http:
             report = ingest_file(args.file, client=client, vision_client=vision, asr_http=http,
-                meta_api_key=meta.model_api_key, edgar=EdgarClient(cache_dir=settings.cache_dir, user_agent=settings.sec_user_agent),
+                meta_api_key=meta.model_api_key, edgar=EdgarClient(cache_dir=settings.cache_dir, user_agent=settings.sec_user_agent, as_of=getattr(args, "as_of", None)),
                 ledger=ledger, model=args.model or settings.model, provider=settings.provider, out_dir=out,
                 max_claims=args.max_claims, secrets=secrets,
                 max_output_tokens=args.max_output_tokens or settings.max_output_tokens,

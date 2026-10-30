@@ -47,3 +47,5 @@ The first/root commit is **`7c5670b84e6052db9fa67fd86606fb2ee11ee42c`**, authore
 - Explorer now defaults to English and offers Traditional Chinese with preserved claim deep links; recorded evidence remains unchanged.
 
 - Added a reproducible three-outcome judge walkthrough using one recorded META outlook: matching range, altered range and wrong period. Publishes exact source locators, raw/text hashes, full program checks and a zero-incremental-API-cost breakdown explicitly limited to offline execution.
+
+- Added `us-financial-v1` policy identity and `--as-of` for edgar/verify/post/ingest. Filters SEC facts before normalization/derivation and release evidence before admission/reuse, records policy in reports/traces, and preserves no-cutoff model replay payloads. Historical archive and intraday reconstruction remain out of scope.

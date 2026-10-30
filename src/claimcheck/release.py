@@ -286,6 +286,8 @@ def provenance(source: dict[str, Any]) -> dict[str, Any]:
 
 class ReleaseService:
     def __init__(self, edgar: Any, client: ReleaseClient | None = None) -> None:
+        from .policy import policy_for
+        self.policy = policy_for(edgar)
         self.edgar = edgar
         self.client = client or ReleaseClient(edgar.cache_dir, user_agent=edgar.user_agent, timeout=edgar.timeout)
         self.candidates: dict[str, dict[str, Any]] = {}
@@ -298,7 +300,8 @@ class ReleaseService:
             return company
         calendar = self.edgar.fiscal_equals_calendar(ticker) is True
         inspected, candidates, failures = [], [], []
-        filings = self.client.filings(company["cik"], period)
+        filings = [filing for filing in self.client.filings(company["cik"], period)
+                   if self.policy.admits(filing.get("filingDate"))]
         # Bound network work, not the interpretation of the requested period.
         # A valid same-period number must still be present in the exhibit text.
         for filing in filings[:32]:
@@ -308,6 +311,8 @@ class ReleaseService:
                 failures.append({"accession": filing["accessionNumber"], "error": type(exc).__name__})
                 continue
             for exhibit in exhibits:
+                if not self.policy.admits(exhibit.get("filed")):
+                    continue
                 source = {k: v for k, v in exhibit.items() if k != "raw"}
                 inspected.append(source)
                 doc = parse_html(exhibit["raw"])
@@ -331,6 +336,8 @@ class ReleaseService:
         stored = self.candidates.get(candidate_id)
         if stored is None or (start, end) != (stored["start"], stored["end"]):
             raise ReleaseError("unknown candidate or offsets do not match a returned span")
+        if not self.policy.admits(stored.get("filed")):
+            raise ReleaseError("release filing is not eligible under as_of policy")
         raw, meta = self.client.read(stored["exhibit_url"])
         if meta["sha256"] != stored["sha256"]:
             raise ReleaseError("release snapshot changed")
