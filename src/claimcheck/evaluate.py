@@ -1989,15 +1989,6 @@ def _write_report(path: Path, summary: Mapping[str, Any], claims: Sequence[Mappi
             "| System | Pairs | Completed | Total cost | Input tokens | Cached tokens | Output tokens | Reasoning tokens | Model calls | Tool calls | Mean latency ms | p50 ms | p95 ms |",
             "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
     ]
-    small_n_caveats = summary.get("small_n_caveats", [])
-    if small_n_caveats:
-        lines.extend(
-            [
-                "",
-                "No significance claims are made for groups with n < 50; Wilson intervals and paired tests there are descriptive and unstable.",
-                "",
-            ]
-        )
     system_totals = summary.get("system_totals", {})
     if isinstance(system_totals, Mapping):
         for system in SYSTEMS:
@@ -2027,6 +2018,15 @@ def _write_report(path: Path, summary: Mapping[str, Any], claims: Sequence[Mappi
                 )
                 + " |"
             )
+    small_n_caveats = summary.get("small_n_caveats", [])
+    if small_n_caveats:
+        lines.extend(
+            [
+                "",
+                "No significance claims are made for groups with n < 50; Wilson intervals and paired tests there are descriptive and unstable.",
+                "",
+            ]
+        )
     lines.extend(
         [
             "",

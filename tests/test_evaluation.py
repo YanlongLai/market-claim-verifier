@@ -182,3 +182,12 @@ def test_report_writes_summary_and_markdown(tmp_path: Path) -> None:
     report = (out / "REPORT.md").read_text()
     assert "Per-claim results" in report
     assert "No significance claims" in report
+    from claimcheck.evaluate import SYSTEMS
+    totals = report.split("## Per-system totals", 1)[1].split("## Provider comparison", 1)[0]
+    lines = totals.splitlines()
+    header = next(i for i, line in enumerate(lines) if line.startswith("| System |"))
+    table = lines[header:header + 2 + len(SYSTEMS)]
+    assert len(table) == 2 + len(SYSTEMS)
+    assert all(line.startswith("|") for line in table)
+    assert all(len(line.split("|")) == 15 for line in table)
+    assert totals.index("No significance claims") > totals.rindex("| ")
