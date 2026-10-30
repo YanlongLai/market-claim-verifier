@@ -43,3 +43,9 @@ Muse Spark chooses tools and drafts explanations; Python checks numbers, periods
 - Current ground truth is SEC XBRL, with tagging/restatement and period limitations; valuation opinions are skipped. L4 earnings-release evidence for guidance and non-GAAP claims was added on Day 4 and scored 31/32 on a 32-claim fixture-based regression set — not a held-out benchmark ([analysis](docs/evidence/eval-l4-2026-10-29/ANALYSIS.md)). L5, market multiples and Taiwan filings are **planned** ([source policy](docs/DATA_SOURCES.md), [post checker](src/claimcheck/post.py), [roadmap](ROADMAP.md)). The site replays saved evidence; fresh model runs require keys/network ([site builder](docs/scripts/build_site.py), [runtime setup](README.md#run-it)).
 
 Code: [MIT](LICENSE). Data/media: [credits](CREDITS.md). AI readers: [llms.txt](llms.txt) → [AGENTS.md](AGENTS.md).
+
+## Inspect the paired media study and real multi-file review
+
+[Same-input benchmark and raw artifacts](docs/evidence/fair-multimodal-v1/REPORT.md) separate product correctness from native-image completion. The denominator is 24 underlying assertions across six issuers, repeated over nine encodings; synthetic media results are not broad real-world accuracy.
+
+Open the [real Tesla three-document summary](docs/evidence/stock-context-posthoc-2026-10-30/attempt-2/summary/stock-review.html): three supported occurrences, five needing evidence, and a chart with no checked claims. The summary costs no additional model call and exposes incomplete coverage. Both repair attempts are retained separately from the benchmark. [Run your own stock review](docs/STOCK_REVIEW.md).

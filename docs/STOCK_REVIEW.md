@@ -5,7 +5,8 @@ The product accepts local text/Markdown, native-text PDF, PNG/JPEG/WebP, support
 ```sh
 uv run python -m claimcheck review-stock TSLA notes.txt table.png call.mp3 \
   --provider baseten --evidence-cache .cache/sec-refresh-2026-10-30 \
-  --as-of 2026-10-30 --budget 3 --per-job-budget 1 --max-jobs 3 --out runs/tsla-review
+  --as-of 2026-10-30 --max-claims 4 --max-output-tokens 4000 --reasoning-effort low \
+  --budget 3 --per-job-budget 1 --max-jobs 3 --out runs/tsla-review
 ```
 
 This makes paid verification calls. Media requires Meta OCR/ASR credentials as well as the chosen text provider. Budgets include preprocessing; the queue admits full job caps before calls. Unsupported or uncertain jobs stay visible. Repeat the exact command to resume jobs left by the per-invocation job limit when admission budget remains; completed jobs are hash-verified and reused, unknown outcomes do not auto-retry. Budget-blocked jobs do not become runnable just by repeating the command. Changing inputs or budget requires a new review directory and deliberate budget allocation. Each invocation writes a new `summary-NNN/stock-review.html` and JSON so previous partial summaries remain available.
@@ -42,3 +43,9 @@ The current summary is deterministic and costs **$0 incremental model fees**. An
 6. **Later:** incremental additions to an existing stock workspace, semantic deduplication with provenance, user-selected authoritative evidence connectors, long-recording chunk resume, native media adapters and discounted vendor batch APIs. Each needs its own benchmark and migration policy.
 
 Uploaded files are **claims to verify**, not automatically trusted evidence. Today the frozen SEC cache supplies the factual reference. Adding a company presentation does not let it override SEC facts or resolve non-GAAP claims by itself. Supporting user-supplied evidence requires provenance, period/units, source authority and conflict handling; that is a separate planned feature.
+
+## Real-document context check
+
+`review-stock` now passes the selected ticker as an **unauthenticated source hint**, never as quotable evidence or an override of another explicitly named issuer. Table extraction requests contiguous row quotations and bounded proposals; it must not assemble a quotation from separated headers and cells. Exact ticker identity and share-class alias support remain separate concerns. See the [context protocol](STOCK_DOCUMENT_CONTEXT.md).
+
+The [retained Tesla example](evidence/stock-context-posthoc-2026-10-30/attempt-2/summary/stock-review.html) reviews three real slide images: eight claim occurrences, three supported, five insufficient, and one chart page without checked target claims. The live smoke check used four proposals per window, as in the command above; the default of eight was not separately live-validated. Both [post-hoc attempts](evidence/stock-context-posthoc-2026-10-30/REPORT.md), including failed quotations, are public. This is a known-failure product check with reused OCR, not a new accuracy benchmark.

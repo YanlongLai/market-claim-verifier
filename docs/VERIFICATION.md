@@ -47,3 +47,7 @@ The [link checker](../scripts/check_links.py) checks all Markdown plus `llms.txt
 The initial figure check found stale `BUILD_LOG.md` input hashes for the before/after and development-latency figures. Only [registry hashes](figures/figures.json) and the [visual index](VISUALS.md) were refreshed; existing chart images/values are unchanged. Seven links to ignored or machine-local demo outputs were replaced with labeled local-output paths and the [committed build record](../demo/BUILD_LOG.md), preserving historical review findings.
 
 The workflow is [configured for push/PR](../.github/workflows/verify.yml); it has not been run on GitHub by this local-only task. The demo publication URL remains pending, and the [opening disclosure](../demo/JUDGE_INTRO.md) has not been rendered into the existing video.
+
+## Paired media and stock-context receipts
+
+[Primary benchmark audit](evidence/fair-multimodal-v1/audit.json) validates the frozen experiment independently of subsequent product changes. [Post-hoc audit](evidence/stock-context-posthoc-2026-10-30/audit.json) verifies both retained repair attempts and their shared budget. [Final product verification log](evidence/stock-context-posthoc-2026-10-30/final-offline-verification.log) records 901 product, 149 demo Python and 55 Node tests plus presentation/output/link checks. Replay instructions are in [REUSE](evidence/fair-multimodal-v1/REUSE.md).

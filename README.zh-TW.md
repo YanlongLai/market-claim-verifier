@@ -38,11 +38,51 @@ Meta Muse 模型找出主張、選擇工具並擷取證據；Python 核對數字
 
 **公平比較：** [事先登記的配對 benchmark](eval/multimodal-v1/README.md)把共用前處理的查核與原生圖片端點辨識分開，讓各平台使用相同輸入並保留失敗。下方舊有「一家測一種格式」案例僅為非配對開發測試，不是平台排名。[完整計畫](docs/FAIR_BENCHMARK_AND_STOCK_REVIEW_PLAN.md) · [同一股票多文件查核](docs/STOCK_REVIEW.md)。
 
+<!-- multimodal-v1:start -->
+
+**配對 benchmark：每種格式正確數 / 24。** 六家公司、24 個基礎主張，重複轉成九種格式；不是 216 個獨立題目。漏抽、未完成與判錯都留在分母。圖片／音訊／影片共用凍結的 Meta OCR／ASR，再比較文字查核。
+
+| 格式 | Meta | Baseten | Fireworks |
+| --- | ---: | ---: | ---: |
+| TXT | 22/24 | 24/24 | 24/24 |
+| MD | 22/24 | 24/24 | 24/24 |
+| PDF | 23/24 | 24/24 | 24/24 |
+| PNG | 24/24 | 24/24 | 24/24 |
+| JPG | 22/24 | 24/24 | 24/24 |
+| WEBP | 23/24 | 24/24 | 24/24 |
+| WAV | 18/24 | 23/24 | 24/24 |
+| MP3 | 14/24 | 24/24 | 24/24 |
+| MP4 | 19/24 | 24/24 | 24/24 |
+
+[完整結果與限制](docs/evidence/fair-multimodal-v1/REPORT.md) · [中文分析](docs/evidence/fair-multimodal-v1/ANALYSIS.zh-TW.md) · [輸入、原始回應與離線重用](docs/evidence/fair-multimodal-v1/REUSE.md)。這是清晰合成素材的單次受控測試；真實 Tesla 頁面另列無完整標準答案的診斷，不能據此宣稱全面準確率。
+
+**原生圖片端點：完成回應 / 6 張控制圖，並非準確率。** 原生辨識的文字／數字指標見完整報告。此測試沒有改變產品仍使用 Meta OCR 的路徑。
+
+| 圖片格式 | Meta | Baseten | Fireworks |
+| --- | ---: | ---: | ---: |
+| PNG | 6/6 | 6/6 | 6/6 |
+| JPG | 6/6 | 6/6 | 6/6 |
+| WEBP | 6/6 | 6/6 | 6/6 |
+
+**API 花費（USD，估算／保留額）**
+
+| 平台 | Benchmark | 事後產品驗證 | 本次工作合計 |
+| --- | ---: | ---: | ---: |
+| Meta | $4.236019 | $0.000000 | $4.236019 |
+| Baseten | $1.951966 | $0.147382 | $2.099348 |
+| Fireworks | $2.013645 | $0.000000 | $2.013645 |
+
+每平台授權上限 $40；共用前處理全計入 Meta，失敗也保留。這不是帳單或剩餘 credit。詳細 [ledger／費用合計](docs/evidence/fair-multimodal-v1/task-spend.json)與[官方單價核對](docs/evidence/fair-multimodal-v1/RATE_CHECK.md)。
+
+**同一股票多文件：** `review-stock` 可批次查核，`stock-summary` 可無新增模型費用重用報告。股票背景與表格引文修正的[真實 Tesla 摘要](docs/evidence/stock-context-posthoc-2026-10-30/attempt-2/summary/stock-review.html)保留三個 supported、五個 insufficient-evidence 主張及無可查核主張的圖表頁。這是[保留兩次嘗試的事後產品驗證](docs/evidence/stock-context-posthoc-2026-10-30/REPORT.md)，未替換 benchmark 分數，也不是獨立準確率。網頁上傳介面與 AI 敘述摘要仍在計畫中。
+
+<!-- multimodal-v1:end -->
+
 [測試紀錄索引與 reuse 指南](docs/TEST_RECORDS.md) · [新增六種格式實測](docs/evidence/input-formats-2026-10-30/REPORT.md)保留各案例的判定、覆蓋、耗時及費用；下方提供摘要。這些小型合成案例不代表完整的「格式 × 平台」評測。
 
 檔案上限 **128 MiB**；影音最長 **2 小時**。這是接受範圍，不是該規模下的準確度保證。[詳細格式與平台能力](docs/PROVIDERS.md)。
 
-**新資料與真實素材：** [2026-10-30 取得的 SEC 快照](docs/evidence/sec-refresh-2026-10-30/REPORT.md)涵蓋 23 家公司、47 份回應；需明確指定使用，不改寫舊評測證據。[真實公司素材目錄](docs/evidence/real-media-2026-10-30/README.md)包含三張 Tesla 財報簡報圖片，以及 Microsoft／Tesla 官方簡報、法說會入口。這批真實素材尚未進行模型評測。
+**新資料與真實素材：** [2026-10-30 取得的 SEC 快照](docs/evidence/sec-refresh-2026-10-30/REPORT.md)涵蓋 23 家公司、47 份回應；需明確指定使用，不改寫舊評測證據。[真實公司素材目錄](docs/evidence/real-media-2026-10-30/README.md)包含三張 Tesla 財報簡報圖片，以及 Microsoft／Tesla 官方簡報、法說會入口。三張 Tesla 頁面已有獨立列示的診斷與事後產品驗證；連結中的法說會影音尚未評測。
 
 ## 準確度與平台比較
 

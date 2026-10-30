@@ -81,7 +81,7 @@ def main():
     for provider,cost in summary['actual_estimated_or_reserved_spend_usd'].items():
         if cost>40:errors.append('authorization exceeded: '+provider)
         if abs(sum(stage_totals[provider].values())-cost)>1e-8:errors.append('summary/record costs differ: '+provider)
-    inventory=[{'path':str(p.relative_to(ROOT)),'sha256':sha(p),'bytes':p.stat().st_size} for p in sorted(OUT.rglob('*')) if p.is_file() and p.name not in ('inventory.json','audit.json','audit.log')]
+    inventory=[{'path':str(p.relative_to(ROOT)),'sha256':sha(p),'bytes':p.stat().st_size} for p in sorted(OUT.rglob('*')) if p.is_file() and not p.name.endswith('.jsonl.lock') and p.name not in ('inventory.json','audit.json','audit.log')]
     (OUT/'inventory.json').write_text(json.dumps(inventory,indent=2)+'\n')
     result={'errors':errors,'historical_source_files_verified_from_archive_or_git':historical_sources,'planned_result_files':len(expected),'local_html_links_checked':html_links,'artifact_files':len(inventory),'artifact_bytes':sum(i['bytes'] for i in inventory),'costs_by_stage_and_provider':stage_totals,'reserved_calls':len(reservations),'reconciled_calls':len(reconciled),'unreconciled_reservations':unmatched,'note':'Unreconciled reservations remain in estimated spend. Inventory excludes itself and audit output; regenerate after final documentation changes.'}
     (OUT/'audit.json').write_text(json.dumps(result,indent=2)+'\n')

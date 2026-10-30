@@ -71,7 +71,7 @@ def main():
     (OUT/'error-analysis.json').write_text(json.dumps({'description':'Mechanical error categories from frozen scored outcomes, not inferred root causes. Repeated encodings are not independent errors.','failures':failures},indent=2)+'\n')
     events=[json.loads(line) for line in (OUT/'ledger.jsonl').read_text().splitlines()]
     latest={event['reservation_id']:event for event in events}
-    spend={p:sum(event['amount'] for event in latest.values() if event['provider']==p) for p in PROVIDERS}
+    spend={p:round(sum(event['amount'] for event in latest.values() if event['provider']==p),8) for p in PROVIDERS}
     calls={}
     for p in PROVIDERS:
         refs=set()

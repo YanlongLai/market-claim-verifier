@@ -48,6 +48,6 @@ def main():
             if not (path.parent/unquote(url.path)).exists():errors.append('broken HTML link: '+str(path)+' -> '+link)
     result={'errors':errors,'attempts':attempts,'total_baseten_estimated_or_reserved_usd':total,'shared_posthoc_cap_usd':1,'primary_plus_posthoc_admission_caps_usd':36,'owner_baseten_cap_usd':40,'raw_recorded_requests':len(requests),'local_html_links_checked':links,'note':'Post-hoc known-failure checks; no independent accuracy estimate. Shared OCR was reused, not rerun.'}
     (BASE/'audit.json').write_text(json.dumps(result,indent=2)+'\n')
-    inventory=[{'path':str(p.relative_to(ROOT)),'sha256':sha(p),'bytes':p.stat().st_size} for p in sorted(BASE.rglob('*')) if p.is_file() and p.name not in ('inventory.json','audit.json','audit.log')]
+    inventory=[{'path':str(p.relative_to(ROOT)),'sha256':sha(p),'bytes':p.stat().st_size} for p in sorted(BASE.rglob('*')) if p.is_file() and not p.name.endswith('.jsonl.lock') and p.name not in ('inventory.json','audit.json','audit.log')]
     (BASE/'inventory.json').write_text(json.dumps(inventory,indent=2)+'\n');print(json.dumps(result,indent=2));return bool(errors)
 if __name__=='__main__':sys.exit(main())

@@ -49,3 +49,9 @@ This command makes paid calls, shares a $3 cap across cases ($1 per provider), v
 ```
 
 Keep the original evidence unchanged. Use a new directory for each run; compare model/prompt/policy/source/input hashes before interpreting changes. Do not publish a best-of score or treat small synthetic examples as a general accuracy benchmark.
+
+## Completed paired study and separate product follow-ups
+
+- [Nine-format final benchmark](evidence/fair-multimodal-v1/REPORT.md): 319 expected artifact records audited, identical per-case inputs across platforms, raw requests/responses and retained failures; [offline reuse](evidence/fair-multimodal-v1/REUSE.md).
+- [Real Tesla context follow-ups](evidence/stock-context-posthoc-2026-10-30/REPORT.md): both attempts retained, 41 recorded requests, Baseten only, frozen OCR reused. These known-failure checks do not replace the primary results.
+- [Combined task spend](evidence/fair-multimodal-v1/task-spend.json): separate primary and post-hoc estimates/reservations, each provider below its $40 authorization.

@@ -38,11 +38,51 @@ Meta Muse models find claims and retrieve evidence. Python checks numbers, perio
 
 **Fair comparison:** [preregistered paired benchmark](eval/multimodal-v1/README.md) separates shared-preprocessing verification from native-image endpoint reading, uses the same inputs per provider, and retains failures. Earlier one-format-per-provider examples below are unpaired development probes, not platform rankings. [Plan](docs/FAIR_BENCHMARK_AND_STOCK_REVIEW_PLAN.md) · [single-stock multi-file review](docs/STOCK_REVIEW.md).
 
+<!-- multimodal-v1:start -->
+
+**Paired benchmark: correct / 24 per format.** Six issuers, 24 underlying assertions repeated across nine encodings—not 216 independent facts. Missing, incomplete and wrong outcomes remain in the denominator. Media uses shared frozen Meta OCR/ASR before text verification.
+
+| Format | Meta | Baseten | Fireworks |
+| --- | ---: | ---: | ---: |
+| TXT | 22/24 | 24/24 | 24/24 |
+| MD | 22/24 | 24/24 | 24/24 |
+| PDF | 23/24 | 24/24 | 24/24 |
+| PNG | 24/24 | 24/24 | 24/24 |
+| JPG | 22/24 | 24/24 | 24/24 |
+| WEBP | 23/24 | 24/24 | 24/24 |
+| WAV | 18/24 | 23/24 | 24/24 |
+| MP3 | 14/24 | 24/24 | 24/24 |
+| MP4 | 19/24 | 24/24 | 24/24 |
+
+[Full results and limits](docs/evidence/fair-multimodal-v1/REPORT.md) · [inputs, raw outputs and offline reuse](docs/evidence/fair-multimodal-v1/REUSE.md). This is one controlled run on clean synthetic media. Real Tesla pages are separate diagnostics without complete gold; these scores are not broad real-world accuracy.
+
+**Native image endpoints: completed responses / 6 control images, not accuracy.** Reading metrics are in the full report. These probes do not change the product’s shared Meta OCR route.
+
+| Image format | Meta | Baseten | Fireworks |
+| --- | ---: | ---: | ---: |
+| PNG | 6/6 | 6/6 | 6/6 |
+| JPG | 6/6 | 6/6 | 6/6 |
+| WEBP | 6/6 | 6/6 | 6/6 |
+
+**API spend (USD, estimated/reserved)**
+
+| Platform | Benchmark | Post-hoc product checks | Total task spend |
+| --- | ---: | ---: | ---: |
+| Meta | $4.236019 | $0.000000 | $4.236019 |
+| Baseten | $1.951966 | $0.147382 | $2.099348 |
+| Fireworks | $2.013645 | $0.000000 | $2.013645 |
+
+Authorization: $40 per platform. All shared preprocessing is charged to Meta; failures remain counted. These are not invoices or remaining-credit balances. [Ledger totals](docs/evidence/fair-multimodal-v1/task-spend.json) · [official rate cross-check](docs/evidence/fair-multimodal-v1/RATE_CHECK.md).
+
+**Single-stock multi-file review:** `review-stock` checks a batch; `stock-summary` reuses reports without new inference. The [real Tesla summary](docs/evidence/stock-context-posthoc-2026-10-30/attempt-2/summary/stock-review.html) retains three supported and five insufficient-evidence claim occurrences plus a chart page with no checked claims. This is a [two-attempt post-hoc product check](docs/evidence/stock-context-posthoc-2026-10-30/REPORT.md), not an independent accuracy estimate or replacement benchmark score. Upload UI and AI narrative remain planned.
+
+<!-- multimodal-v1:end -->
+
 [Test-record index and reuse guide](docs/TEST_RECORDS.md) · **Live evidence:** [six additional format probes](docs/evidence/input-formats-2026-10-30/REPORT.md) record Markdown → Fireworks, JPEG → Meta OCR → Baseten, WebP → Meta OCR → Fireworks, MP3 → Meta ASR → Fireworks, silent MP4 → three Meta OCR frames → Fireworks, and native-text PDF → Meta. Each combination has one retained attempt with verdicts, coverage, latency and estimated cost. These small synthetic smoke tests are not a full format × provider benchmark. [Earlier PNG/WAV/video and long-audio probes](docs/evidence/multimodal-2026-10-30/REPORT.md) remain available.
 
 **File limits:** 128 MiB; audio/video ≤2 hours. These are acceptance limits, not validated accuracy at that scale. [Extensions, vendor capabilities and endpoint caveats](docs/PROVIDERS.md#platform-capability-versus-integration).
 
-**Fresh data and real media:** [SEC snapshot fetched on 2026-10-30](docs/evidence/sec-refresh-2026-10-30/REPORT.md) covers 23 companies and 47 recorded responses; select it explicitly without changing frozen benchmark evidence. [Real issuer media candidates](docs/evidence/real-media-2026-10-30/README.md) include three Tesla slide images and official Microsoft/Tesla presentation/webcast links. These new real-media candidates have not been model-evaluated.
+**Fresh data and real media:** [SEC snapshot fetched on 2026-10-30](docs/evidence/sec-refresh-2026-10-30/REPORT.md) covers 23 companies and 47 recorded responses; select it explicitly without changing frozen benchmark evidence. [Real issuer media candidates](docs/evidence/real-media-2026-10-30/README.md) include three Tesla slide images and official Microsoft/Tesla presentation/webcast links. Three Tesla pages now have separately recorded unscored diagnostics and post-hoc product checks; linked webcasts have not been evaluated.
 
 ## Key results
 

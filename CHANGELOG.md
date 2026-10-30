@@ -64,3 +64,9 @@ The first/root commit is **`7c5670b84e6052db9fa67fd86606fb2ee11ee42c`**, authore
 - Fetched and archived 47 raw SEC responses for the existing 23-company scope, with hashes, retrieval timestamps, date-filtered coverage and offline restoration. [Snapshot report](docs/evidence/sec-refresh-2026-10-30/REPORT.md). Historical fixtures/default cache remain unchanged; the new snapshot is selected explicitly.
 - Added [three real Tesla slide images and official Microsoft/Tesla presentation/webcast sources](docs/evidence/real-media-2026-10-30/README.md), clearly separating prepared inputs from un-downloaded recordings and unevaluated candidates. No paid model calls.
 - Offline verification: 884 product tests, 149 demo Python tests and 55 Node tests passed; all 47 archives restored with verified hashes and CIK identity.
+
+## 2026-10-30 — paired media benchmark and single-stock document review
+
+- Published same-input nine-format results, native-image probes, full input/output artifacts, frozen source archives and spend audits; corrected English/Chinese support tables.
+- Added bounded stock context and contiguous table quotation rules to multi-file review; retained both real Tesla follow-up attempts and an evidence-linked summary.
+- Final offline verification passed 901 product, 149 demo Python and 55 Node tests. Upload UI, validated AI narrative and real-recording accuracy evaluation remain planned.

@@ -64,3 +64,7 @@ Original 266-claim held-out split, corrected labels; recorded run, not a fresh b
 | Meta | 82.0% | 0.025880 | 38.372 |
 
 [Full report and denominator details](evidence/eval-v2-2026-10-27/REPORT.md). Meta has one incomplete agent case; means follow the report's completion accounting. These numbers are not SLAs. Closed Spark and Open Spark are different model variants. Media has only [development probes](evidence/multimodal-2026-10-30b/REPORT.md), not comparable provider-wide accuracy scores. Measure extraction recall separately from verdict accuracy; 50/60 program-checked assertions on frozen ASR is coverage, not 83.3% truth accuracy.
+
+## Paired format evidence (2026-10-30)
+
+The [completed benchmark](evidence/fair-multimodal-v1/REPORT.md) compares identical nine-format inputs with shared frozen Meta preprocessing. Separate native PNG/JPEG/WebP probes completed six control images per format on every provider; native audio/video endpoints were not tested. Native image probes do not change the product adapter: all product image routes still require Meta OCR. [Official price cross-check](evidence/fair-multimodal-v1/RATE_CHECK.md) · [total task spend](evidence/fair-multimodal-v1/task-spend.json). No discounted provider Batch was used.

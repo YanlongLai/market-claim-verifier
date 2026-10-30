@@ -48,3 +48,9 @@ The first summary is deterministic and evidence-linked. Optional AI narrative is
 ### Request-level profile clarification
 
 The retained requests show that the two profiles change verification reasoning. The frozen short-input extractor keeps the repository default reasoning; partitioned long-input extraction uses low. Native-image calls explicitly use the selected profile. The separate stock-context product follow-up adds explicit low extraction reasoning and bounded proposals; it does not alter the frozen study.
+
+## Delivery status — 2026-10-30
+
+Steps 1–5 are delivered: corrected integration tables, frozen same-input corpus, completed primary runs, [published benchmark](evidence/fair-multimodal-v1/REPORT.md), and [single-stock CLI review](STOCK_REVIEW.md). Real Tesla failures led to two separately retained product checks, not replacement scores. Combined estimates/reservations are in [task-spend.json](evidence/fair-multimodal-v1/task-spend.json).
+
+Remaining work is ordered in [Day 5's latest milestone](DAY5_PLAN.md): upload UI first, independent real-document/recording gold and evidence coverage next, then citation-validated AI narrative, followed by more expensive native media and Batch integration. Do not automatically spend the unused authorized ceiling on future work.

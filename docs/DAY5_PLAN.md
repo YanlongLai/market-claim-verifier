@@ -68,3 +68,11 @@ Owner-authorized paid format probes supplement milestones 1–3: Markdown, JPEG,
 ### Paired benchmark and stock-review milestone — 2026-10-30
 
 The [new delivery plan](FAIR_BENCHMARK_AND_STOCK_REVIEW_PLAN.md) replaces one-format-per-provider examples with a frozen same-input comparison. [Corpus and scorer](../eval/multimodal-v1/README.md) were committed in `d58bd53` before paid execution, with $40 authorized per provider and $35 admission ceilings. Results must distinguish shared Meta preprocessing, native image reading and unscored real issuer diagnostics. A [single-stock multi-file CLI and deterministic summary](STOCK_REVIEW.md) is implemented; the upload UI and optional citation-validated AI narrative remain next priorities.
+
+## 2026-10-30 completed paired benchmark and stock context
+
+Published the [nine-format paired study](evidence/fair-multimodal-v1/REPORT.md), [Chinese analysis](evidence/fair-multimodal-v1/ANALYSIS.zh-TW.md), reproducible inputs, raw calls, source archives and offline integrity audits. README tables separate integration, native-image completion and strict correctness. Total estimated/reserved task spend is Meta $4.23601935, Baseten $2.09934800, Fireworks $2.01364550; $40 each remains a ceiling, not a spending target.
+
+Shipped bounded single-stock multi-file review, unauthenticated ticker context and evidence-linked deterministic summaries. Both real-document repair attempts remain public; the final [Tesla example](evidence/stock-context-posthoc-2026-10-30/attempt-2/summary/stock-review.html) has three supported and five insufficient occurrences, with the chart unchecked. Verification: 901 product tests, 149 demo Python tests and 55 Node tests passed, plus figures, byte-identical outputs and Markdown links.
+
+Next: (1) multi-file ticker upload UI using the existing queue and budget gates; (2) independently labeled real tables and recordings plus cash-flow/KPI evidence coverage; (3) optional AI narrative with validated citations/numbers and an explicit budget; (4) native audio/video adapters, long-media continuation and vendor Batch. These remain planned, not shipped. See the [delivery plan](FAIR_BENCHMARK_AND_STOCK_REVIEW_PLAN.md).
