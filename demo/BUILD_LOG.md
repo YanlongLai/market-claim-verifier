@@ -219,10 +219,12 @@ Changed global cache keys: assembly_cache_key.
 
 Output: `/Users/yan/git/market-claim-verifier-video/demo/out/demo-v009.mp4`; SHA-256 `5ef16ffdfc7ec5f4297485c3013690dd326465087d5e2d98fa1108331e4f551f`.
 
-## 2026-10-30 UTC — Owner approved v009 as the final submission video
+## 2026-10-30 UTC — Owner approved v009 as the current candidate (not final)
 
 `demo/out/demo-v009.mp4` (v007 shot list after both independent AI2 review rounds): 178.200 s, 1920×1080 30 fps,
 integrated −14.17 LUFS, true peak −1.27 dBTP, SHA-256 prefix `5ef16ffdfc7ec5f4`. Round 1 (overall FAIL, six fixes)
 and round 2 (five fixed; limits-card border collision) reports are in the local review folders; the remaining
 collision was fixed in `2f0bbf2` and checked on the v009 review frame. The narrator audio is Breeze-TTS-2 output
 (research/non-commercial licence) and the film is not committed; host-measured timing files remain local outputs.
+
+The Owner later said v009 is not the final version and asked not to upload yet; further improvements are planned before the 2026-11-04 deadline.
