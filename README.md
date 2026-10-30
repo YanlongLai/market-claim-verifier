@@ -40,6 +40,28 @@ Meta Muse models find claims and retrieve evidence. Python checks numbers, perio
 
 ## Key results
 
+### 🔍 What are single-shot and agent?
+
+**Single-shot asks the model to answer directly. Agent retrieves evidence, then lets Python check the answer.** These are two execution modes, not two model names. Within each provider's comparison, both modes use the same configured model.
+
+```text
+single_shot: claim → model answer → verdict
+agent:       claim → model chooses SEC tools → evidence → model draft
+                     → Python checks numbers, periods and citations → final verdict
+```
+
+| Question | Single-shot (`single_shot`) | Agent (`agent`) |
+| --- | --- | --- |
+| Does it retrieve SEC evidence? | No tools; answers from existing model knowledge | Yes, using SEC lookup and calculation tools |
+| Who determines the verdict? | The model's answer | Program checks can override the model's draft |
+| Can I inspect the supporting filing? | No retrieved filing evidence in this path | Cited facts and source links are retained |
+| What does the comparison measure? | A no-tool baseline | The complete retrieval + program-checking workflow |
+
+**Example:** for “Amazon's calendar Q3 2023 revenue was $143.1B,” the agent can retrieve $143.083B, verify the period and check rounding before returning `supported`. Single-shot may answer correctly or abstain, but does not retrieve that filing during the check. [Inspect the recorded example](https://hackathon.dappgo.com/explorer/#G0119).
+
+> [!NOTE]
+> “Single-shot” names the no-tool baseline; it does not guarantee exactly one API request. Consult recorded call counts for actual usage. Accuracy gains below measure the whole agent workflow, not the isolated effect of any one rule. `No-tool accuracy` means single-shot accuracy; cost and time columns show the **agent** path.
+
 ### 📝 Text: comparable recorded benchmark
 
 **Same 357-claim set · 23 companies · 91 development + 266 held-out.** Corrected reference labels; failed/incomplete predictions count as wrong. Costs and latency are historical agent means—not prices per document or SLAs.
