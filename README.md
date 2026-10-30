@@ -42,6 +42,8 @@ Meta Muse models find claims and retrieve evidence. Python checks numbers, perio
 
 **File limits:** 128 MiB; audio/video ≤2 hours. These are acceptance limits, not validated accuracy at that scale. [Extensions, vendor capabilities and endpoint caveats](docs/PROVIDERS.md#platform-capability-versus-integration).
 
+**Fresh data and real media:** [SEC snapshot fetched on 2026-10-30](docs/evidence/sec-refresh-2026-10-30/REPORT.md) covers 23 companies and 47 recorded responses; select it explicitly without changing frozen benchmark evidence. [Real issuer media candidates](docs/evidence/real-media-2026-10-30/README.md) include three Tesla slide images and official Microsoft/Tesla presentation/webcast links. These new real-media candidates have not been model-evaluated.
+
 ## Key results
 
 ### 🔍 What are single-shot and agent?

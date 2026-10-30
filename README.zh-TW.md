@@ -42,6 +42,8 @@ Meta Muse 模型找出主張、選擇工具並擷取證據；Python 核對數字
 
 檔案上限 **128 MiB**；影音最長 **2 小時**。這是接受範圍，不是該規模下的準確度保證。[詳細格式與平台能力](docs/PROVIDERS.md)。
 
+**新資料與真實素材：** [2026-10-30 取得的 SEC 快照](docs/evidence/sec-refresh-2026-10-30/REPORT.md)涵蓋 23 家公司、47 份回應；需明確指定使用，不改寫舊評測證據。[真實公司素材目錄](docs/evidence/real-media-2026-10-30/README.md)包含三張 Tesla 財報簡報圖片，以及 Microsoft／Tesla 官方簡報、法說會入口。這批真實素材尚未進行模型評測。
+
 ## 準確度與平台比較
 
 ### 🔍 Single-shot 與 Agent 是什麼？

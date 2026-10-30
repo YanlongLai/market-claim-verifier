@@ -58,3 +58,9 @@ The first/root commit is **`7c5670b84e6052db9fa67fd86606fb2ee11ee42c`**, authore
 - Added six preselected paid format probes with a shared $3 cap: Markdown, JPEG, WebP, MP3, silent MP4 and native-text PDF. [Results, per-provider spend, limits and raw reports](docs/evidence/input-formats-2026-10-30/REPORT.md) remain auditable; no failed attempt is discarded.
 - Extended the existing probe runner to Fireworks text verification, with three equal provider budget partitions; removed stale prior-run budget metadata. Added an offline format-report builder that checks input hashes and cost reconciliation.
 - Added the [test-record index and reuse contract](docs/TEST_RECORDS.md), frozen raw/normalized per-channel text, and a suite runner that records command/log/exit-code history without overwriting prior runs.
+
+## Fresh SEC snapshot and real issuer inputs — 2026-10-30
+
+- Fetched and archived 47 raw SEC responses for the existing 23-company scope, with hashes, retrieval timestamps, date-filtered coverage and offline restoration. [Snapshot report](docs/evidence/sec-refresh-2026-10-30/REPORT.md). Historical fixtures/default cache remain unchanged; the new snapshot is selected explicitly.
+- Added [three real Tesla slide images and official Microsoft/Tesla presentation/webcast sources](docs/evidence/real-media-2026-10-30/README.md), clearly separating prepared inputs from un-downloaded recordings and unevaluated candidates. No paid model calls.
+- Offline verification: 884 product tests, 149 demo Python tests and 55 Node tests passed; all 47 archives restored with verified hashes and CIK identity.

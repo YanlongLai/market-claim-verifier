@@ -16,6 +16,8 @@ Retain every paid attempt, including failed extraction, provider errors, abstent
 | [Additional input formats](evidence/input-formats-2026-10-30/REPORT.md) | Markdown, JPEG, WebP, MP3, silent MP4 and native-text PDF |
 | [Offline judge walkthrough](evidence/judge-walkthrough/REPORT.md) | Deterministic evidence-to-verdict checks; no model calls |
 
+[2026-10-30 SEC refresh](evidence/sec-refresh-2026-10-30/REPORT.md) retains compressed raw snapshots for offline restoration. [Real issuer media catalogue](evidence/real-media-2026-10-30/README.md) distinguishes prepared images from link-only webcast candidates; neither is a new accuracy benchmark.
+
 ## What to retain for each new paid suite
 
 - Before execution: case selection, expected outcomes or explicit unknown ground truth, original inputs or permitted reproducible fixtures, SHA-256 hashes, provider/model, output-token limit, budget partitions and retry policy.
