@@ -1,6 +1,8 @@
 <p align="center">
-  <a href="https://hackathon.dappgo.com/"><img src="docs/figures/hover-readme.gif" width="160" alt="Hover 查核機器人拿著證據文件"></a>
+  <a href="https://hackathon.dappgo.com/"><img src="docs/figures/review-process.gif" width="1012" alt="查核重播：輸入主張、SEC 證據、數字比對與判定"></a>
 </p>
+
+網站已儲存範例的流程重播，並非即時查核。點擊動畫可開啟互動網站。[動畫重建程式](docs/scripts/build_readme_scene.py)。
 
 # Market Claim Verifier
 
@@ -228,6 +230,6 @@ PDF 使用 `ingest report.pdf` 與相同參數。保留頁碼與檔案 hash，�
 
 所有 repo 程式與 demo 工作均於活動期間建立，沒有活動前既有的 repo 程式。[建置紀錄](BUILD_LOG.md) · [MIT 程式授權](LICENSE) · [資料與媒體來源](CREDITS.md)。
 
-頂部浮動動畫沿用網站 Hover；[GIF 重建程式](docs/scripts/build_readme_robot.py)、[靜態版本](docs/site/img/auditor/H/present.webp)；[設計與生成歷程](docs/prompts/site/auditor-robot.md)。[AI 主視覺的可重用 prompt](docs/prompts/hero-image.md)另有記錄；AI 圖片是示意，數值圖表使用實測資料。
+頂部動畫直接擷取網站審查場景；另保留 Hover 獨立動畫的[重建程式](docs/scripts/build_readme_robot.py)、[靜態版本](docs/site/img/auditor/H/present.webp)；[設計與生成歷程](docs/prompts/site/auditor-robot.md)。[AI 主視覺的可重用 prompt](docs/prompts/hero-image.md)另有記錄；AI 圖片是示意，數值圖表使用實測資料。
 
 **英文 README 是主要版本。** 此頁提供繁體中文導覽；原始主張、證據與模型輸出維持原文。[語言規範](docs/LANGUAGE.md)。
