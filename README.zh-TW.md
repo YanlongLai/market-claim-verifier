@@ -1,260 +1,131 @@
-<p align="center">
-  <a href="https://hackathon.dappgo.com/"><img src="docs/figures/review-process-dark-3x-v3.gif" width="1012" alt="查核重播：輸入主張、SEC 證據、數字比對與判定"></a>
-</p>
-
 # Market Claim Verifier
 
-[English（主要版本）](README.md) | **繁體中文**
+[English](README.md) · [繁體中文](README.zh-TW.md)
 
-**輸入金融說法，取得 SEC 證據與可追溯的查核判定。**
+**用 SEC 財報查核金融主張，讓每個結論都有可追溯的證據。**
 
-[🌐 網站](https://hackathon.dappgo.com/) · [🔎 結果瀏覽器](https://hackathon.dappgo.com/explorer/index.zh#G0119) · [⚖️ 評審指南](JUDGES.md) · [🚀 開始使用](#開始使用)
+一段財務敘述可能數字正確，卻用錯季度、單位或會計口徑。Market Claim Verifier 從美股研究與公司資料中抽取主張，搜尋財報證據，再由 Python 檢查數值。每份報告保留原文、來源、計算與尚未釐清的問題。
 
-[![離線測試](docs/badges/tests.svg)](.github/workflows/verify.yml)
-[![MIT 授權](docs/badges/license.svg)](LICENSE)
-[![Meta AI hackathon](docs/badges/hackathon.svg)](BUILD_LOG.md)
+**[查看一筆查核結果](https://hackathon.dappgo.com/explorer/#G0119)** · [產品展示](https://hackathon.dappgo.com/) · [本機試用](#開始使用) · [評審導覽](JUDGES.md)
 
-Meta Muse 模型找出主張、選擇工具並擷取證據；Python 核對數字、期間、單位與引用。範圍是**美股**，證據來自 SEC XBRL 與公司提交的財報新聞稿。
+網站展示已保存的結果，不需要 API key。即時查核透過本機 CLI 執行；瀏覽器多檔上傳介面仍在規劃中。
 
-> [!NOTE]
-> 網站展示已儲存的查核結果；本機 CLI 可以呼叫即時模型。上傳文件屬於待查核內容，不會自動成為可信的財務證據。
+<p align="center">
+  <a href="https://hackathon.dappgo.com/"><img src="docs/figures/review-process-dark-3x-v3.gif" width="1012" alt="已保存的查核過程：金融主張、SEC 證據與程式判定"></a>
+</p>
 
-**快速導覽：** [格式支援](#格式支援) · [準確度與平台比較](#準確度與平台比較) · [多媒體成本與品質](#多媒體成本與品質) · [API 單價](#api-單價) · [開始使用](#開始使用) · [限制](#限制)
+[![離線驗證](docs/badges/tests.svg)](.github/workflows/verify.yml) [![MIT 授權](docs/badges/license.svg)](LICENSE)
 
-## 格式支援
+## 查看範例
 
-**符號說明：** ✅ 已整合流程 · — 未整合。三個平台欄位代表**同一組可接受格式**，不再用單一測試檔名表示支援，也不表示供應商原生影音端點已接入。品質由獨立 benchmark 呈現，不用綠勾代表準確率。
+先看 [Amazon 2023 年第三季營收主張](https://hackathon.dappgo.com/explorer/#G0119)：比較原始句子與 SEC 證據，再展開模型與程式的判斷紀錄。[三種結果示範](docs/evidence/judge-walkthrough/REPORT.md)則展示數字相符、數字被改動及期間錯誤時的處理。
 
-| 輸入格式 | Meta 文字流程 | Baseten 文字流程 | Fireworks 文字流程 | 實際流程／限制 |
-| --- | :---: | :---: | :---: | --- |
-| 文字／Markdown | ✅ | ✅ | ✅ | 本機文字 → 指定 verifier |
-| PNG／JPEG／WebP | ✅ | ✅ | ✅ | Meta OCR → 指定 verifier；所有流程均需 Meta 金鑰 |
-| 原生文字 PDF | ✅ | ✅ | ✅ | 本機逐頁文字 → 指定 verifier；無 PDF OCR、不跨頁傳遞語境 |
-| 聲音檔案 | ✅ | ✅ | ✅ | Meta ASR → 指定 verifier；講者身分未驗證 |
-| 影片檔案 | ✅ | ✅ | ✅ | Meta ASR＋三張畫面 OCR → 指定 verifier；不保證完整畫面覆蓋 |
-| 掃描 PDF | — | — | — | 尚無 PDF OCR |
-| 一般網頁 URL | — | — | — | 不處理任意 HTML／登入頁 |
-| 供應商原生 Batch | — | — | — | 本機佇列不是折扣 Batch API |
+若想看真實影音，從 [Microsoft 法說會案例](docs/evidence/real-av-context-live/REPORT.md)開始。原始錄影、抽取的主張、另外提供的事件期間及後續財報查核都可追溯；結果包含有證據支持的主張，也保留仍缺少上下文的案例。
 
-**公平比較：** [事先登記的配對 benchmark](eval/multimodal-v1/README.md)把共用前處理的查核與原生圖片端點辨識分開，讓各平台使用相同輸入並保留失敗。下方舊有「一家測一種格式」案例僅為非配對開發測試，不是平台排名。[完整計畫](docs/FAIR_BENCHMARK_AND_STOCK_REVIEW_PLAN.md) · [同一股票多文件查核](docs/STOCK_REVIEW.md)。
+## 查核流程
+
+1. **保留原文。** 抽出財務主張，記錄引用與可取得的頁碼、畫面或音訊位置。
+2. **搜尋證據。** Meta Muse 模型選取對應公司與期間的 SEC 數值或合格公司公告。
+3. **程式檢查。** Python 驗證引用、數字、單位、比較方向與四捨五入。最終摘要依程式判定產生，模型原稿另存於 trace。
+4. **檢視報告。** 開啟 HTML 或重用 JSON；同一股票的多份文件可以彙整，未完成項目仍會顯示。
+
+| 結果 | 意義 |
+| --- | --- |
+| `supported` | 在已檢查的期間與精度內，證據支持抽取出的主張。 |
+| `contradicted` | 有效證據與主張衝突，報告列出實際比對的數值。 |
+| `insufficient_evidence` | 缺少必要期間、來源或可支援的檢查，不能據此認定主張錯誤。 |
+
+上傳文件是待查核的主張來源，不會自動成為可信的財務證據。
+
+## 準確度與平台比較
+
+### 文字查核：266 個保留測試題目
+
+原始評測包含 23 家公司的 357 個主張，其中 91 個用於開發，**266 個為保留測試組**。下表只呈現保留測試組。同一平台的無工具基準與查核流程使用相同模型；查核流程另外加入資料檢索與程式檢查。
+
+| 平台／模型 | 查核流程正確數 | 無工具基準正確數 | 錯誤支持¹ |
+| --- | ---: | ---: | ---: |
+| Meta · Muse Spark 1.3 | 218/266 · **82.0%** | 111/266 · 41.7% | 4/139 |
+| Baseten · Muse Spark Open | 240/266 · **90.2%** | 56/266 · 21.1% | 1/139 |
+| Fireworks · Muse Spark Open | 237/266 · **89.1%** | 51/266 · 19.2% | 1/139 |
+
+¹ 標準答案為矛盾或證據不足，卻被查核流程判為支持；分母涵蓋測試組全部 139 個此類題目。
+
+失敗與未完成回應均計為錯誤。這是原始評測的保存結果，採用修正後標籤；兩筆標籤修正與後續事後測試均在[完整報告](docs/evidence/eval-v2-2026-10-27/REPORT.md)揭露。題目混合生成的財務案例與來源句子的改寫，這些成績不能推論為真實多媒體準確率。
+
+### 真實公司資料：改善了什麼，還缺什麼
+
+Microsoft 真實法說會片段的聲音只說「本季」，投影片則標示「FY27 Q1」。原始流程讀到了數字，卻無法安全連結期間。後續加入有來源的事件期間資料，讓查核能使用明確季度，同時保留原始引用。
+
+後續另存一輪六個主張的實際查核結果，**Baseten 與 Fireworks 各支持五項**：營收、淨利、稀釋 EPS、營業利益與營收成長。未補期間的調整後 EPS 對照案例仍是證據不足。Meta 則有一項支持、兩項證據不足、三項 HTTP 500 執行失敗。
+
+例如，財報營收 **$92.279B** 在投影片的顯示精度內，支持 **$92.3B** 的說法。這個結論以另外提供的 FY2027 Q1 期間為條件，不代表整段錄影已通過查核。[結果、證據與失敗紀錄](docs/evidence/real-av-context-live/REPORT.md) · [原始 WAV 與 MP4](eval/real-av-v1/README.md)。
+
+另外三張 Tesla 真實簡報已有[多文件查核紀錄](docs/evidence/stock-context-posthoc-2026-10-30/REPORT.md)。其中未能驗證的圖表促成了明確的覆蓋提示：讀到圖表文字，不代表柱高與序列數值已被驗證。[圖表問題分析](docs/evidence/chart-diagnosis-2026-10-30/REPORT.md)。
+
+<details>
+<summary>九種輸入格式的控制組比較</summary>
 
 <!-- multimodal-v1:start -->
 
-**配對 benchmark：每種格式正確數 / 24。** 六家公司、24 個基礎主張，重複轉成九種格式；不是 216 個獨立題目。漏抽、未完成與判錯都留在分母。圖片／音訊／影片共用凍結的 Meta OCR／ASR，再比較文字查核。
+六家公司、24 個基礎主張，轉成九種格式；不是 216 個獨立題目。表格為正確數／24，漏抽、未完成與判錯均保留於分母。三家使用相同檔案與凍結的 Meta OCR／ASR 文字。
 
 | 格式 | Meta | Baseten | Fireworks |
 | --- | ---: | ---: | ---: |
 | TXT | 22/24 | 24/24 | 24/24 |
-| MD | 22/24 | 24/24 | 24/24 |
+| Markdown | 22/24 | 24/24 | 24/24 |
 | PDF | 23/24 | 24/24 | 24/24 |
 | PNG | 24/24 | 24/24 | 24/24 |
-| JPG | 22/24 | 24/24 | 24/24 |
-| WEBP | 23/24 | 24/24 | 24/24 |
+| JPEG | 22/24 | 24/24 | 24/24 |
+| WebP | 23/24 | 24/24 | 24/24 |
 | WAV | 18/24 | 23/24 | 24/24 |
 | MP3 | 14/24 | 24/24 | 24/24 |
 | MP4 | 19/24 | 24/24 | 24/24 |
 
-[完整結果與限制](docs/evidence/fair-multimodal-v1/REPORT.md) · [中文分析](docs/evidence/fair-multimodal-v1/ANALYSIS.zh-TW.md) · [輸入、原始回應與離線重用](docs/evidence/fair-multimodal-v1/REUSE.md)。這是清晰合成素材的單次受控測試；真實 Tesla 頁面另列無完整標準答案的診斷，不能據此宣稱全面準確率。
+這是清晰控制素材上的單次測試，音訊與影片為合成內容。另列的原生圖片測試中，三家 PNG／JPEG／WebP 均各完成 6/6 張；完成回應不等於財務判定正確。原生聲音／影片端點沒有在這份比較中測試。
 
-**原生圖片端點：完成回應 / 6 張控制圖，並非準確率。** 原生辨識的文字／數字指標見完整報告。此測試沒有改變產品仍使用 Meta OCR 的路徑。
-
-| 圖片格式 | Meta | Baseten | Fireworks |
-| --- | ---: | ---: | ---: |
-| PNG | 6/6 | 6/6 | 6/6 |
-| JPG | 6/6 | 6/6 | 6/6 |
-| WEBP | 6/6 | 6/6 | 6/6 |
-
-**配對 benchmark 與早期產品檢查費用（不含後續真實影音）**
-
-| 平台 | Benchmark | 事後產品驗證 | 本輪小計 |
-| --- | ---: | ---: | ---: |
-| Meta | $4.236019 | $0.000000 | $4.236019 |
-| Baseten | $1.951966 | $0.147382 | $2.099348 |
-| Fireworks | $2.013645 | $0.000000 | $2.013645 |
-
-每平台授權上限 $40；共用前處理全計入 Meta，失敗也保留。這不是帳單或剩餘 credit。詳細 [ledger／費用合計](docs/evidence/fair-multimodal-v1/task-spend.json)與[官方單價核對](docs/evidence/fair-multimodal-v1/RATE_CHECK.md)。
-
-**同一股票多文件：** `review-stock` 可批次查核，`stock-summary` 可無新增模型費用重用報告。股票背景與表格引文修正的[真實 Tesla 摘要](docs/evidence/stock-context-posthoc-2026-10-30/attempt-2/summary/stock-review.html)保留三個 supported、五個 insufficient-evidence 主張及無可查核主張的圖表頁。這是[保留兩次嘗試的事後產品驗證](docs/evidence/stock-context-posthoc-2026-10-30/REPORT.md)，未替換 benchmark 分數，也不是獨立準確率。網頁上傳介面與 AI 敘述摘要仍在計畫中。
+[完整方法、失敗與限制](docs/evidence/fair-multimodal-v1/REPORT.md) · [重用輸入、輸出與離線重算](docs/evidence/fair-multimodal-v1/REUSE.md)。
 
 <!-- multimodal-v1:end -->
 
-[測試紀錄索引與 reuse 指南](docs/TEST_RECORDS.md) · [新增六種格式實測](docs/evidence/input-formats-2026-10-30/REPORT.md)保留各案例的判定、覆蓋、耗時及費用；下方提供摘要。這些小型合成案例不代表完整的「格式 × 平台」評測。
+</details>
 
-檔案上限 **128 MiB**；影音最長 **2 小時**。這是接受範圍，不是該規模下的準確度保證。[詳細格式與平台能力](docs/PROVIDERS.md)。
+## 格式支援
 
-**新資料與真實素材：** [2026-10-30 取得的 SEC 快照](docs/evidence/sec-refresh-2026-10-30/REPORT.md)涵蓋 23 家公司、47 份回應；需明確指定使用，不改寫舊評測證據。[真實公司素材目錄](docs/evidence/real-media-2026-10-30/README.md)包含三張 Tesla 財報簡報圖片，以及 Microsoft／Tesla 官方簡報、法說會入口。三張 Tesla 頁面已有獨立列示的診斷與事後產品驗證；Microsoft 法說會已有另外保存的[真實聲音／影片測試](docs/evidence/real-av-v1/REPORT.md)。
+三家文字查核路線接受相同的 repo 輸入格式。圖片與影音都使用 **Meta OCR／ASR**，即使後續文字查核選擇 Baseten 或 Fireworks 也是如此。
 
-## 準確度與平台比較
-
-### 🔍 Single-shot 與 Agent 是什麼？
-
-**Single-shot 讓模型直接回答；Agent 先檢索證據，再由 Python 核對答案。** 這是兩種執行模式，不是兩個模型名稱；同一平台的比較使用相同設定模型。
-
-```text
-single_shot：主張 → 模型直接回答 → 判定
-agent：     主張 → 模型選擇 SEC 工具 → 取得證據 → 模型草稿
-                    → Python 核對數字、期間與引用 → 最終判定
-```
-
-| 問題 | Single-shot（單次回答基準） | Agent（工具查核流程） |
+| 輸入 | 處理流程 | 主要限制 |
 | --- | --- | --- |
-| 是否檢索 SEC 證據？ | 不用工具，依模型已有知識作答 | 使用 SEC 查詢與計算工具 |
-| 誰決定最終結果？ | 模型的回答 | 程式檢查可修正模型草稿 |
-| 能否查看支持判定的財報？ | 此流程沒有檢索財報證據 | 保留引用數字與原始來源連結 |
-| 這個比較衡量什麼？ | 無工具的基準表現 | 完整「檢索＋程式檢查」流程 |
+| 文字／Markdown | 本機文字 → 選定查核平台 | 主張抽取有數量限制。 |
+| PNG／JPEG／WebP | Meta OCR → 選定查核平台 | 未驗證圖表幾何關係或圖片真偽。 |
+| 文字型 PDF | 本機逐頁擷取 → 選定查核平台 | 尚無掃描 PDF OCR 或跨頁上下文。 |
+| 聲音 | Meta ASR → 選定查核平台 | 講者標籤不代表身分已驗證；時間位置以發言段落為主。 |
+| 影片 | 語音轉錄＋三張畫面 OCR → 選定查核平台 | 可能漏掉未抽樣畫面；聲音與畫面分開查核。 |
 
-**例如：**「Amazon 在 2023 年曆年第三季營收為 $143.1B」。Agent 可取得 $143.083B，核對期間與四捨五入後判為 `supported`。Single-shot 可能答對或回覆證據不足，但不會在這次查核中檢索該財報。[查看已記錄案例](https://hackathon.dappgo.com/explorer/index.zh#G0119)。
-
-> [!NOTE]
-> `single_shot` 是無工具基準的名稱，不保證只有一次 API 請求；實際用量請看呼叫紀錄。下面的準確率提升衡量整套 Agent 流程，不能全部歸因於某一條規則。「無工具準確率」就是 single-shot 準確率；成本與時間欄位則是 **Agent** 流程。
-
-### 📝 文字：相同資料集的歷史評測
-
-**357 個主張、23 家公司：91 筆開發集＋266 筆獨立測試集。** 使用修正後標準答案；失敗或未完成皆計為錯誤。費用及速度是歷史平均值，不是每份文件的固定價格或服務保證。
-
-| 平台／Meta 模型 | Agent 準確率 | 無工具準確率 | 錯誤支持¹ | 每主張平均費用 | 平均時間 |
-| --- | ---: | ---: | ---: | ---: | ---: |
-| **Baseten · Spark Open** | **90.5%**（323/357） | 20.7% | 1/186 | **$0.020** | **12 秒** |
-| **Fireworks · Spark Open** | **90.5%**（323/357） | 19.9% | 1/186 | **$0.020** | **67 秒** |
-| **Meta API · Spark 1.3** | **83.2%**（297/357） | 44.3% | 4/186 | **$0.026** | **39 秒** |
-
-¹ 標準答案不成立或證據不足，卻被判為成立。[完整報告與信賴區間](docs/evidence/eval-v2-2026-10-27/REPORT.md)。兩筆標準答案經修正，[原始登記版本](docs/evidence/eval-v2-2026-10-27/REPORT-registered-gold.md)仍保留；後續重跑是事後回歸，不是新的獨立測試。
-
-Baseten 與 Fireworks 的總分相同，但答對案例不同。單看 266 筆獨立測試集，分別為 **240/266＝90.2%** 與 **237/266＝89.1%**；不能把總分相同解讀為能力完全一致。
-
-### 📊 各格式的準確度證據
-
-| 格式 | Meta | Baseten | Fireworks |
-| --- | --- | --- | --- |
-| 文字主張 | **83.2%**，357 筆 | **90.5%**，357 筆 | **90.5%**，357 筆 |
-| 圖片 | 僅開發測試 | Meta OCR 的 JPEG 測試 | Meta OCR 的 WebP 測試 |
-| 原生文字 PDF | 原生文字測試；無準確度評測 | 無準確度評測 | 無準確度評測 |
-| 聲音 | 僅開發測試 | 使用 Meta ASR 的開發測試 | Meta ASR 的 MP3 測試 |
-| 影片 | 僅開發測試 | 使用 Meta OCR／ASR 的開發測試 | 三張 Meta OCR 畫面的無聲 MP4 測試 |
-
-> [!IMPORTANT]
-> **文字準確率不能套用到 PDF、圖片、聲音或影片。** 多媒體還受辨識與主張抽取品質影響。開發測試不等於準確度評測；「無評測」表示沒有實測的評測準確率，不代表 0% 準確率或不支援。
-
-## 多媒體成本與品質
-
-以下為[2026-10-30 開發測試](docs/evidence/multimodal-2026-10-30/REPORT.md)的整份檔案流程估算。素材及設定不同，**不能當成平台排名**；失敗呼叫的保守預留費用可能仍計入。
-
-| 素材 | 流程 | 總估算費用 | 經過時間 | 觀察到的覆蓋／限制 |
-| --- | --- | ---: | ---: | --- |
-| 🖼️ 截圖 | Meta OCR＋Meta 文字 | **$0.0738** | **59.7 秒** | 讀到 2/2 預期數值；小型合成控制案例 |
-| 🎙️ 短音訊 | Meta ASR＋Baseten 文字 | **$0.0791** | **56.4 秒** | 5/5 數值主張經程式查核 |
-| 🎙️ 雙人聲音訊 | Meta ASR＋Meta 文字 | **$0.0492** | **69.8 秒** | 兩個聲音被合併為同一講者標籤 |
-| 🎙️ 12 分鐘音訊 | Meta ASR＋Baseten 文字 | **$0.2405** | **258.8 秒** | 該次歷史執行查核 19/60 個主張 |
-| 🎬 表列影片 | Meta OCR／ASR＋Meta 文字 | **$0.3359** | **312.1 秒** | 8/9 個主張經查核；只抽三張畫面 |
-| 🎬 字幕影片 | Meta OCR／ASR＋Baseten 文字 | **$0.1554** | **106.6 秒** | 該控制案例查核 9/9 個主張 |
-
-[後續長音訊實驗](docs/evidence/multimodal-2026-10-30b/REPORT.md)把查核覆蓋提高到 44/60；對凍結的 ASR 文字重查達到 50/60。這是重複合成事實的事後覆蓋率，**不是判定真偽的準確率**。
-
-### 新增格式實測 — 2026-10-30
-
-[六個事先選定的合成案例](docs/evidence/input-formats-2026-10-30/REPORT.md)合計估計花費 **$0.32767930**，低於 $3 上限。**15 個抽出的主張列**全部經程式查核，每個案例都抓到刻意放錯的 EPS。這不是全文召回率或通用準確率，素材與流程不同也不能作為平台排名。
-
-| 輸入 | 流程 | 已查核／已抽出 | 估計費用（美元） | 經過時間 |
-| --- | --- | ---: | ---: | ---: |
-| Markdown | Fireworks 文字 | 2/2 | $0.031686 | 110.4 秒 |
-| JPEG | Meta OCR → Baseten 文字 | 2/2 | $0.039148 | 18.9 秒 |
-| WebP | Meta OCR → Fireworks 文字 | 2/2 | $0.034332 | 163.7 秒 |
-| MP3 | Meta ASR → Fireworks 文字 | 3/3 | $0.079938 | 444.1 秒 |
-| 無聲 MP4 | 三張 Meta OCR 畫面 → Fireworks 文字 | 4/4 | $0.089863 | 463.6 秒 |
-| 原生文字 PDF | 本機逐頁解析 → Meta 文字 | 2/2 | $0.052712 | 71.8 秒 |
-
-五項狀態為完成；無聲 MP4 因沒有音軌保留 `partial`，但四個抽出的畫面主張都已查核。影片仍只抽三張畫面。這輪沒有測試或新增 PDF OCR、一般 URL、Baseten／Fireworks 原生影音端點。費用依用量估算，不是官方帳單；表內單項金額經四捨五入。
-
-**這六項測試的各平台 API 花費（美元）：**
-
-| 平台 | API 估計花費 |
-| --- | ---: |
-| Meta | $0.07223290 |
-| Baseten | $0.03489420 |
-| Fireworks | $0.22055220 |
-| **合計** | **$0.32767930** |
-
-依[逐筆請求 ledger](docs/evidence/input-formats-2026-10-30/ledger.jsonl)核算。合計包含一筆沒有 reconcile 事件的 ASR 預留費用 $0.00240000，保留為保守估算。Meta 費用包含供其他文字平台使用的 OCR／ASR 前處理，以及自身的文字查核。這些費用**已包含在上方各輸入格式的費用內**，不是額外加收；範圍僅限這六項測試，不是專案歷來總花費或官方帳單。
-
-**重用測試紀錄：** [紀錄索引與指南](docs/TEST_RECORDS.md) · [機器可讀的執行索引](docs/evidence/input-formats-2026-10-30/runs.json) · [驗證紀錄與日誌](docs/evidence/input-formats-2026-10-30/validation.json)。已保留輸入／雜湊、參數、原始回應、trace、結果與費用。凍結的 OCR／ASR 文字可用於後續文字查核，省下再次前處理的費用；這不會重新驗證辨識或講者歸屬。重建既有報告可離線執行；重新呼叫模型會花費 credit：
-
-```sh
-# 離線：重建既有報告，檢查輸入雜湊與 ledger 費用加總。
-python3 scripts/multimodal/build_format_report.py
-# 付費：重跑六項，共用 $3 上限；必須使用新的輸出目錄。
-.venv/bin/python scripts/multimodal/run_format_suite.py --out-root runs/formats-001
-```
-
-## API 單價
-
-美元／**每百萬 tokens**，價格查核日期 **2026-10-30**。單價與上面的整條流程費用不同。
-
-| 平台 | 模型 | 輸入 | 快取輸入 | 輸出 |
-| --- | --- | ---: | ---: | ---: |
-| Meta API | Muse Spark 1.3 Standard | $1.25 | $0.15 | $4.25 |
-| Baseten | Muse Spark Open | $1.25 | $0.15 | $4.25 |
-| Fireworks | Muse Spark Open | $1.25 | $0.15 | $4.25 |
-
-| 額外步驟 | 費用依據 | 適用內容 |
-| --- | --- | --- |
-| Meta 圖片 OCR | 按 token；不是固定每張價格 | 圖片、影片抽樣畫面 |
-| Meta ASR | **$0.18／小時，$0.003／分鐘** | 聲音、影片音軌 |
-| 原生 PDF 解析 | 本機 CPU；抽取本身不需模型費用 | 後續主張查核仍按 token 計價 |
-| 抽取與驗證 | 每次模型呼叫與適用重試 | 所有接受格式 |
-
-**文件成本＝前處理＋抽取＋全部主張的查核呼叫。** 一份文件可能包含數十個主張，ledger 估算不是帳單。[官方價格來源、Contributor 模式條件與 Batch 限制](docs/PROVIDERS.md#price-comparison)。
-
-## 為什麼需要這個工具
-
-看似合理的金融句子可能用了錯誤季度、單位或比較方式。本專案起源於 DappGo AI 評論未通過內部主張檢查：流暢的說明不夠，每個可查核數字都需要來源、正確期間與可重現的比較。
-
-## 查看範例
-
-先看[三種結果的評審導覽](docs/evidence/judge-walkthrough/REPORT.md)：同一份官方來源，分別檢查相符數字、改錯數字與錯誤期間。這是離線程式查核，不是即時模型展示。
-
-再開啟 [G0119](https://hackathon.dappgo.com/explorer/index.zh#G0119)，查看原句、修正後標準答案、六套系統與 SEC 引用。網站為已儲存的重播；[展示影片公開網址仍待補](demo/JUDGE_INTRO.md)。
-
-## 查核流程
-
-1. **抽取**：拆成個別主張，保留原始引用。
-2. **檢索**：依公司與期間取得 SEC 事實或已接納的新聞稿引用。
-3. **驗證**：Python 核對數字、單位、精度、比較詞與證據編號。
-4. **說明**：輸出判定、來源定位、限制、成本與追蹤紀錄。
-
-![兩次真實執行的判定與 SEC 證據](docs/figures/verdict-cards.svg)
-
-*2026-10-27 的兩次真實執行；圖中數據來自保留的紀錄。*
-
-結果為 `supported`（有證據支持）、`contradicted`（與證據矛盾）或 `insufficient_evidence`（證據不足）。流程完成不表示全部主張均已找到；沒有獨立標註的分母時，全文召回率維持未知。
+掃描 PDF 與一般網頁 URL 尚未整合。本機工作佇列也不是供應商的折扣 Batch API。[完整格式限制與平台能力](docs/PROVIDERS.md)。
 
 ## 開始使用
 
-環境：**Python 3.12–3.14、uv、Node 22+**；影音另需 FFmpeg／ffprobe。以下指令從本機 repo 目錄執行。
-
-**1. 不使用模型金鑰，驗證可重現性。**
+CLI 需要 Python 3.12–3.14 與 `uv`；影音處理另需 FFmpeg 和 ffprobe。
 
 ```sh
-sh scripts/verify.sh
-```
-
-首次會下載鎖定的依賴，之後在暫存副本離線檢查測試、圖表、資料重建與連結；這不是即時模型準確度評測。[預期輸出](AGENTS.md#offline-verification)。
-
-**2. 安裝並預覽請求，不花費 API credit。**
-
-```sh
+git clone https://github.com/YanlongLai/market-claim-verifier.git
+cd market-claim-verifier
 uv sync
+
+# 檢視請求內容，不呼叫模型。
 uv run python -m claimcheck verify --provider baseten --dry-run \
   'Meta Q2 2025 revenue was $47.5B'
 ```
 
-**3. 執行有預算上限的即時查核。** 在 repo 外設定所選平台的 `MODEL_API_KEY`、`BASETEN_API_KEY` 或 `FIREWORKS_API_KEY`。
+在環境變數設定 `BASETEN_API_KEY`，即可用 $1 預算上限執行即時查核：
 
 ```sh
 uv run python -m claimcheck verify --provider baseten --budget 1 \
   'Meta Q2 2025 revenue was $47.5B'
 ```
 
-即時查核需要網路並可能收費；紀錄存於 `runs/`。其他模型、推理與 token 設定請看 `--help`。
+Meta 使用 `MODEL_API_KEY`，Fireworks 使用 `FIREWORKS_API_KEY`。即時查核需要網路，trace 與預算紀錄存於 `runs/`。多媒體前處理另外需要 Meta key。
 
 ### 查核整篇貼文
 
@@ -263,62 +134,42 @@ uv run python -m claimcheck post examples/posts/bigtech-thread.txt \
   --provider baseten --budget 1
 ```
 
-輸出 `report.json`、`report.html`、原文引用與程式查核連結。抽取有上限，不保證找到全部主張。[中英文範例](docs/evidence/posts-2026-10-28/)。
+HTML／JSON 報告保留原文、證據與程式檢查。[英文與中文保存範例](docs/evidence/posts-2026-10-28/)。
 
-### 圖片與其他本機檔案
+### 同一股票的多份文件
 
-```sh
-uv run python -m claimcheck ingest tests/fixtures/multimodal/example-post.png \
-  --provider baseten --budget 1 --out runs/example-input
-```
+`review-stock` 結合有預算限制的文件佇列與股票摘要；`stock-summary` 可彙整已有報告，不再呼叫模型。[多文件指南](docs/STOCK_REVIEW.md)說明預算、證據快照、續跑與匯出；[事件期間指南](docs/EVENT_CONTEXT.md)說明如何提供已檢視的期間，而不將它混入原始發言。
 
-多媒體前處理需要 Meta 金鑰，即使文字查核使用其他平台。輸出 `ingest.json` 與 `ingest.html`；已有輸出目錄不會覆寫。
+單一圖片、聲音、影片或文字 PDF 可使用 `ingest`。[指令與限制](docs/PROVIDERS.md#current-repository-input-contract)。
 
-PDF 使用 `ingest report.pdf` 與相同參數。保留頁碼與檔案 hash，拒絕加密文件；掃描／空白頁標示未查核。限制為 100 頁、每頁 100,000 字元、整份 1,000,000 字元；表格與閱讀順序仍需檢查。
+## API 單價與使用成本
+
+文件費用包含前處理、主張抽取與每次查核呼叫。歷史 357 題文字評測中，Baseten／Fireworks 平均約 **$0.020／主張**，Meta 約 **$0.026／主張**。這是當次流程的觀察值，不是每份文件的報價或服務保證。[實測費用與延遲](docs/evidence/eval-v2-2026-10-27/REPORT.md)。
+
+2026-10-30 核對的公開價格快照；單位為每百萬 tokens、美元：
+
+| 平台／模型 | 輸入 | 快取輸入 | 輸出 |
+| --- | ---: | ---: | ---: |
+| Meta · Muse Spark 1.3 Standard | $1.25 | $0.15 | $4.25 |
+| Baseten · Muse Spark Open | $1.25 | $0.15 | $4.25 |
+| Fireworks · Muse Spark Open | $1.25 | $0.15 | $4.25 |
+
+Meta ASR 當時列價為 $0.18／小時；圖片 OCR 依 token 計費。Ledger 估算包含失敗與保留額，不等同供應商帳單。[官方價格來源與 Batch 說明](docs/PROVIDERS.md#price-comparison) · [最近一輪查核費用](docs/evidence/real-av-context-live/REPORT.md#spend-usd-estimatedreserved)。
 
 ## 限制
 
-- SEC 標記錯誤、重編財報與財年差異可能影響證據。
-- 期間不明、不支援的指標或證據未解決時，可能回傳證據不足。
-- 公司展望只能證明公司曾這樣說，不保證未來實現。
-- 多媒體測試是少量開發控制案例，不是實際財報電話會議的通用評測。
-- 影片三張抽樣畫面不能涵蓋所有投影片；講者標籤不是身分驗證。
-- 本次範圍限美股，不包含台灣資料與一般網頁爬取。
+目前以美股及已支援的 SEC／公司公告證據為範圍。標記錯誤、財報重列、財政年度與 non-GAAP 證據缺漏都會影響結果。事件期間是可追溯、但未認證的補充 metadata。
 
-## 擴充與貢獻
+媒體辨識與主張抽取仍可能漏失。真實影音測試只有一個場景；格式控制組使用合成影音，兩者都不足以代表廣泛的金融影音準確率。報告用於檢視敘述，不產生投資評級。
 
-[擴充指南](docs/EXTENDING.md) · [證據格式](docs/EVIDENCE_RECORDS.md) · [開發優先順序](docs/DAY5_PLAN.md) · [路線圖](ROADMAP.md) · [更新紀錄](CHANGELOG.md)。新增來源需要權威規則、不可變快照、定位與獨立評測，不只是更換 prompt。
+## 重現結果與擴充
+
+執行 `sh scripts/verify.sh` 可檢查資料 fixture、Python／Node 測試、圖表、資料重建與連結；完整驗證另需 Node 22+。安裝依賴可能使用網路，驗證本身則離線執行，不需要模型金鑰。[驗證指南](AGENTS.md) · [測試與可重用輸入輸出](docs/TEST_RECORDS.md)。
+
+新增財務來源可從[擴充指南](docs/EXTENDING.md)、[證據格式](docs/EVIDENCE_RECORDS.md)及[資料政策](docs/DATA_SOURCES.md)開始。[開發計畫](docs/DAY5_PLAN.md)區分已完成能力，以及仍待開發的上傳介面、更多真實資料評測和跨模態整合。
+
+Repo 程式與 demo 工作均於 hackathon 期間建立。[建置紀錄](BUILD_LOG.md) · [更新紀錄](CHANGELOG.md) · [MIT 程式授權](LICENSE) · [資料與媒體來源](CREDITS.md)。英文為主要文件語言，原始證據保持原文。[語言規範](docs/LANGUAGE.md)。
 
 ## 技術參考
 
-完整技術附錄以英文主版維護，避免兩份細節規格分歧：
-
-| 主題 | 文件 |
-| --- | --- |
-| L4 公司新聞稿 | [來源與判定範圍](README.md#l4-earnings-release-evidence) |
-| 原始評測、歷史執行與圖表 | [詳細結果](README.md#real-results) |
-| Meta 模型與平台架構 | [模型使用方式](README.md#how-meta-models-are-used) |
-| 比較詞、精度與最終判定 | [程式規則](README.md#why-you-can-trust-a-verdict) |
-| L1–L4 證據層級 | [可稽核證據](README.md#evidence-you-can-audit) |
-| 評測建立與執行 | [Evaluation](README.md#evaluation) |
-| 架構與差距分數 | [技術附錄](README.md#technical-reference) |
-
-## Hackathon、圖片與語言
-
-所有 repo 程式與 demo 工作均於活動期間建立，沒有活動前既有的 repo 程式。[建置紀錄](BUILD_LOG.md) · [MIT 程式授權](LICENSE) · [資料與媒體來源](CREDITS.md)。
-
-頂部動畫直接擷取網站審查場景；另保留 Hover 獨立動畫的[重建程式](docs/scripts/build_readme_robot.py)、[靜態版本](docs/site/img/auditor/H/present.webp)；[設計與生成歷程](docs/prompts/site/auditor-robot.md)。[AI 主視覺的可重用 prompt](docs/prompts/hero-image.md)另有記錄；AI 圖片是示意，數值圖表使用實測資料。
-
-**英文 README 是主要版本。** 此頁提供繁體中文導覽；原始主張、證據與模型輸出維持原文。[語言規範](docs/LANGUAGE.md)。
-
-**圖表查核限制：** OCR 保留文字，尚未驗證柱高及序列幾何關係。報告現在區分零主張、未讀到文字與處理錯誤，並提示補救方式。[Tesla 圖表診斷與新版摘要](docs/evidence/chart-diagnosis-2026-10-30/REPORT.md)；自動圖形數值查核仍待開發。
-
-## 真實聲音與影片個案
-
-已加入 Microsoft FY2027 Q1 官方法說會 60 秒原始播出片段及其 WAV，三家各測聲音與影片，共六次。所有轉錄保留 11/11 個參考數值 token，**這不是準確率**。最終沒有 supported／contradicted；期間不足、表頭引用、OCR／供應商失敗均保留。
-
-[真實素材與完整結果](docs/evidence/real-av-v1/REPORT.md) · [中文問題分析](docs/evidence/real-av-v1/ANALYSIS.zh-TW.md)。這是一個場景的操作測試，聲音與畫面尚未自動對齊。新增費用約 $0.296171；截至該輪影音測試的小計估算／保留額：Meta $4.45021510、Baseten $2.15855835、Fireworks $2.03641025，各低於 $40。
-
-**真實影音後續修正：** 已加入明確事件期間、需完整年份錨點的 FY 短年份解析，以及由程式判定產生的最終摘要。[使用方式](docs/EVENT_CONTEXT.md) · [離線事後重播](docs/evidence/real-av-context-posthoc/REPORT.md)。20 筆原本拒絕的表頭提案可進入查核，不代表 20 筆財務事實已驗證；原始付費結果保留。
-
-**補齊期間後已完成實際查核：** 三家查核相同六項主張。Baseten、Fireworks 各有五項 supported 與一項缺少期間的對照；Meta 一項 supported、兩項證據不足、三項 HTTP 500 失敗。[結果與原始 trace](docs/evidence/real-av-context-live/REPORT.md)。這是事後驗證，不是準確率 benchmark。新增費用估算／保留額 $0.415169；目前追蹤工作的累計：Meta $4.75379365、Baseten $2.20323285、Fireworks $2.10332610。使用者確認本輪每家 $30 並遵守先前 credit 上限；實際執行仍限制每家 $2。
+[英文技術附錄](README.md#technical-reference)保留歷史評測、證據規則、模型與程式分工、架構圖及可重建圖表。

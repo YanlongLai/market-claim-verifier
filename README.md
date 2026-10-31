@@ -1,312 +1,189 @@
-<p align="center">
-  <a href="https://hackathon.dappgo.com/"><img src="docs/figures/review-process-dark-3x-v3.gif" width="1012" alt="Saved review: input claim, SEC evidence, numeric comparison and verdict"></a>
-</p>
-
 # Market Claim Verifier
 
-**English** | [繁體中文](README.zh-TW.md)
+[English](README.md) · [繁體中文](README.zh-TW.md)
 
-**Financial claims in. SEC evidence and auditable verdicts out.**
+**Check financial claims against SEC filings, with the evidence behind each result.**
 
-[🌐 Website](https://hackathon.dappgo.com/) · [🔎 Results explorer](https://hackathon.dappgo.com/explorer/) · [⚖️ Judge guide](JUDGES.md) · [🚀 Quick start](#run-it)
+A financial statement can use the right number with the wrong quarter, unit or accounting basis. Market Claim Verifier extracts claims from US equity research and company materials, retrieves filing evidence, and checks the numbers in Python. Each result preserves the original quotation, source, calculation and any unresolved questions.
 
-[![Tests: offline suite](docs/badges/tests.svg)](.github/workflows/verify.yml)
-[![License: MIT](docs/badges/license.svg)](LICENSE)
-[![Built for the Meta AI hackathon](docs/badges/hackathon.svg)](BUILD_LOG.md)
+**[Explore a recorded review](https://hackathon.dappgo.com/explorer/#G0119)** · [Product demo](https://hackathon.dappgo.com/) · [Run a live check](#run-it) · [Judge guide](JUDGES.md)
 
-Meta Muse models find claims and retrieve evidence. Python checks numbers, periods, units and citations. Scope: **US equities**, with SEC XBRL and issuer earnings releases.
+The website presents saved results and requires no API key. Live checks run through the local CLI; a browser upload workflow is still planned.
 
-> [!NOTE]
-> The website replays saved results. Local CLI checks can call live models. An uploaded document is a claim source—not automatically trusted financial evidence.
+<p align="center">
+  <a href="https://hackathon.dappgo.com/"><img src="docs/figures/review-process-dark-3x-v3.gif" width="1012" alt="Recorded review showing a financial claim, SEC evidence and the program verdict"></a>
+</p>
 
-**Jump to:** [Format support](#support-and-boundaries) · [Accuracy, cost & speed](#key-results) · [Media measurements](#media-cost-and-quality) · [API prices](#cost-speed-and-provider-choice) · [Run locally](#run-it) · [Limitations](#limitations)
+[![Offline verification](docs/badges/tests.svg)](.github/workflows/verify.yml) [![MIT license](docs/badges/license.svg)](LICENSE)
 
-## Support and boundaries
+## Try it
 
-**Legend:** ✅ integrated route · — not integrated. Every platform column lists the **same supported formats**; it does not name a single test sample or imply a native vendor media endpoint. Quality is reported separately in the benchmark, not by checkmarks.
+Start with [Amazon's Q3 2023 revenue claim](https://hackathon.dappgo.com/explorer/#G0119). Compare the sentence with its SEC evidence, then inspect the recorded model and program decisions. The [three-outcome walkthrough](docs/evidence/judge-walkthrough/REPORT.md) shows what happens to a matching number, an altered number and a wrong-period claim.
 
-| Input format | Meta text route | Baseten text route | Fireworks text route | Actual pipeline / boundary |
-| --- | :---: | :---: | :---: | --- |
-| Text / Markdown | ✅ | ✅ | ✅ | Local text → chosen verifier |
-| PNG / JPEG / WebP | ✅ | ✅ | ✅ | Meta OCR → chosen verifier; Meta key required on every route |
-| Native-text PDF | ✅ | ✅ | ✅ | Local page text → chosen verifier; no PDF OCR or cross-page context |
-| Audio files | ✅ | ✅ | ✅ | Meta ASR → chosen verifier; unverified speaker identity |
-| Video files | ✅ | ✅ | ✅ | Meta ASR + three sampled OCR frames → chosen verifier; incomplete visual coverage |
-| Scanned PDF | — | — | — | No PDF OCR |
-| General webpage URL | — | — | — | No arbitrary HTML/login ingestion |
-| Native vendor Batch | — | — | — | Local queue is not discounted Batch API |
+For a real-media example, follow the [Microsoft earnings-call review](docs/evidence/real-av-context-live/REPORT.md): the original recording, extracted claims, separately supplied event period, and subsequent filing checks are all retained. The result includes both supported claims and a claim that still lacks enough context.
 
-**Fair comparison:** [preregistered paired benchmark](eval/multimodal-v1/README.md) separates shared-preprocessing verification from native-image endpoint reading, uses the same inputs per provider, and retains failures. Earlier one-format-per-provider examples below are unpaired development probes, not platform rankings. [Plan](docs/FAIR_BENCHMARK_AND_STOCK_REVIEW_PLAN.md) · [single-stock multi-file review](docs/STOCK_REVIEW.md).
+## What it does
+
+1. **Preserve the source.** Extract a financial claim with its original quote and page, frame or audio location where available.
+2. **Retrieve evidence.** Meta Muse models select SEC facts and eligible issuer-release passages for the company and period.
+3. **Check the claim.** Python validates citations, numbers, units, comparisons and rounding. Final explanations follow the program verdict; the model's draft remains in the trace.
+4. **Review the result.** Open the HTML report or reuse its JSON. A single-stock review combines multiple files and keeps incomplete documents visible.
+
+| Result | Meaning |
+| --- | --- |
+| `supported` | The recorded evidence supports the extracted claim within the checked period and tolerance. |
+| `contradicted` | Valid evidence conflicts with the claim; the report shows the checked values. |
+| `insufficient_evidence` | A necessary period, source or supported check is missing. It is not a verdict that the claim is false. |
+
+Uploaded documents supply the claims to examine. They do not automatically become trusted financial evidence.
+
+## Key results
+
+### Text verification: 266 held-out claims
+
+The original evaluation contains 357 claims across 23 companies: 91 development claims and **266 held-out claims**. The table below uses only the held-out split. The no-tool baseline and verifier use the same model within each platform; the verifier adds retrieval and program checks.
+
+| Platform / model | Verifier correct | No-tool baseline correct | False support¹ |
+| --- | ---: | ---: | ---: |
+| Meta · Muse Spark 1.3 | 218/266 · **82.0%** | 111/266 · 41.7% | 4/139 |
+| Baseten · Muse Spark Open | 240/266 · **90.2%** | 56/266 · 21.1% | 1/139 |
+| Fireworks · Muse Spark Open | 237/266 · **89.1%** | 51/266 · 19.2% | 1/139 |
+
+¹ Claims labeled contradicted or insufficient in the reference set but accepted as supported by the verifier; denominator includes all 139 such test cases.
+
+Failures and incomplete responses count as wrong. These are recorded results from the original evaluation, using corrected reference labels; two label corrections and later post-hoc runs are disclosed in the [full report](docs/evidence/eval-v2-2026-10-27/REPORT.md). The corpus combines generated financial cases and paraphrased source sentences. These scores do not establish real-world multimedia accuracy.
+
+### Real company materials: what improved, what remains unresolved
+
+In a genuine Microsoft earnings-call excerpt, the audio says “this quarter” while the slide says “FY27 Q1.” The initial workflow could read the numbers but could not safely bind the period. A separate, reviewed event-context record made the period explicit without changing the original quotation.
+
+In the subsequent six-claim check, **Baseten and Fireworks each supported five claims**: revenue, net income, diluted EPS, operating income and revenue growth. Both kept the unchanged, undated adjusted-EPS control as insufficient evidence. Meta returned one supported, two insufficient and three HTTP 500 failures.
+
+For example, the filing value **$92.279B** supports the slide's **$92.3B revenue** at its displayed precision. That conclusion is conditional on the supplied fiscal Q1 2027 context. It does not certify the whole recording. [Results, evidence and failures](docs/evidence/real-av-context-live/REPORT.md) · [Original WAV and MP4](eval/real-av-v1/README.md).
+
+Three real Tesla slides also have a [multi-document review](docs/evidence/stock-context-posthoc-2026-10-30/REPORT.md). Its unresolved chart led to an explicit coverage warning: reading chart labels does not verify bar heights or series values. [Chart diagnosis](docs/evidence/chart-diagnosis-2026-10-30/REPORT.md).
+
+<details>
+<summary>Controlled comparison across nine input formats</summary>
 
 <!-- multimodal-v1:start -->
 
-**Paired benchmark: correct / 24 per format.** Six issuers, 24 underlying assertions repeated across nine encodings—not 216 independent facts. Missing, incomplete and wrong outcomes remain in the denominator. Media uses shared frozen Meta OCR/ASR before text verification.
+Six issuers, 24 underlying assertions, nine encodings—not 216 independent facts. Cells show correct / 24; missing, incomplete and wrong outcomes remain in the denominator. All providers use the same files and frozen Meta OCR/ASR text.
 
 | Format | Meta | Baseten | Fireworks |
 | --- | ---: | ---: | ---: |
 | TXT | 22/24 | 24/24 | 24/24 |
-| MD | 22/24 | 24/24 | 24/24 |
+| Markdown | 22/24 | 24/24 | 24/24 |
 | PDF | 23/24 | 24/24 | 24/24 |
 | PNG | 24/24 | 24/24 | 24/24 |
-| JPG | 22/24 | 24/24 | 24/24 |
-| WEBP | 23/24 | 24/24 | 24/24 |
+| JPEG | 22/24 | 24/24 | 24/24 |
+| WebP | 23/24 | 24/24 | 24/24 |
 | WAV | 18/24 | 23/24 | 24/24 |
 | MP3 | 14/24 | 24/24 | 24/24 |
 | MP4 | 19/24 | 24/24 | 24/24 |
 
-[Full results and limits](docs/evidence/fair-multimodal-v1/REPORT.md) · [inputs, raw outputs and offline reuse](docs/evidence/fair-multimodal-v1/REUSE.md). This is one controlled run on clean synthetic media. Real Tesla pages are separate diagnostics without complete gold; these scores are not broad real-world accuracy.
+One controlled run on clean inputs, with synthetic audio and video. Separate native-image probes completed 6/6 PNG, JPEG and WebP inputs per provider; response completion is not financial accuracy. Native audio/video endpoints were not tested in this comparison.
 
-**Native image endpoints: completed responses / 6 control images, not accuracy.** Reading metrics are in the full report. These probes do not change the product’s shared Meta OCR route.
-
-| Image format | Meta | Baseten | Fireworks |
-| --- | ---: | ---: | ---: |
-| PNG | 6/6 | 6/6 | 6/6 |
-| JPG | 6/6 | 6/6 | 6/6 |
-| WEBP | 6/6 | 6/6 | 6/6 |
-
-**Paired benchmark and earlier product checks (USD, estimated/reserved; excludes subsequent real AV)**
-
-| Platform | Benchmark | Post-hoc product checks | Study subtotal |
-| --- | ---: | ---: | ---: |
-| Meta | $4.236019 | $0.000000 | $4.236019 |
-| Baseten | $1.951966 | $0.147382 | $2.099348 |
-| Fireworks | $2.013645 | $0.000000 | $2.013645 |
-
-Authorization: $40 per platform. All shared preprocessing is charged to Meta; failures remain counted. These are not invoices or remaining-credit balances. [Ledger totals](docs/evidence/fair-multimodal-v1/task-spend.json) · [official rate cross-check](docs/evidence/fair-multimodal-v1/RATE_CHECK.md).
-
-**Single-stock multi-file review:** `review-stock` checks a batch; `stock-summary` reuses reports without new inference. The [real Tesla summary](docs/evidence/stock-context-posthoc-2026-10-30/attempt-2/summary/stock-review.html) retains three supported and five insufficient-evidence claim occurrences plus a chart page with no checked claims. This is a [two-attempt post-hoc product check](docs/evidence/stock-context-posthoc-2026-10-30/REPORT.md), not an independent accuracy estimate or replacement benchmark score. Upload UI and AI narrative remain planned.
+[Methods, failures and limits](docs/evidence/fair-multimodal-v1/REPORT.md) · [Reusable inputs, outputs and offline replay](docs/evidence/fair-multimodal-v1/REUSE.md).
 
 <!-- multimodal-v1:end -->
 
-[Test-record index and reuse guide](docs/TEST_RECORDS.md) · **Live evidence:** [six additional format probes](docs/evidence/input-formats-2026-10-30/REPORT.md) record Markdown → Fireworks, JPEG → Meta OCR → Baseten, WebP → Meta OCR → Fireworks, MP3 → Meta ASR → Fireworks, silent MP4 → three Meta OCR frames → Fireworks, and native-text PDF → Meta. Each combination has one retained attempt with verdicts, coverage, latency and estimated cost. These small synthetic smoke tests are not a full format × provider benchmark. [Earlier PNG/WAV/video and long-audio probes](docs/evidence/multimodal-2026-10-30/REPORT.md) remain available.
+</details>
 
-**File limits:** 128 MiB; audio/video ≤2 hours. These are acceptance limits, not validated accuracy at that scale. [Extensions, vendor capabilities and endpoint caveats](docs/PROVIDERS.md#platform-capability-versus-integration).
+## Support and boundaries
 
-**Fresh data and real media:** [SEC snapshot fetched on 2026-10-30](docs/evidence/sec-refresh-2026-10-30/REPORT.md) covers 23 companies and 47 recorded responses; select it explicitly without changing frozen benchmark evidence. [Real issuer media candidates](docs/evidence/real-media-2026-10-30/README.md) include three Tesla slide images and official Microsoft/Tesla presentation/webcast links. Three Tesla pages now have separately recorded unscored diagnostics and post-hoc product checks; the Microsoft webcast now has a separate [real audio/video test](docs/evidence/real-av-v1/REPORT.md).
+All three text-verifier routes accept the same repository formats. Images and media use **Meta OCR/ASR**, including when Baseten or Fireworks performs the text verification.
 
-## Key results
-
-### 🔍 What are single-shot and agent?
-
-**Single-shot asks the model to answer directly. Agent retrieves evidence, then lets Python check the answer.** These are two execution modes, not two model names. Within each provider's comparison, both modes use the same configured model.
-
-```text
-single_shot: claim → model answer → verdict
-agent:       claim → model chooses SEC tools → evidence → model draft
-                     → Python checks numbers, periods and citations → final verdict
-```
-
-| Question | Single-shot (`single_shot`) | Agent (`agent`) |
+| Input | Processing | Main boundary |
 | --- | --- | --- |
-| Does it retrieve SEC evidence? | No tools; answers from existing model knowledge | Yes, using SEC lookup and calculation tools |
-| Who determines the verdict? | The model's answer | Program checks can override the model's draft |
-| Can I inspect the supporting filing? | No retrieved filing evidence in this path | Cited facts and source links are retained |
-| What does the comparison measure? | A no-tool baseline | The complete retrieval + program-checking workflow |
+| Text / Markdown | Local text → chosen verifier | Claim extraction is bounded. |
+| PNG / JPEG / WebP | Meta OCR → chosen verifier | Chart geometry and image authenticity are not verified. |
+| Text PDF | Local page extraction → chosen verifier | No scanned-PDF OCR or cross-page context. |
+| Audio | Meta ASR → chosen verifier | Speaker labels do not establish identity; timestamps cover turns. |
+| Video | Audio transcription + three OCR frames → chosen verifier | Unsampled visuals can be missed; audio and frames are checked separately. |
 
-**Example:** for “Amazon's calendar Q3 2023 revenue was $143.1B,” the agent can retrieve $143.083B, verify the period and check rounding before returning `supported`. Single-shot may answer correctly or abstain, but does not retrieve that filing during the check. [Inspect the recorded example](https://hackathon.dappgo.com/explorer/#G0119).
-
-> [!NOTE]
-> “Single-shot” names the no-tool baseline; it does not guarantee exactly one API request. Consult recorded call counts for actual usage. Accuracy gains below measure the whole agent workflow, not the isolated effect of any one rule. `No-tool accuracy` means single-shot accuracy; cost and time columns show the **agent** path.
-
-### 📝 Text: comparable recorded benchmark
-
-**Same 357-claim set · 23 companies · 91 development + 266 held-out.** Corrected reference labels; failed/incomplete predictions count as wrong. Costs and latency are historical agent means—not prices per document or SLAs.
-
-| Platform / Meta model | Agent accuracy | No-tool accuracy | False-supported¹ | Cost / claim | Mean time |
-| --- | ---: | ---: | ---: | ---: | ---: |
-| **Baseten · Spark Open** | **90.5%** (323/357) | 20.7% | 1/186 | **$0.020** | **12 s** |
-| **Fireworks · Spark Open** | **90.5%** (323/357) | 19.9% | 1/186 | **$0.020** | **67 s** |
-| **Meta API · Spark 1.3** | **83.2%** (297/357) | 44.3% | 4/186 | **$0.026** | **39 s** |
-
-¹ Non-supported reference claims incorrectly accepted as supported. [Report, confidence intervals and methodology](docs/evidence/eval-v2-2026-10-27/REPORT.md). Two reference labels were corrected; the [original report](docs/evidence/eval-v2-2026-10-27/REPORT-registered-gold.md) remains available. Later reruns are post-hoc.
-
-Baseten and Fireworks have the same total score but different correct cases. On the 266-claim held-out split alone, their scores are **240/266 = 90.2%** and **237/266 = 89.1%**, respectively. Equal overall accuracy does not imply identical behavior.
-
-### 📊 Accuracy evidence by format and platform
-
-| Format | Meta | Baseten | Fireworks |
-| --- | --- | --- | --- |
-| Text claims | **83.2%**, 357 claims | **90.5%**, 357 claims | **90.5%**, 357 claims |
-| Images | Development probes only | JPEG probe with Meta OCR | WebP probe with Meta OCR |
-| Native-text PDF | Native-text probe; no accuracy benchmark | No accuracy benchmark | No accuracy benchmark |
-| Audio | Development probes only | Development probes with Meta ASR | MP3 probe with Meta ASR |
-| Video | Development probes only | Development probes with Meta OCR/ASR | Silent MP4 probe with three Meta OCR frames |
-
-> [!IMPORTANT]
-> **Text accuracy does not transfer to PDF, images, audio or video.** Media quality also depends on reading/transcription and claim extraction. A development probe is not an accuracy benchmark. “No benchmark” means no measured benchmark accuracy, not 0% accuracy or unsupported.
-
-## Media cost and quality
-
-### 🧪 Recorded development examples—not platform rankings
-
-Entire-file workflow estimates from the [2026-10-30 hardening report](docs/evidence/multimodal-2026-10-30/REPORT.md). Different inputs and settings mean these rows are **not controlled provider comparisons**. Reservations on failed calls may remain charged in the estimate.
-
-| Format / recorded example | Pipeline | Total estimated cost | Wall time | Observed coverage / limitation |
-| --- | --- | ---: | ---: | --- |
-| 🖼️ Screenshot | Meta OCR + Meta text | **$0.0738** | **59.7 s** | 2/2 expected numeric mentions read; small synthetic control |
-| 🎙️ Short audio | Meta ASR + Baseten text | **$0.0791** | **56.4 s** | 5/5 expected numeric assertions program-checked |
-| 🎙️ Two-voice audio | Meta ASR + Meta text | **$0.0492** | **69.8 s** | Both voices merged into one speaker label |
-| 🎙️ 12-minute audio | Meta ASR + Baseten text | **$0.2405** | **258.8 s** | 19/60 assertions checked in this historical run |
-| 🎬 Row-only video | Meta OCR/ASR + Meta text | **$0.3359** | **312.1 s** | 8/9 assertions checked; only three frames sampled |
-| 🎬 Captioned video | Meta OCR/ASR + Baseten text | **$0.1554** | **106.6 s** | 9/9 assertions checked in this control |
-
-A [later long-audio follow-up](docs/evidence/multimodal-2026-10-30b/REPORT.md) increased program-checked coverage to 44/60; rechecking frozen ASR text reached 50/60. These are post-hoc coverage results on repeated synthetic facts, **not truth accuracy percentages**.
-
-### Additional format probes — 2026-10-30
-
-[Six preselected synthetic examples](docs/evidence/input-formats-2026-10-30/REPORT.md) cost **$0.32767930 total** against a $3 cap. All **15 extracted claim rows** received program checks; each case caught the deliberately incorrect EPS. This is not a full-content recall or general accuracy score, and different inputs/pipelines do not establish a platform ranking.
-
-| Input | Pipeline | Checked / extracted | Estimated USD | Wall time |
-| --- | --- | ---: | ---: | ---: |
-| Markdown | Fireworks text | 2/2 | $0.031686 | 110.4 s |
-| JPEG | Meta OCR → Baseten text | 2/2 | $0.039148 | 18.9 s |
-| WebP | Meta OCR → Fireworks text | 2/2 | $0.034332 | 163.7 s |
-| MP3 | Meta ASR → Fireworks text | 3/3 | $0.079938 | 444.1 s |
-| Silent MP4 | Three Meta OCR frames → Fireworks text | 4/4 | $0.089863 | 463.6 s |
-| Native-text PDF | Local page extraction → Meta text | 2/2 | $0.052712 | 71.8 s |
-
-Five runs completed; silent MP4 retains `partial` because there is no audio track, although all four extracted visual claims were checked. Video remains limited to three sampled frames. PDF OCR, general URLs and native Baseten/Fireworks media endpoints were not tested or added. Costs are usage-based estimates, not invoices; displayed per-row amounts are rounded.
-
-**API spend by provider for these six probes (USD):**
-
-| Provider | Estimated API spend |
-| --- | ---: |
-| Meta | $0.07223290 |
-| Baseten | $0.03489420 |
-| Fireworks | $0.22055220 |
-| **Total** | **$0.32767930** |
-
-Based on the [per-request ledger](docs/evidence/input-formats-2026-10-30/ledger.jsonl). The total includes a $0.00240000 ASR reservation without a reconciliation event; it remains a conservative estimate. Meta's total includes OCR/ASR preprocessing used by other text providers and its own text checks. These are the **same costs** included in the per-input table, not extra charges. This is six-probe spend, not lifetime project spend or an official invoice.
-
-**Reuse the evidence:** [record index and guide](docs/TEST_RECORDS.md) · [machine-readable run index](docs/evidence/input-formats-2026-10-30/runs.json) · [validation receipt and logs](docs/evidence/input-formats-2026-10-30/validation.json). Inputs/hashes, parameters, raw responses, traces, outcomes and costs are retained. Frozen OCR/ASR text can be reused for downstream checks without repeating media preprocessing; it does not retest extraction or attribution. Rebuilding the saved report is offline; a fresh live suite spends credits:
-
-```sh
-# Offline: rebuild the saved report and check input hashes / ledger totals.
-python3 scripts/multimodal/build_format_report.py
-# Paid: all six cases, shared $3 cap; requires a fresh output directory.
-.venv/bin/python scripts/multimodal/run_format_suite.py --out-root runs/formats-001
-```
-
-## Cost, speed and provider choice
-
-### 💵 Published API rates
-
-USD per **1 million tokens**, checked **2026-10-30**. These are unit prices, separate from the workflow measurements above.
-
-| Platform | Model | Input | Cached input | Output |
-| --- | --- | ---: | ---: | ---: |
-| Meta API | Muse Spark 1.3 Standard | $1.25 | $0.15 | $4.25 |
-| Baseten | Muse Spark Open | $1.25 | $0.15 | $4.25 |
-| Fireworks | Muse Spark Open | $1.25 | $0.15 | $4.25 |
-
-| Additional stage | Cost basis | Applies to |
-| --- | --- | --- |
-| Meta image OCR | Token usage; no fixed per-image quote | Images and sampled video frames |
-| Meta ASR | **$0.18/hour · $0.003/minute** | Audio and video audio tracks |
-| Native PDF parsing | Local CPU; no model fee for extraction itself | Text PDFs; subsequent claim checks still cost tokens |
-| Extraction + verification | Every model turn, including applicable retries | All accepted formats |
-
-**Document cost = preprocessing + extraction + all claim-check calls.** A single file may contain dozens of claims. Ledger estimates are not invoices. Official rate links, Contributor-mode conditions and batch caveats are in the [provider comparison](docs/PROVIDERS.md#price-comparison).
-
-## The problem
-
-A plausible financial sentence can still use the wrong quarter, unit or comparison. This project grew out of a failed assertion check in DappGo's AI-written commentary. A fluent model explanation is not enough: each checkable number needs a source, a matching period and a reproducible comparison.
-
-## Try it
-
-Start with the [three-outcome walkthrough](docs/evidence/judge-walkthrough/REPORT.md): one official issuer source, a matching claim, a changed-number claim and a wrong-period claim. It runs offline with deterministic checks; it is not a live model demonstration.
-
-Then open [claim G0119](https://hackathon.dappgo.com/explorer/#G0119) to inspect the original sentence, corrected reference label, six systems and the cited SEC filing. The explorer is a **saved replay**, with English by default and a Traditional Chinese switch. **Demo video publication is pending** ([record](demo/JUDGE_INTRO.md)).
-
-## What it does
-
-1. **Extract** individual assertions and preserve their original quotes.
-2. **Retrieve** SEC facts or admitted issuer-release quotes for the entity and period.
-3. **Check** numbers, units, precision, comparisons and evidence IDs in Python.
-4. **Explain** the verdict with source locations, limitations, cost and traces.
-
-<!-- figure:verdict-cards:start -->
-![Two real runs rendered as evidence-backed verdict cards](docs/figures/verdict-cards.svg)
-
-*Two real traces, run 2026-10-27; each card shows the program verdict and cited SEC evidence.*
-<!-- figure:verdict-cards:end -->
-
-A completed run does not mean every assertion was found. Ingestion reports show accepted, program-checked, rejected and failed claim counts; full-content recall stays unknown without independently labeled input.
+Scanned PDFs and general webpage URLs are not integrated. The local job queue is not a provider's discounted Batch API. [Detailed format limits and provider capabilities](docs/PROVIDERS.md).
 
 ## Run it
 
-Prerequisites: **Python 3.12–3.14**, **uv**, and **Node 22+** for the complete verifier. Audio/video additionally requires FFmpeg/ffprobe. Start from a local checkout.
-
-**1. Verify the repository without model credentials.**
+The CLI needs Python 3.12–3.14 and `uv`. Audio/video processing also needs FFmpeg and ffprobe.
 
 ```sh
-sh scripts/verify.sh
-```
-
-First use installs locked dependencies. Tests then run offline in a disposable copy, checking fixtures, Python/Node suites, figures, generated data and links. This verifies reproducibility, not live model accuracy. [Expected output](AGENTS.md#offline-verification).
-
-**2. Install and inspect a request without spending API credit.**
-
-```sh
+git clone https://github.com/YanlongLai/market-claim-verifier.git
+cd market-claim-verifier
 uv sync
+
+# Inspect a request without making a model call.
 uv run python -m claimcheck verify --provider baseten --dry-run \
   'Meta Q2 2025 revenue was $47.5B'
 ```
 
-**3. Run a bounded live check.** Set the selected provider credential outside the repository: `MODEL_API_KEY`, `BASETEN_API_KEY` or `FIREWORKS_API_KEY`.
+Set `BASETEN_API_KEY` in your environment, then run a live check with a $1 budget ceiling:
 
 ```sh
 uv run python -m claimcheck verify --provider baseten --budget 1 \
   'Meta Q2 2025 revenue was $47.5B'
 ```
 
-Live checks require network access and may incur charges. Trace and budget records are saved under `runs/`. Use `--help` for model, reasoning and token limits.
+Use `MODEL_API_KEY` for Meta or `FIREWORKS_API_KEY` for Fireworks. Live verification needs network access; traces and budget records are saved under `runs/`. Media preprocessing additionally needs a Meta key.
 
-## Check a whole post
+### Check a whole post
 
 ```sh
 uv run python -m claimcheck post examples/posts/bigtech-thread.txt \
   --provider baseten --budget 1
 ```
 
-The output includes `report.json` and `report.html`, original quotes and links to program checks. Extraction is bounded; do not assume every financial assertion was found. [Recorded English and Chinese examples](docs/evidence/posts-2026-10-28/).
+The post report retains quotations, evidence and program checks in HTML and JSON. [Recorded English and Chinese examples](docs/evidence/posts-2026-10-28/).
 
-## Other inputs
+### Review several files for one stock
 
-```sh
-uv run python -m claimcheck ingest tests/fixtures/multimodal/example-post.png \
-  --provider baseten --budget 1 --out runs/example-input
-```
+`review-stock` combines a bounded file queue with a stock-level summary. `stock-summary` aggregates saved reports without another model call. The [multi-file guide](docs/STOCK_REVIEW.md) covers budgets, frozen evidence, resuming work and exports; the [event-context guide](docs/EVENT_CONTEXT.md) explains how to supply a reviewed period without inserting it into the original speech.
 
-Media preprocessing additionally requires Meta credentials, even when text verification uses another provider. Outputs are `ingest.json` and `ingest.html`; existing output directories are not overwritten. Consult [supported inputs](docs/PROVIDERS.md#current-repository-input-contract) before running your own file.
+<a id="other-inputs"></a>
+<a id="local-pdf-input"></a>
+For a single image, audio file, video or text PDF, use `ingest`. [Commands and limits](docs/PROVIDERS.md#current-repository-input-contract).
 
-## Local PDF input
+## Cost, speed and provider choice
 
-Use `ingest report.pdf` with the same provider/budget flags. Native text retains page locations and the file hash. Encrypted files are rejected; blank/scanned pages remain visibly unchecked. Limits are 100 pages, 100,000 extracted characters per page and 1,000,000 per document. Tables and reading order require review.
+A document's cost includes preprocessing, claim extraction and every verification turn. The historical 357-claim text study averaged approximately **$0.020 per claim** for Baseten/Fireworks and **$0.026** for Meta. Those are observed workflow costs, not per-document prices or service guarantees. [Recorded costs and latency](docs/evidence/eval-v2-2026-10-27/REPORT.md).
+
+Published rate snapshot, checked 2026-10-30; USD per million tokens:
+
+| Platform / model | Input | Cached input | Output |
+| --- | ---: | ---: | ---: |
+| Meta · Muse Spark 1.3 Standard | $1.25 | $0.15 | $4.25 |
+| Baseten · Muse Spark Open | $1.25 | $0.15 | $4.25 |
+| Fireworks · Muse Spark Open | $1.25 | $0.15 | $4.25 |
+
+Meta ASR was listed at $0.18/hour; image OCR uses tokens. Ledger estimates include failed attempts and reservations and are not vendor invoices. [Official rate sources and Batch caveats](docs/PROVIDERS.md#price-comparison) · [Latest recorded follow-up spend](docs/evidence/real-av-context-live/REPORT.md#spend-usd-estimatedreserved).
 
 ## Limitations
 
-- SEC tagging errors, amended filings and fiscal calendars can affect the evidence; source provenance is part of the result.
-- Missing periods, unsupported metrics and unresolved evidence can yield `insufficient_evidence`.
-- Multimedia tests use a small set of development controls, not a general real-call benchmark.
-- Three video frames do not cover every slide. Speaker labels do not establish who spoke.
-- This hackathon scope is US equities; Taiwan data and general web scraping are outside it.
+The current scope is US equities and supported SEC/issuer evidence. Tagging errors, restatements, fiscal calendars and missing non-GAAP evidence can change the result. Context supplied for an event is recorded as conditional metadata, not authenticated evidence.
 
-## Extend and contribute
+Media extraction and claim recall remain incomplete. The real audio/video study uses one scene; the controlled format study uses synthetic media. Neither supports a claim of general financial-media accuracy. Reports are intended for reviewing statements, not issuing investment ratings.
 
-Read the [extension guide](docs/EXTENDING.md), [evidence record contract](docs/EVIDENCE_RECORDS.md) and [prioritized delivery plan](docs/DAY5_PLAN.md). New sources need authority rules, immutable snapshots, exact locators and independent evaluation—not only a new prompt. [Roadmap](ROADMAP.md) · [Changelog](CHANGELOG.md).
+## Reproduce or extend
 
-## Built during the hackathon
+Run `sh scripts/verify.sh` to check fixtures, Python/Node tests, figures, data rebuilds and links. The complete verifier also needs Node 22+. Dependency installation may use the network; verification then runs offline without model credentials. [Verification guide](AGENTS.md) · [Test records and reusable inputs/outputs](docs/TEST_RECORDS.md).
 
-All repository code and demo work were created for the event; no repository code pre-existed. [Build log](BUILD_LOG.md) · [dated history](CHANGELOG.md) · [MIT code license](LICENSE) · [data and media credits](CREDITS.md).
+For new financial sources, start with the [extension guide](docs/EXTENDING.md), [evidence contract](docs/EVIDENCE_RECORDS.md) and [source policy](docs/DATA_SOURCES.md). The [delivery plan](docs/DAY5_PLAN.md) separates implemented features from the upload UI, wider real-data evaluation and cross-modal work still to come.
 
-## Language policy
-
-English is primary. Chinese supplementary explanations are welcome; original evidence and model outputs keep their recorded language. [Language policy](docs/LANGUAGE.md). 中文補充：介面與文件以英文為主；證據保持原文，避免翻譯改變查核含義。
+All repository code and demo work were created during the hackathon. [Build log](BUILD_LOG.md) · [Changelog](CHANGELOG.md) · [MIT code license](LICENSE) · [Data and media credits](CREDITS.md). English is the primary documentation language; source evidence retains its original language. [Language policy](docs/LANGUAGE.md).
 
 ## Technical reference
 
-The following expandable sections retain detailed rules, historical experiments and reproducible diagrams. They are supporting material, not additional current benchmark claims.
+<details>
+<summary>Historical studies, evidence rules, architecture and generated figures</summary>
+
+The material below preserves the detailed study history and reproducible figures. Dates and study-specific limitations apply; current product status is described above.
+
+<!-- figure:verdict-cards:start -->
+![Two real runs rendered as evidence-backed verdict cards](docs/figures/verdict-cards.svg)
+
+*Two real traces, run 2026-10-27; each card shows the program verdict and cited SEC evidence.*
+<!-- figure:verdict-cards:end -->
 
 <details>
 <summary>L4 earnings-release evidence</summary>
@@ -661,7 +538,7 @@ rebuilds the cards from saved checks and trace metadata without modifying the so
 Historical evidence selection: [verification policy and `--as-of`](docs/VERIFICATION_POLICY.md). Cutoffs use inclusive SEC filing dates, not archived historical API state.
 
 <details>
-<summary>🎨 Illustration, robot and reusable prompts</summary>
+<summary>Illustration credits and reusable prompts</summary>
 
 <!-- figure:hero:start -->
 ![Editorial illustration of a sentence connected to filing sheets](docs/figures/hero.png)
@@ -673,16 +550,4 @@ The masthead captures the website review scene. The standalone Hover animation i
 
 </details>
 
-Batch local work with the [bounded queue and cost reports](docs/QUEUE_AND_COSTS.md): frozen evidence, per-job budget admission, integrity-checked successful-job reuse and explicit uncertain-outcome handling. This is not a provider Batch API.
-
-**Chart coverage:** OCR retains visible text, not bar heights or series geometry. Reports now explain zero-claim and failed channels with next steps. [Real Tesla chart diagnosis and updated summary](docs/evidence/chart-diagnosis-2026-10-30/REPORT.md); automatic chart-value verification remains planned.
-
-## Real audio and video case
-
-A genuine 60-second Microsoft FY2027 Q1 webcast excerpt and its WAV audio now have six recorded route tests. All transcripts retain 11/11 reference numeric tokens; **this is not accuracy**. No claim received a supported/contradicted final program verdict; missing periods, header quotation failures, OCR and provider errors remain visible.
-
-[Real inputs and full results](docs/evidence/real-av-v1/REPORT.md) · [Chinese diagnosis](docs/evidence/real-av-v1/ANALYSIS.zh-TW.md). One-scene smoke test; audio and visuals are not automatically reconciled. New estimated/reserved spend: $0.296171. Subtotal through that real-AV suite: Meta $4.45021510, Baseten $2.15855835, Fireworks $2.03641025; each below $40.
-
-**Real-AV follow-up:** explicit reviewed event context, anchored short-FY headers and program-derived final explanations are now implemented. [Usage](docs/EVENT_CONTEXT.md) · [offline known-failure replay](docs/evidence/real-av-context-posthoc/REPORT.md). Twenty previously rejected header proposals can now enter verification; this is not twenty verified financial facts. No paid baseline was replaced.
-
-**Live context follow-up completed:** the same six claims were verified by all three routes. Baseten and Fireworks each returned five supported claims and one missing-period control; Meta returned one supported, two insufficient and three HTTP 500 failures. [Results and raw traces](docs/evidence/real-av-context-live/REPORT.md). This is post-hoc verification, not an accuracy benchmark. New estimated/reserved spend: $0.415169; current combined tracked task totals: Meta $4.75379365, Baseten $2.20323285, Fireworks $2.10332610. The owner confirmed $30 per platform for this round, subject to earlier credit ceilings; execution stayed capped at $2 each.
+</details>
