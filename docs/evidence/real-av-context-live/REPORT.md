@@ -23,7 +23,7 @@ Supported means valid program checks within the recorded evidence, period and to
 | baseten | 0.04467450 | 2.20323285 |
 | fireworks | 0.06691585 | 2.10332610 |
 
-The owner confirmed $30 per platform for this round, subject to prior credit ceilings; see budget-note.json. The execution caps remained $2 per platform. Failed attempts and unreconciled reservations remain counted. No invoice or account balance is inferred. Original real-AV and admission-replay records are unchanged.
+The latest owner reply sets $30 combined across all three platforms for this round, subject to prior platform credit ceilings; see budget-note.json. The execution caps remained $2 per platform. Failed attempts and unreconciled reservations remain counted. No invoice or account balance is inferred. Original real-AV and admission-replay records are unchanged.
 
 ## Reuse
 
