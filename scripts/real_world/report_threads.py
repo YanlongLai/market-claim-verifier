@@ -5,9 +5,13 @@ import argparse
 import json
 from pathlib import Path
 
-from report import PROVIDERS, PATHS, fmt_rate, rate, summarize as phase1_summary
+from report import PROVIDERS, PATHS, fmt_rate as phase1_fmt_rate, rate, summarize as phase1_summary
 
 MARKER = "<!-- THREADS_PHASE2 -->"
+
+
+def fmt_rate(value):
+    return "not estimable (n=0)" if not value["denominator"] else phase1_fmt_rate(value)
 
 
 def summarize(cases, gold, results):
@@ -82,7 +86,14 @@ def findings(out):
                 values.append(f"[{label}]({p}/{path}/{id}/result.json)")
         lines.append(f"| {id} | {gold[id]['gold_verdict']} | " + " | ".join(values) + " |")
     lines += ["", "T02 is Alphabet's explicit Q3 2026 revenue and growth; T19 is AMD's explicit FY2026 Q2 revenue, growth, adjusted EPS, segment revenue and guidance. T03, T09 and T33 contain independently refuted unit or comparison-period components. Exact source coordinates/arithmetic are in [frozen gold](gold.jsonl). An insufficient response on a supported primary case counts wrong, even when abstention is safe operationally.", "",
-              "## Issuer binding and scope", "",
+              "## Longest observed text item per path", "",
+              "Wall time includes extraction/checking, retrieval and retries. These maxima complement the full mean/median/p95 distributions; they are not isolated API speed measurements.", "",
+              "| Provider/path | Item | Seconds | Status |", "|---|---|---:|---|"]
+    for p in PROVIDERS:
+        for path in PATHS:
+            r = max(load_rows(out / p / path / "results.jsonl").values(), key=lambda row: row["wall_seconds"])
+            lines.append(f"| {p}/{path} | [{r['id']}]({p}/{path}/{r['id']}/result.json) | {r['wall_seconds']:.2f} | {r['status']} |")
+    lines += ["", "## Issuer binding and scope", "",
               "[Baseten N03 trace](baseten/agent/N03/trace.json) maps **SM Entertainment**, a Korean issuer named in a KRW claim, to **SM ENERGY CO**, ticker `SM`, CIK `0000893538`, using USD facts and an unstated 2025 period. The resulting contradiction is an invalid issuer comparison. This repeats the kind of binding failure found in phase 1's Hon Precision → Honeywell case. A low false-supported rate does not exclude harmful false contradictions. The current production check validates selected evidence arithmetic without independently establishing that this is the company named by the input.", "",
               "Every decisive output on scope-only gold is listed below. These are operational disagreements, not independent truth adjudications of those posts.", "",
               "| Provider/path | Scope item | Aggregate verdict | Any supported extraction |",
@@ -102,7 +113,8 @@ def findings(out):
             ocr = sum(x['raw_artifact'].startswith('calls/') and x.get('status') == 'completed' for x in reqs)
             incomplete = sum(not x['raw_artifact'].startswith('calls/') and x.get('status') == 'incomplete' for x in reqs)
             lines.append(f"| [{p}/{id}](media/{p}/{id}/result.json) | {r['status']} | {ocr} | {incomplete} | {r['proposed_count']} | {r['verified_claims']} | {r['wall_seconds']:.2f} | {r['cost_usd']:.6f} |")
-    lines += ["", "Media claim extraction uses the registered 3,000-token output limit (text-post extraction uses the phase-1 4,000-token default). Incomplete responses stay failures; no budget increase or repeated paid extraction was selected after observing them. OCR completion alone does not establish OCR fidelity. Text-only analysis of the frozen outputs would not retest image reading.", "",
+    lines += ["", "Five OCR requests completed. Fireworks/M02 stopped on incomplete Meta OCR before text extraction; Fireworks/M01 completed OCR but its text extraction raised `APITimeoutError`. The other four routes returned incomplete text extraction. All six routes produced zero proposals and zero checked claims. The earlier in-progress summary that all six completed OCR and had incomplete text extraction was inaccurate; the retained request records above distinguish the stages.", "",
+              "Media claim extraction uses the registered 3,000-token output limit (text-post extraction uses the phase-1 4,000-token default). Incomplete responses stay failures; no budget increase or repeated paid extraction was selected after observing them. OCR completion alone does not establish OCR fidelity. Text-only analysis of the frozen outputs would not retest image reading.", "",
               "## Translation and compound claims", "",
               "The report separately identifies T33's approximately tenfold Apple segment discrepancies, T03's CoreWeave unit/YTD problems, T09's sequential-versus-year-over-year growth and T10's unscored apparent unit-error candidate. Original-language causation was not verified. Preserve the shown input; do not silently replace it with a corrected number.", "",
               "Post-level supported means the checked extracted rows were all supported; unchecked source assertions can remain. Coverage is therefore reported separately from aggregate accuracy. True extracted components within a refuted compound post are counted in `any_supported_component_on_negative_post_NOT_false_support`, while an entirely supported aggregate on refuted gold is false support. Scope-only items retain phase-1's any-supported rule. Missing reporting years/metric definitions remain on the [review list](GOLD_REVIEW.md).", "",
