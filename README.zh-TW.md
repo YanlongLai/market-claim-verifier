@@ -156,6 +156,12 @@ HTML／JSON 報告保留原文、證據與程式檢查。[英文與中文保存�
 
 Meta ASR 當時列價為 $0.18／小時；圖片 OCR 依 token 計費。Ledger 估算包含失敗與保留額，不等同供應商帳單。[官方價格來源與 Batch 說明](docs/PROVIDERS.md#price-comparison) · [最近一輪查核費用](docs/evidence/real-av-context-live/REPORT.md#spend-usd-estimatedreserved)。
 
+## 真實世界測試
+
+[News 與 Threads 評測](docs/evidence/real-world-2026-11-02/REPORT.md)保留了 80 則新聞改寫，以及第二階段的 30 則自家貼文、48 則第三方 Threads 改寫與兩張真實卡片。三個平台分別執行主張查核、貼文抽取查核及圖片匯入。Threads 來自 Owner 授權的登入瀏覽與 Top 搜尋結果，沒有可靠的互動數據，不能視為已驗證的高互動樣本。
+
+第二階段只有 **5 筆**獨立 SEC 事實標籤，另有 36 筆僅評估範圍外的預期棄答、37 筆待審；自家貼文與圖片的事實準確率無法估計。六條圖片路徑都在主張抽取階段回傳未完成，沒有完成任何主張查核；所有失敗與費用均保留，每個計費平台共用 $8 上限。報告分開呈現翻譯顯示中的單位／比較期間錯誤、覆蓋、失敗、延遲及完整費用；原始貼文、卡片與逐字 OCR 留在本地忽略目錄。[合併結果](docs/evidence/real-world-2026-11-02/REPORT.md#threads) · [待提供的自家 Reels／YouTube 檔案](docs/evidence/real-world-2026-11-02/NEXT_SOURCES.md)。
+
 ## 限制
 
 目前以美股及已支援的 SEC／公司公告證據為範圍。標記錯誤、財報重列、財政年度與 non-GAAP 證據缺漏都會影響結果。事件期間是可追溯、但未認證的補充 metadata。

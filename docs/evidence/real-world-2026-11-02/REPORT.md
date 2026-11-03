@@ -1,6 +1,6 @@
-# Real-world DappGo News evaluation — 2026-11-02
+# Real-world News and Threads evaluation — 2026-11-02
 
-The CURRENT agent was evaluated on 80 paraphrased feed stories (60 numerical financial items and 20 support controls), on Baseten, Fireworks and Meta API, through both the claim agent and the actual post CLI. This is primarily a support/coverage probe: only **four** stories have independently resolved SEC truth labels. **23 US financial items require Claude/Owner review**; **53 scope-policy labels measure expected abstention, not financial truth**. Do not interpret agreement on those scope labels as broad real-world accuracy.
+Phase 1 evaluated the CURRENT agent on 80 paraphrased feed stories (60 numerical financial items and 20 support controls), on Baseten, Fireworks and Meta API, through both the claim agent and the actual post CLI. This is primarily a support/coverage probe: only **four** stories have independently resolved SEC truth labels. **23 US financial items require Claude/Owner review**; **53 scope-policy labels measure expected abstention, not financial truth**. Do not interpret agreement on those scope labels as broad real-world accuracy.
 
 **Observed issuer error:** multiple direct-agent and post paths contradicted Hon Precision's revenue-growth claim using Honeywell (`HON`) companyfacts. This is an invalid issuer match, not successful TW coverage. A zero false-supported count does not exclude erroneous contradictions. [Traces and development priorities](findings.md).
 
@@ -75,7 +75,7 @@ Source outlets are the feed's labels (for example Yahoo), not independently iden
 
 The four primary-source cases are UNH adjusted-EPS minimum guidance (8-K), ARCC investment income (8-K), Shell rounded net income (6-K), and Starbucks US comparable-sales growth (8-K). All four use L4 unaudited issuer-release evidence, not an independent audit of the companies' accounts. Gold was constructed with an independent standard-library HTML parser and Decimal comparisons, without importing the agent's numeric parser/checker. Shell's $12,057m attributable income and $12,145m total income both round to $12.1bn. Guidance gold confirms what the issuer said, not whether the forecast will come true.
 
-TW filings, third-party estimate histories, market prices and several segment measures are beyond the current retrieval domain. Scope-only gold has not validated their truth. A later reviewed-gold analysis must be separately named and keep these original gold/results unchanged. No original feed summarization fidelity, OCR/ASR, full-article ingestion, DappGo published articles, or Threads content was tested.
+TW filings, third-party estimate histories, market prices and several segment measures are beyond the current retrieval domain. Scope-only gold has not validated their truth. A later reviewed-gold analysis must be separately named and keep these original gold/results unchanged. Phase 1 did not test original feed summarization fidelity, OCR/ASR, full-article ingestion, DappGo published articles or Threads content; the Threads and image extension is reported separately below.
 
 ## Inspect and reproduce
 

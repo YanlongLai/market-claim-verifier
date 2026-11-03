@@ -58,6 +58,17 @@ def audit(out, local=None, original=None, secrets=False):
     reserved = {e["reservation_id"]: e for e in events if e["event"] == "reserve"}
     if len(reserved) != sum(e["event"] == "reserve" for e in events):
         raise ValueError("duplicate reservation")
+    reconciled = [e for e in events if e["event"] == "reconcile"]
+    if len({e["reservation_id"] for e in reconciled}) != len(reconciled):
+        raise ValueError("duplicate usage reconciliation")
+    for event in reconciled:
+        reservation = reserved.get(event["reservation_id"])
+        if reservation is None or reservation["provider"] != event["provider"]:
+            raise ValueError("usage reconciliation without matching reservation")
+    models = json.loads((out / "protocol.json").read_text())["execution"]["models"]
+    for event in reserved.values():
+        if event["provider"] not in models or event["model"] != models[event["provider"]]:
+            raise ValueError("paid request outside registered Meta models")
     requests = []
     for provider in ("baseten", "fireworks", "meta"):
         for path in ("agent", "post"):
@@ -149,6 +160,7 @@ def audit(out, local=None, original=None, secrets=False):
     receipt = {"frozen_files_checked": len(freeze["sha256"]), "gold_rebuild": "three original and two metadata-correction byte-identical outputs",
                "expected_text_pairs": 468, "expected_media_routes": 6, "request_reservation_links": len(ids),
                "every_paid_reservation_has_one_retained_request": True, "primary_source_files_checked": source_count,
+               "all_paid_requests_use_registered_meta_models": True,
                "runtime_source_files_checked": archived, "local_raw_media_checked": bool(local),
                "original_post_privacy_checked": bool(original), "public_original_media_files": 0,
                "configured_secrets_scanned_without_printing": secret_count, "configured_secrets_found": 0,
