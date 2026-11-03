@@ -66,7 +66,11 @@ def selected(case, edgar=None):
         quote = runner.dispatch("quote_release", {"candidate_id": c["candidate_id"], "start": c["start"], "end": c["end"]})
         assert not quote.get("error"), quote
         ids = [quote["evidence_id"]]
-    sub = {"text": case["claim"], "original_claim": case["claim"], "stated_text": case["claim"],
+    # These old numerical fixtures used ticker-only names. Exercise their
+    # arithmetic with full issuer names under the new identity requirement;
+    # the historical frozen inputs/gold remain untouched.
+    claim = case["claim"].replace("AAPL", "Apple").replace("AMZN", "Amazon")
+    sub = {"text": claim, "original_claim": claim, "stated_text": claim,
            "claim_type": case["kind"], "comparator": "eq", "evidence_ids": ids,
            "stated_value": 777, "model_found_value": 777, "verdict": "supported"}
     return runner, found, sub

@@ -148,6 +148,10 @@ def _parser() -> argparse.ArgumentParser:
     for command_parser in (edgar, verify, post, ingest, queue, review):
         command_parser.add_argument('--as-of', type=parse_as_of, metavar='YYYY-MM-DD',
                                     help='include only evidence filed on or before this date (inclusive)')
+    for command_parser in (verify, post):
+        command_parser.add_argument('--published-at', help='item publication date or ISO timestamp; relative periods use only eligible SEC filings')
+        command_parser.add_argument('--issuer-country', help='issuer country supplied by source, checked against SEC identity')
+        command_parser.add_argument('--issuer-exchange', help='issuer exchange supplied by source, checked against SEC ticker map')
     return parser
 
 
@@ -490,6 +494,9 @@ def main(argv: Sequence[str] | None = None) -> int:
             max_output_tokens=max_output_tokens,
             reasoning_effort=reasoning_effort,
             provider=provider,
+            published_at=args.published_at,
+            issuer_country=args.issuer_country,
+            issuer_exchange=args.issuer_exchange,
         )
         trace_path = write_trace(settings.runs_dir, recorder)
         result = {**result, "trace_path": str(trace_path), **recorder.summary()}
@@ -528,6 +535,9 @@ def _run_post(args: argparse.Namespace, settings: object) -> int:
             secrets=[settings.model_api_key],
             max_output_tokens=args.max_output_tokens or settings.max_output_tokens,
             reasoning_effort=args.reasoning_effort or settings.reasoning_effort,
+            published_at=args.published_at,
+            issuer_country=args.issuer_country,
+            issuer_exchange=args.issuer_exchange,
         )
     except (BudgetExceeded, UnknownModel) as exc:
         print(f"Post check refused: {exc}", file=sys.stderr)

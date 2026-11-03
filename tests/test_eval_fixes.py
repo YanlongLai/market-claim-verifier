@@ -786,6 +786,9 @@ class _FallbackClient:
 
 
 class _MetaReplayEdgar:
+    def resolve_ticker(self, ticker):
+        return {"ticker": ticker, "cik": "0001326801", "entity": "Meta Platforms Inc"}
+
     def lookup_fact(self, ticker: str, metric: str, period: str) -> dict[str, Any]:
         return {"ticker": ticker, "metric": metric, "period": period, "value": 47.516e9}
 

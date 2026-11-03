@@ -17,7 +17,7 @@ The SEC ticker map, `https://www.sec.gov/files/company_tickers.json`, resolves t
 
 These sources cannot establish management guidance, forecasts, most non-GAAP measures, most segment KPIs or operational metrics, or market prices. They can also contain XBRL tagging errors, concept changes, issuer-specific fiscal calendars, and later comparative restatements. A successful lookup therefore means “the cached tagged fact was found,” not “the issuer's number has been independently audited by this program.”
 
-L4 supplements companyfacts with the issuer's own earnings release furnished under **8-K Item 2.02, Exhibit 99.1**, plus Exhibit 99.2 when it contains HTML text. Discovery follows SEC submissions JSON (including date-relevant historical shards), the filing index, and SEC-indexed exhibit links within that accession. PDFs, image-only slides, IR mirrors, and unrelated 8-K items do not qualify. JSON, index and exhibit bytes are cached with URL, retrieval timestamp and SHA-256; hashes are checked on release-cache reads. A process-wide SEC request gate shared with XBRL starts at most nine requests per second, using `DappGo market-claim-verifier admin@dappgo.com`.
+L4 supplements companyfacts with the issuer's own earnings release furnished under **8-K Item 2.02** or **6-K**, through HTML Exhibits 99.1/99.2. Discovery follows SEC submissions JSON (including date-relevant historical shards), the filing index, and SEC-indexed exhibit links within that accession. A 6-K form alone does not establish a financial metric; the same exact label, unit, reporting-period and source-span checks apply. PDFs, image-only slides, IR mirrors, and unrelated 8-K items do not qualify. JSON, index and exhibit bytes are cached with URL, retrieval timestamp and SHA-256; hashes are checked on release-cache reads. A process-wide SEC request gate shared with XBRL starts at most nine requests per second, using `DappGo market-claim-verifier admin@dappgo.com`.
 
 ## SEC evidence tiers
 
@@ -26,13 +26,17 @@ L4 supplements companyfacts with the issuer's own earnings release furnished und
 | L1 | Audited 10-K / 10-K/A value for the exact period | high |
 | L2 | Reviewed 10-Q / 10-Q/A value for the exact period | medium |
 | L3 | Program derivation retaining its filing components | medium |
-| L4 | Issuer earnings release, furnished 8-K Ex 99.1 / HTML Ex 99.2 | medium |
+| L4 | Issuer earnings release, furnished 8-K / 6-K HTML Ex 99.1 / Ex 99.2 | medium |
 
 `L1` means the exact value is reported in a `10-K` or `10-K/A` audited annual filing. `audited: true` is set only when an exact-period record includes one of those forms.
 
 `L2` means the exact value is reported only in `10-Q` or `10-Q/A` reviewed quarterly filings. A non-standard filing form is retained as a form fallback and receives low strength even though it stays in the direct-fact bucket.
 
 `L3` means the program derived the value, for example a quarter-four flow as annual minus nine-month YTD, or a quarter from two cumulative YTD facts. L3 output keeps the component tiers and provenance. A non-restated L3 derivation is medium strength; a derivation that uses restated or form-fallback evidence is low strength.
+
+Net/operating/gross margins use the matching filed numerator divided by revenue, multiplied by 100. Growth uses `(current - base) / abs(base) * 100`. Results retain the formula, both numeric inputs and component provenance; mismatched issuer/dates/units or a missing/zero denominator abstain. AWS, Google Cloud and NVIDIA/AMD data-center revenue require exact issuer/concept/dimension scope or a verified L4 table; consolidated revenue cannot substitute.
+
+Issuer binding requires the SEC map's name/CIK agreement or a reviewed CIK alias, plus any supplied exchange/country constraints. Relative periods require a source publication date and eligible filed period, with fiscal-calendar evidence; the period resolution is itself recorded. Different plausible fiscal/calendar readings abstain. These rules do not add Taiwan filing coverage.
 
 `L4` is furnished and unaudited. It verifies what the issuer stated, including an outlook, rather than whether a future forecast will come true. It cannot become high strength through repetition. For `reported_in_release`, the program also requests the same XBRL metric/period: an exact-period, matching-unit L1/L2 filing value wins on conflict, and the result adds `release_vs_filing_mismatch`. YTD, wrong-date, form-fallback, and L3 values cannot displace an L4 number through this rule. Both sources remain cited; a low-strength authoritative filing lowers the combined strength.
 
@@ -71,3 +75,7 @@ The [L4 gold corpus and independent builder](../eval/l4/GOLD_REVIEW.md) register
 Source reliability is an empirical reporting layer independent of this verifier's system accuracy. It is published per claim-source tier as the share of gold claims that are `supported`, `contradicted`, or `insufficient_evidence`, each with a Wilson 95% confidence interval. Per-domain reliability is published only when that domain has at least 20 claims; otherwise domains are suppressed and results are aggregated by tier. System accuracy is reported separately by source tier, also with a Wilson interval.
 
 Article claims are stored as short paraphrases with URL, title, and publication date. Verbatim article text is never stored in the registry or evaluation claim record.
+
+For the [DappGo News real-world study](evidence/real-world-2026-11-02/REPORT.md), the Owner's stricter rule also omits third-party titles: public records retain an original short claim paraphrase, outlet, URL, publication date, ticker and hashes. Original feed payloads stay only in ignored `.cache`. Publisher logical hashes and independently calculated delivered-byte hashes are distinct. Scope-only expected abstention is reported separately from independently resolved financial truth; ambiguous gold is left for review.
+
+The study documents a current XBRL issuer-binding gap: multiple workflows accept calculations for Honeywell (`HON`) while the input names Taiwan's Hon Precision. Valid filing arithmetic does not establish the claim's issuer identity. These [retained erroneous corrections](evidence/real-world-2026-11-02/findings.md) are a current limitation; deterministic issuer/CIK binding is planned. The [post-freeze input errata](evidence/real-world-2026-11-02/PARAPHRASE_REVIEW.md) separately disclose a translated company-name error and an ambiguous forecast issuer in the handwritten sample.

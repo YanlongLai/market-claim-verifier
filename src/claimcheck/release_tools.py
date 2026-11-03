@@ -11,7 +11,7 @@ from .release_fetch import ReleaseError
 FIND_EARNINGS_RELEASE_TOOL = {
     "type": "function", "name": "find_earnings_release", "strict": True,
     "description": (
-        "Find SEC 8-K Item 2.02 Ex 99.1 earnings releases (and HTML Ex 99.2). "
+        "Find SEC 8-K Item 2.02 and 6-K HTML Ex 99.1/99.2 earnings releases. "
         "Use for guidance, non-GAAP results, or reported_in_release. An explicit "
         "period is required; FY2026Q2 is fiscal, 2025Q2 is calendar. Returns "
         "deterministically parsed candidate quotes, candidate_id and start/end "
