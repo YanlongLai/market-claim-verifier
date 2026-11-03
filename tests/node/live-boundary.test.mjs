@@ -180,3 +180,17 @@ test("known backend errors retain partial traces and existing status/error codes
   assert.equal(response.status, 503);
   assert.deepEqual(await response.json(), partial);
 });
+
+test("dashboard-pasted values with trailing newlines still reach the origin as clean headers", async t => {
+  t.mock.method(globalThis, "fetch", async req => {
+    assert.equal(req.url, "https://live-origin.example.com/api/budget");
+    assert.equal(req.headers.get("x-live-origin-token"), origin.LIVE_ORIGIN_TOKEN);
+    assert.equal(req.headers.get("cf-access-client-secret"), origin.LIVE_ACCESS_CLIENT_SECRET);
+    return Response.json({ day: "2026-11-03", daily_limit_usd: 3, daily_spent_usd: 0, daily_remaining_usd: 3,
+      resets_at: "2026-11-04T00:00:00Z", status: "ready" });
+  });
+  const env = Object.fromEntries(Object.entries(origin).map(([k, v]) => [k, `${v}\n`]));
+  const response = await onBudget({ request: new Request("https://hackathon.dappgo.com/api/budget"), env });
+  assert.equal(response.status, 200);
+  assert.equal((await response.json()).daily_remaining_usd, 3);
+});

@@ -9,6 +9,10 @@ const headers = {
 const error = (code, status) => new Response(JSON.stringify({ error: code, demo: "data/live-demo.json" }), { status, headers });
 
 async function originFetch(env, path, options = {}) {
+  // Dashboard pastes can carry a trailing newline, which is invalid in a header.
+  const clean = value => typeof value === "string" ? value.trim() : value;
+  env = { ...env, LIVE_ORIGIN_HOST: clean(env.LIVE_ORIGIN_HOST), LIVE_ACCESS_CLIENT_ID: clean(env.LIVE_ACCESS_CLIENT_ID),
+    LIVE_ACCESS_CLIENT_SECRET: clean(env.LIVE_ACCESS_CLIENT_SECRET), LIVE_ORIGIN_TOKEN: clean(env.LIVE_ORIGIN_TOKEN) };
   const host = env.LIVE_ORIGIN_HOST;
   if (typeof host !== "string" || host.length > 253 ||
       !/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$/i.test(host) ||
