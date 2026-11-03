@@ -30,7 +30,8 @@ class Links(HTMLParser):
 
 
 def crawl():
-    queue = deque([("/", "entry"), ("/explorer/", "entry")])
+    queue = deque([("/", "entry"), ("/zh/", "entry"), ("/explorer/", "entry"),
+                   ("/explorer/index.zh.html", "entry"), ("/llms.txt", "entry")])
     visited = set()
     missing = []
     external = set()
@@ -61,7 +62,7 @@ def crawl():
             links += parser.links
         if file.suffix in {".html", ".css"}:
             links += re.findall(r"url\(\s*[\"']?([^\s\)\"']+)", file.read_text())
-        if file.suffix == ".md":
+        if file.suffix == ".md" or file.name == "llms.txt":
             links += re.findall(r"!?\[[^\]]*\]\(([^\s)]+)", file.read_text())
         if file.suffix == ".js":
             links += re.findall(r"fetch\([\"']([^\"']+)", file.read_text())

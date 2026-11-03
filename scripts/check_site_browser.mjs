@@ -14,7 +14,8 @@ const allowed = new Set([new URL(base).origin, 'https://fonts.googleapis.com', '
 // Installed before page scripts: measure the first painted scene and actual text,
 // accounting for hidden ancestors, opacity, viewport clipping, and nonempty content.
 function monitor(language) {
-  localStorage.setItem('market-claim-verifier-language', language);
+  // A stale preference must not change the language of a canonical URL.
+  localStorage.setItem('market-claim-verifier-language', language === 'en' ? 'zh' : 'en');
   window.__qa = { timing: {}, violations: [], firstScene: null };
   addEventListener('securitypolicyviolation', e => {
     const violation = { directive: e.effectiveDirective, blocked: e.blockedURI };
@@ -61,17 +62,39 @@ async function run(width, language, explorer) {
   page.on('request', r => resources.add(`${r.resourceType()} ${new URL(r.url()).origin}`));
   await page.route('**/*', route => allowed.has(new URL(route.request().url()).origin) ? route.continue() : route.abort());
   await page.addInitScript(monitor, language);
-  const path = explorer ? `/explorer/${language === 'zh' ? 'index.zh.html' : ''}` : '/';
+  const path = explorer ? `/explorer/${language === 'zh' ? 'index.zh.html' : ''}` : language === 'zh' ? '/zh/' : '/';
   const response = await page.goto(base + path, { waitUntil: 'domcontentloaded' });
+  assert.equal(response.status(), 200);
   assert.ok(response.headers()['content-security-policy']?.includes("frame-ancestors 'none'"));
+  const raw = await response.text();
+  if (language === 'zh') assert.ok(raw.includes(explorer ? '同一個模型' : '貼上一則財經貼文。'), `${label} static Chinese`);
   if (explorer) await page.waitForFunction(() => document.querySelector('#count')?.textContent.includes('357'));
   else await page.waitForFunction(() => window.__qa.firstScene);
   const first = await page.evaluate(() => ({ ...window.__qa, overflow: document.documentElement.scrollWidth > innerWidth }));
   await page.screenshot({ path: `${out}/${label}-first.png` });
+  await page.waitForTimeout(Math.max(0, 5000 - await page.evaluate(() => performance.now())));
+  await page.screenshot({ path: `${out}/${label}-5s.png` });
   await page.waitForTimeout(Math.max(0, 8000 - await page.evaluate(() => performance.now())));
   await page.screenshot({ path: `${out}/${label}-8s.png` });
   await page.screenshot({ path: `${out}/${label}-full.png`, fullPage: true });
   const result = { label, first, after8s: await page.evaluate(() => ({ ...window.__qa, overflow: document.documentElement.scrollWidth > innerWidth, inlineScripts: document.querySelectorAll('script:not([src])').length, inlineStyles: document.querySelectorAll('style').length, styleAttributes: document.querySelectorAll('[style]').length })), resources: [...resources].sort(), errors, failed };
+  result.metadata = await page.evaluate(({ raw, language }) => {
+    const source = new DOMParser().parseFromString(raw, 'text/html');
+    source.querySelectorAll('head,script,style,[hidden],[aria-hidden="true"],dialog,details:not([open])').forEach(el => el.remove());
+    const segmenter = new Intl.Segmenter(language === 'zh' ? 'zh-Hant' : 'en', { granularity: 'word' });
+    return {
+      rawVisibleWords: [...segmenter.segment(source.body.textContent)].filter(s => s.isWordLike).length,
+      title: document.title, lang: document.documentElement.lang,
+      canonical: document.querySelector('link[rel="canonical"]').href,
+      jsonld: [...document.querySelectorAll('script[type="application/ld+json"]')].map(el => JSON.parse(el.textContent)),
+      inlineExecutableScripts: [...document.querySelectorAll('script:not([src])')].filter(el => el.type !== 'application/ld+json').length
+    };
+  }, { raw, language });
+  assert.equal(result.metadata.lang, language === 'zh' ? 'zh-Hant' : 'en');
+  assert.equal(result.metadata.canonical, 'https://hackathon.dappgo.com' + path);
+  assert.equal(result.metadata.jsonld.length, 1);
+  assert.equal(result.metadata.jsonld[0]['@type'], explorer ? 'Dataset' : 'WebApplication');
+  if (!explorer) assert.equal(result.metadata.inlineExecutableScripts, 0);
   result.localRoutes = await page.evaluate(() => [...new Set([...document.querySelectorAll('[href],[src]')].flatMap(el => ['href', 'src'].flatMap(attr => {
     const raw = el.getAttribute(attr);
     if (!raw || raw.startsWith('#')) return [];
@@ -111,10 +134,15 @@ async function run(width, language, explorer) {
       assert.deepEqual(result.dialogSmallTargets, []);
     }
     await page.locator('#filing-dialog-close').click();
-    for (const seconds of [0, 12.94, 25.5, 33.5, 49.5]) {
-      await page.goto(`${base}/?stamp-t=${seconds}#top`, { waitUntil: 'domcontentloaded' });
+    result.robotAtSeek = [];
+    for (const seconds of [0, 1.6, 3.9, 5, 12.94, 25.5, 33.5, 49.5]) {
+      await page.goto(`${base}${path}?stamp-t=${seconds}#top`, { waitUntil: 'domcontentloaded' });
       await page.waitForFunction(t => window.__stampScene?.getState().seconds === t, seconds);
       assert.equal(await page.locator('#stamp-pause').getAttribute('aria-pressed'), 'true');
+      await page.waitForFunction(() => [...document.querySelectorAll('.stamp-robot-pose')].some(el => el.complete && el.naturalWidth > 0 && Number(getComputedStyle(el).opacity) > .1));
+      assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false, `${label} seek ${seconds} overflow`);
+      result.robotAtSeek.push(await page.evaluate(() => ({ ...window.__stampScene.getState(), width: document.querySelector('.stamp-robot').getBoundingClientRect().width, height: document.querySelector('.stamp-robot').getBoundingClientRect().height })));
+      await page.screenshot({ path: `${out}/${label}-seek-${seconds}.png` });
     }
     await page.emulateMedia({ reducedMotion: 'reduce' });
     await page.waitForFunction(() => document.querySelector('#stamp-scene').dataset.animated === 'false');
@@ -127,10 +155,11 @@ async function run(width, language, explorer) {
     }
     await page.emulateMedia({ reducedMotion: 'no-preference', colorScheme: 'dark' });
     await page.screenshot({ path: `${out}/${label}-dark-seek.png` });
-    result.seekAndPlayback = 'steps 1–4, pause/resume, and 0/12.94/25.5/33.5/49.5s seek passed';
+    result.seekAndPlayback = 'steps 1–4, pause/resume, and 0/1.6/3.9/5/12.94/25.5/33.5/49.5s seek passed; robot pose decoded and visible at every seek';
     const other = language === 'en' ? 'zh' : 'en';
     await page.locator(`[data-language="${other}"]`).click();
-    assert.equal(await page.title(), other === 'en' ? 'Market claim verifier · DappGo' : '財經說法查核 · DappGo');
+    await page.waitForURL(base + (other === 'zh' ? '/zh/' : '/'));
+    assert.equal(await page.title(), other === 'en' ? 'SEC fact-checks for finance posts · Market claim verifier' : '財經貼文查核：用 SEC 申報文件驗證數字 · DappGo');
   } else {
     await page.locator('#f-q').fill('G0119');
     await page.waitForFunction(() => document.querySelector('#count').textContent.startsWith('1 / 357'));
@@ -169,13 +198,17 @@ try {
   }
   const ctx = await browser.newContext({ javaScriptEnabled: false, viewport: { width: 375, height: 812 } });
   const page = await ctx.newPage();
-  await page.goto(base);
-  assert.equal(await page.locator('#stamp-scene').isVisible(), false);
-  assert.equal(await page.locator('[data-ui]:visible').count(), 0);
-  assert.ok((await page.locator('#filing-dialog-title').textContent()).trim());
-  await page.screenshot({ path: `${out}/home-375-noscript.png` });
+  for (const path of ['/', '/zh/']) {
+    await page.goto(base + path);
+    assert.equal(await page.locator('#stamp-scene').isVisible(), false);
+    assert.equal(await page.locator('[data-ui]:visible').count(), 0);
+    assert.ok((await page.locator('#filing-dialog-title').textContent()).trim());
+    await page.screenshot({ path: `${out}/home-375-${path === '/' ? 'en' : 'zh'}-noscript.png` });
+  }
   await ctx.close();
   const check = await browser.newContext();
+  assert.equal((await check.request.get(`${base}/llms.txt`)).status(), 200);
+  assert.equal((await check.request.get(`${base}/zh/`)).status(), 200);
   const missing = await check.request.get(`${base}/missing-page`);
   assert.equal(missing.status(), 404);
   assert.ok((await missing.text()).includes('Page not found.'));

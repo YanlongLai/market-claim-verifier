@@ -96,6 +96,8 @@ def main() -> int:
     run("Checking Node offline guard", "node", "-e", 'try { require("node:net").connect(9); process.exit(1); } catch (e) { if (!e.message.includes("network access is disabled")) throw e; }')
     run("Checking committed SEC test fixture provenance", python, "scripts/build_offline_fixtures.py", "--check")
     run("Checking first-filing iXBRL documents and values", python, "scripts/build_site_filing_fixtures.py", "--check")
+    run("Checking static Traditional Chinese page", python, "scripts/build_zh_page.py", "--check")
+    run("Checking CSS/JS content hashes", python, "scripts/stamp_site_assets.py", "--check")
     run("Product, replay, provider and site tests", python, "-m", "pytest", "-q", "-ra")
     run("Demo pipeline tests (optional FFmpeg tests use their existing skip markers)", str(args.demo_python), "-m", "pytest", "-q", "-ra", demo=True)
     run("Standalone demo JavaScript tests", "node", "--test", "demo/tests/motion.test.mjs", "demo/tests/motion-v3.test.mjs", "demo/tests/layout.test.mjs", "demo/tests/capture.test.mjs")

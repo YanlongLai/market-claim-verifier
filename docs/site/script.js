@@ -3,12 +3,12 @@
 
   const $ = (selector) => document.querySelector(selector);
   const $$ = (selector) => Array.from(document.querySelectorAll(selector));
-  const LANGUAGE_KEY = "market-claim-verifier-language";
 
   const COPY = {
     en: {
-      metaTitle: "Market claim verifier · DappGo",
-      metaDescription: "Paste a finance post and check its numbers against SEC filings.",
+      metaTitle: "SEC fact-checks for finance posts · Market claim verifier",
+      metaDescription: "Check finance posts against SEC filings. On 357 claims, Baseten scored 90.5% with SEC lookup vs 20.7% without. Explore saved verdicts and filing evidence.",
+      metaImageAlt: "Market claim verifier comparing an example finance post with its saved SEC filing, alongside the auditor robot.",
       a11y: {
         skip: "Skip to content",
         home: "Market claim verifier home",
@@ -181,8 +181,9 @@
       }
     },
     zh: {
-      metaTitle: "財經說法查核 · DappGo",
-      metaDescription: "貼上財經貼文，將其中的數字與 SEC 申報文件比對。",
+      metaTitle: "財經貼文查核：用 SEC 申報文件驗證數字 · DappGo",
+      metaDescription: "貼上財經貼文，對照 SEC 申報文件查核數字。357 個說法實測：Baseten 加入 SEC 查詢後準確率 90.5%，未查詢僅 20.7%。每個判定都附引用與計算。",
+      metaImageAlt: "財經貼文查核示範：對照貼文與已保存的 SEC 申報文件，旁邊是查核機器人。",
       a11y: {
         skip: "跳到主要內容",
         home: "財經說法查核首頁",
@@ -450,6 +451,12 @@
       tool_limit: "此貼文超過簡短查核上限，請改用一家美股公司的一句敘述。"
     }
   };
+  // The static page builder imports this same dictionary through Node.
+  // No DOM, provider calls or page initialization run during generation.
+  if (typeof document === "undefined") {
+    if (typeof module === "object") module.exports = COPY;
+    return;
+  }
 
   let pageLanguage = readLanguage();
   let exampleLanguage = pageLanguage;
@@ -719,19 +726,7 @@
   }
 
   function readLanguage() {
-    try {
-      return localStorage.getItem(LANGUAGE_KEY) === "zh" ? "zh" : "en";
-    } catch (_error) {
-      return "en";
-    }
-  }
-
-  function saveLanguage(language) {
-    try {
-      localStorage.setItem(LANGUAGE_KEY, language);
-    } catch (_error) {
-      // Private browsing and locked-down embeds can reject storage.
-    }
+    return document.documentElement.lang === "zh-Hant" ? "zh" : "en";
   }
 
   function getCopy(path) {
@@ -759,10 +754,11 @@
       if (typeof value === "string") element.setAttribute("aria-label", value);
     });
 
-    $$('[data-language]').forEach((button) => {
-      const active = button.dataset.language === pageLanguage;
-      button.classList.toggle("is-active", active);
-      button.setAttribute("aria-pressed", String(active));
+    $$('[data-language]').forEach((link) => {
+      const active = link.dataset.language === pageLanguage;
+      link.classList.toggle("is-active", active);
+      if (active) link.setAttribute("aria-current", "page");
+      else link.removeAttribute("aria-current");
     });
 
     $$('[data-example]').forEach((button) => {
@@ -987,6 +983,7 @@
       image.height = height;
       image.loading = "lazy";
       image.decoding = "async";
+      path = path.startsWith("/") ? path : "/" + path;
       image.dataset.src = path;
       // Image slots have fixed dimensions. Re-measure the actual text targets
       // after decoding too, including the intrinsic phone maxima.
@@ -1047,11 +1044,11 @@
     }
 
     function paperDetails(parent, isStatic = false) {
-      const grain = polishImage("img/polish/paper-grain.webp", "stamp-paper-grain", 256, 256, isStatic);
+      const grain = polishImage("/img/polish/paper-grain.webp", "stamp-paper-grain", 256, 256, isStatic);
       grain.addEventListener("load", () => parent.classList.toggle("has-paper-grain", true));
       parent.append(grain,
-        polishImage("img/polish/stack-edge.webp", "stamp-stack-edge", 384, 96, isStatic),
-        polishImage("img/polish/paperclip.webp", "stamp-paperclip", 96, 160, isStatic));
+        polishImage("/img/polish/stack-edge.webp", "stamp-stack-edge", 384, 96, isStatic),
+        polishImage("/img/polish/paperclip.webp", "stamp-paperclip", 96, 160, isStatic));
     }
     paperDetails(filingBox);
 
@@ -1080,7 +1077,9 @@
       image.alt = "";
       image.width = POSE_CANVAS[0];
       image.height = POSE_CANVAS[1];
-      image.loading = "lazy";
+      // Phone poses must be ready even when a taller translated hero starts
+      // them below the fold. They still paint from the same scene clock.
+      image.loading = phone.matches ? "eager" : "lazy";
       image.decoding = "async";
       image.dataset.pose = name;
       image.dataset.facing = facing[name];
@@ -1088,7 +1087,7 @@
         const fallback = poseFallbacks[name];
         if (fallback && image.dataset.asset !== fallback) {
           image.dataset.asset = fallback;
-          image.src = `img/auditor/H/${fallback}.webp`;
+          image.src = `/img/auditor/H/${fallback}.webp`;
           geometryKey = "";
           measure();
         }
@@ -1108,19 +1107,19 @@
           geometryKey = "";
           measure();
         });
-        image.src = `img/auditor/H/${name}.webp`;
+        image.src = `/img/auditor/H/${name}.webp`;
       });
       thrusters.forEach(({ frames }) => frames.forEach((image) => {
-        image.src = `img/auditor/H/thruster-${image.dataset.frame}.webp`;
+        image.src = `/img/auditor/H/thruster-${image.dataset.frame}.webp`;
       }));
       // A failed ink texture leaves solid, readable stamp text.
       const ink = element("img", "");
       ink.decoding = "async";
       ink.addEventListener("load", () => scene.classList.toggle("has-stamp-ink", ink.naturalWidth > 0));
       ink.addEventListener("error", () => scene.classList.remove("has-stamp-ink"));
-      ink.src = "img/stamp-ink.webp";
+      ink.src = "/img/stamp-ink.webp";
       Object.entries(fx.sources).forEach(([name, sources]) => {
-        const image = element("img", "stamp-fx-preload"), url = `img/fx/${name}.webp`;
+        const image = element("img", "stamp-fx-preload"), url = `/img/fx/${name}.webp`;
         image.decoding = "async";
         image.dataset.texture = name;
         image.addEventListener("load", () => sources.forEach((node) => node.setAttribute("href", url)));
@@ -1142,7 +1141,7 @@
       const dateStamp = element("span", "stamp-filing-date");
       const filedDate = element("time", "");
       filedDate.dateTime = source.filed;
-      dateStamp.append(polishImage("img/polish/ink-ring.webp", "stamp-date-ring", 256, 128, isStatic), filedDate);
+      dateStamp.append(polishImage("/img/polish/ink-ring.webp", "stamp-date-ring", 256, 128, isStatic), filedDate);
       formLine.append(element("p", "stamp-passage-meta", source.type === "release" ? "8-K · Item 2.02 · Ex 99.1" : `FORM ${source.form}`), dateStamp);
       header.append(formLine);
       header.append(element("p", "stamp-passage-company", source.company));
@@ -1230,7 +1229,7 @@
       avatar.height = 56;
       avatar.loading = "lazy";
       avatar.decoding = "async";
-      avatar.src = card.persona.avatar;
+      avatar.src = "/" + card.persona.avatar;
       const identity = element("div", "stamp-identity");
       const authorRow = element("div", "stamp-author-row");
       const author = element("strong", "stamp-author");
@@ -1273,7 +1272,7 @@
           originalAvatar.height = 56;
           originalAvatar.loading = "lazy";
           originalAvatar.decoding = "async";
-          originalAvatar.src = original.persona.avatar;
+          originalAvatar.src = "/" + original.persona.avatar;
           const identity = element("div", "stamp-identity");
           identity.append(element("strong", "stamp-original-author"), element("p", "stamp-original-byline"));
           const originalDate = element("time", "stamp-post-date", original.post_date);
@@ -1285,7 +1284,7 @@
       const article = card.source_kind === "article" && card.article ? element("div", "stamp-article-deck") : null;
       const lead = article ? element("p", "stamp-article-lead") : null;
       if (article) {
-        const masthead = polishImage("img/polish/banana-masthead.webp", "stamp-masthead", 520, 96, isStatic);
+        const masthead = polishImage("/img/polish/banana-masthead.webp", "stamp-masthead", 520, 96, isStatic);
         masthead.addEventListener("error", () => identity.classList.toggle("masthead-unavailable", true));
         identity.prepend(masthead);
         const pictures = element("div", "stamp-article-pictures");
@@ -2738,15 +2737,6 @@
   }
 
   function setupControls() {
-    $$('[data-language]').forEach((button) => {
-      button.addEventListener("click", () => {
-        pageLanguage = button.dataset.language === "zh" ? "zh" : "en";
-        exampleLanguage = pageLanguage;
-        saveLanguage(pageLanguage);
-        applyCopy();
-      });
-    });
-
     $$('[data-example]').forEach((button) => {
       button.addEventListener("click", () => {
         exampleLanguage = button.dataset.example === "zh" ? "zh" : "en";
@@ -2762,7 +2752,7 @@
 
   async function loadData() {
     try {
-      const response = await fetch("data/site.json", { cache: "no-store" });
+      const response = await fetch("/data/site.json", { cache: "no-store" });
       if (!response.ok) throw new Error("site data unavailable");
       siteData = await response.json();
       renderStampScene();
