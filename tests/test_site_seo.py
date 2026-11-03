@@ -111,7 +111,11 @@ def test_sitemap_contains_every_canonical_and_reciprocal_alternates():
     tree = ElementTree.parse(ROOT / "docs/sitemap.xml")
     ns = {"s": "http://www.sitemaps.org/schemas/sitemap/0.9", "x": "http://www.w3.org/1999/xhtml"}
     entries = tree.findall("s:url", ns)
-    assert {entry.findtext("s:loc", namespaces=ns) for entry in entries} == {ORIGIN + p[0] for p in PAGES.values()}
+    bilingual = {ORIGIN + p[0] for p in PAGES.values()}
+    # English-only public pages have no alternates.
+    single = {ORIGIN + "/wild/"}
+    assert {entry.findtext("s:loc", namespaces=ns) for entry in entries} == bilingual | single
     for entry in entries:
         assert entry.findtext("s:lastmod", namespaces=ns)
-        assert {link.attrib["hreflang"] for link in entry.findall("x:link", ns)} == {"en", "zh-Hant", "x-default"}
+        expected = set() if entry.findtext("s:loc", namespaces=ns) in single else {"en", "zh-Hant", "x-default"}
+        assert {link.attrib["hreflang"] for link in entry.findall("x:link", ns)} == expected

@@ -174,7 +174,7 @@
         explorer: "Results explorer ↗",
         github: "GitHub repo ↗",
         run: "Run it yourself",
-        hackathon: "All repository code and demo work were created during the hackathon.",
+        hackathon: "Built for the Meta Global AI Developer Hackathon 2026.",
         builtBy: "Built by DappGo",
         source: "GitHub repo",
         top: "Back to top ↑"
@@ -182,7 +182,7 @@
     },
     zh: {
       metaTitle: "財經貼文查核：用 SEC 申報文件驗證數字 · DappGo",
-      metaDescription: "貼上財經貼文，對照 SEC 申報文件查核數字。在 357 個說法的已保存測試中，Baseten 加入 SEC 查詢後準確率為 90.5%，未查詢為 20.7%。查看每個判定的引用、計算與限制；模型提出查核步驟，程式決定結果。網站重播已保存的證據，並非即時查核；測試採用修正後的參考答案，失敗也計入錯誤。",
+      metaDescription: "貼上財經貼文，對照 SEC 申報文件查核數字。357 個說法實測：Baseten 加入 SEC 查詢後準確率 90.5%，未查詢僅 20.7%。每個判定都附引用與計算。",
       metaImageAlt: "財經貼文查核示範：對照貼文與已保存的 SEC 申報文件，旁邊是查核機器人。",
       a11y: {
         skip: "跳到主要內容",
@@ -349,7 +349,7 @@
         explorer: "結果瀏覽器 ↗",
         github: "GitHub 程式庫 ↗",
         run: "自己執行",
-        hackathon: "所有程式碼與示範作品皆於黑客松期間建立。",
+        hackathon: "為 Meta Global AI Developer Hackathon 2026 打造。",
         builtBy: "由 DappGo 打造",
         source: "GitHub 程式庫",
         top: "回到頂端 ↑"
