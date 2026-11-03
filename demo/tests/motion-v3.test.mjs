@@ -41,7 +41,7 @@ test('all v007 frames obey safe rectangles/type floors without a browser',()=>{
   for(let i=0;i<Math.ceil(window.timeline.duration*30);i++) {
     window.seek(i/30);
     for(const box of window.frame.boxes) {
-      assert(box.size>=(box.realworld?36:56),box.text);
+      assert(box.size>=(box.className.includes('aggregate-label')?48:56),box.text);
       assert(box.x>=64&&box.x+box.w<=1856,box.text);
       assert(box.y>=64&&box.y+box.h<=(box.realworld?816:880),box.text);
       if(box.className==='headline')assert(box.size>=96);
@@ -61,6 +61,40 @@ test('v007 seek is deterministic after arbitrary backwards and forwards seeks',(
   assert.throws(()=>window.seek(NaN),/finite/);assert.throws(()=>window.seek(Infinity),/finite/);
   window.seek(-10);assert.equal(window.frame.time,0);
   window.seek(1000);assert.equal(window.frame.time,window.timeline.duration);
+});
+
+function encodedHolds(window,stage,start,end,identity) {
+  const holds=[];
+  for(let frame=Math.ceil(start*30);frame<Math.ceil(end*30);frame++) {
+    window.seek(frame/30);
+    const key=identity(window.frame,stage.innerHTML),last=holds.at(-1);
+    if(last?.key===key)last.frames++;else holds.push({key,frames:1});
+  }
+  return holds;
+}
+
+test('Amazon, NVIDIA and opinion each hold for 75 encoded frames, including the reviewed early speech cue',()=>{
+  for(const useReviewedCue of [false,true]) {
+    const {window,stage}=page('',d=>{
+      if(useReviewedCue)d.cues._events['v303-extract'][0].t=21.8176;
+    }),shot=window.timeline.shots.find(s=>s.id==='v303-extract');
+    const holds=encodedHolds(window,stage,shot.start,shot.end,(_,html)=>
+      /AMZN/.test(html)?'Amazon':/opinion<\/div>/.test(html)?'Opinion':/NVDA/.test(html)?'NVIDIA':'Unexpected');
+    assert.deepEqual(holds.map(h=>h.key),['Amazon','NVIDIA','Opinion']);
+    for(const h of holds)assert(h.frames>=75,`${h.key}: ${h.frames}/30 s`);
+    window.seek(shot.start+4.9);assert(!/416\.2B/.test(stage.innerHTML),'Repeated Apple extraction card returns.');
+    window.seek(shot.start+5);assert(!/AMZN/.test(stage.innerHTML));
+  }
+});
+
+test('each real-world page holds at least 75 encoded frames in the unchanged 11.3081 s reserve',()=>{
+  const {window,stage}=page(),shot=window.timeline.shots.find(s=>s.id==='v311b-realworld');
+  assert(Math.abs(shot.end-shot.start-11.3081)<1e-8);
+  const holds=encodedHolds(window,stage,shot.start,shot.end,(_,html)=>html.match(/data-realworld-page="(\d+)"/)[1]);
+  assert.deepEqual(holds.map(h=>h.key),['0','1','2','3']);
+  for(const h of holds)assert(h.frames>=75,`Real-world page ${h.key}: ${h.frames}/30 s`);
+  const {window:overcrowded}=page('',d=>d.realworld.examples.push(structuredClone(d.realworld.examples[0])));
+  assert.throws(()=>overcrowded.seek(shot.start),/at least 2.5 s/);
 });
 
 test('Hover uses real H assets, site pose clock, thruster and spotlight alphas',()=>{
@@ -311,6 +345,20 @@ test('B-roll is recomputed from shifted scene/cue times and refuses invalid host
   assert.throws(()=>B.windows(early),/narration lead/);
 });
 
+test('L4 insert uses the contained approved point-glow PNGs at every source-frame index',()=>{
+  const {window}=page(),D=window.MOTION_DATA,B=window.BrollLayer;
+  const insert=B.windows(D).find(c=>c.shot==='v307-l4'),approved=window.BROLL_DATA.clips.find(c=>c.id==='point-glow-s29');
+  assert.equal(insert.asset_id,'point-glow-s29');
+  assert.equal(insert.source_sha256,approved.source_sha256);
+  assert.equal(insert.receipt_sha256,approved.receipt_sha256);
+  for(let frame=0;frame<45;frame++) {
+    const chosen=B.select(D,insert.start+(frame+.5)/16);
+    assert(chosen.src.includes('/point-glow-s29/'));
+    assert(!chosen.src.includes('/turn-point-s11/'));
+    assert.equal(chosen.frameIndex,frame);
+  }
+});
+
 test('v010 pending real-world reserve is honest, silent and deterministic',()=>{
   const {window,stage}=page('',d=>{
     d.realworld={status:'awaiting_evidence',sources:[],examples:[],narration:null,provenance:{}};
@@ -334,17 +382,15 @@ function syntheticWorld() {
     items_tested:3,items_checked:2,items_with_errors:1,coverage_percent:66.7,
     verdict_counts:{supported:0,contradicted:1,insufficient_evidence:1},
     cost_per_item_usd:.03,p50_latency_s:3}));
-  const primary={check_index:0,claim_type:'value',verdict:'contradicted',value:10,unit:'USD',
+  const primary={check_index:0,claim_type:'value',verdict:'contradicted',value:10,stated_value:12.5,unit:'USD',
     period:'FY2025',metric:'revenue',source_label:'10-K',source_tier:'L1',evidence_ids:['E1'],
     gap:{gap_kind:'relative',gap:.25}};
-  return {status:'ready',runs:[{id:'synthetic-original',phase:'original',sources},
-    {id:'synthetic-fix',phase:'posthoc_frozen_text_recheck',sources:[sources[1]]}],
-    examples:[{run_id:'synthetic-original',source_id:'news',handle:null,paraphrase:'Synthetic news paraphrase.',
+  return {status:'ready',runs:[{id:'synthetic-original',phase:'original',provider:'baseten',path:'post',sources},
+    {id:'synthetic-fix',phase:'posthoc_frozen_text_recheck',provider:'baseten',path:'post',sources:[sources[1]]}],
+    examples:[{run_id:'synthetic-original',source_id:'news',report:'synthetic-report.json',handle:null,paraphrase:'Synthetic news paraphrase.',
       verdict:'supported',primary,comparisons:[]},
-      {run_id:'synthetic-original',source_id:'threads',handle:'@synthetic_user',paraphrase:'Synthetic: 12.5 claimed; source says 10.',
-        verdict:'contradicted',primary,comparisons:[]},
-      {run_id:'synthetic-fix',source_id:'threads',handle:'@synthetic_user',paraphrase:'Synthetic known-case frozen-text recheck.',
-        verdict:'insufficient_evidence',primary,comparisons:[]}]};
+      {run_id:'synthetic-original',source_id:'threads',report:'synthetic-report.json',handle:'@synthetic_user',paraphrase:'Synthetic: 12.5 claimed; source says 10.',
+        verdict:'contradicted',primary,comparisons:[]}]};
 }
 
 test('compiled-source renderer covers metrics, handles and separately labeled rechecks within the reserve',()=>{
@@ -354,23 +400,29 @@ test('compiled-source renderer covers metrics, handles and separately labeled re
   for(let i=0;i<Math.ceil((shot.end-shot.start)*30);i++) {
     const t=Math.min(shot.end-.00001,shot.start+i/30);window.seek(t);
     const text=plain(stage.innerHTML);
-    assert.match(text,/3 tested · 2\/3 checked \(66\.7%\) · 1 errors/);
-    assert.match(text,/Supported/);assert.match(text,/Contradicted/);assert.match(text,/Insufficient/);
-    assert.match(text,/\$0\.0300\/item · p50 3\.00s/);
-    assert.match(text,/SEC: \$10 FY2025 revenue \(10-K · L1\)/);
-    assert.match(text,/Recorded relative gap: 0\.25×/);
+    assert.match(text,/Baseten · post route/);
+    assert.match(text,/coverage ≠ accuracy/i);
+    assert(!/p50|\/item| errors/.test(text),'Receipt detail belongs in linked evidence.');
     const badge=window.frame.boxes.find(b=>b.className.includes('claim-verdict'));
     const colors={SUPPORTED:'mint',CONTRADICTED:'coral',INSUFFICIENT:'amber'};
-    assert(badge&&badge.className.includes(colors[badge.text]));
+    if(badge) {
+      assert(badge.className.includes(colors[badge.text]));
+      for(const label of ['$12.5','$10','SEC 10-K · FY2025'])assert(text.includes(label));
+      assert(!/Supported|Insufficient|run failures/.test(text),'Example must have one comparison.');
+    } else {
+      assert.match(text,/2\/3 items checked \(66\.7%\)/);assert.match(text,/1 run failures/);
+      for(const label of ['Supported','Contradicted','Insufficient','verdict counts'])assert(text.includes(label));
+    }
     assert(!/https?:\/\/|threads\.(net|com)\//.test(stage.innerHTML));
     if(/DappGo News/.test(text))seen.add('news');
     if(/Threads/.test(text))seen.add('threads');
     if(/Post-hoc · frozen text/.test(text)) {
       seen.add('recheck');assert.match(text,/OCR\/ASR not retested/);
-    } else assert.match(text,/coverage ≠ accuracy/);
+    }
     for(const box of window.frame.boxes) {
       assert(box.x>=64&&box.x+box.w<=1856);
-      assert(box.y>=64&&box.y+box.h<=816);assert(box.size>=36);
+      assert(box.y>=64&&box.y+box.h<=816);
+      assert(box.size>=(box.className.includes('aggregate-label')?48:56));
     }
     expected.push([t,stage.innerHTML]);
   }
@@ -381,15 +433,12 @@ test('compiled-source renderer covers metrics, handles and separately labeled re
   }
 });
 
-test('recorded real-world cards show the contradicted claims and their primary SEC values',()=>{
+test('recorded examples give one large comparison; original and post-hoc aggregates keep counts distinct',()=>{
   const {window,stage}=page(),D=window.MOTION_DATA,
     shot=window.timeline.shots.find(s=>s.id==='v311b-realworld');
   const expected=[
-    ['@taiwandata · paraphrase of post',"CoreWeave's annual revenue in 2023 was $2.29 billion.",
-      'SEC: $229M FY2023 revenue (10-K · L1)','Recorded relative gap: 9×'],
-    ['@sky311091 · paraphrase of post','SanDisk fiscal 2027 Q1 revenue was $11.0 billion, up 23% year over year.',
-      'SEC: $11.031B FY2027Q1 revenue (10-Q · L2)',
-      'Revenue supported · YoY +377.9% · Recorded gap: 354.9 pp']];
+    ['@taiwandata · paraphrase of post','CoreWeave','$2.29B','$229M','SEC 10-K · FY2023','Annual revenue'],
+    ['@sky311091 · paraphrase of post','SanDisk','23%','377.9%','SEC 10-Q · FY2027Q1','Recorded YoY revenue growth']];
   for(const [i,texts] of expected.entries()) {
     const frame=D.keyframes.find(f=>f.position==='realworld-page-'+(i+2));
     window.seek(frame.t);
@@ -397,35 +446,54 @@ test('recorded real-world cards show the contradicted claims and their primary S
     for(const value of texts)assert(text.includes(value),value);
     assert.match(stage.innerHTML,/class="abs claim-verdict coral"/);
     assert.match(text,/CONTRADICTED/);
-    for(const b of window.frame.boxes)assert(b.size>=36&&b.y+b.h<=816,b.text);
+    assert.match(text,/Saved original · coverage ≠ accuracy/);
+    assert(!/items checked|run failures|Supported|Insufficient|\$11\.0|354\.9/.test(text));
+    assert.equal([...stage.innerHTML.matchAll(/class="number"/g)].length,2);
+    assert(stage.innerHTML.includes(`href="../../../${D.realworld.examples[i].report}"`));
+    const badge=window.frame.boxes.find(b=>b.className.includes('claim-verdict'));
+    assert(badge.size>=56&&badge.w>=700&&badge.h>=96);
+    for(const b of window.frame.boxes)assert(b.size>=56&&b.y+b.h<=816,b.text);
   }
   for(const page of [1,4]) {
     window.seek(D.keyframes.find(f=>f.position==='realworld-page-'+page).t);
-    assert.match(stage.innerHTML,/Coverage is not verdict accuracy/);
+    assert.match(stage.innerHTML,/Coverage ≠ accuracy/);
+    assert.match(stage.innerHTML,/Baseten · post route/);
+    assert.match(stage.innerHTML,/verdict counts are claims/);
     assert(!stage.innerHTML.includes('claim-verdict'));
-    if(page===4)assert.match(stage.innerHTML,/Post-hoc · frozen text/);
+    if(page===4) {
+      for(const label of ['Post-hoc · frozen text','43/80 items checked (53.8%)','0 run failures',
+        'OCR/ASR not retested','Previously seen inputs'])assert(stage.innerHTML.includes(label));
+    } else {
+      for(const label of ['DappGo News','Threads','44/80 items checked (55.0%)',
+        '42/78 items checked (53.8%)','0 run failures','6 run failures'])assert(stage.innerHTML.includes(label));
+    }
   }
   assert(shot.end-shot.start<12);
 });
 
-test('real-world cards use recorded ratios and differences without calculating them from values',()=>{
+test('comparison values come from recorded checks rather than the paraphrase or a new calculation',()=>{
   const {window,stage}=page('',d=>{
     d.realworld=syntheticWorld();
-    Object.assign(d.realworld.examples[1].primary,{ratio:7.12345,difference:19.23456});
+    Object.assign(d.realworld.examples[1].primary,{stated_value:9876,value:1234});
   });
   const shot=window.timeline.shots.find(s=>s.id==='v311b-realworld');
   window.seek((shot.start+shot.end)/2);
-  assert.match(plain(stage.innerHTML),/Recorded ratio: 7\.123× · Recorded difference: 19\.235 USD/);
+  assert.match(plain(stage.innerHTML),/\$9\.876K/);
+  assert.match(plain(stage.innerHTML),/\$1\.234K/);
 });
 
-test('real-world geometry guard enforces the 36px floor, overflow and 64px caption clearance',()=>{
-  const good={text:[{text:'SEC: $229M FY2023 revenue (10-K · L1)',realworld:true,fontSize:36,
-    left:442,right:1824,top:714,bottom:762,textLeft:442,textRight:1400,textTop:714,textBottom:758}],numbers:[]};
+test('real-world geometry guard enforces 56px example text, 96px values and scoped 48px aggregate labels',()=>{
+  const good={text:[{text:'SEC 10-K · FY2023',realworld:true,fontSize:56,
+    left:944,right:1824,top:404,bottom:472,textLeft:944,textRight:1500,textTop:404,textBottom:471}],numbers:[]};
   assertV3Layout(good);
-  for(const change of [m=>m.text[0].fontSize=35,m=>m.text[0].bottom=817,
-    m=>m.text[0].textRight=1825,m=>m.text[0].textBottom=763,m=>m.text[0].realworld=false]) {
+  for(const change of [m=>m.text[0].fontSize=55,m=>m.text[0].bottom=817,
+    m=>m.text[0].textRight=1825,m=>m.text[0].textBottom=473,
+    m=>{m.text[0].fontSize=95;m.text[0].exampleValue=true;}]) {
     const bad=structuredClone(good);change(bad);assert.throws(()=>assertV3Layout(bad));
   }
+  const aggregate=structuredClone(good);Object.assign(aggregate.text[0],{aggregateLabel:true,fontSize:48});
+  assertV3Layout(aggregate);
+  aggregate.text[0].fontSize=47;assert.throws(()=>assertV3Layout(aggregate));
 });
 
 test('Apple ribbon animates recorded steps and fact IDs during the existing lead with seek-stable cost/latency',()=>{
@@ -433,7 +501,7 @@ test('Apple ribbon animates recorded steps and fact IDs during the existing lead
     shot=D.timing.shots.find(s=>s.id==='v304-hover'),
     start=window.BrollLayer.windows(D).find(c=>c.id==='point-glow-s29').end,end=shot.voice_start;
   assert(start<end&&end-shot.start>=9);
-  const samples=T.steps.map(step=>start+(step.start_s+step.latency_s*.5)/T.latency_s*(end-start));
+  const samples=T.steps.map(step=>start+(step.start_s+step.latency_s*.5)/T.latency_s*(end-2.5-start));
   const expected=samples.map((t,i)=>{
     window.seek(t);const step=T.steps[i],state=window.frame.hover.trace;
     assert.equal(window.frame.broll,null);
@@ -441,13 +509,8 @@ test('Apple ribbon animates recorded steps and fact IDs during the existing lead
     assert.deepEqual(Array.from(state.fact_ids),Array.from(step.fact_ids));
     assert(stage.innerHTML.includes(step.name));assert.match(stage.innerHTML,/E1/);
     assert.match(stage.innerHTML,/class="trace-fill"/);
-    if(i===T.steps.length-1) {
-      assert(stage.innerHTML.includes('$'+T.cost_usd.toFixed(5)));
-      assert(stage.innerHTML.includes(T.latency_s.toFixed(3)+'s'));
-    } else {
-      assert(stage.innerHTML.includes('$'+step.cost_usd.toFixed(5)));
-      assert(stage.innerHTML.includes(step.latency_s.toFixed(3)+'s'));
-    }
+    assert(stage.innerHTML.includes('Saved trace · recorded 8.080 s, compressed'));
+    assert(!stage.innerHTML.includes('Step ~$'));
     for(const b of window.frame.boxes.filter(b=>/trace-/.test(b.className))) {
       assert(b.x>=64&&b.x+b.w<=1856&&b.y>=150&&b.y+b.h<=332);
       if(b.text)assert(b.h>=b.size*1.2);
@@ -460,6 +523,26 @@ test('Apple ribbon animates recorded steps and fact IDs during the existing lead
   }
   window.seek(end);assert.equal(window.frame.hover.trace,null);
   assert.equal(window.timeline.duration,177.2611);
+});
+
+test('Apple trace label is fixed throughout and final run receipt holds at least 75 encoded frames',()=>{
+  const {window,stage}=page(),D=window.MOTION_DATA,shot=D.timing.shots.find(s=>s.id==='v304-hover'),
+    start=window.BrollLayer.windows(D).find(c=>c.id==='point-glow-s29').end;
+  const holds=encodedHolds(window,stage,start,shot.voice_start,(frame,html)=>{
+    assert(html.includes('Saved trace · recorded 8.080 s, compressed'));
+    if(frame.hover.trace.receipt) {
+      assert(html.includes('Run ~$'+D.agent_trace.cost_usd.toFixed(5)));
+      assert(html.includes('3 requests · E1'));
+    }
+    return frame.hover.trace.receipt?'receipt':'steps';
+  });
+  assert.deepEqual(holds.map(h=>h.key),['steps','receipt']);
+  assert(holds.at(-1).frames>=75,`Receipt: ${holds.at(-1).frames}/30 s`);
+  for(const frame of D.keyframes.filter(f=>f.position.startsWith('recorded-trace-'))) {
+    window.seek(frame.t);
+    if(frame.position==='recorded-trace-receipt')assert(window.frame.hover.trace.receipt);
+    else assert.equal(window.frame.hover.trace.index,Number(frame.position.at(-1)));
+  }
 });
 
 test('host B-roll guard rejects text occlusion, subtitle incursions and wrong decoded PNGs',()=>{

@@ -44,9 +44,10 @@
       box(64,758,1792,106,show(t,e,'paste')?'Post pasted → extract claims':'Check the period before sharing.','body mint',64);
   }
   function extract(t,s,e) {
-    const b=D.beats.beats_s.filter(b=>b>=s.start&&b<s.end),
-      index=show(t,e,'opinion')?3:t>=b[8]?2:t>=b[4]?1:0,
+    const opinionAt=Math.max(e.opinion,s.start+5),
+      index=t>=opinionAt?3:t>=s.start+2.5?1:0,
       claim=P.english_claims[index];
+    if(s.end-opinionAt<2.5)throw new Error('Extraction opinion needs at least 2.5 s; review the cue.');
     return chrome('Extract claims')+title('Keep the exact quote.')+
       surface(64,332,1792,430)+
       box(96,360,1728,80,esc(claim.ticker||'NVDA')+' · '+(index===3?'opinion':'checkable claim'),'body muted',64)+
@@ -67,13 +68,15 @@
     if(!trace)return null;
     const start=B.windows(D).find(c=>c.id==='point-glow-s29').end,end=s.voice_start;
     if(t<start||t>=end)return null;
-    const age=clamp((t-start)/(end-start))*trace.latency_s;
+    const receiptStart=end-2.5;
+    if(receiptStart<=start)throw new Error('Saved trace needs room for a 2.5 s final receipt.');
+    const receipt=t>=receiptStart,age=clamp((t-start)/(receiptStart-start))*trace.latency_s;
     const step=trace.steps.find(r=>age<r.start_s+r.latency_s)||trace.steps.at(-1);
-    const detail=`Step ~$${step.cost_usd.toFixed(5)} · ${step.latency_s.toFixed(3)}s · model request`;
-    return {state:{index:step.index,name:step.name,fact_ids:step.fact_ids,age,start,end},html:
-      box(64,172,1792,80,esc(`${step.index}/${trace.steps.length}  ${step.name} → ${step.fact_ids.join(' · ')}`),'body mint trace-step',64)+
-      box(64,252,1792,68,esc(step===trace.steps.at(-1)?
-        `Run ~$${trace.cost_usd.toFixed(5)} · ${trace.latency_s.toFixed(3)}s · saved, compressed`:detail),'body muted trace-detail',56)+
+    return {state:{index:step.index,name:step.name,fact_ids:step.fact_ids,age,start,end,receipt,receiptStart},html:
+      box(64,172,1792,80,esc(receipt?
+        `Run ~$${trace.cost_usd.toFixed(5)} · ${trace.steps.length} requests · ${trace.fact_ids.join(' · ')}`:
+        `${step.index}/${trace.steps.length}  ${step.name} → ${step.fact_ids.join(' · ')}`),'body mint trace-step',64)+
+      box(64,252,1792,68,esc(`Saved trace · recorded ${trace.latency_s.toFixed(3)} s, compressed`),'body muted trace-detail',56)+
       box(64,324,1792,4,`<div class="trace-fill" style="width:${100*clamp((age-step.start_s)/step.latency_s)}%"></div>`,'trace-track',56)};
   }
   function hover(t,s,e) {
@@ -202,37 +205,48 @@
       box(96,548,1728,168,'No recorded results yet.\nMetrics and narration require the evidence compiler.','source-text muted',64)+
       box(96,740,1728,68,'Preview only · not ready for film','body amber',56));
     const pages=[];
-    for(const run of data.runs)for(const source of run.sources) {
-      const examples=data.examples.filter(e=>e.run_id===run.id&&e.source_id===source.id);
-      for(const example of examples.length?examples:[null])pages.push({run,source,example});
+    for(const run of data.runs) {
+      pages.push({run});
+      for(const example of data.examples.filter(e=>e.run_id===run.id))pages.push({run,example});
     }
+    if((s.end-s.start)/pages.length<2.5)throw new Error('Real-world pages need at least 2.5 s each.');
     const index=Math.min(pages.length-1,Math.floor(clamp((t-s.start)/(s.end-s.start))*pages.length));
-    const {run,source:r,example}=pages[index],posthoc=run.phase!=='original';
-    let html=chrome(posthoc?'Post-hoc · frozen text':'Saved · coverage ≠ accuracy')+
-      box(64,176,1792,116,esc(r.label),'headline',96)+
-      box(64,300,1792,54,esc(`${r.items_tested} tested · ${r.items_checked}/${r.items_tested} checked (${r.coverage_percent.toFixed(1)}%) · ${r.items_with_errors} errors`),'body muted',44);
-    for(const [i,key] of ['supported','contradicted','insufficient_evidence'].entries()) {
-      const x=64+i*608,label=['Supported','Contradicted','Insufficient'][i],color=['mint','coral','amber'][i];
-      html+=box(x,360,200,116,n(r.verdict_counts[key],96),color,96)+
-        box(x+216,386,360,52,label,'body '+color,40);
-    }
-    html+=box(64,478,1792,48,esc(`~$${r.cost_per_item_usd.toFixed(4)}/item · p50 ${r.p50_latency_s.toFixed(2)}s · claim verdicts`),'body muted',36);
+    const {run,example}=pages[index],posthoc=run.phase!=='original';
+    let html=chrome(`${run.provider==='baseten'?'Baseten':run.provider} · ${run.path} route`);
     if(example) {
-      const primary=example.primary,color={contradicted:'coral',supported:'mint',insufficient_evidence:'amber'}[example.verdict],
-        label={contradicted:'CONTRADICTED',supported:'SUPPORTED',insufficient_evidence:'INSUFFICIENT'}[example.verdict];
-      html+=surface(64,532,1792,284)+
-        box(88,544,1728,44,esc((example.handle||'Public news item')+' · paraphrase of post'+
-          (posthoc?' · OCR/ASR not retested':'')),'body muted',36)+
-        box(88,594,1728,110,esc(example.paraphrase),'source-text',44)+
-        box(88,714,330,48,esc(label),'claim-verdict '+color,36)+
-        box(442,714,1382,48,esc(`SEC: ${recordedValue(primary)} ${primary.period} ${primary.metric} (${primary.source_label} · ${primary.source_tier})`),'body',36)+
-        box(88,768,1728,44,esc(recordedComparison(example)),'body muted',36);
+      const check=example.comparisons.find(c=>c.claim_type==='change_pct')||example.primary,
+        color={contradicted:'coral',supported:'mint',insufficient_evidence:'amber'}[check.verdict],
+        label={contradicted:'CONTRADICTED',supported:'SUPPORTED',insufficient_evidence:'INSUFFICIENT'}[check.verdict],
+        name=example.paraphrase.split(/['’]|\s/)[0],growth=check.claim_type==='change_pct';
+      html+=box(64,176,1792,116,`<a href="../../../${esc(example.report)}">${esc(name)}</a>`,'headline',96)+
+        box(64,300,1792,68,esc(`${example.handle||'Public news item'} · paraphrase of post`),'body muted',56)+
+        box(96,404,736,68,'Claimed'+(growth?' YoY':''),'body muted',56)+
+        box(944,404,880,68,esc(`SEC ${check.source_label} · ${check.period}`),'body mint',56)+
+        box(96,480,640,138,n(recordedValue({...check,value:check.stated_value})),'coral',112)+
+        box(760,480,152,138,'→','body muted',112)+
+        box(944,480,880,138,n(recordedValue(check)),'mint',112)+
+        box(64,632,752,104,esc(label),'claim-verdict '+color,64)+
+        box(872,650,984,80,growth?'Recorded YoY revenue growth':'Annual revenue','body',56)+
+        box(64,748,1792,68,posthoc?'Post-hoc · frozen text · OCR/ASR not retested':
+          'Saved original · coverage ≠ accuracy','body muted',56);
     } else {
-      html+=box(64,574,1792,68,esc(posthoc?'Frozen text · OCR/ASR not retested':
-        'Program-check coverage · not accuracy'),'body mint',56)+
-        box(64,654,1792,144,'Saved development runs. Coverage is not verdict accuracy.','source-text',56);
+      html+=box(64,176,1792,116,`<a href="../../../docs/evidence/${esc(run.id)}/REPORT.md">${posthoc?'Post-hoc · frozen text':'Original · News + Threads'}</a>`,'headline',96)+
+        box(64,300,1792,68,'Coverage ≠ accuracy · verdict counts are claims','body muted',56);
+      for(const [row,r] of run.sources.entries()) {
+        const y=396+row*220;
+        html+=box(64,y,464,80,esc(r.label),'body',64)+
+          box(552,y+8,840,70,esc(`${r.items_checked}/${r.items_tested} items checked (${r.coverage_percent.toFixed(1)}%)`),'body mint',56)+
+          box(1416,y+16,440,64,esc(`${r.items_with_errors} run failures`),'body muted aggregate-label',48);
+        for(const [i,key] of ['supported','contradicted','insufficient_evidence'].entries()) {
+          const x=64+i*608,label=['Supported','Contradicted','Insufficient'][i],color=['mint','coral','amber'][i];
+          html+=box(x,y+84,192,116,n(r.verdict_counts[key],96),color,96)+
+            box(x+208,y+110,368,64,label,'body '+color+' aggregate-label',48);
+        }
+      }
+      if(posthoc)html+=box(64,652,1792,68,'Frozen text · OCR/ASR not retested','body mint',56)+
+        box(64,748,1792,68,'Previously seen inputs · claim verdict counts','body muted',56);
     }
-    return wrap(html);
+    return `<section data-realworld data-realworld-page="${index}" data-realworld-kind="${example?'example':'aggregate'}">${html}</section>`;
   }
   const decimal=(value,places=1)=>Number(value.toFixed(places)).toString();
   function recordedValue(check) {
@@ -243,25 +257,6 @@
       return '$'+decimal(check.value,2);
     }
     return check.unit==='%'?decimal(check.value)+'%':decimal(check.value,3)+' '+check.unit;
-  }
-  function recordedGap(check) {
-    const recorded=[];
-    if(check.ratio!==undefined)recorded.push(`Recorded ratio: ${decimal(check.ratio,3)}×`);
-    if(check.difference!==undefined)recorded.push(`Recorded difference: ${decimal(check.difference,3)} ${check.unit}`);
-    if(recorded.length)return recorded.join(' · ');
-    if(!check.gap)return '';
-    const {gap,gap_kind:kind}=check.gap;
-    return kind==='relative'?`Recorded relative gap: ${decimal(gap,3)}×`:
-      `Recorded gap: ${decimal(gap)} ${kind==='points'?'pp':check.unit}`;
-  }
-  function recordedComparison(example) {
-    const changes=example.comparisons.map(check=>{
-      const label=/year.over.year/i.test(check.text)?'YoY':'Change';
-      return `${label} ${check.value>0?'+':''}${recordedValue(check)} · ${recordedGap(check)}`;
-    });
-    if(changes.length)return (example.primary.verdict==='supported'?
-      example.primary.metric[0].toUpperCase()+example.primary.metric.slice(1)+' supported · ':'')+changes.join(' · ');
-    return recordedGap(example.primary);
   }
   function qrSVG() {
     const {matrix,quiet_zone:q}=D.qr,size=matrix.length+2*q;

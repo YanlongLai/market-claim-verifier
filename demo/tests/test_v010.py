@@ -84,7 +84,7 @@ def test_all_attempts_feed_coverage_cost_verdicts_and_p50(tmp_path):
     assert example['handle'] == '@synthetic_user'
     assert example['verdict'] == 'contradicted'
     assert example['primary'] == dict(check_index=0, claim_type='value', verdict='contradicted',
-                                      value=10, unit='USD', period='FY2025', metric='revenue',
+                                      value=10, stated_value=12.5, unit='USD', period='FY2025', metric='revenue',
                                       source_label='10-K', source_tier='L1', evidence_ids=['E1'],
                                       gap=dict(gap_kind='relative', gap=.25))
     assert example['comparisons'] == []
@@ -97,7 +97,7 @@ def test_all_attempts_feed_coverage_cost_verdicts_and_p50(tmp_path):
         rw.load_snapshot(tmp_path, require_ready=True)
 
 
-@pytest.mark.parametrize('field', ['actual_value', 'evidence_ids', 'evidence_valid', 'program_verdict',
+@pytest.mark.parametrize('field', ['actual_value', 'stated_value', 'evidence_ids', 'evidence_valid', 'program_verdict',
                                  'source', 'unit', 'period', 'metric', 'form', 'tier', 'source_value'])
 def test_selected_example_fails_without_recorded_checked_value_or_source(tmp_path, field):
     descriptor = fixture_run(tmp_path)
@@ -160,6 +160,7 @@ def test_real_examples_bind_values_and_growth_to_the_selected_recorded_claim():
         for value in [example['primary'], *example['comparisons']]:
             recorded = claim['program_checks'][value['check_index']]
             assert value['value'] == recorded['actual_value']
+            assert value['stated_value'] == recorded['stated_value']
             assert value['gap'] == recorded['gap']
             assert value['evidence_ids'] == recorded['evidence_ids']
         assert data['provenance'][example['report']] == file_hash(v3.ROOT/example['report'])
@@ -368,3 +369,29 @@ def test_apple_ribbon_is_compiled_from_real_calls_costs_latencies_and_fact_ids()
         assert step['cost_usd'] == request['cost']
         assert step['latency_s'] == request['latency_ms']/1000
     assert all(file_hash(v3.ROOT/p) == h for p,h in data['provenance'].items())
+
+
+def test_reading_holds_fit_retained_audio_and_approved_reserve():
+    lengths = LENGTHS[:-1]+[6.64, LENGTHS[-1]]
+    voices = [dict(voice_s=n, key=s['id']) for s,n in zip(STORY['scenes'], lengths, strict=True)]
+    data = v3.compile_data(v3.ROOT, STORY, voices=voices,
+                           analyze=lambda scene, voice: pauses(scene['id'], voice['voice_s']))
+    extract = next(s for s in data['timing']['shots'] if s['id'] == 'v303-extract')
+    event, = data['cues']['_events'][extract['id']]
+    assert event['cue_start'] < extract['start']+5  # Retained speech begins before the reveal.
+    assert event['t'] >= extract['start']+5
+    assert event['t'] in data['beats']['beats_s']
+    assert extract['end']-event['t'] >= 2.5
+    assert {f['position'] for f in data['keyframes'] if f['position'].startswith('extract-')} == {
+        'extract-amazon', 'extract-nvidia'}
+    hover = next(s for s in data['timing']['shots'] if s['id'] == 'v304-hover')
+    receipt, = [f for f in data['keyframes'] if f['position'] == 'recorded-trace-receipt']
+    assert receipt['t'] == pytest.approx(hover['voice_start']-1.25, abs=1e-6)
+    pages = [f for f in data['keyframes'] if f['position'].startswith('realworld-page-')]
+    assert len(pages) == 4
+    assert all(b['t']-a['t'] >= 2.5 for a,b in zip(pages, pages[1:]))
+    assert data['timing']['duration'] == 177.2611
+    overcrowded = deepcopy(data['realworld'])
+    overcrowded['examples'].append(deepcopy(overcrowded['examples'][0]))
+    with pytest.raises(BuildError, match='at least 2.5 s'):
+        v3.keyframes(data['timing'], data['hover_anchors'], realworld=overcrowded)

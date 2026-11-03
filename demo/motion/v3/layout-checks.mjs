@@ -16,7 +16,8 @@ export function assertV3Layout(metrics) {
     }
   }
   for(const box of metrics.text) {
-    assert(box.fontSize>=(box.realworld?36:56),`Unreadable label: ${box.text}`);
+    assert(box.fontSize>=(box.aggregateLabel?48:56),`Unreadable label: ${box.text}`);
+    if(box.exampleValue)assert(box.fontSize>=96,`Unreadable example value: ${box.text}`);
     assert(box.left>=63.5&&box.right<=1856.5&&box.top>=63.5&&box.bottom<=(box.realworld?816:880),
       `Text enters edge/subtitle zone: ${box.text}`);
     assert(box.textLeft>=box.left-.5&&box.textRight<=box.right+.5&&
@@ -47,6 +48,10 @@ export async function checkV3Layout(page) {
       const content=range.getBoundingClientRect();
       return {text:el.textContent,fontSize:parseFloat(getComputedStyle(el).fontSize),
         realworld:Boolean(el.closest('[data-realworld]')),
+        aggregateLabel:el.classList.contains('aggregate-label')&&
+          el.closest('[data-realworld-kind="aggregate"]')!==null,
+        exampleValue:el.closest('[data-realworld-kind="example"]')!==null&&
+          el.querySelector('.number')!==null,
         left:box.left,right:box.right,top:box.top,bottom:box.bottom,
         textLeft:content.left,textRight:content.right,textTop:content.top,textBottom:content.bottom};
     });

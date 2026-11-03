@@ -14,6 +14,17 @@ must expose both sources. Rechecks have their own descriptor and are never merge
 Every `real-world-*` run directory must have an index; an unindexed recheck fails compilation rather than
 silently disappearing. Original pages appear first, followed by the separately labeled rechecks.
 
+The v010 AI2 revision uses four pages inside the same 11.3081-second reserve: one original
+News + Threads aggregate, one CoreWeave value comparison, one SanDisk YoY comparison, and one
+post-hoc aggregate. Each holds for 2.827025 seconds. Aggregate labels are at least 48 px;
+example values are 112 px and their source, period and outcome are at least 56 px. The
+original and recheck cards identify **Baseten · post route**, distinguish **run failures** from
+claim verdicts, and keep **coverage ≠ accuracy** visible. The example titles link to their
+retained reports; aggregate titles link to the original/recheck reports. Full cost and latency
+detail stays in this snapshot and the [original evidence](../../docs/evidence/real-world-2026-11-02/REPORT.md)
+and [post-hoc evidence](../../docs/evidence/real-world-2026-11-03-fixcheck/REPORT.md).
+Adding enough pages to reduce a hold below 2.5 seconds fails preparation and playback.
+
 ```json
 {
   "schema_version": 1,

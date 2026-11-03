@@ -95,11 +95,20 @@ def records(repo: Path) -> dict:
 
 
 def runtime_data(data: dict) -> str:
+    sources = {c['id']: c for c in data['clips']}
+    clips = []
+    for clip in data['clips']:
+        asset_id = data.get('placement_replacements', {}).get(clip['id'], clip['id'])
+        if asset_id not in sources:
+            raise BuildError(f"{clip['id']}: replacement must reuse an approved source.")
+        source = sources[asset_id]
+        clips.append(dict(id=clip['id'], asset_id=asset_id,
+                          source_sha256=source['source_sha256'],
+                          receipt_sha256=source['receipt_sha256'], **clip['placement']))
     value = dict(fps=data['fps'], frame_count=data['retained_frames'], size=data['size'],
                  trim_tail_s=data['trim_tail_s'], background=data['background'], panel=data['panel'],
                  base='../../cache/broll-480/',
-                 clips=[dict(id=c['id'], source_sha256=c['source_sha256'],
-                             receipt_sha256=c['receipt_sha256'], **c['placement']) for c in data['clips']])
+                 clips=clips)
     return ('// Generated from demo/prompts/broll/manifest.json by demo/broll.py; no media decoded.\n'
             'window.BROLL_DATA = ' + json.dumps(value, ensure_ascii=False, indent=2) + ';\n')
 

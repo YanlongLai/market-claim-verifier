@@ -27,7 +27,7 @@
     const clip=windows(data,clips).find(c=>time>=c.start&&time<c.end);
     if(!clip)return null;
     const frameIndex=Math.min(clips.frame_count-1,Math.floor((time-clip.start)*clips.fps+1e-9));
-    return {...clip,frameIndex,src:clips.base+clip.id+`/frame-${String(frameIndex).padStart(4,'0')}.png`,
+    return {...clip,frameIndex,src:clips.base+(clip.asset_id||clip.id)+`/frame-${String(frameIndex).padStart(4,'0')}.png`,
       rect:{...(clip.panel||clips.panel)}};
   }
   function panel(frame) {

@@ -256,17 +256,24 @@ def keyframes(timing: dict, anchors: list, *, trace=None, trace_start=None, real
         frames.extend(dict(shot=shot['id'], t=round(t, 6), position=label)
                       for t, label in zip(times, ('opening', 'middle', 'end')))
     if trace is not None:
-        span = hover['voice_start'] - trace_start
+        span = hover['voice_start'] - 2.5 - trace_start
         if span <= 0:
             raise BuildError('Apple trace ribbon must fit inside the existing Hover narration lead.')
         frames.extend(dict(shot=hover['id'],
                            t=round(trace_start+(s['start_s']+s['latency_s']/2)/trace['latency_s']*span, 6),
                            position='recorded-trace-step-'+str(s['index'])) for s in trace['steps'])
+        frames.append(dict(shot=hover['id'], t=round(hover['voice_start']-1.25, 6),
+                           position='recorded-trace-receipt'))
+    if timing.get('revision') == 'v010':
+        extract = next(s for s in timing['shots'] if s['id'] == 'v303-extract')
+        # The first two cards have fixed reading holds; the opinion cue may land later.
+        frames.extend(dict(shot=extract['id'], t=round(extract['start']+offset, 6), position=label)
+                      for offset, label in [(1.25, 'extract-amazon'), (3.75, 'extract-nvidia')])
     if realworld is not None and realworld['status'] == 'ready':
         shot = next(s for s in timing['shots'] if s['id'] == REALWORLD_SCENE)
-        pages = sum(max(1, sum(e['run_id'] == run['id'] and e['source_id'] == source['id']
-                              for e in realworld['examples']))
-                    for run in realworld['runs'] for source in run['sources'])
+        pages = len(realworld['runs']) + len(realworld['examples'])
+        if (shot['end']-shot['start'])/pages < 2.5:
+            raise BuildError('Real-world pages need at least 2.5 s each inside the approved reserve.')
         frames.extend(dict(shot=shot['id'], t=round(shot['start']+(shot['end']-shot['start'])*(i+.5)/pages, 6),
                            position='realworld-page-'+str(i+1)) for i in range(pages))
     return frames

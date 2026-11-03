@@ -20,6 +20,12 @@ def test_broll_sources_prompts_and_runtime_addresses_match():
         'hover-arrive-s11', 'point-glow-s29', 'stamp-press-s29', 'turn-point-s11', 'think-approve-s11'}
     assert data['retained_frames'] == 45
     assert data['retained_frames']/data['fps'] == 2.8125
+    runtime = json.loads(broll.runtime_data(data).split('window.BROLL_DATA = ', 1)[1].rstrip(';\n'))
+    replacement = next(c for c in runtime['clips'] if c['shot'] == 'v307-l4')
+    approved = next(c for c in data['clips'] if c['id'] == 'point-glow-s29')
+    assert replacement['asset_id'] == approved['id']
+    assert replacement['source_sha256'] == approved['source_sha256']
+    assert replacement['receipt_sha256'] == approved['receipt_sha256']
     assert (data['source_frames']-data['retained_frames'])/data['fps'] >= .2
     for clip in data['clips']:
         assert clip['model']['repo_id'] == 'Wan-AI/Wan2.2-TI2V-5B-Diffusers'

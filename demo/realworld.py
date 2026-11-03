@@ -112,7 +112,9 @@ def checked_values(claim: dict, report: str) -> dict:
         if source.get('exhibit'):
             label += ' Ex ' + str(source['exhibit'])
         compiled = dict(check_index=index, claim_type=kind, verdict=check['program_verdict'],
-                        value=value, unit='%' if kind == 'change_pct' else source['unit'],
+                        value=value, stated_value=finite(check.get('stated_value'),
+                                                       f'program check {index} stated_value'),
+                        unit='%' if kind == 'change_pct' else source['unit'],
                         period=source['period'], metric=source['metric'],
                         source_label=label, source_tier=source['tier'], evidence_ids=deepcopy(ids))
         if kind == 'change_pct':

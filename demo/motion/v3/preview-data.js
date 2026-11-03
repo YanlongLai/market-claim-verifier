@@ -52,14 +52,15 @@ window.MOTION_PREVIEW = {
       "target_s": 9.6827,
       "narration": "Muse Spark extracts each checkable claim with its exact quote. Forecasts and opinions are labeled, not judged.",
       "on_screen": "Exact quote → checkable claim",
-      "director_notes": "Real report quotes for Amazon, NVIDIA and Apple step through a full-width product extraction panel; end on the real unjudged opinion.",
+      "director_notes": "Hold the Amazon and NVIDIA report quotes for at least 2.5 seconds each. Omit the repeated Apple quote; reveal the real unjudged opinion after both holds without moving narration audio.",
       "evidence": [
         "demo/data/demo-thread.json"
       ],
       "cue_events": [
         {
           "event": "opinion",
-          "cue": "Forecasts and opinions"
+          "cue": "Forecasts and opinions",
+          "min_scene_s": 5
         }
       ],
       "visual": {
@@ -311,7 +312,7 @@ window.MOTION_PREVIEW = {
       "data_source": "demo/data/realworld.json",
       "narration": "Saved real-world runs: 80 news items, 78 Threads posts. Coverage is not accuracy.",
       "on_screen": "Real-world saved runs · DappGo News + Threads · coverage is not accuracy",
-      "director_notes": "Read only the compiled realworld.json. Show tested items, program-check coverage, claim verdict counts, full item cost and p50 latency per source. Show at most three retained paraphrases with @handle only. Label frozen-text post-hoc rechecks separately. A pending preview has no metrics or narration; voice and film preparation fail until evidence exists.",
+      "director_notes": "Read only the compiled realworld.json. Use four pages: original News + Threads coverage and claim counts; CoreWeave claimed versus SEC annual revenue; SanDisk claimed versus recorded YoY growth; separate frozen-text post-hoc coverage and claim counts. Hold each page at least 2.5 seconds. Values are at least 96 px; example source, period and outcome at least 56 px; aggregate labels at least 48 px. Keep Baseten / post, run failures and coverage is not accuracy visible. Costs and latency stay in linked evidence. A pending preview has no metrics or narration; voice and film preparation fail until evidence exists.",
       "evidence": [
         "demo/data/realworld.json",
         "demo/data/REALWORLD.md"
@@ -2463,9 +2464,9 @@ window.MOTION_PREVIEW = {
       "tests/fixtures/multimodal/example-post.png": "06fc3980cd17a30c665ae86eaedd501805e8e4ad25267dc0b7bb57e3bc43b557",
       "tests/fixtures/multimodal/generation.json": "bbfb8be8d07ce2b9689ef3fe90dcb4d7c45332377cb074a819ca7d57de953efa",
       "tests/fixtures/multimodal/release-reading.wav": "06dc5144bc0f3d3ebdf0509a679cb53ab76d523ec104a29c68d62997a991c122",
-      "demo/storyboard-v3.yaml": "89d8642b7b58b68ce37accf0229283a6b985850a6eb48802fcdaa9ed43e1a95b",
+      "demo/storyboard-v3.yaml": "4e3838870006d345180a47347d6065c870bd3f7bbe1b45517ab7cea4e157fe22",
       "docs/evidence/posts-2026-10-28/demo-thread-baseten/traces/20261029T023240Z-12ac28b8.json": "341af6c59b5f65b8a6a6f680e2d8868b3e53d5d0a5a30e57596cbc6b402b261a",
-      "demo/data/realworld.json": "0863cf60a0125fff62a07fc1cec222c5c17f4a7537c562af4475168c1e2a3531",
+      "demo/data/realworld.json": "ae9974d56cb233e184c827c724604fdf9409e9e5dfc70c96c52a742ad021e8af",
       "docs/evidence/real-world-2026-11-02/baseten/post/RW001/report.json": "e8b78a476d1365394208c0e91c316ad8826247b69fadd62099a1ad360b059f0b",
       "docs/evidence/real-world-2026-11-02/baseten/post/RW001/result.json": "6fa11490db7af185eab31f3a4d23a79e36a47012ab1921613ac5165afa883df8",
       "docs/evidence/real-world-2026-11-02/baseten/post/RW001/traces/20261103T031750Z-79e3dbe7.json": "e9708fc0f9630e5ab97b7de255da858d224ec933648cbb33ff0b2f290111ae3e",
@@ -3362,7 +3363,7 @@ window.MOTION_PREVIEW = {
       "docs/evidence/real-world-2026-11-03-fixcheck/sets/news-r2/baseten/post/RW080/result.json": "0847546cbed2e8a634c878a79704372f8236a66243cd5e9bad83a8e18799ca8c",
       "docs/evidence/real-world-2026-11-03-fixcheck/sets/news-r2/baseten/post/RW080/traces/20261103T074526Z-c6b8418f.json": "cada82aad123e07626d34b27d07471c619b926dbb37010463a8a3c68423625f9",
       "docs/evidence/real-world-2026-11-03-fixcheck/sets/news-r2/claims.jsonl": "6b5c80e6491dc655e858ed265f94e25e4898bf0a7a8089507112e70fa05ba0e5",
-      "demo/prompts/broll/manifest.json": "1c870643df7d245091ff2593a2b739b5365120db0907489d830ffa250a248d91"
+      "demo/prompts/broll/manifest.json": "4dc035847a32a94f116ac53fbb800f155dca8a48c8a48951ecb73e04e6aa0021"
     }
   },
   "agent_trace": {
@@ -3542,6 +3543,7 @@ window.MOTION_PREVIEW = {
           "claim_type": "value",
           "verdict": "contradicted",
           "value": 229000000.0,
+          "stated_value": 2290000000.0,
           "unit": "USD",
           "period": "FY2023",
           "metric": "revenue",
@@ -3576,6 +3578,7 @@ window.MOTION_PREVIEW = {
           "claim_type": "value",
           "verdict": "supported",
           "value": 11031000000.0,
+          "stated_value": 11000000000.0,
           "unit": "USD",
           "period": "FY2027Q1",
           "metric": "revenue",
@@ -3598,6 +3601,7 @@ window.MOTION_PREVIEW = {
             "claim_type": "change_pct",
             "verdict": "contradicted",
             "value": 377.946273830156,
+            "stated_value": 23.0,
             "unit": "%",
             "period": "FY2027Q1",
             "metric": "revenue",
@@ -4805,18 +4809,33 @@ window.MOTION_PREVIEW = {
     },
     {
       "shot": "v304-hover",
-      "t": 30.758351,
+      "t": 30.537444,
       "position": "recorded-trace-step-1"
     },
     {
       "shot": "v304-hover",
-      "t": 33.19302,
+      "t": 32.032579,
       "position": "recorded-trace-step-2"
     },
     {
       "shot": "v304-hover",
-      "t": 35.859769,
+      "t": 33.670236,
       "position": "recorded-trace-step-3"
+    },
+    {
+      "shot": "v304-hover",
+      "t": 35.4143,
+      "position": "recorded-trace-receipt"
+    },
+    {
+      "shot": "v303-extract",
+      "t": 18.9204,
+      "position": "extract-amazon"
+    },
+    {
+      "shot": "v303-extract",
+      "t": 21.4204,
+      "position": "extract-nvidia"
     },
     {
       "shot": "v311b-realworld",
