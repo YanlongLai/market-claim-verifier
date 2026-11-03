@@ -17,11 +17,27 @@ pytestmark = pytest.mark.skipif(shutil.which("node") is None, reason="Node is re
 
 
 def run_check(script, **config):
+    config.setdefault("page", "docs/evidence/site-tour/index.html")
     result = subprocess.run(
         ["node", "--input-type=module", "-", str(ROOT), json.dumps(config)],
         input=SETUP + script, text=True, capture_output=True, cwd=ROOT, check=False,
     )
     assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_evidence_tour_boot_loads_the_retained_historical_widgets():
+    run_check(r"""
+const requests=[];
+context.fetch=async url=>{
+  requests.push(url);
+  return {ok:true,json:async()=>JSON.parse(readFileSync(root+'/docs/site/data/site.json','utf8'))};
+};
+await context.liveTest.loadData();
+assert.deepEqual(requests,['/data/site.json']);
+assert.equal(tree.querySelector('#chart').children.length,3);
+assert.ok(tree.querySelector('#chart').textContent.includes('Baseten'));
+assert.ok(tree.querySelector('#research-list').children.length>0);
+""")
 
 
 @pytest.mark.parametrize("viewport", [390, 768, 1280])
@@ -189,7 +205,7 @@ const phone = viewport < 640;
 const tablet = viewport >= 640 && viewport <= 1100;
 const css = readFileSync(`${root}/docs/site/styles.css`, 'utf8');
 const source = readFileSync(`${root}/docs/site/script.js`, 'utf8');
-const html = readFileSync(`${root}/docs/site/index.html`, 'utf8');
+const html = readFileSync(`${root}/${config.page}`, 'utf8');
 const cards = JSON.parse(readFileSync(`${root}/docs/site/data/site.json`, 'utf8')).stamp_cards;
 if (config.inputKind) { cards[0].input_kind=config.inputKind; cards[0].input_media=config.inputPayload; }
 // Read the actual CSS cascade, including either side of both breakpoints.
@@ -271,7 +287,7 @@ function matches(node, selector) {
   const simple = (item, pattern) => {
     if (item.tagName === '#text') return false;
     const tag = pattern.match(/^[\w-]+/); if (tag && item.tagName !== tag[0]) return false;
-    for (const match of pattern.matchAll(/([.#])([\w-]+)/g)) {
+    for (const match of pattern.replace(/\[[^\]]*\]/g,'').matchAll(/([.#])([\w-]+)/g)) {
       if (match[1] === '#' ? item.attributes.id !== match[2] : !item.classList.contains(match[2])) return false;
     }
     for (const match of pattern.matchAll(/\[([\w-]+)(?:="([^"]*)")?\]/g)) {
@@ -387,6 +403,7 @@ const document = {
   createElement: tag => { const node = new Element(tag); created.push(node); return node; },
   createElementNS: (_namespace,tag) => { const node = new Element(tag); created.push(node); return node; },
   createTextNode: text => { const node = new Element('#text'); node.textContent = text; return node; },
+  createDocumentFragment: () => new Element('#document-fragment'),
   querySelector: selector => tree.querySelector(selector), querySelectorAll: selector => tree.querySelectorAll(selector),
   addEventListener: (key,fn) => { documentEvents[key] = fn; }
 };
@@ -408,16 +425,16 @@ const boot = '  setupLive();\n  setupFilingDialog();\n  setupControls();\n  appl
 assert.ok(source.includes(boot));
 vm.runInContext(source.replace(boot, `
   globalThis.stamps = { createStampConveyor, setLanguage: language => { pageLanguage = language; applyCopy(); } };
-  globalThis.liveTest = { setupLive, renderLiveTrace, localizeLive, refreshLiveBudget, state: () => ({ liveResult, liveStatus, savedLiveDemo, liveBudget }) };
+  globalThis.liveTest = { setupLive, renderLiveTrace, localizeLive, refreshLiveBudget, loadData, setupControls, state: () => ({ liveResult, liveStatus, savedLiveDemo, liveBudget }) };
 `), context);
-const conveyor = context.stamps.createStampConveyor(cards);
-context.stamps.setLanguage(config.language || 'en'); conveyor.localize();
+const conveyor = tree.querySelector('.stamp-stage') ? context.stamps.createStampConveyor(cards) : null;
+context.stamps.setLanguage(config.language || 'en'); conveyor?.localize();
 const api = context.window.__stampScene, seek = seconds => api.seek(seconds);
 const scene = tree.querySelector('#stamp-scene'), stage = tree.querySelector('.stamp-stage');
 const robot = tree.querySelector('.stamp-robot'), pause = tree.querySelector('#stamp-pause');
 const track = tree.querySelector('#stamp-track'), filingBox = tree.querySelector('.stamp-filing-box');
 const filingContent = tree.querySelector('#stamp-filing-content');
-const moving = track.children, still = tree.querySelector('#stamp-static-list').children;
+const moving = track?.children || [], still = tree.querySelector('#stamp-static-list')?.children || [];
 const starts = [0,8,16,21.4,29.4,37.4,45.4,53.4,61.4,69.4,77.4,82.8,90.8,98.8,106.8];
 const hasEvidence = card => Boolean(card.excerpt);
 const find = (node,name) => node.classList.contains(name) ? node : node.querySelector(`.${name}`);
@@ -564,7 +581,7 @@ for(let index=0;index<cards.length;index++){
   const card=cards[index], body=still[index].children[0];
   assert.equal(find(body,'stamp-claim').textContent,card.text[config.language]);
   assert.equal(find(body,'stamp-company').textContent,card.company);assert.equal(body.tabIndex,config.reduced?0:-1);
-  assert.ok(body.href===card.filing_url||body.href===card.source_report.replace(/^docs\//,'../'));
+  assert.ok(body.href===card.filing_url||body.href===card.source_report.replace(/^docs\//,'/'));
   if(card.excerpt){
     const filing=find(body,'stamp-passage');
     for(const text of [card.excerpt.filed,card.excerpt.company,card.excerpt.section_title,card.excerpt.value,

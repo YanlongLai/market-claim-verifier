@@ -3,7 +3,16 @@ import subprocess
 
 import pytest
 
-from test_site_stamps_runtime import ROOT, run_check
+from test_site_stamps_runtime import ROOT, run_check as run_scene_check
+
+
+def run_check(script, **config):
+    run_scene_check(script, page="docs/site/index.html", **config)
+
+
+@pytest.mark.parametrize("language", ["en", "zh"])
+def test_homepage_boot_leaves_legacy_anchors_and_historical_data_on_evidence_page(language):
+    run_check(HOMEPAGE_BOOT, language=language)
 
 
 @pytest.mark.parametrize("language", ["en", "zh"])
@@ -39,6 +48,29 @@ def test_pages_boundary_without_provider_key_or_network():
     result = subprocess.run(["node", "--test", "tests/node/live-boundary.test.mjs"],
                             cwd=ROOT, capture_output=True, text=True)
     assert result.returncode == 0, result.stdout + result.stderr
+
+
+HOMEPAGE_BOOT = r"""
+const ids=['post-text','claim-list','chart','posthoc-rerun','research-list'];
+const labels=ids.map(id=>tree.querySelector('#'+id).textContent);
+const requests=[];
+context.fetch=async url=>{
+  requests.push(url);
+  return {ok:true,json:async()=>JSON.parse(readFileSync(root+'/docs/site/data/site.json','utf8'))};
+};
+context.window.addEventListener=()=>{};
+context.window.location.hash='';
+context.liveTest.setupControls();
+await context.liveTest.loadData();
+assert.deepEqual(requests,[], 'the homepage must not load the historical chart dataset');
+assert.deepEqual(ids.map(id=>tree.querySelector('#'+id).textContent),labels);
+context.stamps.setLanguage(config.language==='zh'?'en':'zh');
+for(const id of ids)assert.ok(tree.querySelector('#'+id).children.every(child=>child.tagName==='#text'));
+const saved=tree.querySelector('#saved-check-details');
+assert.ok(!saved.open);
+tree.querySelector('a[href="#recorded-run"]').events.click();
+assert.equal(saved.open,true);
+"""
 
 
 RENDER = r"""
@@ -139,7 +171,7 @@ assert.equal(password.value,'');assert.equal(password.getAttribute('type'),'pass
 assert.equal(password.getAttribute('autocomplete'),'off');assert.equal(form.getAttribute('method'),'post');
 assert.ok(tree.querySelector('#recorded-trace').textContent.includes('FY2026Q3'));
 assert.ok(tree.querySelector('#live-budget-text').textContent.includes('$3.00'));
-assert.ok(/password-protected|需要密碼/.test(tree.querySelector('#live-password-note').textContent));
+assert.ok(/submission notes|需要密碼/.test(tree.querySelector('#live-password-note').textContent));
 await form.events.submit({preventDefault(){}});assert.equal(requests.length,0);
 password.value=credential;
 const denied=form.events.submit({preventDefault(){}});

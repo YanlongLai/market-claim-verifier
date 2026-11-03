@@ -54,7 +54,7 @@ def test_static_chinese_page_cannot_drift_from_template_or_copy():
                             cwd=ROOT, capture_output=True, text=True)
     assert result.returncode == 0, result.stdout + result.stderr
     source = (ROOT / "docs/zh/index.html").read_text()
-    for text in ("貼上一則財經貼文。", "即時查核", "每個答案都連到申報文件。"):
+    for text in ("貼上財經貼文，逐一用 SEC 申報資料核對數字，並產出附出處的修正版草稿。", "即時查核", "保留測試 90.2%（240/266）", "1/139"):
         assert text in source
     assert 'src="/script.js?v=' in source
     assert 'href="/explorer/index.zh.html"' in source
@@ -86,25 +86,33 @@ def test_all_pages_have_consistent_canonical_metadata_and_valid_schema():
             assert schema["publisher"] == {"@type": "Organization", "name": "DappGo", "url": "https://dappgo.com"}
 
 
-def test_metadata_numbers_match_the_published_full_evaluation():
+def test_metadata_uses_held_out_headline_and_keeps_full_counts_on_the_explorer():
     site = json.loads((ROOT / "docs/site/data/site.json").read_text())
     explorer = json.loads((ROOT / "docs/explorer/data.json").read_text())
     count = len(explorer["claims"])
     verdicts = sum(len(claim["results"]) for claim in explorer["claims"])
     assert site["eval"]["claim_count"] == count == 357
     assert site["eval"]["result_count"] == verdicts == 2142
-    systems = {system["id"]: system for system in site["systems"]}
-    with_sec = f'{100 * systems["agent@baseten"]["accuracy"]:.1f}%'
-    without_sec = f'{100 * systems["single_shot@baseten"]["accuracy"]:.1f}%'
+    held_out = [claim for claim in explorer["claims"] if claim["split"] == "test"]
+    correct = sum(claim["results"]["agent@baseten"]["status"] == "completed"
+                  and claim["results"]["agent@baseten"]["verdict"] == claim["gold"]
+                  for claim in held_out)
+    non_supported = [claim for claim in held_out if claim["gold"] != "supported"]
+    false_support = sum(claim["results"]["agent@baseten"]["status"] == "completed"
+                        and claim["results"]["agent@baseten"]["verdict"] == "supported"
+                        for claim in non_supported)
+    assert (correct, len(held_out), false_support, len(non_supported)) == (240, 266, 1, 139)
     for relative, (_, _, schema_type) in PAGES.items():
         page = Page((ROOT / relative).read_text())
-        assert str(count) in page.meta["description"]
         if schema_type == "WebApplication":
-            assert with_sec in page.meta["description"] and without_sec in page.meta["description"]
+            assert f"{correct}/{len(held_out)}" in page.meta["description"]
+            assert f"{100 * correct / len(held_out):.1f}%" in page.meta["description"]
+            assert f"{false_support}/{len(non_supported)}" in page.meta["description"]
+            assert "90.5%" not in page.meta["description"] and "357" not in page.meta["description"]
         else:
+            assert str(count) in page.meta["description"]
             assert f"{verdicts:,}" in page.meta["description"]
             assert [item["value"] for item in page.schemas[0]["variableMeasured"]] == [count, verdicts]
-    assert 140 <= len(Page((ROOT / "docs/site/index.html").read_text()).meta["description"]) <= 155
 
 
 def test_sitemap_contains_every_canonical_and_reciprocal_alternates():
@@ -113,7 +121,7 @@ def test_sitemap_contains_every_canonical_and_reciprocal_alternates():
     entries = tree.findall("s:url", ns)
     bilingual = {ORIGIN + p[0] for p in PAGES.values()}
     # English-only public pages have no alternates.
-    single = {ORIGIN + "/wild/"}
+    single = {ORIGIN + path for path in ("/wild/", "/evidence/", "/evidence/site-tour/")}
     assert {entry.findtext("s:loc", namespaces=ns) for entry in entries} == bilingual | single
     for entry in entries:
         assert entry.findtext("s:lastmod", namespaces=ns)

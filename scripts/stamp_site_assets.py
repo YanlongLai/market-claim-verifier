@@ -12,7 +12,7 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-PAGES = ["docs/site/index.html", "docs/zh/index.html", "docs/explorer/index.html", "docs/explorer/index.zh.html"]
+PAGES = ["docs/evidence/index.html", "docs/evidence/site-tour/index.html", "docs/site/index.html", "docs/zh/index.html", "docs/explorer/index.html", "docs/explorer/index.zh.html"]
 LINK = re.compile(r'(?P<attr>href|src)="(?P<name>/?(?:[\w.-]+/)*[\w.-]+\.(?:css|js))(?:\?v=[0-9a-f]+)?"')
 
 

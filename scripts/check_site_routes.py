@@ -11,6 +11,7 @@ from urllib.parse import urljoin, urlsplit
 from serve_site import ROOT, output_path
 
 ORIGIN = "https://hackathon.dappgo.com"
+RUNTIME_ROUTES = {"/api/budget", "/api/check"}
 
 
 class Links(HTMLParser):
@@ -47,6 +48,9 @@ def crawl():
         if path in visited:
             continue
         visited.add(path)
+        if path in RUNTIME_ROUTES:
+            print(f"RUNTIME {path} (server and Pages-boundary tests; not a static file)")
+            continue
         file = output_path(path)
         if file.is_dir():
             file /= "index.html"
@@ -70,7 +74,8 @@ def crawl():
             if link.startswith(("#", "data:", "mailto:", "tel:", "javascript:")):
                 continue
             queue.append((urljoin(ORIGIN + path, unescape(link)), path))
-    print(f"CHECKED {len(visited)} local paths; {len(missing)} missing; no fallback used")
+    print(f"CHECKED {len(visited)} local paths; {len(missing)} missing; "
+          f"{len(visited & RUNTIME_ROUTES)} runtime routes; no SPA fallback used")
     print("EXTERNAL link origins (not fetched): " + ", ".join(sorted(external)))
     return bool(missing)
 

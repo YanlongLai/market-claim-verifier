@@ -21,7 +21,11 @@ def output_path(url):
     if ".." in Path(path).parts:
         raise ValueError("Path escapes the output tree")
     first = path.split("/", 1)[0]
-    return ROOT / "site" / path if first in COPIED else ROOT / path
+    target = ROOT / "site" / path if first in COPIED else ROOT / path
+    # Pages serves HTML without its final .html suffix, including index.zh.
+    # Resolve only an existing file; unknown routes still receive a real 404.
+    html = target.with_name(target.name + ".html")
+    return html if not target.exists() and html.is_file() else target
 
 
 class Handler(SimpleHTTPRequestHandler):

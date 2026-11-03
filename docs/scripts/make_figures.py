@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build the repository's evidence-backed visuals and keep README in sync.
+"""Build the repository's evidence-backed visuals and keep the technical guide in sync.
 
 The builder is deliberately offline. It reads BUILD_LOG.md, committed JSON
 traces, evaluation summaries, Mermaid source files, and recorded prompts. It
@@ -39,7 +39,7 @@ from matplotlib.ticker import FuncFormatter
 
 ROOT = Path(__file__).resolve().parents[2]
 BUILD_LOG = ROOT / "BUILD_LOG.md"
-README = ROOT / "README.md"
+REFERENCE = ROOT / "docs/evidence/TECHNICAL_GUIDE.md"
 VISUALS_DOC = ROOT / "docs" / "VISUALS.md"
 REGISTRY = ROOT / "docs" / "figures" / "figures.json"
 LIVE_EVIDENCE = ROOT / "docs" / "evidence" / "2026-10-27"
@@ -855,7 +855,7 @@ def _registry_entries(evaluation: dict[str, Any] | None, prior: dict[str, Any]) 
     entries.append(
         _entry(
             "before-after",
-            ["docs/figures/before-after.svg", "docs/figures/before-after.png", "README.md"],
+            ["docs/figures/before-after.svg", "docs/figures/before-after.png", "docs/evidence/TECHNICAL_GUIDE.md"],
             "chart",
             "make_before_after",
             ["BUILD_LOG.md"],
@@ -866,7 +866,7 @@ def _registry_entries(evaluation: dict[str, Any] | None, prior: dict[str, Any]) 
     entries.append(
         _entry(
             "verdict-cards",
-            ["docs/figures/verdict-cards.svg", "docs/figures/verdict-cards.png", "README.md"],
+            ["docs/figures/verdict-cards.svg", "docs/figures/verdict-cards.png", "docs/evidence/TECHNICAL_GUIDE.md"],
             "card",
             "make_verdict_cards",
             [f"docs/evidence/2026-10-27/{name}" for name in CARD_TRACES],
@@ -881,7 +881,7 @@ def _registry_entries(evaluation: dict[str, Any] | None, prior: dict[str, Any]) 
         entries.append(
             _entry(
                 "eval-summary",
-                ["docs/figures/eval-summary.svg", "docs/figures/eval-summary.png", "README.md"],
+                ["docs/figures/eval-summary.svg", "docs/figures/eval-summary.png", "docs/evidence/TECHNICAL_GUIDE.md"],
                 "chart",
                 "make_eval_summary",
                 eval_source,
@@ -905,7 +905,7 @@ def _registry_entries(evaluation: dict[str, Any] | None, prior: dict[str, Any]) 
     entries.append(
         _entry(
             "live-cost-latency",
-            ["docs/figures/live-cost-latency.svg", "docs/figures/live-cost-latency.png", "README.md", "docs/VISUALS.md"],
+            ["docs/figures/live-cost-latency.svg", "docs/figures/live-cost-latency.png", "docs/evidence/TECHNICAL_GUIDE.md", "docs/VISUALS.md"],
             "chart",
             "make_live_cost_latency",
             ["BUILD_LOG.md", "docs/evidence/2026-10-27/*.json"],
@@ -918,7 +918,7 @@ def _registry_entries(evaluation: dict[str, Any] | None, prior: dict[str, Any]) 
         entries.append(
             _entry(
                 diagram_id,
-                ["README.md"],
+                ["docs/evidence/TECHNICAL_GUIDE.md"],
                 "diagram",
                 f"docs/diagrams/{diagram_id}.mmd",
                 [f"docs/diagrams/{diagram_id}.mmd"],
@@ -959,19 +959,19 @@ def _figure_body(figure_id: str, evaluation: dict[str, Any] | None) -> str:
     date = _build_log_date()
     if figure_id == "hero":
         return (
-            "![Editorial illustration of a sentence connected to filing sheets](docs/figures/hero.png)\n\n"
+            "![Editorial illustration of a sentence connected to filing sheets](../figures/hero.png)\n\n"
             "*AI-generated illustration: a sentence being checked against filings.* "
-            "The reusable prompt is recorded in [`docs/prompts/hero-image.md`](docs/prompts/hero-image.md)."
+            "The reusable prompt is recorded in [`docs/prompts/hero-image.md`](../prompts/hero-image.md)."
         )
     if figure_id == "verdict-cards":
         return (
-            "![Two real runs rendered as evidence-backed verdict cards](docs/figures/verdict-cards.svg)\n\n"
+            "![Two real runs rendered as evidence-backed verdict cards](../figures/verdict-cards.svg)\n\n"
             f"*Two real traces, run {date}; each card shows the program verdict and cited SEC evidence.*"
         )
     if figure_id == "before-after":
         rows = _build_log_rows()
         return (
-            "![Before and after Day 2 fixes](docs/figures/before-after.svg)\n\n"
+            "![Before and after Day 2 fixes](../figures/before-after.svg)\n\n"
             f"*Before/after chart: n = {len(rows)} live claims from BUILD_LOG.md, run {date}."
             "*"
         )
@@ -983,15 +983,15 @@ def _figure_body(figure_id: str, evaluation: dict[str, Any] | None) -> str:
         )
         if evaluation is None:
             return (
-                "![Development-run cost and latency](docs/figures/live-cost-latency.svg)\n\n"
+                "![Development-run cost and latency](../figures/live-cost-latency.svg)\n\n"
                 f"*Development runs, Day 1–2: n = {count} traces; not an evaluation.*"
             )
-        return "Development-run cost and latency is documented in [`docs/VISUALS.md`](docs/VISUALS.md); the evaluation figure above is the results view."
+        return "Development-run cost and latency is documented in [`docs/VISUALS.md`](../VISUALS.md); the evaluation figure above is the results view."
     if figure_id == "eval-summary":
         if evaluation is None:
             return ""
         return (
-            "![Evaluation cost, latency, accuracy, and false-supported rate](docs/figures/eval-summary.svg)\n\n"
+            "![Evaluation cost, latency, accuracy, and false-supported rate](../figures/eval-summary.svg)\n\n"
             f"*Evaluation: n = {evaluation['claim_count']} {evaluation['split']} claims, run {evaluation['run_date']}."
             "*"
         )
@@ -999,17 +999,17 @@ def _figure_body(figure_id: str, evaluation: dict[str, Any] | None) -> str:
 
 
 def _sync_readme(evaluation: dict[str, Any] | None) -> None:
-    text = README.read_text(encoding="utf-8")
+    text = REFERENCE.read_text(encoding="utf-8")
     for diagram_id, _ in DIAGRAM_SPECS:
         text = _replace_marker(text, "diagram", diagram_id, _diagram_block(diagram_id))
     for figure_id in ("hero", "verdict-cards", "before-after", "eval-summary", "live-cost-latency"):
         text = _replace_marker(text, "figure", figure_id, _figure_body(figure_id, evaluation))
-    README.write_text(text, encoding="utf-8")
+    REFERENCE.write_text(text, encoding="utf-8")
 
 
 def _output_label(output: str) -> str:
-    if output == "README.md":
-        return "`README.md`"
+    if output == "docs/evidence/TECHNICAL_GUIDE.md":
+        return "[`docs/evidence/TECHNICAL_GUIDE.md`](evidence/TECHNICAL_GUIDE.md)"
     if output == "docs/VISUALS.md":
         return "`docs/VISUALS.md`"
     target = output.removeprefix("docs/") if output.startswith("docs/") else output
@@ -1018,7 +1018,7 @@ def _output_label(output: str) -> str:
 
 def _visuals_registry_table(entries: list[dict[str, Any]]) -> str:
     lines = [
-        "| ID | Kind | Output | Generator | Data sources | README section | Inputs SHA-256 |",
+        "| ID | Kind | Output | Generator | Data sources | Reference section | Inputs SHA-256 |",
         "| --- | --- | --- | --- | --- | --- | --- |",
     ]
     for entry in entries:
@@ -1089,19 +1089,19 @@ def _check_registry() -> list[str]:
                     stale.append(f"{figure_id}: missing output {output}")
         if entry.get("kind") == "diagram":
             expected = _diagram_block(figure_id)
-            actual = _body_between(README.read_text(encoding="utf-8"), "diagram", figure_id)
+            actual = _body_between(REFERENCE.read_text(encoding="utf-8"), "diagram", figure_id)
             if actual != expected:
-                stale.append(f"{figure_id}: README is out of sync")
+                stale.append(f"{figure_id}: technical guide is out of sync")
 
-    readme_text = README.read_text(encoding="utf-8")
+    readme_text = REFERENCE.read_text(encoding="utf-8")
     expected_by_id = {str(entry.get("id")): entry for entry in entries}
     if evaluation is not None and "eval-summary" not in expected_by_id:
         stale.append("eval-summary: complete evaluation found (rerun --all)")
     for figure_id in ("hero", "verdict-cards", "before-after", "live-cost-latency"):
         if figure_id in expected_by_id and _body_between(readme_text, "figure", figure_id) != _figure_body(figure_id, evaluation):
-            stale.append(f"{figure_id}: README caption/embed is out of sync")
+            stale.append(f"{figure_id}: technical guide caption/embed is out of sync")
     if "eval-summary" in expected_by_id and _body_between(readme_text, "figure", "eval-summary") != _figure_body("eval-summary", evaluation):
-        stale.append("eval-summary: README caption/embed is out of sync")
+        stale.append("eval-summary: technical guide caption/embed is out of sync")
 
     if VISUALS_DOC.is_file():
         visuals_text = VISUALS_DOC.read_text(encoding="utf-8")

@@ -7,7 +7,7 @@
   const COPY = {
     en: {
       metaTitle: "SEC fact-checks for finance posts · Market claim verifier",
-      metaDescription: "Check finance posts against SEC filings. On 357 claims, Baseten scored 90.5% with SEC lookup vs 20.7% without. Explore saved verdicts and filing evidence.",
+      metaDescription: "Paste a finance post. Every number is checked against SEC filings, and you get a corrected draft with citations. Held-out text: 240/266 (90.2%); false support 1/139. Corrected gold.",
       metaImageAlt: "Market claim verifier comparing an example finance post with its saved SEC filing, alongside the auditor robot.",
       a11y: {
         skip: "Skip to content",
@@ -182,7 +182,7 @@
     },
     zh: {
       metaTitle: "財經貼文查核：用 SEC 申報文件驗證數字 · DappGo",
-      metaDescription: "貼上財經貼文，對照 SEC 申報文件查核數字。357 個說法實測：Baseten 加入 SEC 查詢後準確率 90.5%，未查詢僅 20.7%。每個判定都附引用與計算。",
+      metaDescription: "貼上財經貼文，逐一用 SEC 申報資料核對數字，並產出附出處的修正版草稿。 保留文字測試：240/266（90.2%）；誤判為「支持」1/139。使用修正後參考答案。",
       metaImageAlt: "財經貼文查核示範：對照貼文與已保存的 SEC 申報文件，旁邊是查核機器人。",
       a11y: {
         skip: "跳到主要內容",
@@ -365,8 +365,8 @@
     scope: "US equities · SEC financial facts only. No prices, forecasts, crypto or investment advice.",
     input: "Paste a financial sentence or short post", submit: "Check against SEC", useExample: "Use Apple example",
     password: "Live-check password",
-    passwordNote: "Live check is password-protected during the hackathon review. After a successful check, the password stays only in this tab's session.",
-    privacy: "Usually within 30 seconds. Text goes to Baseten for this check; we do not save it. Anonymous rate counters expire after 10 minutes. 5 checks / 10 min.",
+    passwordNote: "Judges: password in the submission notes; saved examples need none",
+    privacy: "Text goes to Baseten for this check; we do not save it. Anonymous rate counters expire after 10 minutes. 5 checks / 10 min.",
     recordedTitle: "Follow a real Apple check.",
     recordedNote: "Saved run · 28 Oct 2026 · actual model calls and SEC evidence. Available even when the live budget runs out.",
     loading: "Loading the recorded trace…", loadingFailed: "The saved trace could not load. Try refreshing the page.",
@@ -412,8 +412,8 @@
     scope: "限美股 SEC 財務事實。不查股價、預測、加密貨幣，也不提供投資建議。",
     input: "貼上一句財務敘述或短貼文", submit: "比對 SEC 資料", useExample: "使用 Apple 範例",
     password: "即時查核密碼",
-    passwordNote: "黑客松評審期間，即時查核需要密碼。查核成功後，密碼只會保留在此分頁的工作階段。",
-    privacy: "通常在 30 秒內完成。文字會傳至 Baseten 進行查核；本站不儲存文字。匿名限流計數於 10 分鐘後刪除。每 10 分鐘限 5 次。",
+    passwordNote: "即時查核需要密碼；評審密碼在提交備註中，已儲存範例免密碼。",
+    privacy: "文字會傳至 Baseten 進行查核；本站不儲存文字。匿名限流計數於 10 分鐘後刪除。每 10 分鐘限 5 次。",
     recordedTitle: "跟著一筆真實 Apple 查核。",
     recordedNote: "已儲存紀錄 · 2026 年 10 月 28 日 · 真實模型呼叫與 SEC 證據。即時預算用完仍可查看。",
     loading: "正在讀取查核紀錄…", loadingFailed: "無法讀取查核紀錄，請重新整理頁面。",
@@ -451,6 +451,127 @@
       tool_limit: "此貼文超過簡短查核上限，請改用一家美股公司的一句敘述。"
     }
   };
+
+  // Approved product copy (DESIGN-final.md, sections 1–3, 2026-11-03).
+  COPY.en.facts = {
+  "title": "Facts",
+  "caption": "Eight answers about the verifier",
+  "question": "Question",
+  "answer": "Answer",
+  "question1": "What it does",
+  "answer1": "Extracts each financial claim → Muse Spark picks SEC tools → Python computes the verdict (supported / contradicted / insufficient evidence) → corrected draft for contradicted numbers.",
+  "question2": "Time span",
+  "answer2": "Any period the company has reported in SEC XBRL (generally 2009 onward, earlier when restated) up to its latest 10-Q/10-K. Annual, quarterly and growth comparisons. Live SEC data refreshes every 6 h.",
+  "question3": "Which US stocks",
+  "answer3": "US-listed companies filing 10-K/10-Q with US-GAAP XBRL — the SEC ticker map lists ≈8,000 companies. Deeply tested on 23. Not ETFs/funds; IFRS foreign filers limited.",
+  "question4": "Inputs",
+  "answer4": "Website: pasted text ≤600 characters. CLI: text, screenshots (Muse OCR), PDFs with text, audio/video (Muse Voice Transcribe).",
+  "question5": "Price",
+  "answer5": "≈$0.01 per live check (measured $0.0099); $0.020 per claim on the 266-claim benchmark (Baseten).",
+  "question6": "Speed",
+  "answer6": "Live: 6.3 s (verified production run). Benchmark: median 10 s, p95 21 s per claim.",
+  "question7": "Accuracy",
+  "answer7": "90.2% (240/266) on held-out claims; wrongly says \"supported\" 1 in 139 times. Benchmark text, not a guarantee on every post; real-world coverage reported separately.",
+  "question8": "Fix the article?",
+  "answer8": "Yes, for numbers it disproves: a corrected draft strikes the wrong number, inserts the filed value and cites the filing. Only checked assertions are changed; never labelled \"approved\"."
+};
+  COPY.en.metaDescription = "Paste a finance post. Every number is checked against SEC filings, and you get a corrected draft with citations. Held-out text: 240/266 (90.2%); false support 1/139. Corrected gold.";
+  COPY.en.workflow = {
+  "label": "How it works",
+  "paste": "Paste",
+  "evidence": "Muse finds SEC evidence",
+  "decide": "Python decides + corrected draft"
+};
+  COPY.en.draft = {
+  "title": "Corrected draft",
+  "rule": "A corrected draft changes only disproved numbers, inserts the filed value and cites the filing. Only checked assertions are changed; never labelled \"approved\".",
+  "note": "A draft is shown only when a check returns a correction with a filed value and citation. Review the verdict and SEC evidence for every checked assertion."
+};
+  COPY.en.evidence = {
+  "title": "Evidence",
+  "benchmark": "Original held-out text benchmark",
+  "accuracy": "Accuracy",
+  "falseSupport": "False support",
+  "cost": "Mean / claim",
+  "speed": "Median / claim",
+  "seconds": "s",
+  "benchmarkNote": "Baseten · Muse Spark Open · corrected gold (two changes); failures count as wrong. False support counts reference contradicted/insufficient claims accepted as supported. Benchmark text, not a guarantee on every post.",
+  "report": "Read the benchmark and limits",
+  "realworld": "Real-world coverage",
+  "coverage": "Coverage ≠ accuracy. Real posts include unchecked assertions and abstentions. Primary truth labels and scope-only expectations are reported separately; post-hoc rechecks are not held out and do not retest OCR/ASR.",
+  "wild": "Read the real-world study",
+  "wildNav": "In the wild",
+  "links": "Evidence links",
+  "index": "Evidence index",
+  "tour": "Saved demos and methodology",
+  "origin": "DappGo publishes US-market commentary. An internal fact check found posts with the right number but the wrong period, unit or comparison. The model proposes, the program decides.",
+  "earlier": "Earlier section links",
+  "stamps": "Stamp walkthrough"
+};
+  Object.assign(COPY.en.nav, {"try": "Try", "facts": "Facts", "evidence": "Evidence"});
+  Object.assign(COPY.en.hero, {"lede": "Every number is checked against SEC filings, and you get a corrected draft with citations.", "saved": "See a saved check (no password)"});
+  Object.assign(COPY.en.live, {"title": "Try", "cta": "Try live check"});
+  Object.assign(COPY.en.footer, {"explorer": "Results explorer", "disclosure": "DappGo existed before; this verifier, site and evidence were built during the hackathon, from 27 Oct 2026.", "legal": "Project credits", "build": "Build disclosure", "license": "MIT license", "credits": "Credits"});
+  COPY.zh.facts = {
+  "title": "產品事實",
+  "caption": "關於查核器的八個答案",
+  "question": "問題",
+  "answer": "答案",
+  "question1": "功能",
+  "answer1": "擷取每個財務主張 → Muse Spark 選擇 SEC 工具 → Python 計算判定（支持／矛盾／證據不足）→ 為矛盾的數字產出修正版草稿。",
+  "question2": "可查期間",
+  "answer2": "公司在 SEC XBRL 申報過的期間皆可（大致 2009 年起，較早期間若被後續申報重述也可），直到最新 10-Q/10-K。支援年度、季度與成長比較。即時版 SEC 資料每 6 小時更新。",
+  "question3": "支援哪些美股",
+  "answer3": "以 US-GAAP XBRL 申報 10-K/10-Q 的美股公司——SEC 代號表約 8,000 家。深入測試 23 家。不含 ETF／基金；IFRS 外國公司支援有限。",
+  "question4": "輸入格式",
+  "answer4": "網站：貼上 600 字內文字。CLI：文字、截圖（Muse OCR）、文字型 PDF、音訊／影片（Muse Voice Transcribe）。",
+  "question5": "費用",
+  "answer5": "即時查核每次約 $0.01（實測 $0.0099）；266 題基準平均每題 $0.020（Baseten）。",
+  "question6": "速度",
+  "answer6": "即時：6.3 秒（正式環境實測）。基準：每題中位數 10 秒、p95 21 秒。",
+  "question7": "準確率",
+  "answer7": "保留測試 90.2%（240/266）；誤判為「支持」僅 1/139。 為基準測試文字，不保證每篇貼文；真實貼文的涵蓋率另列。",
+  "question8": "能修正文章嗎？",
+  "answer8": "可以，限被證明錯誤的數字：修正版草稿刪除錯誤數字、填入申報值並附出處。只修改核對過的主張，不標示為「已核准」。"
+};
+  COPY.zh.metaDescription = "貼上財經貼文，逐一用 SEC 申報資料核對數字，並產出附出處的修正版草稿。 保留文字測試：240/266（90.2%）；誤判為「支持」1/139。使用修正後參考答案。";
+  COPY.zh.workflow = {
+  "label": "查核流程",
+  "paste": "貼上貼文",
+  "evidence": "Muse 尋找 SEC 證據",
+  "decide": "Python 判定並產出修正版草稿"
+};
+  COPY.zh.draft = {
+  "title": "修正版草稿",
+  "rule": "修正版草稿只改被證明錯誤的數字、填入申報值並附出處。只修改核對過的主張，不標示為「已核准」。",
+  "note": "只有查核回傳附申報值與出處的修正時，才會顯示草稿。請逐一檢視每項已核對主張的判定與 SEC 證據。"
+};
+  COPY.zh.evidence = {
+  "title": "證據",
+  "benchmark": "原始保留文字測試",
+  "accuracy": "準確率",
+  "falseSupport": "誤判為支持",
+  "cost": "每題平均費用",
+  "speed": "每題中位時間",
+  "seconds": "秒",
+  "benchmarkNote": "Baseten · Muse Spark Open · 使用修正後參考答案（兩項變更），失敗計為錯誤。誤判為支持的分母是參考答案為矛盾或證據不足的主張。此為基準文字測試，不保證每篇貼文。",
+  "report": "閱讀基準測試與限制",
+  "realworld": "真實貼文涵蓋率",
+  "coverage": "涵蓋率 ≠ 準確率。真實貼文含未核對主張與棄權結果；主要事實標籤與僅依範圍預期的結果分開報告。事後重查不等於保留測試，也沒有重測 OCR／ASR。",
+  "wild": "閱讀真實貼文研究",
+  "wildNav": "真實貼文",
+  "links": "證據連結",
+  "index": "證據索引",
+  "tour": "已儲存展示與方法",
+  "origin": "DappGo 發布美股評論。內部事實查核發現，數字正確也可能配錯期間、單位或比較方式。模型提出，程式判定。",
+  "earlier": "原章節連結",
+  "stamps": "印章查核導覽"
+};
+  Object.assign(COPY.zh.nav, {"try": "試用", "facts": "事實", "evidence": "證據"});
+  Object.assign(COPY.zh.hero, {"titleLine1": "貼上財經貼文，逐一用 SEC 申報資料核對數字，並產出附出處的修正版草稿。", "lede": "", "saved": "查看已儲存查核（免密碼）"});
+  Object.assign(COPY.zh.live, {"title": "試用", "cta": "試試即時查核"});
+  Object.assign(COPY.zh.footer, {"explorer": "結果瀏覽器", "disclosure": "DappGo 在黑客松前已存在；此查核器、網站與證據從 2026 年 10 月 27 日起於黑客松期間建立。", "legal": "專案出處", "build": "建置揭露", "license": "MIT 授權", "credits": "出處與致謝"});
+
   // The static page builder imports this same dictionary through Node.
   // No DOM, provider calls or page initialization run during generation.
   if (typeof document === "undefined") {
@@ -783,7 +904,7 @@
   }
 
   function renderStampScene() {
-    if (!siteData.stamp_cards || !siteData.stamp_cards.length) return;
+    if (!$("#stamp-scene")?.querySelector(".stamp-stage") || !siteData.stamp_cards || !siteData.stamp_cards.length) return;
     if (!stampConveyor) stampConveyor = createStampConveyor(siteData.stamp_cards);
     stampConveyor.localize();
   }
@@ -1221,7 +1342,7 @@
       const hash = Array.from(card.id).reduce((value, character) => (value * 31 + character.charCodeAt(0)) >>> 0, 0);
       const angle = (hash % 13) - 6;
       body.style.setProperty("--stamp-angle", `${angle}deg`);
-      if (isStatic) body.href = card.filing_url || card.source_report.replace(/^docs\//, "../");
+      if (isStatic) body.href = card.filing_url || card.source_report.replace(/^docs\//, "/");
       const postHeader = element("div", "stamp-post-header");
       const avatar = element("img", "stamp-avatar");
       avatar.alt = "";
@@ -2737,6 +2858,18 @@
   }
 
   function setupControls() {
+    const revealSavedCheck = () => {
+      const saved = $("#saved-check-details");
+      if (saved && window.location.hash === "#recorded-run") saved.open = true;
+    };
+    $$('a[href="#recorded-run"]').forEach((link) => {
+      link.addEventListener("click", () => {
+        const saved = $("#saved-check-details");
+        if (saved) saved.open = true;
+      });
+    });
+    window.addEventListener("hashchange", revealSavedCheck);
+    revealSavedCheck();
     $$('[data-example]').forEach((button) => {
       button.addEventListener("click", () => {
         exampleLanguage = button.dataset.example === "zh" ? "zh" : "en";
@@ -2751,6 +2884,9 @@
   }
 
   async function loadData() {
+    // Historical widgets live on the evidence tour. Legacy homepage bookmarks
+    // keep their IDs, but must never become chart or example render targets.
+    if (document.documentElement.dataset.evidenceTour === undefined) return;
     try {
       const response = await fetch("/data/site.json", { cache: "no-store" });
       if (!response.ok) throw new Error("site data unavailable");

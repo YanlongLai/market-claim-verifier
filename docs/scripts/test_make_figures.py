@@ -30,7 +30,7 @@ def test_check_reports_changed_evidence_in_a_temp_copy(tmp_path: Path) -> None:
     output = tmp_path / "docs" / "figures" / "demo.png"
     output.parent.mkdir(parents=True)
     output.write_bytes(b"not a real image, but an existing registered output")
-    (tmp_path / "README.md").write_text("", encoding="utf-8")
+    (source.parent / "TECHNICAL_GUIDE.md").write_text("", encoding="utf-8")
 
     registry = {
         "version": 1,
