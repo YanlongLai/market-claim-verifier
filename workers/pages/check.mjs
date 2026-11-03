@@ -34,7 +34,7 @@ async function originFetch(env, path, options = {}) {
     // Include body consumption in the timeout. Access HTML/redirects fail closed.
     let data;
     try { data = await response.json(); }
-    catch { throw Object.assign(Error("non_json"), { originStatus: response.status }); }
+    catch { throw Object.assign(Error("non_json"), { originStatus: `${response.status}-html` }); }
     return { response, data };
   } finally { clearTimeout(timer); }
 }
