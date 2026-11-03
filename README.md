@@ -158,6 +158,18 @@ Published rate snapshot, checked 2026-10-30; USD per million tokens:
 
 Meta ASR was listed at $0.18/hour; image OCR uses tokens. Ledger estimates include failed attempts and reservations and are not vendor invoices. [Official rate sources and Batch caveats](docs/PROVIDERS.md#price-comparison) · [Latest recorded follow-up spend](docs/evidence/real-av-context-live/REPORT.md#spend-usd-estimatedreserved).
 
+## Real-world test
+
+The [DappGo News study](docs/evidence/real-world-2026-11-02/REPORT.md) tests the current agent and post CLI on **80 paraphrased stories**: 60 numerical financial statements and 20 support controls, across Baseten, Fireworks and Meta API. Gold and runtime hashes were locally committed before model execution; original third-party headlines and summaries remain only in ignored cache.
+
+Only **four** items have independently resolved SEC truth labels. **23 US financial items need review**, and **53 scope-only labels measure expected abstention**, including Taiwan claims and non-financial controls. Coverage, latency, costs, failures and source/type breakdowns are reported for every item; scope agreement is not broad factual accuracy. [Gold review list](docs/evidence/real-world-2026-11-02/GOLD_REVIEW.md) · [Future DappGo articles and Threads plan](docs/evidence/real-world-2026-11-02/NEXT_SOURCES.md).
+
+All six provider/path combinations abstained on the four SEC-confirmed positive cases. The study also exposes an issuer-binding failure: five combinations compare Taiwan's Hon Precision with **Honeywell (`HON`)** and return a contradiction. This is an invalid correction. [Retained traces and next work](docs/evidence/real-world-2026-11-02/findings.md).
+
+A post-freeze input review found one translated company-name error and one ambiguous forecast issuer. The [errata](docs/evidence/real-world-2026-11-02/PARAPHRASE_REVIEW.md) retain the original runs, provide the known correction, and mark corrected-input behavior untested; these cases have no factual truth score.
+
+The 480 item/path evaluations used **$5.3361 in ledger estimates/reservations**: Baseten $1.5528, Fireworks $1.5872 and Meta $2.1961, each below its $10 task cap. Failed attempts and unknown-usage reservations remain included; these are not provider invoices.
+
 ## Limitations
 
 The current scope is US equities and supported SEC/issuer evidence. Tagging errors, restatements, fiscal calendars and missing non-GAAP evidence can change the result. Context supplied for an event is recorded as conditional metadata, not authenticated evidence.

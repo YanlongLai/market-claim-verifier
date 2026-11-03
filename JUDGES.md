@@ -18,6 +18,7 @@ Muse Spark chooses tools and drafts explanations; Python checks numbers, periods
 | Impact | Concrete evidence |
 | --- | --- |
 | Auditable checks before sharing financial claims | [English/Chinese post reports](docs/evidence/posts-2026-10-28/), [verdict cards](docs/figures/verdict-cards.svg). On **357 claims**, original v2 agents: **90.5%** Baseten/Fireworks vs **20.7% / 19.9%** single-shot; Meta API **83.2%** vs **44.3%** ([REPORT](docs/evidence/eval-v2-2026-10-27/REPORT.md), [figure](docs/figures/eval-summary.svg)). Benchmark results, not measured user outcomes. |
+| Current-agent real-world support probe | [80 paraphrased DappGo News items](docs/evidence/real-world-2026-11-02/REPORT.md), three providers, claim agent plus actual post CLI. Only four independent SEC truth labels; 23 US items require review and 53 labels concern expected abstention. Includes an [Hon Precision → Honeywell issuer error](docs/evidence/real-world-2026-11-02/findings.md), failures, cost, latency and coverage; scope agreement is not broad financial accuracy. |
 
 | Use of Meta AI tooling | Concrete evidence |
 | --- | --- |
