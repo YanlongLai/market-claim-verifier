@@ -32,6 +32,18 @@ def test_saved_post_renders_one_cited_edit_reasons_and_result_section_order(lang
 
 
 @pytest.mark.parametrize("language", ["en", "zh"])
+@pytest.mark.parametrize("stated,replacement,value,expected", [
+    ("$1,200.0 million", "$1,178.0 million", 1178000000, "$1,178.0M"),
+    ("$1.2 billion", "$0.9 billion", 900000000, "$0.9B"),
+    ("$60.0M", "$60.9M", 60922000, "$60.9M"),
+    ("-$60.0 million", "-$60.9 million", -60922000, "−$60.9M"),
+])
+def test_draft_citations_and_evidence_share_stated_scale(language, stated, replacement, value, expected):
+    run_check(SCALED_MONEY, language=language, stated=stated, replacement=replacement,
+              value=value, expected=expected)
+
+
+@pytest.mark.parametrize("language", ["en", "zh"])
 def test_default_post_example_saved_selection_and_hero_entry(language):
     page = "docs/zh/index.html" if language == "zh" else "docs/site/index.html"
     run_check(DEFAULT_POST, page=page, language=language)
@@ -146,7 +158,10 @@ for(const link of section.querySelectorAll('a'))assert.ok(link.href.startsWith('
 assert.equal(section.querySelectorAll('img').length,0);assert.equal(section.querySelectorAll('script').length,0);
 assert.ok(section.textContent.includes('<img src=x onerror=alert(1)>'));
 assert.ok(section.textContent.includes('<script>alert(1)</script>'));
-assert.ok(section.textContent.includes('416,161,000,000'));assert.ok(section.textContent.includes('313,695,000,000'));
+const editData=JSON.parse(section.querySelector('.trace-data').querySelector('pre').textContent);
+assert.equal(editData.citations[0].value,416161000000);assert.equal(editData.citations[1].value,313695000000);
+assert.equal(section.querySelector('.trace-data').open,undefined);
+assert.equal(target.querySelector('.live-trace').open,false);
 // Even a malformed/hostile origin payload cannot create markup or active URLs.
 const unsafe=JSON.parse(JSON.stringify(result));
 unsafe.corrections.edits[0].replacement='<img src=x onerror=alert(1)>';
@@ -161,6 +176,7 @@ unsafe.corrections.edits[0].start=0;
 context.liveTest.renderLiveTrace(unsafe,target);
 assert.equal(target.querySelector('.corrected-draft-text').textContent,config.corrections.original_text);
 assert.equal(target.querySelectorAll('del').length,0);
+assert.equal(target.querySelector('.live-trace').open,true,'invalid edit spans do not collapse the trace');
 // Exercise the same envelope through the form and a subsequent language switch.
 context.AbortController=AbortController;context.setTimeout=()=>0;context.clearTimeout=()=>{};
 context.fetch=async url=>({ok:true,json:async()=>url==='/api/check'?result:url==='/api/budget'?
@@ -174,6 +190,28 @@ assert.equal(target.querySelector('.corrected-draft-text').querySelector('strong
 context.stamps.setLanguage(config.language==='zh'?'en':'zh');
 assert.ok(target.textContent.includes(config.language==='zh'?'Corrected draft — only listed assertions checked':'修正版草稿——僅核對列出的主張'));
 assert.ok(target.textContent.includes(config.language==='zh'?'This assertion was not judged':'此主張未評判'));
+"""
+
+
+SCALED_MONEY = r"""
+context.URL=URL;
+const target=tree.querySelector('#live-result');
+const fact={evidence_id:'E1',ticker:'AAPL',metric:'revenue',unit:'USD',value:config.value,
+  period:'FY2025',period_basis:'fiscal',period_type:'annual',form:'10-K'};
+const edit={start:0,end:Array.from(config.stated).length,original:config.stated,replacement:config.replacement,
+  actual_value:config.value,unit:'USD',period:'FY2025',evidence_ids:['E1'],citations:[{...fact}]};
+const result={events:[],evidence:[fact],claims:[{text:config.stated,evidence_ids:['E1']}],corrections:{
+  original_text:config.stated,span_unit:'unicode_codepoints',edits:[edit],not_corrected:[]}};
+context.liveTest.renderLiveTrace(result,target);
+assert.equal(target.querySelector('.corrected-draft-text').querySelector('strong').textContent,config.expected);
+assert.ok(target.querySelector('.citation-primary').textContent.includes(config.expected));
+assert.ok(target.querySelector('.evidence-primary').textContent.startsWith(config.expected+' · '));
+assert.ok(!/億|兆/.test(target.querySelector('.corrected-draft-text').textContent));
+assert.equal(JSON.parse(target.querySelector('.trace-data').querySelector('pre').textContent).actual_value,config.value);
+assert.equal(target.querySelector('.live-trace').open,false);
+result.corrections=null;
+context.liveTest.renderLiveTrace(result,target);
+assert.equal(target.querySelector('.live-trace').open,true);
 """
 
 
@@ -191,20 +229,69 @@ const verify=language=>{
   const draft=corrections.querySelector('.corrected-draft-text');
   assert.equal(draft.querySelectorAll('del').length,1);
   assert.equal(draft.querySelectorAll('strong').length,1);
-  assert.equal(draft.querySelector('del').textContent,'$416.2 billion');
-  assert.equal(draft.querySelector('strong').textContent,'$102.5 billion');
+  assert.equal(draft.querySelector('del').textContent,'$416.2B');
+  assert.equal(draft.querySelector('strong').textContent,'$102.5B');
+  assert.ok(draft.textContent.includes('$143.1B'));
+  assert.ok(draft.textContent.includes('$60.9B'));
   assert.equal(corrections.querySelector('.correction-changes').children.length,1);
   const links=corrections.querySelectorAll('a');
   assert.equal(links.length,2);
   assert.ok(links[0].href.endsWith('/000032019325000079/'));
   assert.ok(links[1].href.endsWith('/000032019326000020/'));
-  assert.ok(corrections.textContent.includes('10-K'));
-  assert.ok(corrections.textContent.includes('10-Q'));
+  const citationLines=corrections.querySelectorAll('.citation-primary').map(node=>node.textContent);
+  assert.deepEqual(citationLines,language==='zh'?[
+    '10-K · 2025 財年（全年） · $416.2B 營收 · 開啟 SEC 申報',
+    '10-Q · 截至 2025 年 6 月 28 日的 9 個月 · $313.7B 營收 · 開啟 SEC 申報'
+  ]:[
+    '10-K · fiscal 2025 (annual) · $416.2B revenue · Open SEC filing',
+    '10-Q · nine months to 28 Jun 2025 · $313.7B revenue · Open SEC filing'
+  ]);
+  assert.equal(corrections.querySelector('.correction-derivation').textContent,language==='zh'?
+    '申報季度 = 全年 − 前九個月':'Filed quarter = annual − nine months');
+  const rawEdit=JSON.parse(corrections.querySelector('.trace-data').querySelector('pre').textContent);
+  assert.equal(rawEdit.evidence_ids[0],'C3:E1');
+  assert.equal(rawEdit.citations[0].accn,'0000320193-25-000079');
+  assert.equal(rawEdit.citations[0].value,416161000000);
+  assert.equal(rawEdit.citations[1].value,313695000000);
+  const cards=evidence.querySelectorAll('.live-evidence-row');
+  assert.equal(cards.length,demo.evidence.length);
+  assert.deepEqual(cards.map(card=>card.querySelector('.evidence-primary').textContent),language==='zh'?[
+    '$143.1B · Amazon 營收 · 2023 曆年第 3 季 · 10-Q',
+    '$60.9B · NVIDIA 營收 · 2024 財年（全年） · 10-K',
+    '125.9% · NVIDIA 營收成長 · 2024 對 2023 財年 · 10-K',
+    '$102.5B · Apple 營收 · 2025 財年第 4 季 · 10-K − 10-Q'
+  ]:[
+    '$143.1B · Amazon revenue · calendar Q3 2023 · 10-Q',
+    '$60.9B · NVIDIA revenue · fiscal 2024 (annual) · 10-K',
+    '125.9% · NVIDIA revenue growth · fiscal 2024 vs 2023 · 10-K',
+    '$102.5B · Apple revenue · fiscal Q4 2025 · 10-K − 10-Q'
+  ]);
+  cards.forEach((card,index)=>{
+    assert.equal(card.children.length,1,'one compact disclosure per evidence item');
+    const details=card.querySelector('.trace-data');
+    assert.ok(!details.open);
+    assert.deepEqual(JSON.parse(details.querySelector('pre').textContent),demo.evidence[index]);
+    const primary=card.querySelector('.evidence-primary').textContent;
+    assert.ok(!/C\d+:E\d+|\d{10}|us-gaap|RevenueFrom|\d{4}-\d{2}-\d{2}|億|兆/.test(primary));
+  });
   const unchanged=corrections.querySelector('.correction-unchanged');
   assert.equal(unchanged.children.length,4);
   assert.ok(unchanged.textContent.includes(language==='zh'?'程式支持此主張，無須修改。':'The program supports this assertion; no edit needed.'));
   assert.ok(unchanged.textContent.includes(language==='zh'?'此主張未評判（意見或超出範圍）。':'This assertion was not judged (opinion or out of scope).'));
   assert.ok(unchanged.textContent.includes('NVDA at 30x sales is still cheap.'));
+  assert.equal(unchanged.tagName,'ol');
+  assert.equal(unchanged.querySelectorAll('q').length,0);
+  unchanged.children.forEach(row=>{
+    assert.equal(row.children.length,2);
+    assert.equal(row.children[0].className,'correction-assertion');
+    assert.equal(row.children[1].className,'correction-reason');
+  });
+  assert.equal(property('.correction-assertion','font-size'),'1rem');
+  assert.equal(property('.correction-reason','color'),'var(--muted)');
+  assert.equal(trace.tagName,'details');
+  assert.equal(trace.open,false);
+  assert.equal(trace.querySelector('summary').textContent,language==='zh'?
+    `代理執行過程（${demo.events.length} 個步驟）`:`Agent trace (${demo.events.length} steps)`);
   assert.equal(target.querySelectorAll('.trace-step').length,demo.events.length);
 };
 verify(config.language);
@@ -246,12 +333,14 @@ await claimButton.events.click();
 assert.equal(context.liveTest.state().savedLiveDemo.input,claim.input);
 assert.equal(claimButton.getAttribute('aria-pressed'),'true');
 assert.equal(target.querySelector('.corrected-draft-text').querySelectorAll('del').length,0);
+assert.equal(target.querySelector('.live-trace').open,true);
 tree.querySelector('#live-example').events.click();assert.equal(input.value,original);
 tree.querySelector('a[href="#recorded-run"]').events.click();
 assert.equal(tree.querySelector('#saved-check-details').open,true);
 assert.equal(context.liveTest.state().savedLiveDemo.input,original);
 assert.equal(postButton.getAttribute('aria-pressed'),'true');
 assert.equal(target.querySelector('.corrected-draft-text').querySelectorAll('del').length,1);
+assert.equal(target.querySelector('.live-trace').open,false);
 context.stamps.setLanguage(config.language==='zh'?'en':'zh');
 assert.equal(target.querySelector('.corrected-draft-text').querySelectorAll('del').length,1);
 assert.equal(context.liveTest.state().savedLiveDemo.input,original);
@@ -264,14 +353,18 @@ const target=tree.querySelector('#recorded-trace');
 context.liveTest.renderLiveTrace(demo,target);
 const corrections=target.querySelector('.live-corrections');
 assert.ok(corrections);
-assert.equal(corrections.querySelector('.corrected-draft-text').textContent,demo.input);
+assert.equal(corrections.querySelector('.corrected-draft-text').textContent,demo.input.replace('$109.4 billion','$109.4B'));
 assert.ok(corrections.querySelector('.correction-unchanged').textContent.includes(config.language==='zh'?
   '程式支持此主張，無須修改。':'The program supports this assertion; no edit needed.'));
 assert.ok(corrections.querySelector('.correction-scope').textContent.includes(config.language==='zh'?
   '文中其餘內容均未經查證':'nothing else in the text was verified'));
 assert.equal(target.querySelectorAll('.trace-step').length,7);
 assert.equal(target.querySelectorAll('.trace-model').length,3);
-assert.ok(target.textContent.includes('109,417,000,000'));
+assert.ok(target.textContent.includes('109417000000'));
+assert.equal(target.querySelector('.evidence-primary').textContent,config.language==='zh'?
+  '$109.4B · Apple 營收 · 2026 財年第 3 季 · 10-Q':
+  '$109.4B · Apple revenue · fiscal Q3 2026 · 10-Q');
+assert.equal(target.querySelector('.live-trace').open,true);
 assert.ok(target.textContent.includes('FY2026Q3'));
 assert.ok(target.textContent.includes('0000320193-26-000020'));
 assert.ok(target.textContent.includes('0.01222'));
