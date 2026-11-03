@@ -18,6 +18,8 @@ DATA_OUTPUTS = (
     "docs/site/data/site.json",
     "docs/site/BUILD_SUMMARY.md",
 )
+WILD_OUTPUT = "docs/wild/data.json"
+WILD_EVIDENCE = "docs/evidence/real-world-2026-11-02"
 
 PYTHON_GUARD = '''import socket
 _connect = socket.socket.connect
@@ -99,16 +101,28 @@ def main() -> int:
     run("Rebuilding figures in the temporary copy", python, "docs/scripts/make_figures.py", "--all")
     run("Checking rebuilt figures", python, "docs/scripts/make_figures.py", "--check")
     # Figure SVG metadata includes generation times; data outputs must be exact bytes.
-    before = {name: (snapshot / name).read_bytes() for name in DATA_OUTPUTS}
+    # A not-yet-merged probe has fixture coverage but no publishable numbers.
+    # Either the real evidence or a saved output activates the strict rebuild;
+    # missing evidence must not let a stale published snapshot pass verification.
+    wild_required = (snapshot / WILD_EVIDENCE).exists() or (snapshot / WILD_OUTPUT).exists()
+    outputs = (*DATA_OUTPUTS, WILD_OUTPUT) if wild_required else DATA_OUTPUTS
+    before = {name: (snapshot / name).read_bytes() for name in outputs}
     run("Rebuilding the explorer from saved evaluation results", python, "docs/scripts/build_explorer_data.py")
     run("Rebuilding site data with stored filing excerpts", python, "docs/scripts/build_site.py", "--offline")
-    different = [name for name in DATA_OUTPUTS if (snapshot / name).read_bytes() != before[name]]
+    if wild_required:
+        run("Rebuilding wild findings from saved evidence", python, "docs/scripts/build_wild.py")
+        run("Checking wild findings snapshot", python, "docs/scripts/build_wild.py", "--check")
+    else:
+        print("SKIP wild data: required evidence not merged; compiler and page exercised with synthetic fixtures", flush=True)
+    different = [name for name in outputs if (snapshot / name).read_bytes() != before[name]]
     if different:
         raise RuntimeError("Non-identical rebuilt outputs: " + ", ".join(different))
     run("Checking all Markdown and llms.txt links/anchors", python, "scripts/check_links.py")
     print("\nPASS offline Python and Node suites")
     print("PASS figure rebuild + --check")
     print("PASS explorer, site data and build summary: 3 byte-identical outputs")
+    if wild_required:
+        print("PASS wild findings: 1 byte-identical output")
     print("PASS Markdown links and anchors")
     print("PASS no model calls, SEC fetches or credentials; source tree unchanged")
     return 0
