@@ -62,6 +62,17 @@ def numeric_tokens(text: str) -> set[str]:
     return set(re.findall(r'(?<![\w.])-?\d[\d,]*(?:\.\d+)?', text))
 
 
+def item_input(path: Path, item_id: str) -> dict:
+    """Select the retained source row without copying or rewriting frozen inputs."""
+    if path.suffix != '.jsonl':
+        return read_json(path)
+    rows = [json.loads(line) for line in path.read_text().splitlines() if line.strip()]
+    matches = [row for row in rows if row.get('id') == item_id]
+    if len(matches) != 1:
+        raise BuildError(f'{path}: expected exactly one input row for {item_id}.')
+    return matches[0]
+
+
 def compile_evidence(repo: Path) -> dict:
     folders = sorted(p for p in (repo / 'docs/evidence').glob('real-world-*') if p.is_dir())
     if not folders:
@@ -101,18 +112,40 @@ def compile_evidence(repo: Path) -> dict:
                 if item['id'] in seen:
                     raise BuildError(f'{run_id}: duplicate item {item["id"]}.')
                 seen.add(item['id'])
-                report_path = record_path(repo, descriptor.parent, item['report'])
                 input_path = record_path(repo, descriptor.parent, item['input'])
-                report, original = read_json(report_path), read_json(input_path)
-                report_source, input_source = retain(report_path), retain(input_path)
+                original = item_input(input_path, item['id'])
+                input_source = retain(input_path)
+                report_path = (record_path(repo, descriptor.parent, item['report'])
+                               if item.get('report') else None)
+                report = read_json(report_path) if report_path else {}
+                report_source = retain(report_path) if report_path else None
+                accounting = report
+                latency_key = 'wall_clock_s'
+                if item.get('result'):
+                    receipt_path = record_path(repo, descriptor.parent, item['result'])
+                    accounting = read_json(receipt_path)
+                    receipt_source = retain(receipt_path)
+                    if (accounting.get('id') != item['id'] or
+                            not all(config.get(k) and accounting.get(k) == config[k]
+                                    for k in ('provider', 'path')) or
+                            any(report.get(k) != accounting.get(k) for k in ('provider', 'model')
+                                if k in report)):
+                        raise BuildError(f'{receipt_source}: item/provider/path/model does not match selection.')
+                    latency_key = 'wall_seconds'
+                    # Failed CLI attempts can retain only their extraction trace, without a report.
+                    for trace_path in sorted((receipt_path.parent/'traces').glob('*.json')):
+                        retain(record_path(repo, receipt_path.parent, 'traces/'+trace_path.name))
+                    report_source = report_source or receipt_source
                 # Includes partial/failed items: a missing spend/latency receipt is not zero.
-                costs.append(number(report.get('cost_usd'), 'cost_usd'))
-                latencies.append(number(report.get('wall_clock_s'), 'wall_clock_s'))
-                status = report.get('status', 'completed')
+                costs.append(number(accounting.get('cost_usd'), 'cost_usd'))
+                latencies.append(number(accounting.get(latency_key), latency_key))
+                status = accounting.get('status', 'completed')
                 if status not in ('completed', 'partial', 'failed', 'error', 'provider_error'):
                     raise BuildError(f'{report_source}: unrecognized recorded status {status!r}.')
+                if not report_path and status == 'completed':
+                    raise BuildError(f'{report_source}: completed receipt requires its post report.')
                 claims = report.get('claims', [])
-                errors += bool(status != 'completed' or report.get('error') or
+                errors += bool(status != 'completed' or accounting.get('error') or report.get('error') or
                                any(c.get('status') in ('failed', 'error', 'provider_error') for c in claims))
                 # Trace files stay in evidence; bind them into the snapshot receipt too.
                 trace_paths = [report.get('extraction_trace')] + [c.get('trace_path') for c in claims]
@@ -155,7 +188,8 @@ def compile_evidence(repo: Path) -> dict:
             raise BuildError('Original real-world run must contain both News and Threads results.')
         if phase != 'original' and not config.get('rechecks_run'):
             raise BuildError('Post-hoc run must name the original run it rechecks.')
-        runs.append(dict(id=run_id, phase=phase, rechecks_run=config.get('rechecks_run'), sources=source_rows))
+        runs.append(dict(id=run_id, phase=phase, rechecks_run=config.get('rechecks_run'), sources=source_rows,
+                         **{k: config[k] for k in ('provider', 'path', 'selection_note') if k in config}))
     originals = [r for r in runs if r['phase'] == 'original']
     if len(originals) != 1:
         raise BuildError('Real-world shot needs exactly one original run; disambiguate its demo-shot.json.')
@@ -174,7 +208,8 @@ def compile_evidence(repo: Path) -> dict:
                 coverage_definition='Items with at least one program-checked claim / all attempted items; '
                                     'coverage is not accuracy. Verdict counts are claims, not items.',
                 latency_definition='Median item wall time, including retained partial/failed attempts.',
-                cost_definition='Recorded report estimates/reservations including all retained item attempts; '
+                cost_definition='Recorded item receipts (or legacy report estimates/reservations), '
+                                'including all retained item attempts; '
                                 'not provider invoices.',
                 recheck_note='Post-hoc frozen-text rechecks do not retest OCR/ASR or establish fresh accuracy.',
                 narration=narration, narration_template=NARRATION_TEMPLATE, max_voice_s=MAX_VOICE_S,

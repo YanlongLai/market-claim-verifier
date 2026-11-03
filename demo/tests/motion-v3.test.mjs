@@ -312,7 +312,10 @@ test('B-roll is recomputed from shifted scene/cue times and refuses invalid host
 });
 
 test('v010 pending real-world reserve is honest, silent and deterministic',()=>{
-  const {window,stage}=page(),D=window.MOTION_DATA,
+  const {window,stage}=page('',d=>{
+    d.realworld={status:'awaiting_evidence',sources:[],examples:[],narration:null,provenance:{}};
+    d.cues['v311b-realworld']=[];
+  }),D=window.MOTION_DATA,
     shot=D.timing.shots.find(s=>s.id==='v311b-realworld');
   assert.equal(D.timing.shots.length,13);assert.equal(D.timing.duration,177.2611);
   assert(Math.abs(shot.end-shot.start-11.3081)<1e-7);

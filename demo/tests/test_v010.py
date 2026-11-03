@@ -87,6 +87,82 @@ def test_all_attempts_feed_coverage_cost_verdicts_and_p50(tmp_path):
         rw.load_snapshot(tmp_path, require_ready=True)
 
 
+def fixture_runner_receipts(repo):
+    descriptor = fixture_run(repo)
+    config = read_json(descriptor)
+    config.update(provider='baseten', path='post', selection_note='One synthetic fixed route.')
+    for source in config['sources']:
+        rows = []
+        for item in source['items']:
+            original = read_json(descriptor.parent/item['input'])
+            rows.append(dict(id=item['id'], **original))
+            item['input'] = source['id']+'.jsonl'
+            report_path = descriptor.parent/item['report']
+            report = read_json(report_path)
+            receipt = dict(id=item['id'], provider='baseten', path='post', model='synthetic-open',
+                           status=report['status'], cost_usd=report['cost_usd'],
+                           wall_seconds=report['wall_clock_s'])
+            item['result'] = item['id']+'/result.json'
+            write_json(descriptor.parent/item['result'], receipt)
+            if receipt['status'] == 'completed':
+                # The runner's ledger/wall receipt takes precedence over the inner CLI report.
+                report.update(provider='baseten', model='synthetic-open', cost_usd=999, wall_clock_s=999)
+                write_json(report_path, report)
+            else:
+                report_path.unlink()
+                del item['report']
+                write_json(descriptor.parent/item['id']/'traces/extraction.json', dict(error='synthetic'))
+        (descriptor.parent/(source['id']+'.jsonl')).write_text(
+            ''.join(json.dumps(row)+'\n' for row in rows))
+    write_json(descriptor, config)
+    return descriptor
+
+
+def test_runner_receipts_preserve_failed_cost_latency_and_extraction_traces(tmp_path):
+    descriptor = fixture_runner_receipts(tmp_path)
+    data = rw.compile_evidence(tmp_path)
+    for row in data['sources']:
+        assert row['items_tested'] == 3 and row['items_checked'] == 2
+        assert row['items_with_errors'] == 1 and row['coverage_percent'] == 66.7
+        assert row['cost_usd'] == pytest.approx(.09) and row['p50_latency_s'] == 3
+    run, = data['runs']
+    assert (run['provider'], run['path'], run['selection_note']) == (
+        'baseten', 'post', 'One synthetic fixed route.')
+    for source in ('news', 'threads'):
+        for relative in (source+'.jsonl', source+'-2/result.json', source+'-2/traces/extraction.json'):
+            path = descriptor.parent/relative
+            assert data['provenance'][path.relative_to(tmp_path).as_posix()] == file_hash(path)
+    assert data['examples'][0]['handle'] == '@synthetic_user'
+
+
+@pytest.mark.parametrize('corruption,match', [
+    ('cost_usd', 'recorded nonnegative'), ('wall_seconds', 'recorded nonnegative'),
+    ('id', 'does not match selection'), ('provider', 'does not match selection'),
+    ('path', 'does not match selection'), ('model', 'does not match selection'),
+    ('completed_without_report', 'completed receipt requires'),
+    ('missing_input', 'exactly one input row'), ('duplicate_input', 'exactly one input row')])
+def test_runner_adapter_rejects_missing_receipts_or_mismatched_evidence(tmp_path, corruption, match):
+    descriptor = fixture_runner_receipts(tmp_path)
+    config = read_json(descriptor)
+    item = config['sources'][0]['items'][0]
+    receipt_path = descriptor.parent/item['result']
+    receipt = read_json(receipt_path)
+    if corruption in ('cost_usd', 'wall_seconds'):
+        del receipt[corruption]  # Never fall back to the legacy report's 999.
+    elif corruption in ('id', 'provider', 'path', 'model'):
+        receipt[corruption] = 'other'
+    elif corruption == 'completed_without_report':
+        del item['report']
+    else:
+        input_path = descriptor.parent/item['input']
+        rows = input_path.read_text().splitlines()
+        input_path.write_text('\n'.join(rows[1:] if corruption == 'missing_input' else rows+[rows[0]])+'\n')
+    write_json(receipt_path, receipt)
+    write_json(descriptor, config)
+    with pytest.raises(BuildError, match=match):
+        rw.compile_evidence(tmp_path)
+
+
 def test_posthoc_recheck_is_separate_and_never_replaces_original(tmp_path):
     fixture_run(tmp_path)
     original = rw.compile_evidence(tmp_path)
