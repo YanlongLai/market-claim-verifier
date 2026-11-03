@@ -6,6 +6,8 @@ Check financial claims against SEC filings with Meta’s open-weight Muse Spark 
 
 <a id="60-second-path"></a>
 
+[Open-weight LoRA attempt (Nov 3 UTC)](docs/evidence/lora-2026-11-03/REPORT.md): Fireworks NVFP4 LoRA initialization confirmed; tokenizer access blocked training. $0 estimated spend, no trained adapter or extraction improvement claim. [Feasibility and rates](docs/evidence/lora-2026-11-03/FEASIBILITY.md).
+
 ## 3-minute path
 
 1. **Try a check.** Apple’s “$416.2B in one quarter” uses the full-year figure; fiscal Q4 2025 was $102.5B, making the claim about 4× the quarter. Open the [saved check](docs/evidence/posts-2026-10-28/demo-thread-baseten/report.json) or [readable post report](docs/evidence/posts-2026-10-28/demo-thread-baseten/report.html), then the [demo](https://hackathon.dappgo.com/). The [three-outcome walkthrough](docs/evidence/judge-walkthrough/REPORT.md) is an offline program example, not a live model run.
