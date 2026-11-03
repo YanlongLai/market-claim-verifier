@@ -26,6 +26,9 @@ def audit(out, local=None, original=None, secrets=False):
     for path, expected in freeze["sha256"].items():
         if sha((ROOT / path).read_bytes()) != expected:
             raise ValueError(f"frozen input changed: {path}")
+    protocol_errata = json.loads((out / "PROTOCOL_METADATA_ERRATA.json").read_text())
+    if protocol_errata["original_protocol_sha256"] != sha((out / "protocol.json").read_bytes()):
+        raise ValueError("protocol metadata errata not bound to frozen protocol")
     with tempfile.TemporaryDirectory(prefix="threads-gold-audit-") as directory:
         target = Path(directory)
         shutil.copytree(out / "sources", target / "sources")
@@ -42,6 +45,10 @@ def audit(out, local=None, original=None, secrets=False):
     gold = load_rows(out / "gold.jsonl")
     if len(cases) != 78 or set(cases) != set(gold):
         raise ValueError("case inventory mismatch")
+    if Counter(c["source_group"] for c in cases.values()) != {"own_posts": 30, "third_party_threads": 48}:
+        raise ValueError("source sample counts differ from protocol")
+    if Counter(g["gold_basis"] for g in gold.values()) != protocol_errata["threads_gold_partitions"]:
+        raise ValueError("protocol metadata errata differs from frozen gold")
     for id, case in cases.items():
         if sha(case["claim"].encode()) != gold[id]["claim_sha256"]:
             raise ValueError("claim/gold binding mismatch")
@@ -107,11 +114,22 @@ def audit(out, local=None, original=None, secrets=False):
                     raise ValueError("runtime source hash mismatch")
                 archived += 1
     if original:
+        from prepare_threads import sample
         raw = json.loads((original / "mcv-threads-dappgo-posts.json").read_text())
+        selection = json.loads((out / "selection.json").read_text())
+        if sha((original / "mcv-threads-dappgo-posts.json").read_bytes()) != selection["own_input_sha256"]:
+            raise ValueError("original own-post collection changed")
+        if sha((original / "external-selected.jsonl").read_bytes()) != selection["external_input_sha256"]:
+            raise ValueError("supplied external paraphrases changed")
+        for i, post in enumerate(sample(raw["posts"]), 1):
+            if cases[f"O{i:02d}"]["url"] != post["url"] or cases[f"O{i:02d}"]["original_sha256"] != sha(post["text"].encode()):
+                raise ValueError("seeded own-post sample not reproducible")
         needles = [p["text"].encode() for p in raw["posts"]]
         for file in out.rglob("*"):
-            if file.is_file() and any(n in file.read_bytes() for n in needles):
-                raise ValueError("unparaphrased original post found in public artifacts")
+            if file.is_file():
+                contents = file.read_bytes()
+                if any(n in contents for n in needles):
+                    raise ValueError("unparaphrased original post found in public artifacts")
     if any(p.suffix.lower() in {".png", ".jpg", ".jpeg", ".mp4", ".wav"} for p in out.rglob("*")):
         raise ValueError("original media must remain ignored")
     secret_count = 0
@@ -120,8 +138,10 @@ def audit(out, local=None, original=None, secrets=False):
         keys = [load_settings(provider=p).model_api_key for p in ("baseten", "fireworks", "meta")]
         needles = [key.encode() for key in keys if key]
         for file in out.rglob("*"):
-            if file.is_file() and any(key in file.read_bytes() for key in needles):
-                raise ValueError("configured secret found in public artifact")
+            if file.is_file():
+                contents = file.read_bytes()
+                if any(key in contents for key in needles):
+                    raise ValueError("configured secret found in public artifact")
         secret_count = len(needles)
     budgets = ledger_summary(out)
     if not all(r["cap_respected"] for r in budgets.values()):
