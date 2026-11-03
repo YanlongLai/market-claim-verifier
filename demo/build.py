@@ -18,7 +18,7 @@ import PIL
 import yaml
 
 import media
-from motion_timing import narration_lead
+from motion_timing import narration_lead, narration_offset
 from pipeline import (BuildError, append_build_log, cache_key, cached, collapse, file_hash,
                       make_run_record, next_version, previous_run, read_json, receipt,
                       scene_timings, subtitle_timing, to_srt, voice_key, write_json)
@@ -85,8 +85,10 @@ class Builder:
             if not math.isfinite(target) or target <= 0:
                 raise BuildError(f"{sid}: target_s must be a positive number.")
             narration_lead(scene)
-            if 'narration_lead_s' in scene and story.get('motion_variant') != 'v3':
-                raise BuildError(f"{sid}: narration_lead_s requires motion_variant: v3.")
+            narration_offset(scene)
+            for placement in ('narration_lead_s', 'narration_offset_s'):
+                if placement in scene and story.get('motion_variant') != 'v3':
+                    raise BuildError(f"{sid}: {placement} requires motion_variant: v3.")
             kind = scene.get("visual", {}).get("kind")
             if kind not in ("image", "capture", "card", "motion"):
                 raise BuildError(f"{sid}: unknown visual.kind {kind!r}")

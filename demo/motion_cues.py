@@ -132,6 +132,14 @@ def cue_document(scenes: list[dict], timing: dict, local: dict, analysis: dict,
                 event['t'] = max(event['t'], next_beat(beats, shot['start'] + minimum))
                 if event['t'] >= shot['end'] or (spec.get('within_cue') and event['t'] >= cue['end']):
                     raise BuildError('Minimum scene reading time crosses the shot or spoken cue.')
+            if 'at_scene_s' in spec:
+                placement = spec['at_scene_s']
+                if type(placement) not in (int, float) or not math.isfinite(placement) or placement < minimum:
+                    raise BuildError('Fixed scene reading time must be finite and at least the reading minimum.')
+                event['t'] = next_beat(beats, shot['start'] + placement)
+                if event['t'] >= shot['end'] or (spec.get('within_cue') and
+                        not cue['start'] <= event['t'] < cue['end']):
+                    raise BuildError('Fixed scene reading time crosses the shot or spoken cue.')
             if spec.get('review_at_start'):
                 event['review_at_start'] = True
             events.append(event)

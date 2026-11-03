@@ -50,9 +50,10 @@ window.MOTION_PREVIEW = {
       "target_start_s": 17.6704,
       "target_end_s": 27.3531,
       "target_s": 9.6827,
+      "narration_offset_s": 1.05,
       "narration": "Muse Spark extracts each checkable claim with its exact quote. Forecasts and opinions are labeled, not judged.",
       "on_screen": "Exact quote → checkable claim",
-      "director_notes": "Hold the Amazon and NVIDIA report quotes for at least 2.5 seconds each. Omit the repeated Apple quote; reveal the real unjudged opinion after both holds without moving narration audio.",
+      "director_notes": "Hold the Amazon and NVIDIA report quotes for at least 2.5 seconds each. Omit the repeated Apple quote; reveal the real unjudged opinion on the first beat at scene + 5 s. Place the existing extraction voice clip 1.05 s later so its opinion clause starts at the reveal; consume only the post-speech hold, keeping the scene end unchanged.",
       "evidence": [
         "demo/data/demo-thread.json"
       ],
@@ -60,7 +61,7 @@ window.MOTION_PREVIEW = {
         {
           "event": "opinion",
           "cue": "Forecasts and opinions",
-          "min_scene_s": 5
+          "at_scene_s": 5
         }
       ],
       "visual": {
@@ -312,7 +313,7 @@ window.MOTION_PREVIEW = {
       "data_source": "demo/data/realworld.json",
       "narration": "Saved real-world runs: 80 news items, 78 Threads posts. Coverage is not accuracy.",
       "on_screen": "Real-world saved runs · DappGo News + Threads · coverage is not accuracy",
-      "director_notes": "Read only the compiled realworld.json. Use four pages: original News + Threads coverage and claim counts; CoreWeave claimed versus SEC annual revenue; SanDisk claimed versus recorded YoY growth; separate frozen-text post-hoc coverage and claim counts. Hold each page at least 2.5 seconds. Values are at least 96 px; example source, period and outcome at least 56 px; aggregate labels at least 48 px. Keep Baseten / post, run failures and coverage is not accuracy visible. Costs and latency stay in linked evidence. A pending preview has no metrics or narration; voice and film preparation fail until evidence exists.",
+      "director_notes": "Read only the compiled realworld.json. Use four pages: original News + Threads coverage and claim counts; CoreWeave claimed versus SEC annual revenue; SanDisk claimed versus recorded YoY growth; separate frozen-text post-hoc coverage and claim counts. Hold each page at least 2.5 seconds. Values are at least 96 px; example source, period and outcome at least 56 px; aggregate labels at least 56 px. Keep Baseten / post, run failures and coverage is not accuracy visible. Costs and latency stay in linked evidence. A pending preview has no metrics or narration; voice and film preparation fail until evidence exists.",
       "evidence": [
         "demo/data/realworld.json",
         "demo/data/REALWORLD.md"
@@ -363,7 +364,7 @@ window.MOTION_PREVIEW = {
         "id": "v303-extract",
         "start": 17.6704,
         "end": 27.3531,
-        "voice_start": 17.6704
+        "voice_start": 18.7204
       },
       {
         "id": "v304-hover",
@@ -429,7 +430,7 @@ window.MOTION_PREVIEW = {
     "version": 2,
     "revision": "v010",
     "music_offset_s": 9.4041,
-    "voice_rule": "first detected beat >= scene start + narration_lead_s (default 0)",
+    "voice_rule": "first detected beat >= scene start + narration_lead_s (default 0); then add exact narration_offset_s (default 0)",
     "cut_rule": "first detected beat >= max(absolute target end, narration end + 0.3 s)"
   },
   "cues": {
@@ -460,7 +461,7 @@ window.MOTION_PREVIEW = {
       },
       "v303-extract": {
         "source": "target preview only",
-        "voice_start": 17.6704
+        "voice_start": 18.7204
       },
       "v304-hover": {
         "source": "target preview only",
@@ -519,8 +520,8 @@ window.MOTION_PREVIEW = {
         {
           "event": "opinion",
           "cue": "Forecasts and opinions",
-          "cue_start": 22.836706422,
-          "cue_end": 24.669911927,
+          "cue_start": 23.289458716,
+          "cue_end": 24.910737615,
           "alignment": "sentence",
           "t": 22.7555
         }
@@ -712,12 +713,12 @@ window.MOTION_PREVIEW = {
     "v303-extract": [
       {
         "text": "Muse Spark extracts each checkable claim with its exact quote.",
-        "start": 17.6704,
-        "end": 22.836706422
+        "start": 18.7204,
+        "end": 23.289458716
       },
       {
         "text": "Forecasts and opinions are labeled, not judged.",
-        "start": 22.836706422,
+        "start": 23.289458716,
         "end": 26.7531
       }
     ],
@@ -2464,7 +2465,7 @@ window.MOTION_PREVIEW = {
       "tests/fixtures/multimodal/example-post.png": "06fc3980cd17a30c665ae86eaedd501805e8e4ad25267dc0b7bb57e3bc43b557",
       "tests/fixtures/multimodal/generation.json": "bbfb8be8d07ce2b9689ef3fe90dcb4d7c45332377cb074a819ca7d57de953efa",
       "tests/fixtures/multimodal/release-reading.wav": "06dc5144bc0f3d3ebdf0509a679cb53ab76d523ec104a29c68d62997a991c122",
-      "demo/storyboard-v3.yaml": "4e3838870006d345180a47347d6065c870bd3f7bbe1b45517ab7cea4e157fe22",
+      "demo/storyboard-v3.yaml": "345c198f151a29c59857e6defb6b59a06f6539a95359cf97a0a4c71ad27f32cf",
       "docs/evidence/posts-2026-10-28/demo-thread-baseten/traces/20261029T023240Z-12ac28b8.json": "341af6c59b5f65b8a6a6f680e2d8868b3e53d5d0a5a30e57596cbc6b402b261a",
       "demo/data/realworld.json": "ae9974d56cb233e184c827c724604fdf9409e9e5dfc70c96c52a742ad021e8af",
       "docs/evidence/real-world-2026-11-02/baseten/post/RW001/report.json": "e8b78a476d1365394208c0e91c316ad8826247b69fadd62099a1ad360b059f0b",

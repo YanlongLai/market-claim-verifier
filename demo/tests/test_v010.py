@@ -1,6 +1,7 @@
 """Real-world compiler, active v010 timings and saved Apple trace; no paid/media calls."""
 from copy import deepcopy
 import json
+import math
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -10,6 +11,9 @@ import yaml
 from agent_trace import REPORT, compile_trace
 from build import Builder
 import motion_v3 as v3
+import motion_media
+import media
+from motion_cues import sentence_subtitles
 from pipeline import BuildError, file_hash, read_json, write_json
 import realworld as rw
 from test_review_v007 import LENGTHS, pauses
@@ -371,15 +375,50 @@ def test_apple_ribbon_is_compiled_from_real_calls_costs_latencies_and_fact_ids()
     assert all(file_hash(v3.ROOT/p) == h for p,h in data['provenance'].items())
 
 
-def test_reading_holds_fit_retained_audio_and_approved_reserve():
+def test_reading_holds_fit_retained_audio_and_approved_reserve(tmp_path, monkeypatch):
     lengths = LENGTHS[:-1]+[6.64, LENGTHS[-1]]
     voices = [dict(voice_s=n, key=s['id']) for s,n in zip(STORY['scenes'], lengths, strict=True)]
     data = v3.compile_data(v3.ROOT, STORY, voices=voices,
                            analyze=lambda scene, voice: pauses(scene['id'], voice['voice_s']))
     extract = next(s for s in data['timing']['shots'] if s['id'] == 'v303-extract')
     event, = data['cues']['_events'][extract['id']]
-    assert event['cue_start'] < extract['start']+5  # Retained speech begins before the reveal.
-    assert event['t'] >= extract['start']+5
+    # N5: the unchanged 7.12 s extraction clip moves 1.05 s into its former hold.
+    original = deepcopy(STORY)
+    next(s for s in original['scenes'] if s['id'] == extract['id']).pop('narration_offset_s')
+    before = v3.compile_data(v3.ROOT, original, voices=voices,
+                            analyze=lambda scene, voice: pauses(scene['id'], voice['voice_s']))
+    old_extract = next(s for s in before['timing']['shots'] if s['id'] == extract['id'])
+    assert [(s['start'], s['end']) for s in data['timing']['shots']] == [
+        (s['start'], s['end']) for s in before['timing']['shots']]
+    assert extract['voice_s'] == old_extract['voice_s'] == 7.12
+    assert extract['voice_start'] == pytest.approx(old_extract['voice_start']+1.05)
+    assert extract['voice_end'] == pytest.approx(old_extract['voice_end']+1.05)
+    assert extract['hold_s'] == pytest.approx(old_extract['hold_s']-1.05)
+    assert extract['hold_s'] == pytest.approx(1.5127)
+    assert event['t'] == before['cues']['_events'][extract['id']][0]['t'] == 22.7555
+    reveal_frame = math.ceil(event['t']*30)/30
+    assert reveal_frame == pytest.approx(22.766666667)
+    assert event['cue_start'] == pytest.approx(22.770308257)
+    assert event['cue_start'] >= reveal_frame-.1, 'Opinion audio precedes the opinion reveal'
+    captions = sentence_subtitles(data['scenes'], data['timing'], data['cues'])
+    opinion = next(c for c in captions if 'Forecasts and opinions' in c.text)
+    assert opinion.start == 22.766
+    assert opinion.start >= reveal_frame-.1, 'Opinion SRT precedes the opinion reveal'
+    assert data['timing']['voice_keys'] == before['timing']['voice_keys']
+    for shot in data['timing']['shots']:
+        if shot['id'] != extract['id']:
+            assert data['cues'][shot['id']] == before['cues'][shot['id']]
+    # Exercise the real mix planner without FFmpeg or licensed narration.
+    calls = []
+    monkeypatch.setattr(media, 'ffmpeg', lambda args, log: calls.append(args))
+    voice, bed = tmp_path/'existing-clip.wav', tmp_path/'existing-bed.wav'
+    motion_media.mix_audio([voice], [extract], bed, -22, tmp_path/'mix.wav',
+                           offset=data['timing']['music_offset_s'], timeline_duration=177.2611)
+    args, = calls
+    assert args[:4] == ['-t', '7.120000000', '-i', voice]
+    graph = args[args.index('-filter_complex')+1]
+    assert f'adelay={round(extract["voice_start"]*48000)}S:all=1' in graph
+    assert 'atempo' not in graph
     assert event['t'] in data['beats']['beats_s']
     assert extract['end']-event['t'] >= 2.5
     assert {f['position'] for f in data['keyframes'] if f['position'].startswith('extract-')} == {

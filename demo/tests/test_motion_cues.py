@@ -105,6 +105,21 @@ def test_reading_floor_moves_picture_cue_without_moving_sentence_or_spoken_cue()
         cue_document(scenes, timing, local, {'s': {}}, [10., 13.9, 15.5, 20.])
 
 
+def test_fixed_reading_boundary_preserves_card_holds_when_narration_moves():
+    scenes = [dict(id='s', cue_events=[dict(event='opinion', cue='Opinions', at_scene_s=5)])]
+    timing = dict(shots=[dict(id='s', start=10., end=20.)])
+    beats = [10., 13.9, 14.95, 15.5, 16., 20.]
+    for start in [4., 5.5, 6.]:
+        local = {'s': ([dict(text='Opinions.', start=start, end=8.)], 'silence')}
+        doc = cue_document(scenes, timing, local, {'s': {}}, beats)
+        assert doc['_events']['s'][0]['t'] == 15.5
+        assert doc['s'][0]['start'] == 10.+start
+    for invalid in [-1, float('nan'), float('inf'), True, '5', 10]:
+        scenes[0]['cue_events'][0]['at_scene_s'] = invalid
+        with pytest.raises(BuildError, match='reading time'):
+            cue_document(scenes, timing, local, {'s': {}}, beats)
+
+
 @pytest.mark.skipif(not media.FFMPEG.exists(), reason='Homebrew ffmpeg required')
 def test_real_ffmpeg_detects_two_speech_runs_in_a_synthetic_audio_fixture(tmp_path):
     rate = 16000

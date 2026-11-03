@@ -41,7 +41,7 @@ test('all v007 frames obey safe rectangles/type floors without a browser',()=>{
   for(let i=0;i<Math.ceil(window.timeline.duration*30);i++) {
     window.seek(i/30);
     for(const box of window.frame.boxes) {
-      assert(box.size>=(box.className.includes('aggregate-label')?48:56),box.text);
+      assert(box.size>=56,box.text);
       assert(box.x>=64&&box.x+box.w<=1856,box.text);
       assert(box.y>=64&&box.y+box.h<=(box.realworld?816:880),box.text);
       if(box.className==='headline')assert(box.size>=96);
@@ -82,6 +82,12 @@ test('Amazon, NVIDIA and opinion each hold for 75 encoded frames, including the 
       /AMZN/.test(html)?'Amazon':/opinion<\/div>/.test(html)?'Opinion':/NVDA/.test(html)?'NVIDIA':'Unexpected');
     assert.deepEqual(holds.map(h=>h.key),['Amazon','NVIDIA','Opinion']);
     for(const h of holds)assert(h.frames>=75,`${h.key}: ${h.frames}/30 s`);
+    if(!useReviewedCue) {
+      assert.deepEqual(holds.map(h=>h.frames),[75,77,138],'Approved v011 card holds changed');
+      const event=window.MOTION_DATA.cues._events[shot.id][0],reveal=Math.ceil(event.t*30)/30;
+      assert(event.cue_start>=reveal-.1,'Opinion speech precedes the card reveal');
+      assert.equal(window.timeline.duration,177.2611);
+    }
     window.seek(shot.start+4.9);assert(!/416\.2B/.test(stage.innerHTML),'Repeated Apple extraction card returns.');
     window.seek(shot.start+5);assert(!/AMZN/.test(stage.innerHTML));
   }
@@ -408,9 +414,9 @@ test('compiled-source renderer covers metrics, handles and separately labeled re
     if(badge) {
       assert(badge.className.includes(colors[badge.text]));
       for(const label of ['$12.5','$10','SEC 10-K · FY2025'])assert(text.includes(label));
-      assert(!/Supported|Insufficient|run failures/.test(text),'Example must have one comparison.');
+      assert(!/Supported|Insufficient|failed runs/.test(text),'Example must have one comparison.');
     } else {
-      assert.match(text,/2\/3 items checked \(66\.7%\)/);assert.match(text,/1 run failures/);
+      assert.match(text,/2\/3 items checked \(66\.7%\)/);assert.match(text,/1 failed runs/);
       for(const label of ['Supported','Contradicted','Insufficient','verdict counts'])assert(text.includes(label));
     }
     assert(!/https?:\/\/|threads\.(net|com)\//.test(stage.innerHTML));
@@ -422,7 +428,7 @@ test('compiled-source renderer covers metrics, handles and separately labeled re
     for(const box of window.frame.boxes) {
       assert(box.x>=64&&box.x+box.w<=1856);
       assert(box.y>=64&&box.y+box.h<=816);
-      assert(box.size>=(box.className.includes('aggregate-label')?48:56));
+      assert(box.size>=56,box.text);
     }
     expected.push([t,stage.innerHTML]);
   }
@@ -447,7 +453,7 @@ test('recorded examples give one large comparison; original and post-hoc aggrega
     assert.match(stage.innerHTML,/class="abs claim-verdict coral"/);
     assert.match(text,/CONTRADICTED/);
     assert.match(text,/Saved original · coverage ≠ accuracy/);
-    assert(!/items checked|run failures|Supported|Insufficient|\$11\.0|354\.9/.test(text));
+    assert(!/items checked|failed runs|Supported|Insufficient|\$11\.0|354\.9/.test(text));
     assert.equal([...stage.innerHTML.matchAll(/class="number"/g)].length,2);
     assert(stage.innerHTML.includes(`href="../../../${D.realworld.examples[i].report}"`));
     const badge=window.frame.boxes.find(b=>b.className.includes('claim-verdict'));
@@ -461,11 +467,19 @@ test('recorded examples give one large comparison; original and post-hoc aggrega
     assert.match(stage.innerHTML,/verdict counts are claims/);
     assert(!stage.innerHTML.includes('claim-verdict'));
     if(page===4) {
-      for(const label of ['Post-hoc · frozen text','43/80 items checked (53.8%)','0 run failures',
+      for(const label of ['Post-hoc · frozen text','43/80 items checked (53.8%)','0 failed runs',
         'OCR/ASR not retested','Previously seen inputs'])assert(stage.innerHTML.includes(label));
     } else {
       for(const label of ['DappGo News','Threads','44/80 items checked (55.0%)',
-        '42/78 items checked (53.8%)','0 run failures','6 run failures'])assert(stage.innerHTML.includes(label));
+        '42/78 items checked (53.8%)','0 failed runs','6 failed runs'])assert(stage.innerHTML.includes(label));
+    }
+    const labels=window.frame.boxes.filter(b=>b.className.includes('aggregate-label'));
+    for(const label of ['Supported','Contradicted','Insufficient'])assert(labels.some(b=>b.text===label));
+    assert(labels.some(b=>b.text.includes('failed runs')));
+    for(const b of labels) {
+      assert(b.size>=56,`${b.text}: ${b.size} px; minimum 56 px`);
+      assert(b.h>=b.size*1.2,`${b.text}: line box is too short`);
+      assert(b.x>=64&&b.x+b.w<=1856&&b.y+b.h<=816,b.text);
     }
   }
   assert(shot.end-shot.start<12);
@@ -482,7 +496,7 @@ test('comparison values come from recorded checks rather than the paraphrase or 
   assert.match(plain(stage.innerHTML),/\$1\.234K/);
 });
 
-test('real-world geometry guard enforces 56px example text, 96px values and scoped 48px aggregate labels',()=>{
+test('real-world geometry guard enforces 56px labels without aggregate exceptions and 96px values',()=>{
   const good={text:[{text:'SEC 10-K · FY2023',realworld:true,fontSize:56,
     left:944,right:1824,top:404,bottom:472,textLeft:944,textRight:1500,textTop:404,textBottom:471}],numbers:[]};
   assertV3Layout(good);
@@ -491,9 +505,11 @@ test('real-world geometry guard enforces 56px example text, 96px values and scop
     m=>{m.text[0].fontSize=95;m.text[0].exampleValue=true;}]) {
     const bad=structuredClone(good);change(bad);assert.throws(()=>assertV3Layout(bad));
   }
-  const aggregate=structuredClone(good);Object.assign(aggregate.text[0],{aggregateLabel:true,fontSize:48});
+  const aggregate=structuredClone(good);Object.assign(aggregate.text[0],{aggregateLabel:true,fontSize:56});
   assertV3Layout(aggregate);
-  aggregate.text[0].fontSize=47;assert.throws(()=>assertV3Layout(aggregate));
+  for(const fontSize of [48,55]) {
+    aggregate.text[0].fontSize=fontSize;assert.throws(()=>assertV3Layout(aggregate),/minimum 56 px/);
+  }
 });
 
 test('Apple ribbon animates recorded steps and fact IDs during the existing lead with seek-stable cost/latency',()=>{

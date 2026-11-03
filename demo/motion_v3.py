@@ -304,7 +304,8 @@ def compile_data(repo: Path, story: dict, *, voices=None, analyze=None) -> dict:
         raise BuildError('v007 must fit 170–180 s. Review the script/holds on the host; never accelerate speech.')
     revision = story.get('revision', 'v007')
     timing.update(version=2, revision=revision, music_offset_s=offset,
-                  voice_rule='first detected beat >= scene start + narration_lead_s (default 0)',
+                  voice_rule='first detected beat >= scene start + narration_lead_s (default 0); '
+                             'then add exact narration_offset_s (default 0)',
                   cut_rule='first detected beat >= max(absolute target end, narration end + 0.3 s)')
     local, analysis = {}, {}
     for i, (scene, shot) in enumerate(zip(scenes, timing['shots'])):

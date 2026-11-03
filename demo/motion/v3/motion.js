@@ -236,11 +236,11 @@
         const y=396+row*220;
         html+=box(64,y,464,80,esc(r.label),'body',64)+
           box(552,y+8,840,70,esc(`${r.items_checked}/${r.items_tested} items checked (${r.coverage_percent.toFixed(1)}%)`),'body mint',56)+
-          box(1416,y+16,440,64,esc(`${r.items_with_errors} run failures`),'body muted aggregate-label',48);
+          box(1416,y+8,440,72,esc(`${r.items_with_errors} failed runs`),'body muted aggregate-label',56);
         for(const [i,key] of ['supported','contradicted','insufficient_evidence'].entries()) {
           const x=64+i*608,label=['Supported','Contradicted','Insufficient'][i],color=['mint','coral','amber'][i];
-          html+=box(x,y+84,192,116,n(r.verdict_counts[key],96),color,96)+
-            box(x+208,y+110,368,64,label,'body '+color+' aggregate-label',48);
+          html+=box(x,y+84,144,116,n(r.verdict_counts[key],96),color,96)+
+            box(x+160,y+110,416,72,label,'body '+color+' aggregate-label',56);
         }
       }
       if(posthoc)html+=box(64,652,1792,68,'Frozen text · OCR/ASR not retested','body mint',56)+

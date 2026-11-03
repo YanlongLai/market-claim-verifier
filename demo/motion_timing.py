@@ -34,7 +34,16 @@ def narration_lead(scene: dict) -> float:
 
 def narration_start(scene: dict, start: float, beats: list[float]) -> float:
     lead = narration_lead(scene)
-    return next_beat(beats, start + lead) if lead else start
+    origin = next_beat(beats, start + lead) if lead else start
+    return round(origin + narration_offset(scene), 9)
+
+
+def narration_offset(scene: dict) -> float:
+    """Place an unchanged voice clip precisely, after any beat-snapped lead."""
+    offset = scene.get('narration_offset_s', 0)
+    if type(offset) not in (int, float) or not math.isfinite(offset) or offset < 0:
+        raise BuildError(f"{scene['id']}: narration_offset_s must be a nonnegative, finite number.")
+    return offset
 
 
 def target_timing(scenes: list[dict]) -> dict:

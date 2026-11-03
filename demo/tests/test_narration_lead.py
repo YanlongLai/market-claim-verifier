@@ -23,10 +23,11 @@ _, BEATS = video_beats(read_json(v3.ROOT/STORY['music']['beats']))
 
 
 @pytest.mark.parametrize('bad', [-1, float('nan'), float('inf'), True, '9', None])
-def test_invalid_lead_fails_story_validation_before_synthesis(bad):
+@pytest.mark.parametrize('placement', ['narration_lead_s', 'narration_offset_s'])
+def test_invalid_lead_fails_story_validation_before_synthesis(bad, placement):
     story = deepcopy(STORY)
-    story['scenes'][3]['narration_lead_s'] = bad
-    with pytest.raises(BuildError, match='narration_lead_s'):
+    story['scenes'][3][placement] = bad
+    with pytest.raises(BuildError, match=placement):
         Builder.validate_story(SimpleNamespace(story=story))
 
 
@@ -48,7 +49,8 @@ def test_lead_snaps_voice_and_cut_to_first_eligible_beats_without_speedup():
         presentation_timing(scenes, dict(lead=2, default=1), beats)
 
 
-def test_lead_edit_reuses_cached_clip_in_host_voice_step(tmp_path, monkeypatch):
+@pytest.mark.parametrize('placement,seconds', [('narration_lead_s', 9), ('narration_offset_s', 1.05)])
+def test_lead_edit_reuses_cached_clip_in_host_voice_step(tmp_path, monkeypatch, placement, seconds):
     demo = tmp_path/'demo'
     demo.mkdir()
     story = deepcopy(STORY)
@@ -69,7 +71,7 @@ def test_lead_edit_reuses_cached_clip_in_host_voice_step(tmp_path, monkeypatch):
     prepared = []
     monkeypatch.setattr(builder, 'prepare_motion', lambda: prepared.append(True))
     monkeypatch.setattr(media, 'command', lambda *a, **k: pytest.fail('Cached voice must not invoke TTS'))
-    builder.scenes[0]['narration_lead_s'] = 9
+    builder.scenes[0][placement] = seconds
     # Cue-only edits also reuse the narration; voice still calls motion preparation.
     builder.scenes[0]['cue_events'] = deepcopy(STORY['scenes'][3]['cue_events'])
     assert builder.voice_spec(builder.scenes[0])[1] == key
