@@ -19,6 +19,14 @@ OUT='demo/motion/v4'
 BOUNDARIES=[0.,6.,26.,40.,56.,72.,122.,146.,162.,178.]
 
 
+def scale_narration(scale):
+    median=scale['cohorts'][scale['selected_cohort']]['median_wall_seconds']
+    if round(scale['projection']['sequential_hours_at_median'])!=2:
+        raise BuildError('Rounded two-hour narration no longer matches the saved projection.')
+    return (f'On saved Threads posts, the median was {median:.1f} seconds. '
+            'At that median, a thousand posts take about two hours on one worker.')
+
+
 def validate(story):
     scenes=story['scenes']
     if [s['id'] for s in scenes] != [f'v40{i}' for i in range(1,10)]:
@@ -44,7 +52,7 @@ def compile_data(root=ROOT, story=None, voices=None):
     scale=read_json(root/'demo/data/scale-v4.json')
     if scale!=compile_scale(root):
         raise BuildError('scale-v4.json is stale; rebuild it before motion preparation.')
-    if scale['narration_sentence'] not in story['scenes'][6]['narration']:
+    if scale_narration(scale) not in story['scenes'][6]['narration']:
         raise BuildError('Beat 7 narration no longer matches the measured scale evidence.')
     baseline=yaml.safe_load((root/'demo/storyboard-v3.yaml').read_text())
     if story['voice']!=baseline['voice'] or story['music']!=baseline['music']:
@@ -88,6 +96,10 @@ def compile_data(root=ROOT, story=None, voices=None):
     metrics=dict(heldout_correct=correct,heldout_n=len(heldout),false_support=false_support,negative_n=len(negative),
                  mean_cost_usd=sum(costs)/len(costs),median_claim_seconds=scale['eval_v2']['median_completed_latency_seconds'])
     product=read_json(root/'demo/data/demo-thread.json')
+    from phone_v4 import ASSET, SOURCE, svg
+    if (root/ASSET).read_text()!=svg(root):
+        raise BuildError('Saved post still is stale; run demo/phone_v4.py')
+    phone_post=dict(path=ASSET,sha256=file_hash(root/ASSET),source=SOURCE)
     inputs=[]
     for ext,label in [('webp','Screenshot · Muse OCR'),('pdf','PDF · native text'),('wav','Podcast · Muse Voice'),('mp4','Video · sampled frames + ASR')]:
         p=f'eval/multimodal-v1/inputs/{"META" if ext=="webp" else "MSFT"}/input.{ext}'
@@ -106,6 +118,7 @@ def compile_data(root=ROOT, story=None, voices=None):
     for s in story['scenes']:evidence.update(s['evidence'])
     evidence.update(i['path'] for i in inputs)
     evidence.add('demo/assets/architecture-v4.svg')
+    evidence.update((ASSET,SOURCE))
     provenance={p:file_hash(root/p) for p in sorted(evidence)}
     keyframes=[dict(t=s['start']+min(2.,(s['end']-s['start'])/2),shot=s['id']) for s in shots]
     keyframes.extend([dict(t=56+t,shot='v405') for t in (0,3,6,9,12,14)])
@@ -113,7 +126,7 @@ def compile_data(root=ROOT, story=None, voices=None):
         scenes=story['scenes'],keyframes=sorted(keyframes,key=lambda f:f['t']),
         subtitles=[dict(start=c.start,end=c.end,text=c.text) for c in subtitles],
         architecture_svg=(root/'demo/assets/architecture-v4.svg').read_text(),
-        product=product,metrics=metrics,inputs=inputs,provenance=provenance,
+        product=product,phone_post=phone_post,metrics=metrics,inputs=inputs,provenance=provenance,
         scale=dict(median=scale['cohorts'][scale['selected_cohort']]['median_wall_seconds'],
                    hours=scale['projection']['sequential_hours_at_median']),
         asset_status=dict(site_footage='director pending: v406=50 s, v409=16 s',
