@@ -800,3 +800,254 @@ Reference/edit inputs: `candidates-v3/3-hover/idle.webp`, `H/source/thruster-loo
 ```text
 Create ONE isolated bigger recoil BURST version of the mint hover thruster flame shown in the second reference. Match the first reference Hover robot's mint jet and the loop sheet's sculpted style. ONLY THE FLAME, no robot, nozzle, stamp, shadow, sparks, lettering or symbols. A luminous white-mint core, saturated aqua/mint edge, short broad downward teardrop with a gently forked bottom tip, rounded flattened horizontal top attachment, strong crisp silhouette that reads on light ivory and dark navy. Compared with a normal loop flame, this burst has a broader shoulder and more energetic three-lobed tapered lower end. Not an explosion. Square canvas 1024x1024; flame centered horizontally at x512, flat top starts y200, entire flame x300..724 y200..720. Generous blank margin. Opaque completely flat #FF00FF magenta background, no background gradient, checkerboard, floor or surrounding objects. Minimal soft halo, no pink on flame.
 ```
+
+## Hover turnaround
+
+2026-11-02. Built-in `image_gen` produced five identity-preserving rotations using the approved `H/idle.webp`, `H/point.webp`, `H/stamp.webp` and `H/contact.png` as reference/edit inputs. The new true front was an additional reference for the other views. Nine exact calls are retained below and in [prompts.json](../../site/img/auditor/H/turnaround/prompts.json): five initial views, one antenna-orientation correction, and three antenna-span corrections. All four superseded images remain in `turnaround/source/`; no attempt was discarded.
+
+The stamp stays in the **anatomical right hand**, following approved idle and point (viewer-left in front, viewer-right from the back). The action stamp reference switches hands, so its tool/material details were used without adopting that hand change or its effort eyes. The left profile honestly occludes the far hand and mint handle; part of the navy stamp base remains visible. Every view has a visible mint-rimmed dark nozzle and no flame.
+
+### Exports and processing
+
+All exports are **512×512 RGBA WebP**, with a shared **0.53×** source scale and translation only, no per-view fitting or redrawing. Their nozzle anchors are **(256, 494)**. Visible alpha content is approximately 481–487 px tall. The [processor](../../site/img/auditor/H/turnaround/process-turnaround.py) reuses the existing Auditor key/despill functions and records anchors, source/reference hashes, alpha checks and encoded file hashes in [manifest.json](../../site/img/auditor/H/turnaround/manifest.json).
+
+| View | File | Bytes |
+| --- | --- | ---: |
+| front | [front.webp](../../site/img/auditor/H/turnaround/front.webp) | 33,226 |
+| three-quarter-left | [three-quarter-left.webp](../../site/img/auditor/H/turnaround/three-quarter-left.webp) | 30,716 |
+| side-left | [side-left.webp](../../site/img/auditor/H/turnaround/side-left.webp) | 22,846 |
+| three-quarter-back | [three-quarter-back.webp](../../site/img/auditor/H/turnaround/three-quarter-back.webp) | 24,430 |
+| back | [back.webp](../../site/img/auditor/H/turnaround/back.webp) | 26,434 |
+| Dark/light review sheet | [sheet.png](../../site/img/auditor/H/turnaround/sheet.png) | 947,614 |
+| 3× decoded alpha-edge crops | [edge-check.png](../../site/img/auditor/H/turnaround/edge-check.png) | 255,214 |
+
+The review sheet displays all five views at the same scale on **#111a20** and **#f7f5ef**. The edge sheet shows nozzle, stamp and antenna crops on both backgrounds. All nine generated originals are retained at 1254×1254.
+
+Each exact prompt requested opaque flat **#FF00FF** and used `transparent_background=false`, following the requested magenta-key workflow. The generated backdrops have slight near-magenta variation rather than exact flat RGB; the measured border color was used for keying and edge unmixing, followed by despill. The originals are preserved unchanged rather than relabeled as exact-color masters.
+
+### Review and consistency limits
+
+Visual review covered the full sheet and 3× decoded edge crops on both themes. Numeric checks passed for all five files: real 0–255 alpha with soft edges, complete transparent borders, no detected magenta spill where alpha >32, an empty corridor below the nozzle, and sizes below 80,000 bytes. No flame, floor shadow or surrounding effect is baked in. Validation details are retained in [validation.log](../../site/img/auditor/H/turnaround/validation.log).
+
+Identity is close to the approved Hover, but **these generated rotations are not an exact 3D reconstruction**. The antenna initially mirrored in the front three-quarter view; that was corrected, and three further edits reduced its span. Small bend/projection differences remain, most visibly in the rear three-quarter antenna. Visor and brim curvature, ear-disc depth, shell silhouette and small highlights also vary slightly between generated views. The back has no approved reference, so its plain ivory construction is inferred; no vents, ports, seams or backpack were invented. Review these limitations before treating the sheet as a final character lock.
+
+```sh
+.venv/bin/python docs/site/img/auditor/H/turnaround/process-turnaround.py
+python3 scripts/check_links.py
+```
+
+### Exact turnaround calls
+
+All calls used built-in `image_gen` with `transparent_background=false` and `referenced_image_paths` (no text-only generation or CLI fallback). Reference order below matches the exact tool arguments. Prompts are reproduced verbatim.
+
+#### Hover turnaround call 1: front
+
+Status: completed; selected. Retained output: [source/front.png](../../site/img/auditor/H/turnaround/source/front.png).
+
+Reference/edit inputs in order:
+
+- [docs/site/img/auditor/H/idle.webp](../../site/img/auditor/H/idle.webp)
+- [docs/site/img/auditor/H/point.webp](../../site/img/auditor/H/point.webp)
+- [docs/site/img/auditor/H/stamp.webp](../../site/img/auditor/H/stamp.webp)
+- [docs/site/img/auditor/H/contact.png](../../site/img/auditor/H/contact.png)
+
+```text
+Use case: identity-preserve.
+Asset type: production character-lock turnaround, one isolated view of the EXACT approved Hover robot.
+Input images: Image 1 (idle.webp) is the PRIMARY identity, materials, proportions, relaxed pose and stamp-hand reference/edit target. Image 2 (point.webp) confirms the identical shell, visor, cap brim, antenna, ear disc and nozzle. Image 3 (stamp.webp) confirms material/tool details ONLY: do NOT copy its changed stamp hand, effort eyes or action pose. Image 4 (contact.png) is a consistency reference ONLY: do NOT reproduce its grid, words, flames or other poses.
+Primary request: rotate this same robot to the specified view; this is an identity-preserving camera rotation, not a new robot design.
+Identity lock: one compact off-white spherical egg-shaped shell with integrated head/body, broad glossy rounded navy-black visor, exactly two large simple round luminous mint dot eyes when visible; no mouth or nose. The cap is ONLY the thick curved low mint eyebrow/visor brim from idle, with the narrow raised upper band, NOT a full green helmet or baseball cap. One short bent navy antenna with a single mint ball on top. Circular ear discs with ivory outer flange, navy recessed ring and mint center, same size and height as the approved idle; show only the discs visible at this angle. Tiny off-white mitten arms attached low on the sides, no separate torso, neck, legs or feet. Exactly one flat mint-rimmed underbody thruster nozzle with dark recessed outlet, fully present and visible at the shell bottom.
+Pose and handedness: neutral relaxed idle, arms down, the navy rectangular rubber stamp with mint bulb-shaped handle remains in the robot's ANATOMICAL RIGHT hand (the viewer-left hand in a straight front view), exactly as idle.webp and point.webp. Never swap hands or mirror the robot to fake a rotation. Tool and arms rotate with the body; realistic partial occlusion is allowed in side/rear views. The other hand is empty. Same upright body attitude in every view.
+Style/lighting: preserve the exact approved soft toy-like 3D render, softly shaded warm ivory, glossy deep navy screen, vivid mint trim, small gentle highlights and soft upper-left studio light. Same lighting brightness and camera elevation for every view, near-orthographic product camera, only enough elevation to see the narrow dark nozzle opening and stamp top. No new texture, seam decoration, screws, panels, backpack, logo, clothing or accessories.
+Framing and shared scale: one square 1024x1024 image. Center the body axis and nozzle at x512. Physical shell crown-to-nozzle height about 610px, crown near y250, nozzle bottom near y860, antenna tip near y115; same shell size and camera distance for every view. Leave all antenna, hands and tool inside the frame with generous padding. Do not zoom to fit the different silhouette widths.
+Background and layers: opaque perfectly FLAT pure #FF00FF magenta across the entire background; no transparency, checkerboard, gradient, floor, horizon, ground shadow, vignette or labels. Magenta is only the removable key backdrop. NO THRUSTER FLAME, luminous jet, exhaust, underbody glow, trail, sparks, particles, detached shapes or reflections on a floor. The bottom ends at the clean nozzle with empty magenta immediately below.
+Text: none. Exactly one robot, one stamp, one view.
+
+VIEW: TRUE FRONT, yaw 0 degrees. Robot faces the viewer squarely. Symmetrical visor opening and two equal round mint eyes, the cap brim centered above it. Both matching ear discs may be seen at the sides in appropriate foreshortening. Stamp hangs low in viewer-left/anatomical-right hand. No lean, no gesture.
+```
+
+#### Hover turnaround call 2: three-quarter-left
+
+Status: completed; antenna mirrored; retained; superseded. Retained output: [source/three-quarter-left-attempt-1.png](../../site/img/auditor/H/turnaround/source/three-quarter-left-attempt-1.png).
+
+Reference/edit inputs in order:
+
+- [docs/site/img/auditor/H/idle.webp](../../site/img/auditor/H/idle.webp)
+- [docs/site/img/auditor/H/point.webp](../../site/img/auditor/H/point.webp)
+- [docs/site/img/auditor/H/stamp.webp](../../site/img/auditor/H/stamp.webp)
+- [docs/site/img/auditor/H/contact.png](../../site/img/auditor/H/contact.png)
+- [docs/site/img/auditor/H/turnaround/source/front.png](../../site/img/auditor/H/turnaround/source/front.png)
+
+```text
+Use case: identity-preserve.
+Asset type: production character-lock turnaround, one isolated view of the EXACT approved Hover robot.
+Input images: Image 1 (idle.webp) is the PRIMARY identity, materials, proportions, relaxed pose and stamp-hand reference/edit target. Image 2 (point.webp) confirms the identical shell, visor, cap brim, antenna, ear disc and nozzle. Image 3 (stamp.webp) confirms material/tool details ONLY: do NOT copy its changed stamp hand, effort eyes or action pose. Image 4 (contact.png) is a consistency reference ONLY: do NOT reproduce its grid, words, flames or other poses.
+Input image 5 (front.png) is the newly locked true front from this same turnaround: preserve its exact parts, shell/visor/eyes proportions, colors, light, relaxed hands, stamp and camera scale while rotating. The four approved original references remain the identity authority.
+Primary request: rotate this same robot to the specified view; this is an identity-preserving camera rotation, not a new robot design.
+Identity lock: one compact off-white spherical egg-shaped shell with integrated head/body, broad glossy rounded navy-black visor, exactly two large simple round luminous mint dot eyes when visible; no mouth or nose. The cap is ONLY the thick curved low mint eyebrow/visor brim from idle, with the narrow raised upper band, NOT a full green helmet or baseball cap. One short bent navy antenna with a single mint ball on top. Circular ear discs with ivory outer flange, navy recessed ring and mint center, same size and height as the approved idle; show only the discs visible at this angle. Tiny off-white mitten arms attached low on the sides, no separate torso, neck, legs or feet. Exactly one flat mint-rimmed underbody thruster nozzle with dark recessed outlet, fully present and visible at the shell bottom.
+Pose and handedness: neutral relaxed idle, arms down, the navy rectangular rubber stamp with mint bulb-shaped handle remains in the robot's ANATOMICAL RIGHT hand (the viewer-left hand in a straight front view), exactly as idle.webp and point.webp. Never swap hands or mirror the robot to fake a rotation. Tool and arms rotate with the body; realistic partial occlusion is allowed in side/rear views. The other hand is empty. Same upright body attitude in every view.
+Style/lighting: preserve the exact approved soft toy-like 3D render, softly shaded warm ivory, glossy deep navy screen, vivid mint trim, small gentle highlights and soft upper-left studio light. Same lighting brightness and camera elevation for every view, near-orthographic product camera, only enough elevation to see the narrow dark nozzle opening and stamp top. No new texture, seam decoration, screws, panels, backpack, logo, clothing or accessories.
+Framing and shared scale: one square 1024x1024 image. Center the body axis and nozzle at x512. Physical shell crown-to-nozzle height about 610px, crown near y250, nozzle bottom near y860, antenna tip near y115; same shell size and camera distance for every view. Leave all antenna, hands and tool inside the frame with generous padding. Do not zoom to fit the different silhouette widths.
+Background and layers: opaque perfectly FLAT pure #FF00FF magenta across the entire background; no transparency, checkerboard, gradient, floor, horizon, ground shadow, vignette or labels. Magenta is only the removable key backdrop. NO THRUSTER FLAME, luminous jet, exhaust, underbody glow, trail, sparks, particles, detached shapes or reflections on a floor. The bottom ends at the clean nozzle with empty magenta immediately below.
+Text: none. Exactly one robot, one stamp, one view.
+
+VIEW: FRONT THREE-QUARTER LEFT, yaw 45 degrees toward SCREEN LEFT from the true front. Robot's face points diagonally left; the robot's anatomical LEFT side/ear is the nearer side. Keep both round dot eyes visible with natural foreshortening, the far eye smaller. The cap brim projects toward screen-left. The anatomical RIGHT stamp hand is now on the far side; keep the exact same grip and relaxed arm, allowing honest occlusion rather than swapping hands. Only rotate the camera/robot relative yaw; keep the shell and all parts identical.
+```
+
+#### Hover turnaround call 3: three-quarter-left-antenna-fix
+
+Status: completed; orientation corrected; span superseded. Retained output: [source/three-quarter-left-antenna-attempt-2.png](../../site/img/auditor/H/turnaround/source/three-quarter-left-antenna-attempt-2.png).
+
+Reference/edit inputs in order:
+
+- [docs/site/img/auditor/H/turnaround/source/three-quarter-left-attempt-1.png](../../site/img/auditor/H/turnaround/source/three-quarter-left-attempt-1.png)
+- [docs/site/img/auditor/H/turnaround/source/front.png](../../site/img/auditor/H/turnaround/source/front.png)
+- [docs/site/img/auditor/H/idle.webp](../../site/img/auditor/H/idle.webp)
+
+```text
+Use case: precise-object-edit, identity-preserve.
+Input image 1 is the edit target, the generated front-three-quarter LEFT Hover robot. Input image 2 is the locked true FRONT view. Input image 3 is the original approved idle identity reference.
+Change ONLY the bent antenna orientation in image 1. Its antenna was inadvertently mirrored. On this exact character the stalk bends toward the robot's ANATOMICAL LEFT, which appears SCREEN-RIGHT in the true front image 2. At this 45-degree left-facing view the mint ball must still be slightly SCREEN-RIGHT of its navy root socket, not screen-left. Keep the socket fixed at exactly the same crown location; keep the same stalk thickness, short length, mint ball size and materials. Foreshorten the sideways offset appropriate to a 45-degree rotation, preserving the ball's top height. The corrected navy stalk rises and curves gently to SCREEN-RIGHT, with the mint ball above and a little right of its root.
+Preserve every other pixel-level design feature and composition of image 1: exact ivory egg body, navy visor, both mint eyes, mint cap brim, ear discs, two relaxed mitten arms, stamp in the same far anatomical RIGHT hand, exposed mint-rimmed dark nozzle, lighting, body scale, pose, canvas and camera angle. Do not mirror or rotate the whole robot. No flame, exhaust, glow under the nozzle, shadow, text or new detail. Keep the entire backdrop opaque perfectly flat pure #FF00FF magenta, with no gradient, checkerboard or floor. Output the single same square image with only that antenna correction.
+```
+
+#### Hover turnaround call 4: side-left
+
+Status: completed; selected. Retained output: [source/side-left.png](../../site/img/auditor/H/turnaround/source/side-left.png).
+
+Reference/edit inputs in order:
+
+- [docs/site/img/auditor/H/idle.webp](../../site/img/auditor/H/idle.webp)
+- [docs/site/img/auditor/H/point.webp](../../site/img/auditor/H/point.webp)
+- [docs/site/img/auditor/H/stamp.webp](../../site/img/auditor/H/stamp.webp)
+- [docs/site/img/auditor/H/contact.png](../../site/img/auditor/H/contact.png)
+- [docs/site/img/auditor/H/turnaround/source/front.png](../../site/img/auditor/H/turnaround/source/front.png)
+
+```text
+Use case: identity-preserve.
+Asset type: production character-lock turnaround, one isolated view of the EXACT approved Hover robot.
+Input images: Image 1 (idle.webp) is the PRIMARY identity, materials, proportions, relaxed pose and stamp-hand reference/edit target. Image 2 (point.webp) confirms the identical shell, visor, cap brim, antenna, ear disc and nozzle. Image 3 (stamp.webp) confirms material/tool details ONLY: do NOT copy its changed stamp hand, effort eyes or action pose. Image 4 (contact.png) is a consistency reference ONLY: do NOT reproduce its grid, words, flames or other poses.
+Input image 5 (front.png) is the newly locked true front from this same turnaround: preserve its exact parts, shell/visor/eyes proportions, colors, light, relaxed hands, stamp and camera scale while rotating. The four approved original references remain the identity authority.
+Primary request: rotate this same robot to the specified view; this is an identity-preserving camera rotation, not a new robot design.
+Identity lock: one compact off-white spherical egg-shaped shell with integrated head/body, broad glossy rounded navy-black visor, exactly two large simple round luminous mint dot eyes when visible; no mouth or nose. The cap is ONLY the thick curved low mint eyebrow/visor brim from idle, with the narrow raised upper band, NOT a full green helmet or baseball cap. One short bent navy antenna with a single mint ball on top. Circular ear discs with ivory outer flange, navy recessed ring and mint center, same size and height as the approved idle; show only the discs visible at this angle. Tiny off-white mitten arms attached low on the sides, no separate torso, neck, legs or feet. Exactly one flat mint-rimmed underbody thruster nozzle with dark recessed outlet, fully present and visible at the shell bottom.
+Pose and handedness: neutral relaxed idle, arms down, the navy rectangular rubber stamp with mint bulb-shaped handle remains in the robot's ANATOMICAL RIGHT hand (the viewer-left hand in a straight front view), exactly as idle.webp and point.webp. Never swap hands or mirror the robot to fake a rotation. Tool and arms rotate with the body; realistic partial occlusion is allowed in side/rear views. The other hand is empty. Same upright body attitude in every view.
+Style/lighting: preserve the exact approved soft toy-like 3D render, softly shaded warm ivory, glossy deep navy screen, vivid mint trim, small gentle highlights and soft upper-left studio light. Same lighting brightness and camera elevation for every view, near-orthographic product camera, only enough elevation to see the narrow dark nozzle opening and stamp top. No new texture, seam decoration, screws, panels, backpack, logo, clothing or accessories.
+Framing and shared scale: one square 1024x1024 image. Center the body axis and nozzle at x512. Physical shell crown-to-nozzle height about 610px, crown near y250, nozzle bottom near y860, antenna tip near y115; same shell size and camera distance for every view. Leave all antenna, hands and tool inside the frame with generous padding. Do not zoom to fit the different silhouette widths.
+Background and layers: opaque perfectly FLAT pure #FF00FF magenta across the entire background; no transparency, checkerboard, gradient, floor, horizon, ground shadow, vignette or labels. Magenta is only the removable key backdrop. NO THRUSTER FLAME, luminous jet, exhaust, underbody glow, trail, sparks, particles, detached shapes or reflections on a floor. The bottom ends at the clean nozzle with empty magenta immediately below.
+Text: none. Exactly one robot, one stamp, one view.
+
+VIEW: STRICT LEFT PROFILE, yaw 90 degrees toward SCREEN LEFT from the true front. See the robot's anatomical LEFT side; its cap brim and visor front point to screen-left. Near circular ear disc prominent in the correct place behind the visor edge. Only the near mint eye can be visible through the thin foreshortened edge of the navy screen if physically visible; do not draw two frontal eyes on the side shell. The anatomical RIGHT stamp arm stays on the FAR side, at the same relaxed position; it and the navy stamp may be partly occluded, never moved to the near left hand. Preserve the spherical body depth, one bent antenna and bottom mint-rimmed nozzle. This is a real side view, not another three-quarter.
+The antenna bends toward the robot's anatomical LEFT, as in the true front reference where its ball is screen-right of its socket. At this STRICT LEFT PROFILE that sideways bend points along the view direction: show a naturally foreshortened stalk, with the mint ball nearly aligned horizontally with the crown socket, not an exaggerated screen-left or screen-right arc.
+```
+
+#### Hover turnaround call 5: three-quarter-back
+
+Status: completed; antenna span superseded. Retained output: [source/three-quarter-back-attempt-1.png](../../site/img/auditor/H/turnaround/source/three-quarter-back-attempt-1.png).
+
+Reference/edit inputs in order:
+
+- [docs/site/img/auditor/H/idle.webp](../../site/img/auditor/H/idle.webp)
+- [docs/site/img/auditor/H/point.webp](../../site/img/auditor/H/point.webp)
+- [docs/site/img/auditor/H/stamp.webp](../../site/img/auditor/H/stamp.webp)
+- [docs/site/img/auditor/H/contact.png](../../site/img/auditor/H/contact.png)
+- [docs/site/img/auditor/H/turnaround/source/front.png](../../site/img/auditor/H/turnaround/source/front.png)
+
+```text
+Use case: identity-preserve.
+Asset type: production character-lock turnaround, one isolated view of the EXACT approved Hover robot.
+Input images: Image 1 (idle.webp) is the PRIMARY identity, materials, proportions, relaxed pose and stamp-hand reference/edit target. Image 2 (point.webp) confirms the identical shell, visor, cap brim, antenna, ear disc and nozzle. Image 3 (stamp.webp) confirms material/tool details ONLY: do NOT copy its changed stamp hand, effort eyes or action pose. Image 4 (contact.png) is a consistency reference ONLY: do NOT reproduce its grid, words, flames or other poses.
+Input image 5 (front.png) is the newly locked true front from this same turnaround: preserve its exact parts, shell/visor/eyes proportions, colors, light, relaxed hands, stamp and camera scale while rotating. The four approved original references remain the identity authority.
+Primary request: rotate this same robot to the specified view; this is an identity-preserving camera rotation, not a new robot design.
+Identity lock: one compact off-white spherical egg-shaped shell with integrated head/body, broad glossy rounded navy-black visor, exactly two large simple round luminous mint dot eyes when visible; no mouth or nose. The cap is ONLY the thick curved low mint eyebrow/visor brim from idle, with the narrow raised upper band, NOT a full green helmet or baseball cap. One short bent navy antenna with a single mint ball on top. Circular ear discs with ivory outer flange, navy recessed ring and mint center, same size and height as the approved idle; show only the discs visible at this angle. Tiny off-white mitten arms attached low on the sides, no separate torso, neck, legs or feet. Exactly one flat mint-rimmed underbody thruster nozzle with dark recessed outlet, fully present and visible at the shell bottom.
+Pose and handedness: neutral relaxed idle, arms down, the navy rectangular rubber stamp with mint bulb-shaped handle remains in the robot's ANATOMICAL RIGHT hand (the viewer-left hand in a straight front view), exactly as idle.webp and point.webp. Never swap hands or mirror the robot to fake a rotation. Tool and arms rotate with the body; realistic partial occlusion is allowed in side/rear views. The other hand is empty. Same upright body attitude in every view.
+Style/lighting: preserve the exact approved soft toy-like 3D render, softly shaded warm ivory, glossy deep navy screen, vivid mint trim, small gentle highlights and soft upper-left studio light. Same lighting brightness and camera elevation for every view, near-orthographic product camera, only enough elevation to see the narrow dark nozzle opening and stamp top. No new texture, seam decoration, screws, panels, backpack, logo, clothing or accessories.
+Framing and shared scale: one square 1024x1024 image. Center the body axis and nozzle at x512. Physical shell crown-to-nozzle height about 610px, crown near y250, nozzle bottom near y860, antenna tip near y115; same shell size and camera distance for every view. Leave all antenna, hands and tool inside the frame with generous padding. Do not zoom to fit the different silhouette widths.
+Background and layers: opaque perfectly FLAT pure #FF00FF magenta across the entire background; no transparency, checkerboard, gradient, floor, horizon, ground shadow, vignette or labels. Magenta is only the removable key backdrop. NO THRUSTER FLAME, luminous jet, exhaust, underbody glow, trail, sparks, particles, detached shapes or reflections on a floor. The bottom ends at the clean nozzle with empty magenta immediately below.
+Text: none. Exactly one robot, one stamp, one view.
+
+VIEW: REAR THREE-QUARTER, yaw 135 degrees toward SCREEN LEFT from the true front, continuing past the left profile. See mostly the plain warm ivory back and the anatomical LEFT side. Face points away to screen-left; at most a very narrow visor/brim edge may peek on the far-left contour. No eyes on the back. Preserve one antenna, near circular ivory/navy/mint ear disc, relaxed mitten arms and bottom mint-rimmed dark nozzle. The anatomical RIGHT stamp remains in its original hand rotating to the far/rear side and can be partly occluded. Back shell is smooth and plain: references establish no rear ornaments; do not invent vents, ports, seams or panels.
+The antenna bends toward the robot's anatomical LEFT; at this 135-degree rear-left view its mint ball should project slightly SCREEN-LEFT of the navy root socket, the continuing rotation of the front reference antenna. Do not invent a second antenna.
+```
+
+#### Hover turnaround call 6: back
+
+Status: completed; antenna span superseded. Retained output: [source/back-attempt-1.png](../../site/img/auditor/H/turnaround/source/back-attempt-1.png).
+
+Reference/edit inputs in order:
+
+- [docs/site/img/auditor/H/idle.webp](../../site/img/auditor/H/idle.webp)
+- [docs/site/img/auditor/H/point.webp](../../site/img/auditor/H/point.webp)
+- [docs/site/img/auditor/H/stamp.webp](../../site/img/auditor/H/stamp.webp)
+- [docs/site/img/auditor/H/contact.png](../../site/img/auditor/H/contact.png)
+- [docs/site/img/auditor/H/turnaround/source/front.png](../../site/img/auditor/H/turnaround/source/front.png)
+
+```text
+Use case: identity-preserve.
+Asset type: production character-lock turnaround, one isolated view of the EXACT approved Hover robot.
+Input images: Image 1 (idle.webp) is the PRIMARY identity, materials, proportions, relaxed pose and stamp-hand reference/edit target. Image 2 (point.webp) confirms the identical shell, visor, cap brim, antenna, ear disc and nozzle. Image 3 (stamp.webp) confirms material/tool details ONLY: do NOT copy its changed stamp hand, effort eyes or action pose. Image 4 (contact.png) is a consistency reference ONLY: do NOT reproduce its grid, words, flames or other poses.
+Input image 5 (front.png) is the newly locked true front from this same turnaround: preserve its exact parts, shell/visor/eyes proportions, colors, light, relaxed hands, stamp and camera scale while rotating. The four approved original references remain the identity authority.
+Primary request: rotate this same robot to the specified view; this is an identity-preserving camera rotation, not a new robot design.
+Identity lock: one compact off-white spherical egg-shaped shell with integrated head/body, broad glossy rounded navy-black visor, exactly two large simple round luminous mint dot eyes when visible; no mouth or nose. The cap is ONLY the thick curved low mint eyebrow/visor brim from idle, with the narrow raised upper band, NOT a full green helmet or baseball cap. One short bent navy antenna with a single mint ball on top. Circular ear discs with ivory outer flange, navy recessed ring and mint center, same size and height as the approved idle; show only the discs visible at this angle. Tiny off-white mitten arms attached low on the sides, no separate torso, neck, legs or feet. Exactly one flat mint-rimmed underbody thruster nozzle with dark recessed outlet, fully present and visible at the shell bottom.
+Pose and handedness: neutral relaxed idle, arms down, the navy rectangular rubber stamp with mint bulb-shaped handle remains in the robot's ANATOMICAL RIGHT hand (the viewer-left hand in a straight front view), exactly as idle.webp and point.webp. Never swap hands or mirror the robot to fake a rotation. Tool and arms rotate with the body; realistic partial occlusion is allowed in side/rear views. The other hand is empty. Same upright body attitude in every view.
+Style/lighting: preserve the exact approved soft toy-like 3D render, softly shaded warm ivory, glossy deep navy screen, vivid mint trim, small gentle highlights and soft upper-left studio light. Same lighting brightness and camera elevation for every view, near-orthographic product camera, only enough elevation to see the narrow dark nozzle opening and stamp top. No new texture, seam decoration, screws, panels, backpack, logo, clothing or accessories.
+Framing and shared scale: one square 1024x1024 image. Center the body axis and nozzle at x512. Physical shell crown-to-nozzle height about 610px, crown near y250, nozzle bottom near y860, antenna tip near y115; same shell size and camera distance for every view. Leave all antenna, hands and tool inside the frame with generous padding. Do not zoom to fit the different silhouette widths.
+Background and layers: opaque perfectly FLAT pure #FF00FF magenta across the entire background; no transparency, checkerboard, gradient, floor, horizon, ground shadow, vignette or labels. Magenta is only the removable key backdrop. NO THRUSTER FLAME, luminous jet, exhaust, underbody glow, trail, sparks, particles, detached shapes or reflections on a floor. The bottom ends at the clean nozzle with empty magenta immediately below.
+Text: none. Exactly one robot, one stamp, one view.
+
+VIEW: TRUE BACK, yaw 180 degrees from the true front. Robot faces directly away, back shell centered and upright. Plain smooth warm ivory rear shell with no screen, no eyes, no face or green helmet on its back. The frontal low cap brim may show only physically justified thin tips at the sides, not a wraparound cap. Both circular ear discs edge-on at the correct heights, same single bent navy antenna and mint ball, same relaxed mitten arms and visible bottom mint-rimmed dark nozzle. The stamp is in the SAME anatomical RIGHT hand, which is now VIEWER-RIGHT; its mint handle and navy rectangular base rotate with the hand. No invented rear seams, vents, backpack, buttons, charging port or decorations.
+The antenna bends toward the robot's anatomical LEFT, which in this exact rear view means the mint ball is SCREEN-LEFT of its navy socket, the correct reversed projection of the front reference. Preserve its dimensions and bend radius.
+```
+
+#### Hover turnaround call 7: three-quarter-left-antenna-span
+
+Status: completed; selected. Retained output: [source/three-quarter-left.png](../../site/img/auditor/H/turnaround/source/three-quarter-left.png).
+
+Reference/edit inputs in order:
+
+- [docs/site/img/auditor/H/turnaround/source/three-quarter-left-antenna-attempt-2.png](../../site/img/auditor/H/turnaround/source/three-quarter-left-antenna-attempt-2.png)
+- [docs/site/img/auditor/H/turnaround/source/front.png](../../site/img/auditor/H/turnaround/source/front.png)
+- [docs/site/img/auditor/H/idle.webp](../../site/img/auditor/H/idle.webp)
+
+```text
+Use case: precise-object-edit, identity-preserve.
+Input image 1 is the EDIT TARGET: the 45-degree front three-quarter LEFT Hover robot. Image 2 is this same turnaround's true front antenna dimension reference. Image 3 is the approved original idle identity reference.
+Change ONLY the antenna above the ivory shell, to correct its over-wide bend in this view. Keep the navy crown root socket fixed at (646, 277) in the existing 1254x1254 canvas. The mint ball is currently centered about (745, 156); move its center to (696, 156), keeping its same diameter (about 104px), top height, mint color and highlight. This is a precise horizontal shift, not a change of robot scale. The ball center must end about 50px screen-right of the root socket. Reshape only the short navy curved stalk between that fixed socket and relocated mint ball: retain its thickness and a gentle bend matching the true-front reference. The antenna consistently bends to the robot's anatomical LEFT, foreshortened for this view. Do not enlarge or raise the ball.
+Every part below the antenna socket must remain unchanged: same exact ivory shell silhouette and proportions, navy visor or plain rear shell, mint cap brim where visible, ear discs, relaxed mitten arms, same anatomical RIGHT stamp hand and navy/mint stamp, nozzle, camera angle, pose, highlights and lighting. No mirroring, no new back features, no extra antenna, no face changes. Keep the exact canvas and camera scale of image 1.
+Opaque flat pure #FF00FF key background; no text, checkerboard, floor, shadows, flame, glow under the nozzle, exhaust or particles. Output only the same single robot with the corrected antenna. All other subject pixels and composition stay fixed.
+```
+
+#### Hover turnaround call 8: three-quarter-back-antenna-span
+
+Status: completed; selected. Retained output: [source/three-quarter-back.png](../../site/img/auditor/H/turnaround/source/three-quarter-back.png).
+
+Reference/edit inputs in order:
+
+- [docs/site/img/auditor/H/turnaround/source/three-quarter-back-attempt-1.png](../../site/img/auditor/H/turnaround/source/three-quarter-back-attempt-1.png)
+- [docs/site/img/auditor/H/turnaround/source/front.png](../../site/img/auditor/H/turnaround/source/front.png)
+- [docs/site/img/auditor/H/idle.webp](../../site/img/auditor/H/idle.webp)
+
+```text
+Use case: precise-object-edit, identity-preserve.
+Input image 1 is the EDIT TARGET: the 135-degree rear three-quarter LEFT Hover robot. Image 2 is this same turnaround's true front antenna dimension reference. Image 3 is the approved original idle identity reference.
+Change ONLY the antenna above the ivory shell, to correct its over-wide bend in this view. Keep the navy crown root socket fixed at (581, 274) in the existing 1254x1254 canvas. The mint ball is currently centered about (447, 156); move its center to (531, 156), keeping its same diameter (about 104px), top height, mint color and highlight. This is a precise horizontal shift, not a change of robot scale. The ball center must end about 50px screen-left of the root socket. Reshape only the short navy curved stalk between that fixed socket and relocated mint ball: retain its thickness and a gentle bend matching the true-front reference. The antenna consistently bends to the robot's anatomical LEFT, foreshortened for this view. Do not enlarge or raise the ball.
+Every part below the antenna socket must remain unchanged: same exact ivory shell silhouette and proportions, navy visor or plain rear shell, mint cap brim where visible, ear discs, relaxed mitten arms, same anatomical RIGHT stamp hand and navy/mint stamp, nozzle, camera angle, pose, highlights and lighting. No mirroring, no new back features, no extra antenna, no face changes. Keep the exact canvas and camera scale of image 1.
+Opaque flat pure #FF00FF key background; no text, checkerboard, floor, shadows, flame, glow under the nozzle, exhaust or particles. Output only the same single robot with the corrected antenna. All other subject pixels and composition stay fixed.
+```
+
+#### Hover turnaround call 9: back-antenna-span
+
+Status: completed; selected. Retained output: [source/back.png](../../site/img/auditor/H/turnaround/source/back.png).
+
+Reference/edit inputs in order:
+
+- [docs/site/img/auditor/H/turnaround/source/back-attempt-1.png](../../site/img/auditor/H/turnaround/source/back-attempt-1.png)
+- [docs/site/img/auditor/H/turnaround/source/front.png](../../site/img/auditor/H/turnaround/source/front.png)
+- [docs/site/img/auditor/H/idle.webp](../../site/img/auditor/H/idle.webp)
+
+```text
+Use case: precise-object-edit, identity-preserve.
+Input image 1 is the EDIT TARGET: the 180-degree true BACK Hover robot. Image 2 is this same turnaround's true front antenna dimension reference. Image 3 is the approved original idle identity reference.
+Change ONLY the antenna above the ivory shell, to correct its over-wide bend in this view. Keep the navy crown root socket fixed at (612, 277) in the existing 1254x1254 canvas. The mint ball is currently centered about (491, 155); move its center to (542, 155), keeping its same diameter (about 104px), top height, mint color and highlight. This is a precise horizontal shift, not a change of robot scale. The ball center must end about 70px screen-left of the root socket. Reshape only the short navy curved stalk between that fixed socket and relocated mint ball: retain its thickness and a gentle bend matching the true-front reference. The antenna consistently bends to the robot's anatomical LEFT, foreshortened for this view. Do not enlarge or raise the ball.
+Every part below the antenna socket must remain unchanged: same exact ivory shell silhouette and proportions, navy visor or plain rear shell, mint cap brim where visible, ear discs, relaxed mitten arms, same anatomical RIGHT stamp hand and navy/mint stamp, nozzle, camera angle, pose, highlights and lighting. No mirroring, no new back features, no extra antenna, no face changes. Keep the exact canvas and camera scale of image 1.
+Opaque flat pure #FF00FF key background; no text, checkerboard, floor, shadows, flame, glow under the nozzle, exhaust or particles. Output only the same single robot with the corrected antenna. All other subject pixels and composition stay fixed.
+```

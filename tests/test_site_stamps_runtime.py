@@ -38,6 +38,10 @@ def test_playback_freezes_offscreen_hidden_paused_and_reduced_motion():
     run_check(LIFECYCLE)
 
 
+def test_step_buttons_seek_pause_and_skip_uncheckable_filing_steps():
+    run_check(STEP_CONTROLS)
+
+
 @pytest.mark.parametrize("viewport", [390, 768, 1280])
 @pytest.mark.parametrize("language", ["en", "zh"])
 @pytest.mark.parametrize("reduced", [False, True])
@@ -503,11 +507,15 @@ for(let index=0;index<cards.length;index++)if(!hasEvidence(cards[index])){
 """
 
 LIFECYCLE = r"""
+const initial=api.getState().seconds;
+near(initial,3.02);assert.equal(api.getState().phase,'find');
+assert.equal(scene.querySelector('.stamp-filing-box').dataset.state,'filing');
+assert.equal(scene.querySelector('.stamp-filing-content').querySelector('.stamp-passage-details').style.opacity,'1');
 assert.equal(callbacks.size,0);assert.equal(created.filter(x=>x.src&&!x.classList.contains('stamp-avatar')&&!x.classList.contains('stamp-polish-art')).length,0);
 intersection([{isIntersecting:true}]);assert.equal(callbacks.size,1);
 assert.equal(created.filter(x=>x.src?.includes('/H/')&&x.classList.contains('stamp-robot-pose')).length,11);
 const reads=layoutReads;
-step(100);step(300);near(api.getState().seconds,.2);assert.equal(layoutReads,reads,'Animation frames perform no layout reads');
+step(100);step(300);near(api.getState().seconds,initial+.2);assert.equal(layoutReads,reads,'Animation frames perform no layout reads');
 intersection([{isIntersecting:false}]);assert.equal(callbacks.size,0);
 const frozen=api.getState().seconds;
 intersection([{isIntersecting:true}]);step(100000);near(api.getState().seconds,frozen);
@@ -521,6 +529,21 @@ assert.ok(still.every(item=>item.children[0].tabIndex===0));
 motion.matches=false;onMotion();assert.equal(callbacks.size,1);
 assert.equal(created.filter(x=>x.src?.includes('/H/')&&x.classList.contains('stamp-robot-pose')).length,11);
 onResize();assert.ok(layoutReads>reads);
+"""
+
+STEP_CONTROLS = r"""
+const buttons=scene.querySelectorAll('.stamp-step');
+for(let index=0;index<4;index++){
+  buttons[index].events.click();
+  assert.equal(api.getState().step,index+1);
+  assert.equal(pause.attributes['aria-pressed'],'true');
+}
+const unknown=cards.findIndex(card=>!card.excerpt);
+seek(starts[unknown]+1);
+assert.equal(buttons[0].disabled,false);assert.equal(buttons[3].disabled,false);
+assert.equal(buttons[1].disabled,true);assert.equal(buttons[2].disabled,true);
+buttons[3].events.click();assert.equal(api.getState().step,4);
+seek(0);assert.equal(api.getState().seconds,0);assert.equal(api.getState().phase,'enter');
 """
 
 SEEK = r"""
@@ -565,12 +588,12 @@ assert.equal(tree.querySelector('.stamp-panel-label').textContent,config.languag
 """
 
 QUERY = r"""
-assert.equal(api.getState().seconds,0);assert.equal(pause.attributes['aria-pressed'],'false');
+assert.equal(api.getState().seconds,3.02);assert.equal(pause.attributes['aria-pressed'],'false');
 intersection([{isIntersecting:true}]);assert.equal(scene.dataset.running,'true');assert.equal(callbacks.size,1);
 """
 
 GEOMETRY = r"""
-near(sceneHeight,phone?2*letterboxHeight+2*labelHeight+postHeight+92+filingHeight+32:tablet?436:420);
+near(sceneHeight,phone?2*letterboxHeight+2*labelHeight+postHeight+92+filingHeight+44:tablet?436:420);
 assert.ok(sceneHeight<=(phone?640:tablet?444:424));
 near(sceneHeight,stageHeight+stripHeight+stripGap);
 assert.equal(property('.stamp-carrier','position'),'absolute');
@@ -588,7 +611,7 @@ for(const box of [post,filed]){
   assert.ok(box.left>=0&&box.right<=sceneWidth);assert.ok(box.top>=0&&box.bottom<=sceneHeight);
 }
 if(phone){
-  assert.equal(property('.stamp-strip','order'),'-1');near(stripHeight,32);
+  assert.equal(property('.stamp-strip','order'),'-1');near(stripHeight,44);
   assert.equal(property('.stamp-strip','display'),'flex');assert.equal(property('.stamp-next','display'),'none');
   assert.equal(property('.stamp-pause-label','display'),'none');assert.equal(property('.stamp-pause-icon','display'),'inline');
   assert.ok(post.bottom<=robotTop);near(robotTop,post.bottom+4);near(robotLeft,8);
@@ -652,7 +675,7 @@ const first=tree.querySelector('.stamp-panel-label').textContent;
 assert.equal(first,config.language==='zh'?'① 待查核貼文':'① Post under review');
 const steps=scene.querySelectorAll('.stamp-progress li');
 const expected=config.language==='zh'?['找出說法','打開財報','程式判定','蓋章']:['Find the claim','Open the filing','Code decides','Stamp'];
-for(let i=0;i<4;i++)assert.equal(steps[i].children[1].textContent,expected[i]);
+for(let i=0;i<4;i++)assert.equal(steps[i].querySelector('[data-i18n]').textContent,expected[i]);
 """
 
 FILING = r"""
@@ -1031,9 +1054,9 @@ for(let index=0;index<cards.length;index++)for(const age of [.1,1.05,2.4,3.14,4.
 }
 onResize();onResize();assert.equal(intrinsicReads,once,'Seeks and observer echoes never remeasure the card set');
 assert.equal(property('.stamp-strip','display'),'flex');assert.equal(property('.stamp-progress','display'),'flex');
-near(stripHeight,32);assert.equal(property('.stamp-next','display'),'none');
+near(stripHeight,44);assert.equal(property('.stamp-next','display'),'none');
 assert.equal(property('.stamp-pause-label','display'),'none');assert.equal(property('.stamp-pause-icon','display'),'inline');
-const hiddenLabel='.stamp-progress li:not(.is-active) > [data-i18n]';
+const hiddenLabel='.stamp-progress li:not(.is-active) [data-i18n]';
 assert.equal(property(hiddenLabel,'position'),'absolute');assert.equal(property(hiddenLabel,'clip-path'),'inset(50%)');
 assert.equal(property('.stamp-progress li.is-active','flex'),'1');
 assert.ok(!html.includes('stamp-desk')&&!html.includes('stamp-folder-tab'));
@@ -1045,7 +1068,8 @@ seek(1);assert.equal(intrinsicReads,once);near(postHeight,expectedPost);
 onFonts();assert.ok(intrinsicReads>once,'A completed font load invalidates intrinsic maxima');near(postHeight,246);near(filingHeight,226);
 const afterFont=intrinsicReads;onResize();seek(12.1);assert.equal(intrinsicReads,afterFont);
 context.stamps.setLanguage(config.language==='en'?'zh':'en');conveyor.localize();assert.ok(intrinsicReads>afterFont);
-assert.equal(scene.classList.contains('is-measuring'),false);assert.ok(sceneHeight<=640);
+// The 44px touch strip adds 12px to the former 32px strip's 640px envelope.
+assert.equal(scene.classList.contains('is-measuring'),false);assert.ok(sceneHeight<=652);
 """
 
 CARD_FITS = r"""

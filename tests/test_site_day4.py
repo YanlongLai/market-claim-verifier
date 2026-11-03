@@ -117,7 +117,10 @@ def test_capabilities_follow_how_and_link_to_saved_reports_with_static_replays()
     html = (site.ROOT / "docs/site/index.html").read_text()
     assert html.index('id="how"') < html.index('id="capabilities"') < html.index('id="example"')
     for report in ["eval-v2-2026-10-27/REPORT.md", "eval-l4-2026-10-29/ANALYSIS.md", "multimodal-2026-10-29/REPORT.md"]:
-        assert f'href="../evidence/{report}"' in html
+        # The multimodal report links to source files outside the Pages output.
+        # GitHub resolves those repository-relative links without a SPA fallback.
+        prefix = "https://github.com/YanlongLai/market-claim-verifier/blob/main/docs/evidence/" if report.startswith("multimodal-") else "../evidence/"
+        assert f'href="{prefix}{report}"' in html
         assert (site.ROOT / "docs/evidence" / report).is_file()
     for seconds in (25.5, 33.5, 49.5):
         assert f'href="?stamp-t={seconds}#top"' in html

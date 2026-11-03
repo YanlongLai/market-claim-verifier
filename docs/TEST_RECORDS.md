@@ -6,6 +6,7 @@ Retain every paid attempt, including failed extraction, provider errors, abstent
 
 | Record | Purpose and boundary |
 |---|---|
+| [Muse Spark Open extraction LoRA feasibility](evidence/lora-2026-11-03/REPORT.md) | Account initialization, failed tokenizer access, cleanup and $0 ledger; no training or extraction evaluation |
 | [Original 357-claim evaluation](evidence/eval-v2-2026-10-27/REPORT.md) | Six systems; retained requests, outputs, gold and manifests |
 | [Post-hoc evaluation](evidence/eval-v2-2026-10-28-r2-posthoc/REPORT.md) | Same claims after fixes; not a new held-out benchmark |
 | [Aborted early evaluation](evidence/eval-2026-10-27-aborted-partial/) | Incomplete attempts remain available |
@@ -17,6 +18,9 @@ Retain every paid attempt, including failed extraction, provider errors, abstent
 | [Paired multimodal corpus/protocol](../eval/multimodal-v1/README.md) | Same-input comparison; frozen code, shared preprocessing, native image reading and retained failures |
 | [Single-stock saved summary](evidence/stock-review-example/stock-review.html) | Reuses three reports, no new calls; repeated occurrences are not independent facts |
 | [Offline judge walkthrough](evidence/judge-walkthrough/REPORT.md) | Deterministic evidence-to-verdict checks; no model calls |
+| [Real-world DappGo News probe](evidence/real-world-2026-11-02/REPORT.md) | 80 paraphrased feed items, original pre-fix agent plus post CLI, all three providers; four primary truth labels, 53 scope expectations and 23 unresolved US review cases |
+| [Real-world POST-HOC FIX RECHECK](evidence/real-world-2026-11-03-fixcheck/REPORT.md) | Seen News inputs after fixes, unchanged text/gold and newly supplied publication context; separate manifests accept later Threads inputs, all paths/sets share a $5/provider ledger; no held-out or OCR/ASR claim |
+| [Threads phase 2 and real cards](evidence/real-world-2026-11-02/REPORT.md#threads) | 78 paraphrased posts through agent/post on three providers plus six fresh image routes; pre-call gold commit, shared $8/provider ledger, every failure, primary sources and local media-response hashes retained |
 
 [2026-10-30 SEC refresh](evidence/sec-refresh-2026-10-30/REPORT.md) retains compressed raw snapshots for offline restoration. [Real issuer media catalogue](evidence/real-media-2026-10-30/README.md) distinguishes prepared images from link-only webcast candidates; neither is a new accuracy benchmark.
 

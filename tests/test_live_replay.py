@@ -60,6 +60,12 @@ class ReplayClient:
 
 
 class ReplayEdgar:
+    def resolve_ticker(self, ticker):
+        records = {"META": ("0001326801", "Meta Platforms Inc"), "TSLA": ("0001318605", "Tesla Inc"),
+                   "GOOGL": ("0001652044", "Alphabet Inc"), "GOOG": ("0001652044", "Alphabet Inc")}
+        cik, entity = records[ticker]
+        return {"ticker": ticker, "cik": cik, "entity": entity}
+
     def __init__(
         self,
         facts: dict[tuple[str, str, str], dict[str, Any]],

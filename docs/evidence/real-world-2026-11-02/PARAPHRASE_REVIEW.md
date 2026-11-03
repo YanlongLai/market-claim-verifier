@@ -1,0 +1,10 @@
+# Post-freeze paraphrase review
+
+These issues were identified after execution began. Original claims, gold, traces and costs remain unchanged. No corrected-input paid rerun is included. The main report retains all 80 as-run cases and adds a separately labelled, post-hoc sensitivity calculation excluding these two input-fidelity issues. Neither case had an independently resolved financial truth label, so the four-case primary accuracy panel is unaffected.
+
+| ID | Issue | Correction / remaining review |
+|---|---|---|
+| RW077 | Confirmed company-name translation error in a price-move control. The as-run English paraphrase names Taiwan Specialty Chemical, while the source item refers to Taiwan ticker 3532. | Correct paraphrase: **Formosa Sumco Technology shares declined by 3.39%.** The [Taiwan Futures Exchange issuer notice](https://www.taifex.com.tw/file/taifex/eng/eng11/3532en_20250708.pdf) identifies 3532 as Formosa Sumco Technology Corporation. The corrected sentence has not been run; no claim is made that these results evaluate the corrected company name. |
+| RW020 | The displayed snippet mentions both Formosa Plastics and Formosa Petrochemical, with an EPS-growth estimate of 780%. The as-run paraphrase assigns that forecast to Formosa Petrochemical, but the snippet does not establish that attribution. The feed ticker is 1301. | **Owner/Claude review required:** obtain permitted article/primary analyst context and identify which issuer and forecast period the 780% refers to. Do not choose an issuer from the feed ticker or the model output. No corrected financial claim is assigned yet. |
+
+For reuse, first resolve issuer names from authoritative exchange/issuer records, retain original-language names in separate provenance, and mark multi-headline or truncated snippets as ambiguous before writing the model input. The unchanged [gold review list](GOLD_REVIEW.md) still contains the 23 US period/definition cases. These two input-quality records are additional review context, not retroactive gold edits.
