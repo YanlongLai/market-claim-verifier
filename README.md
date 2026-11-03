@@ -28,7 +28,7 @@ Start with [Amazon's Q3 2023 revenue claim](https://hackathon.dappgo.com/explore
 
 For real company materials, open the [Microsoft earnings-call review](docs/evidence/real-av-context-live/REPORT.md) or [Tesla multi-document review](docs/evidence/stock-context-posthoc-2026-10-30/REPORT.md). Each preserves the original quotation, evidence, calculations and unresolved questions.
 
-Pending links: [Live check — TODO (Claude)](JUDGES.md#live-check-todo) · [In the wild — TODO (Claude)](JUDGES.md#in-the-wild-todo).
+[In the wild](https://hackathon.dappgo.com/wild/): real posts checked against SEC filings, with every abstention and failure kept. Pending link: [Live check — TODO (Claude)](JUDGES.md#live-check-todo).
 
 <a id="key-results"></a>
 <a id="text-verification-266-held-out-claims"></a>
