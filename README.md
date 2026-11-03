@@ -168,6 +168,8 @@ Media extraction and claim recall remain incomplete. The real audio/video study 
 
 Run `sh scripts/verify.sh` to check fixtures, Python/Node tests, figures, data rebuilds and links. The complete verifier also needs Node 22+. Dependency installation may use the network; verification then runs offline without model credentials. [Verification guide](AGENTS.md) · [Test records and reusable inputs/outputs](docs/TEST_RECORDS.md).
 
+[Claim-extraction LoRA attempt (Nov 3 UTC)](docs/evidence/lora-2026-11-03/REPORT.md): Fireworks Muse Spark Open NVFP4 LoRA initialization succeeded, but matching tokenizer access blocked training. Estimated spend $0; no trained adapter, extraction scores, or provider change. [Support, rates, and feasibility evidence](docs/evidence/lora-2026-11-03/FEASIBILITY.md).
+
 For new financial sources, start with the [extension guide](docs/EXTENDING.md), [evidence contract](docs/EVIDENCE_RECORDS.md) and [source policy](docs/DATA_SOURCES.md). The [delivery plan](docs/DAY5_PLAN.md) separates implemented features from the upload UI, wider real-data evaluation and cross-modal work still to come.
 
 All repository code and demo work were created during the hackathon. [Build log](BUILD_LOG.md) · [Changelog](CHANGELOG.md) · [MIT code license](LICENSE) · [Data and media credits](CREDITS.md). English is the primary documentation language; source evidence retains its original language. [Language policy](docs/LANGUAGE.md).

@@ -6,6 +6,7 @@ Retain every paid attempt, including failed extraction, provider errors, abstent
 
 | Record | Purpose and boundary |
 |---|---|
+| [Muse Spark Open extraction LoRA feasibility](evidence/lora-2026-11-03/REPORT.md) | Account initialization, failed tokenizer access, cleanup and $0 ledger; no training or extraction evaluation |
 | [Original 357-claim evaluation](evidence/eval-v2-2026-10-27/REPORT.md) | Six systems; retained requests, outputs, gold and manifests |
 | [Post-hoc evaluation](evidence/eval-v2-2026-10-28-r2-posthoc/REPORT.md) | Same claims after fixes; not a new held-out benchmark |
 | [Aborted early evaluation](evidence/eval-2026-10-27-aborted-partial/) | Incomplete attempts remain available |
