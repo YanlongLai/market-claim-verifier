@@ -23,6 +23,8 @@ def digest(path):return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
 def prepare():
+    if MANIFEST.exists() and any(s['attempts'] for s in json.loads(MANIFEST.read_text())['shots']):
+        raise SystemExit('Existing attempts are retained. Do not replace prompts-r4.json with --prepare.')
     folder=MANIFEST.parent/'v4';folder.mkdir(parents=True,exist_ok=True)
     for name in ('cards-fanning-out','numbers-raining-into-filing'):
         image=Image.new('RGB',(480,480),'#111a20');draw=ImageDraw.Draw(image)
@@ -71,10 +73,6 @@ def prepare():
         parameter_reference_clip=reference['id'],
         pipeline='WanImageToVideoPipeline, Wan2.2 TI2V-5B; conditioning drawings are code-native abstract shapes',
         shots=shots,approved_reuse_available=[dict(id=c['id'],source=c['source'],sha256=digest(ROOT/c['source'])) for c in approved['clips']])
-    if MANIFEST.exists():
-        existing=json.loads(MANIFEST.read_text())
-        if any(s['attempts'] for s in existing['shots']):
-            raise SystemExit('Existing attempts are retained. Do not replace prompts-r4.json with --prepare.')
     MANIFEST.write_text(json.dumps(data,indent=2)+'\n')
 
 
@@ -109,7 +107,10 @@ def generate():
     # keep its raw MP4/JSON/log, then copy the three-second test accent into demo.
     work=ENGINE/'round4'/stamp
     for shot in data['shots']:
-        if (ROOT/shot['expected_output']).exists():
+        existing=ROOT/shot['expected_output']
+        if existing.exists() and shot['status']=='generated' and digest(existing)==shot.get('output_sha256'):
+            continue
+        if existing.exists():
             raise SystemExit('Keep existing output; create a separately named take before retrying.')
         out=work/(shot['id']+'.mp4');args=command(shot,out)
         completed=subprocess.run(args,capture_output=True,text=True)

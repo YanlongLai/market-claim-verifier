@@ -96,7 +96,7 @@ def main() -> int:
     run("Checking first-filing iXBRL documents and values", python, "scripts/build_site_filing_fixtures.py", "--check")
     run("Product, replay, provider and site tests", python, "-m", "pytest", "-q", "-ra")
     run("Demo pipeline tests (optional FFmpeg tests use their existing skip markers)", str(args.demo_python), "-m", "pytest", "-q", "-ra", demo=True)
-    run("Standalone demo JavaScript tests", "node", "--test", "demo/tests/motion.test.mjs", "demo/tests/motion-v3.test.mjs", "demo/tests/layout.test.mjs", "demo/tests/capture.test.mjs")
+    run("Standalone demo JavaScript tests", "node", "--test", "demo/tests/motion.test.mjs", "demo/tests/motion-v3.test.mjs", "demo/tests/motion-v4.test.mjs", "demo/tests/layout.test.mjs", "demo/tests/capture.test.mjs")
     run("Checking committed figure inputs and embeds", python, "docs/scripts/make_figures.py", "--check")
     run("Rebuilding figures in the temporary copy", python, "docs/scripts/make_figures.py", "--all")
     run("Checking rebuilt figures", python, "docs/scripts/make_figures.py", "--check")
