@@ -16,6 +16,7 @@ from typing import Any
 from claimcheck.agent import SYSTEM_INSTRUCTIONS, VERDICT_SCHEMA, _parse_strict_verdict
 from claimcheck.budget import Ledger
 from claimcheck.checks import evaluate_verdict
+from claimcheck.correction import build_corrections
 from claimcheck.edgar import EdgarClient
 from claimcheck.program_summary import program_summary
 from claimcheck.period_context import missing_period_reason
@@ -146,9 +147,11 @@ class MemoryEdgar(EdgarClient):
 def finish(claim: str, final: dict, runner: ToolRunner) -> dict:
     checks, verdict = evaluate_verdict(
         [{**sub, "original_claim": claim} for sub in final["sub_claims"]], runner)
+    evidence = list(runner.evidence.values())
     return {"verdict": verdict, "model_verdict": final["verdict"],
             "summary": program_summary(verdict, checks), "claims": checks,
-            "evidence": list(runner.evidence.values()), "scope": SCOPE}
+            "evidence": evidence, "scope": SCOPE,
+            "corrections": build_corrections(claim, checks, evidence)}
 
 
 class LiveRun:
@@ -180,7 +183,8 @@ class LiveRun:
             self.event("program_check", check=check)
             self.event("verdict", verdict="insufficient_evidence")
             return self.envelope(verdict="insufficient_evidence", model_verdict=None,
-                                 claims=[check], evidence=[], scope=SCOPE, summary=reason)
+                                 claims=[check], evidence=[], scope=SCOPE, summary=reason,
+                                 corrections=build_corrections(claim, [check], []))
         messages = [{"role": "system", "content": INSTRUCTIONS}, {"role": "user", "content": claim}]
         calls_used = 0
         for turn in range(MAX_CALLS):

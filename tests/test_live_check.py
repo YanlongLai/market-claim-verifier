@@ -220,7 +220,32 @@ def test_missing_period_uses_cli_abstention_without_model_or_sec_io():
         assert result["verdict"] == "insufficient_evidence"
         assert result["cost_usd"] == 0
         assert "missing_period" in result["claims"][0]["flags"]
+        assert result["corrections"]["original_text"] == "Apple revenue reached $109.4 billion"
+        assert result["corrections"]["edits"] == []
+        assert result["corrections"]["not_corrected"][0]["reason_code"] == "not_contradicted"
     asyncio.run(run())
+
+
+def test_live_finish_uses_program_value_despite_model_replacement_numbers():
+    source = ROOT / "docs/evidence/posts-2026-10-28/demo-thread-baseten"
+    record = json.loads((source / "report.json").read_text())["claims"][2]
+    trace = json.loads((source / record["trace_path"]).read_text())
+    def never(_):
+        pytest.fail("saved correction must not fetch SEC data")
+    runner = ToolRunner(EdgarClient(cache_dir="/not-used", fetcher=never))
+    runner.evidence["E1"] = trace["tool_calls"][0]["result"]
+    runner.evidence_kind["E1"] = "lookup_fact"
+    final = copy.deepcopy(trace["final_verdict"])
+    final["summary"] = "Replace the amount with $999B"
+    final["corrections"] = {"replacement": "$999B"}
+    for sub in final["sub_claims"]:
+        sub["actual_value"] = 999000000000
+        sub["replacement"] = "$999B"
+    result = finish(record["quote"], final, runner)
+    assert result["verdict"] == "contradicted"
+    edit, = result["corrections"]["edits"]
+    assert edit["replacement"] == "$102.5 billion"
+    assert len(edit["citations"]) == 2
 
 
 def test_failure_after_lookup_keeps_partial_sec_evidence_and_cost():

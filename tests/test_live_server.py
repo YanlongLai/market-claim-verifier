@@ -89,7 +89,12 @@ def test_replay_through_real_http_adapter_preserves_python_verdict_cost_and_priv
             assert result["cost_usd"] == pytest.approx(TRACE["cost_usd"])
             assert (await services.gate("budget", {}))["daily_spent_usd"] == pytest.approx(TRACE["cost_usd"], abs=3e-9)
             stored = json.dumps(state(services))
-            for private in (PASSWORD, TOKEN, services.settings.api_key, APPLE["claim"], "192.0.2.1", "reasoning_content"):
+            # The corrected draft intentionally echoes the original to its
+            # caller. It must still never persist the post or expose secrets.
+            assert APPLE["claim"] not in stored
+            assert result["corrections"]["original_text"] == APPLE["claim"]
+            assert result["corrections"]["edits"] == []
+            for private in (PASSWORD, TOKEN, services.settings.api_key, "192.0.2.1", "reasoning_content"):
                 assert private not in stored
                 assert private not in response.text
             assert services.ledger.db.execute("PRAGMA journal_mode").fetchone()[0] == "wal"

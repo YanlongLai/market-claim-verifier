@@ -1,8 +1,10 @@
 """Execute shipped form/trace JS in the existing offline DOM adapter."""
+import json
 import subprocess
 
 import pytest
 
+from claimcheck.correction import build_corrections
 from test_site_stamps_runtime import ROOT, run_check
 
 
@@ -39,6 +41,67 @@ def test_pages_boundary_without_provider_key_or_network():
     result = subprocess.run(["node", "--test", "tests/node/live-boundary.test.mjs"],
                             cwd=ROOT, capture_output=True, text=True)
     assert result.returncode == 0, result.stdout + result.stderr
+
+
+@pytest.mark.parametrize("language", ["en", "zh"])
+@pytest.mark.parametrize("viewport", [390, 1280])
+def test_corrected_draft_keeps_hostile_original_text_and_cites_all_components(language, viewport):
+    source = ROOT / "docs/evidence/posts-2026-10-28/demo-thread-baseten"
+    record = json.loads((source / "report.json").read_text())["claims"][2]
+    trace = json.loads((source / record["trace_path"]).read_text())
+    text = '🧵 <img src=x onerror=alert(1)>\nApple revenue in fiscal Q4 2025 was $416.2B.\nFirst ever <script>alert(1)</script>.'
+    unchecked = {"text": "First ever <script>alert(1)</script>.", "program_verdict": "unchecked"}
+    corrections = build_corrections(text, [*record["program_checks"], unchecked], [trace["tool_calls"][0]["result"]])
+    assert len(corrections["edits"]) == 1
+    run_check(CORRECTIONS, language=language, viewport=viewport, corrections=corrections)
+
+
+CORRECTIONS = r"""
+context.URL=URL;
+const target=tree.querySelector('#live-result');
+const result={mode:'live',verdict:'contradicted',events:[],claims:[],evidence:[],corrections:config.corrections};
+context.liveTest.renderLiveTrace(result,target);
+const section=target.querySelector('.live-corrections'),draft=section.querySelector('.corrected-draft-text');
+assert.ok(section.textContent.includes(config.language==='zh'?'修正版草稿——僅核對列出的主張':'Corrected draft — only listed assertions checked'));
+assert.ok(section.textContent.includes(config.language==='zh'?'未修正':'Not corrected'));
+assert.ok(section.textContent.includes(config.language==='zh'?'程式未確認':'No program contradiction'));
+assert.equal(draft.querySelector('del').textContent,'$416.2B');
+assert.equal(draft.querySelector('strong').textContent,'$102.5B');
+assert.equal(draft.textContent,config.corrections.original_text.replace('$416.2B','$416.2B → $102.5B'));
+assert.equal(section.querySelectorAll('a').length,2);
+for(const link of section.querySelectorAll('a'))assert.ok(link.href.startsWith('https://www.sec.gov/Archives/edgar/data/320193/'));
+assert.equal(section.querySelectorAll('img').length,0);assert.equal(section.querySelectorAll('script').length,0);
+assert.ok(section.textContent.includes('<img src=x onerror=alert(1)>'));
+assert.ok(section.textContent.includes('<script>alert(1)</script>'));
+assert.ok(section.textContent.includes('416,161,000,000'));assert.ok(section.textContent.includes('313,695,000,000'));
+// Even a malformed/hostile origin payload cannot create markup or active URLs.
+const unsafe=JSON.parse(JSON.stringify(result));
+unsafe.corrections.edits[0].replacement='<img src=x onerror=alert(1)>';
+unsafe.corrections.edits[0].citations.push({url:'javascript:alert(1)',form:'<svg onload=alert(1)>'},
+  {url:'https://www.sec.gov.evil.test/Archives/edgar/data/1/file'},
+  {url:'https://evil@www.sec.gov/Archives/edgar/data/1/file'},
+  {url:'https://www.sec.gov:444/Archives/edgar/data/1/file'});
+context.liveTest.renderLiveTrace(unsafe,target);
+assert.equal(target.querySelectorAll('a').length,2);assert.equal(target.querySelectorAll('img').length,0);
+assert.equal(target.querySelectorAll('svg').length,0);assert.equal(target.querySelectorAll('script').length,0);
+unsafe.corrections.edits[0].start=0;
+context.liveTest.renderLiveTrace(unsafe,target);
+assert.equal(target.querySelector('.corrected-draft-text').textContent,config.corrections.original_text);
+assert.equal(target.querySelectorAll('del').length,0);
+// Exercise the same envelope through the form and a subsequent language switch.
+context.AbortController=AbortController;context.setTimeout=()=>0;context.clearTimeout=()=>{};
+context.fetch=async url=>({ok:true,json:async()=>url==='/api/check'?result:url==='/api/budget'?
+  {day:'2026-11-03',daily_limit_usd:3,daily_remaining_usd:3,resets_at:'2099-11-04T00:00:00Z',status:'ready'}:
+  JSON.parse(readFileSync(root+'/docs/site/data/live-demo.json','utf8'))});
+context.liveTest.setupLive();await new Promise(resolve=>setImmediate(resolve));
+tree.querySelector('#live-input').value=config.corrections.original_text;
+tree.querySelector('#live-password').value='offline-only';
+await tree.querySelector('#live-form').events.submit({preventDefault(){}});
+assert.equal(target.querySelector('.corrected-draft-text').querySelector('strong').textContent,'$102.5B');
+context.stamps.setLanguage(config.language==='zh'?'en':'zh');
+assert.ok(target.textContent.includes(config.language==='zh'?'Corrected draft — only listed assertions checked':'修正版草稿——僅核對列出的主張'));
+assert.ok(target.textContent.includes(config.language==='zh'?'No program contradiction':'程式未確認'));
+"""
 
 
 RENDER = r"""
