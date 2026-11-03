@@ -367,7 +367,8 @@
     password: "Live-check password",
     passwordNote: "Judges: password in the submission notes; saved examples need none",
     privacy: "Text goes to Baseten for this check; we do not save it. Anonymous rate counters expire after 10 minutes. 5 checks / 10 min.",
-    recordedTitle: "Follow a real Apple check.",
+    recordedTitle: "Saved checks",
+    savedPost: "Saved check · viral post · 28 Oct 2026", savedClaim: "Saved check · one claim",
     recordedNote: "Saved run · 28 Oct 2026 · actual model calls and SEC evidence. Available even when the live budget runs out.",
     loading: "Loading the recorded trace…", loadingFailed: "The saved trace could not load. Try refreshing the page.",
     pending: "Muse Spark is choosing tools and checking SEC facts…", complete: "Check complete. The program verdict and trace are below.",
@@ -403,7 +404,7 @@
       unavailable: "Live checking is unavailable. Follow the saved demo below.", timeout: "The check reached its time limit. No verdict was issued. Follow the saved demo below.",
       provider_error: "The model service did not complete this check. No verdict was issued. The saved demo is below.",
       sec_unavailable: "SEC data is unavailable right now. No verdict was issued. The saved demo is below.",
-      mock_input_only: "Offline mode replays the saved Apple example only. Choose “Use Apple example”.",
+      mock_input_only: "Offline mode replays the saved viral post or one-claim example only. Choose “Use Apple example”.",
       invalid_model_output: "The model did not return a complete claim report. No verdict was issued. The saved demo is below.",
       incomplete_model: "The model response was incomplete. No verdict was issued. The saved demo is below.",
       tool_limit: "This post exceeded the short-check limit. Try one sentence about one US issuer."
@@ -417,7 +418,8 @@
     password: "即時查核密碼",
     passwordNote: "即時查核需要密碼；評審密碼在提交備註中，已儲存範例免密碼。",
     privacy: "文字會傳至 Baseten 進行查核；本站不儲存文字。匿名限流計數於 10 分鐘後刪除。每 10 分鐘限 5 次。",
-    recordedTitle: "跟著一筆真實 Apple 查核。",
+    recordedTitle: "已儲存的查核",
+    savedPost: "已儲存查核 · 熱傳貼文 · 2026 年 10 月 28 日", savedClaim: "已儲存查核 · 單一主張",
     recordedNote: "已儲存紀錄 · 2026 年 10 月 28 日 · 真實模型呼叫與 SEC 證據。即時預算用完仍可查看。",
     loading: "正在讀取查核紀錄…", loadingFailed: "無法讀取查核紀錄，請重新整理頁面。",
     pending: "Muse Spark 正在選擇工具並比對 SEC 事實…", complete: "查核完成。以下是程式裁定與執行過程。",
@@ -452,7 +454,7 @@
       rate_limited: "每 10 分鐘限 5 次，請等候 10 分鐘；下方示範仍可查看。",
       unavailable: "即時查核暫時無法使用。請查看下方已儲存的示範。", timeout: "查核已達時間上限，未作出裁定。請查看下方示範。",
       provider_error: "模型服務未完成查核，未作出裁定。請查看下方示範。", sec_unavailable: "SEC 資料暫時無法取得，未作出裁定。請查看下方示範。",
-      mock_input_only: "離線模式僅重播已儲存的 Apple 範例，請選擇「使用 Apple 範例」。",
+      mock_input_only: "離線模式僅重播已儲存的熱傳貼文或單一主張範例，請選擇「使用 Apple 範例」。",
       invalid_model_output: "模型未回傳完整報告，未作出裁定。請查看下方示範。", incomplete_model: "模型回應不完整，未作出裁定。請查看下方示範。",
       tool_limit: "此貼文超過簡短查核上限，請改用一家美股公司的一句敘述。"
     }
@@ -590,6 +592,8 @@
   let activeFilingClaim = null;
   let filingReturnFocus = null;
   let savedLiveDemo = null;
+  let savedDemoKind = "post";
+  const savedDemos = {};
   let liveResult = null;
   let liveStatus = "";
   const LIVE_PASSWORD_KEY = "claimcheck.livePassword";
@@ -696,21 +700,9 @@
     if (result.input) head.append(liveNode("blockquote", result.input, "trace-input"));
     target.append(head);
     renderLiveCorrections(result.corrections, target);
-    if (result.claims && result.claims.length) {
-      target.append(liveNode("h5", liveCopy("claims")));
-      const claims = liveNode("ol", null, "live-claims");
-      result.claims.forEach((check) => {
-        const item = liveNode("li");
-        item.append(liveNode("strong", liveVerdict(check.program_verdict), `is-${check.program_verdict}`), liveNode("p", check.text));
-        item.append(liveNode("p", `${liveCopy("stated")}: ${liveNumber(check.stated_value_used)} · ${liveCopy("actual")}: ${liveNumber(check.actual_value)} · ${liveCopy("tolerance")}: ${liveNumber(check.tolerance)}`, "live-small"));
-        item.append(liveNode("p", `${liveCopy("strength")}: ${liveCopy(check.evidence_strength) || "—"} · ${(check.evidence_ids || []).join(", ")}`, "live-small"));
-        liveRaw(item, check);
-        claims.append(item);
-      });
-      target.append(claims);
-    }
     const evidence = (result.evidence || []).filter((fact) => !fact.error);
-    target.append(liveNode("h5", liveCopy("evidence")));
+    const proof = liveNode("section", null, "live-proof");
+    proof.append(liveNode("h5", liveCopy("evidence")));
     const rows = liveNode("div", null, "live-evidence");
     if (!evidence.length) rows.append(liveNode("p", liveCopy("noEvidence")));
     evidence.forEach((fact) => {
@@ -733,7 +725,23 @@
       liveRaw(row, fact);
       rows.append(row);
     });
-    target.append(rows, liveNode("h5", liveCopy("trace")));
+    proof.append(rows);
+    if (result.claims && result.claims.length) {
+      proof.append(liveNode("h5", liveCopy("claims")));
+      const claims = liveNode("ol", null, "live-claims");
+      result.claims.forEach((check) => {
+        const item = liveNode("li");
+        item.append(liveNode("strong", liveVerdict(check.program_verdict), `is-${check.program_verdict}`), liveNode("p", check.text));
+        item.append(liveNode("p", `${liveCopy("stated")}: ${liveNumber(check.stated_value_used)} · ${liveCopy("actual")}: ${liveNumber(check.actual_value)} · ${liveCopy("tolerance")}: ${liveNumber(check.tolerance)}`, "live-small"));
+        item.append(liveNode("p", `${liveCopy("strength")}: ${liveCopy(check.evidence_strength) || "—"} · ${(check.evidence_ids || []).join(", ")}`, "live-small"));
+        liveRaw(item, check);
+        claims.append(item);
+      });
+      proof.append(claims);
+    }
+    target.append(proof);
+    const trace = liveNode("section", null, "live-trace");
+    trace.append(liveNode("h5", liveCopy("trace")));
     const steps = liveNode("ol", null, "agent-trace");
     (result.events || []).forEach((event, i) => {
       const step = liveNode("li", null, `trace-step trace-${event.kind}`);
@@ -759,15 +767,16 @@
       }
       steps.append(step);
     });
-    target.append(steps, liveNode("p", liveCopy("honesty"), "live-small"));
+    trace.append(steps, liveNode("p", liveCopy("honesty"), "live-small"));
     if (result.mode === "recorded" || result.mode === "mock") {
-      target.append(liveNode("p", liveCopy("timing"), "live-small"));
+      trace.append(liveNode("p", liveCopy("timing"), "live-small"));
       if (typeof result.source === "string" && /^docs\/evidence\/[\w/.-]+\.json$/.test(result.source)) {
         const link = liveNode("a", liveCopy("source"));
         link.href = `https://github.com/YanlongLai/market-claim-verifier/blob/main/${result.source}`;
-        target.append(link);
+        trace.append(link);
       }
     }
+    target.append(trace);
   }
 
   function liveStop() {
@@ -838,6 +847,34 @@
     renderLiveBudget();
   }
 
+  async function selectSavedDemo(kind) {
+    savedDemoKind = kind;
+    savedLiveDemo = savedDemos[kind] || null;
+    $$('[data-saved-demo]').forEach((button) => {
+      button.setAttribute("aria-pressed", String(button.dataset.savedDemo === kind));
+    });
+    const loading = $("#recorded-loading");
+    loading.hidden = Boolean(savedLiveDemo);
+    if (!savedLiveDemo) {
+      $("#recorded-trace").replaceChildren();
+      loading.textContent = liveCopy("loading");
+    }
+    try {
+      if (!savedDemos[kind]) {
+        const path = kind === "post" ? "/data/live-demo-post.json" : "/data/live-demo.json";
+        const response = await fetch(path, { cache: "no-store" });
+        if (!response.ok) throw new Error("missing trace");
+        savedDemos[kind] = await response.json();
+      }
+      if (savedDemoKind !== kind) return;
+      savedLiveDemo = savedDemos[kind];
+      loading.hidden = true;
+      localizeLive();
+    } catch (_error) {
+      if (savedDemoKind === kind) loading.textContent = liveCopy("loadingFailed");
+    }
+  }
+
   function setupLive() {
     const form = $("#live-form");
     if (!form) return;
@@ -849,7 +886,10 @@
     const count = () => { $("#live-count").textContent = `${Array.from(input.value).length} / 600`; };
     input.addEventListener("input", count);
     $("#live-example").addEventListener("click", () => {
-      if (savedLiveDemo && !input.disabled) { input.value = savedLiveDemo.input; count(); input.focus(); }
+      if (!input.disabled) { input.value = input.getAttribute("placeholder"); count(); input.focus(); }
+    });
+    $$('[data-saved-demo]').forEach((button) => {
+      button.addEventListener("click", () => selectSavedDemo(button.dataset.savedDemo));
     });
     form.addEventListener("submit", async (event) => {
       event.preventDefault();
@@ -899,14 +939,7 @@
     });
     refreshLiveBudget();
     document.addEventListener("visibilitychange", () => { if (!document.hidden) refreshLiveBudget(); });
-    fetch("/data/live-demo.json", { cache: "no-store" }).then((response) => {
-      if (!response.ok) throw new Error("missing trace");
-      return response.json();
-    }).then((data) => {
-      savedLiveDemo = data;
-      $("#recorded-loading").hidden = true;
-      localizeLive();
-    }).catch(() => { $("#recorded-loading").textContent = liveCopy("loadingFailed"); });
+    selectSavedDemo("post");
   }
 
   function readLanguage() {
@@ -2923,12 +2956,16 @@
   function setupControls() {
     const revealSavedCheck = () => {
       const saved = $("#saved-check-details");
-      if (saved && window.location.hash === "#recorded-run") saved.open = true;
+      if (saved && window.location.hash === "#recorded-run") {
+        saved.open = true;
+        if (savedDemoKind !== "post") selectSavedDemo("post");
+      }
     };
     $$('a[href="#recorded-run"]').forEach((link) => {
       link.addEventListener("click", () => {
         const saved = $("#saved-check-details");
         if (saved) saved.open = true;
+        if (savedDemoKind !== "post") selectSavedDemo("post");
       });
     });
     window.addEventListener("hashchange", revealSavedCheck);

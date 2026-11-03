@@ -98,6 +98,12 @@ def main() -> int:
     run("Checking first-filing iXBRL documents and values", python, "scripts/build_site_filing_fixtures.py", "--check")
     run("Checking static Traditional Chinese page", python, "scripts/build_zh_page.py", "--check")
     run("Checking CSS/JS content hashes", python, "scripts/stamp_site_assets.py", "--check")
+    run("Checking saved claim and post envelopes", python, "scripts/build_live_demo.py", "--check")
+    demo_outputs = ("docs/site/data/live-demo.json", "docs/site/data/live-demo-post.json")
+    demo_before = {name: (snapshot / name).read_bytes() for name in demo_outputs}
+    run("Rebuilding saved claim and post envelopes", python, "scripts/build_live_demo.py")
+    if any((snapshot / name).read_bytes() != demo_before[name] for name in demo_outputs):
+        raise RuntimeError("Non-identical rebuilt saved check envelopes")
     run("Product, replay, provider and site tests", python, "-m", "pytest", "-q", "-ra")
     run("Demo pipeline tests (optional FFmpeg tests use their existing skip markers)", str(args.demo_python), "-m", "pytest", "-q", "-ra", demo=True)
     run("Standalone demo JavaScript tests", "node", "--test", "demo/tests/motion.test.mjs", "demo/tests/motion-v3.test.mjs", "demo/tests/layout.test.mjs", "demo/tests/capture.test.mjs")
@@ -123,6 +129,7 @@ def main() -> int:
         raise RuntimeError("Non-identical rebuilt outputs: " + ", ".join(different))
     run("Checking all Markdown and llms.txt links/anchors", python, "scripts/check_links.py")
     print("\nPASS offline Python and Node suites")
+    print("PASS saved claim and post envelopes: 2 byte-identical outputs")
     print("PASS figure rebuild + --check")
     print("PASS explorer, site data and build summary: 3 byte-identical outputs")
     if wild_required:

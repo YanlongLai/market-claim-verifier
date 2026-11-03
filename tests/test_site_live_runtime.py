@@ -9,7 +9,8 @@ from test_site_stamps_runtime import ROOT, run_check as run_scene_check
 
 
 def run_check(script, **config):
-    run_scene_check(script, page="docs/site/index.html", **config)
+    config.setdefault("page", "docs/site/index.html")
+    run_scene_check(script, **config)
 
 
 @pytest.mark.parametrize("language", ["en", "zh"])
@@ -21,6 +22,19 @@ def test_homepage_boot_leaves_legacy_anchors_and_historical_data_on_evidence_pag
 @pytest.mark.parametrize("viewport", [390, 768, 1280])
 def test_saved_trace_has_ordered_public_steps_sec_row_and_safe_text(language, viewport):
     run_check(RENDER, language=language, viewport=viewport)
+
+
+@pytest.mark.parametrize("language", ["en", "zh"])
+@pytest.mark.parametrize("viewport", [390, 768, 1280])
+def test_saved_post_renders_one_cited_edit_reasons_and_result_section_order(language, viewport):
+    page = "docs/zh/index.html" if language == "zh" else "docs/site/index.html"
+    run_check(POST_RENDER, page=page, language=language, viewport=viewport)
+
+
+@pytest.mark.parametrize("language", ["en", "zh"])
+def test_default_post_example_saved_selection_and_hero_entry(language):
+    page = "docs/zh/index.html" if language == "zh" else "docs/site/index.html"
+    run_check(DEFAULT_POST, page=page, language=language)
 
 
 @pytest.mark.parametrize("language", ["en", "zh"])
@@ -163,6 +177,86 @@ assert.ok(target.textContent.includes(config.language==='zh'?'This assertion was
 """
 
 
+POST_RENDER = r"""
+context.URL=URL;
+const demo=JSON.parse(readFileSync(root+'/docs/site/data/live-demo-post.json','utf8'));
+const target=tree.querySelector('#recorded-trace');
+context.liveTest.renderLiveTrace(demo,target);
+const verify=language=>{
+  const head=target.querySelector('.trace-head'),corrections=target.querySelector('.live-corrections');
+  const evidence=target.querySelector('.live-proof'),trace=target.querySelector('.live-trace');
+  assert.deepEqual(target.children.map(node=>node.className),['trace-head','live-corrections','live-proof','live-trace']);
+  assert.equal(head.querySelector('.trace-verdict').textContent,language==='zh'?'證據矛盾':'Contradicted');
+  assert.equal(evidence.querySelector('.live-claims').querySelectorAll('li').length,5);
+  const draft=corrections.querySelector('.corrected-draft-text');
+  assert.equal(draft.querySelectorAll('del').length,1);
+  assert.equal(draft.querySelectorAll('strong').length,1);
+  assert.equal(draft.querySelector('del').textContent,'$416.2 billion');
+  assert.equal(draft.querySelector('strong').textContent,'$102.5 billion');
+  assert.equal(corrections.querySelector('.correction-changes').children.length,1);
+  const links=corrections.querySelectorAll('a');
+  assert.equal(links.length,2);
+  assert.ok(links[0].href.endsWith('/000032019325000079/'));
+  assert.ok(links[1].href.endsWith('/000032019326000020/'));
+  assert.ok(corrections.textContent.includes('10-K'));
+  assert.ok(corrections.textContent.includes('10-Q'));
+  const unchanged=corrections.querySelector('.correction-unchanged');
+  assert.equal(unchanged.children.length,4);
+  assert.ok(unchanged.textContent.includes(language==='zh'?'程式支持此主張，無須修改。':'The program supports this assertion; no edit needed.'));
+  assert.ok(unchanged.textContent.includes(language==='zh'?'此主張未評判（意見或超出範圍）。':'This assertion was not judged (opinion or out of scope).'));
+  assert.ok(unchanged.textContent.includes('NVDA at 30x sales is still cheap.'));
+  assert.equal(target.querySelectorAll('.trace-step').length,demo.events.length);
+};
+verify(config.language);
+const other=config.language==='zh'?'en':'zh';
+context.stamps.setLanguage(other);
+context.liveTest.renderLiveTrace(demo,target);
+verify(other);
+"""
+
+DEFAULT_POST = r"""
+context.URL=URL;context.AbortController=AbortController;
+context.setTimeout=()=>0;context.clearTimeout=()=>{};
+context.window.addEventListener=()=>{};context.window.location.hash='';
+const post=JSON.parse(readFileSync(root+'/docs/site/data/live-demo-post.json','utf8'));
+const claim=JSON.parse(readFileSync(root+'/docs/site/data/live-demo.json','utf8'));
+const original=JSON.parse(readFileSync(root+'/docs/evidence/posts-2026-10-28/demo-thread-baseten/report.json','utf8')).post;
+const requests=[];
+context.fetch=async url=>{
+  requests.push(url);assert.notEqual(url,'/api/check');
+  if(url==='/api/budget')return {ok:true,json:async()=>({day:'2026-11-03',daily_limit_usd:3,daily_remaining_usd:3,
+    resets_at:'2099-11-04T00:00:00Z',status:'ready'})};
+  assert.ok(['/data/live-demo-post.json','/data/live-demo.json'].includes(url));
+  return {ok:true,json:async()=>url==='/data/live-demo-post.json'?post:claim};
+};
+context.liveTest.setupLive();context.liveTest.setupControls();
+await new Promise(resolve=>setImmediate(resolve));
+const input=tree.querySelector('#live-input'),target=tree.querySelector('#recorded-trace');
+const postButton=tree.querySelector('[data-saved-demo="post"]'),claimButton=tree.querySelector('[data-saved-demo="claim"]');
+input.focus=()=>{};
+assert.equal(input.getAttribute('placeholder'),original);assert.ok(Array.from(original).length<=600);
+tree.querySelector('#live-example').events.click();assert.equal(input.value,original);
+assert.equal(tree.querySelector('#live-count').textContent,Array.from(original).length+' / 600');
+assert.equal(context.liveTest.state().savedLiveDemo.input,original);
+assert.equal(postButton.getAttribute('aria-pressed'),'true');
+assert.equal(claimButton.getAttribute('aria-pressed'),'false');
+assert.ok(postButton.textContent.includes(config.language==='zh'?'熱傳貼文':'Saved check · viral post · 28 Oct 2026'));
+assert.equal(requests.filter(url=>url==='/data/live-demo.json').length,0);
+await claimButton.events.click();
+assert.equal(context.liveTest.state().savedLiveDemo.input,claim.input);
+assert.equal(claimButton.getAttribute('aria-pressed'),'true');
+assert.equal(target.querySelector('.corrected-draft-text').querySelectorAll('del').length,0);
+tree.querySelector('#live-example').events.click();assert.equal(input.value,original);
+tree.querySelector('a[href="#recorded-run"]').events.click();
+assert.equal(tree.querySelector('#saved-check-details').open,true);
+assert.equal(context.liveTest.state().savedLiveDemo.input,original);
+assert.equal(postButton.getAttribute('aria-pressed'),'true');
+assert.equal(target.querySelector('.corrected-draft-text').querySelectorAll('del').length,1);
+context.stamps.setLanguage(config.language==='zh'?'en':'zh');
+assert.equal(target.querySelector('.corrected-draft-text').querySelectorAll('del').length,1);
+assert.equal(context.liveTest.state().savedLiveDemo.input,original);
+"""
+
 RENDER = r"""
 context.URL=URL;
 const demo=JSON.parse(readFileSync(root+'/docs/site/data/live-demo.json','utf8'));
@@ -203,7 +297,7 @@ const budget=()=>({day:'2026-11-02',daily_limit_usd:3,daily_remaining_usd:remain
 // Keep rollover timers inert in this DOM test; the real browser owns them.
 context.setTimeout=(fn,ms)=>ms>32000?0:setTimeout(fn,ms);context.clearTimeout=clearTimeout;
 context.fetch=async (url,opts)=>{
-  if(url==='/data/live-demo.json')return {ok:true,json:async()=>demo};
+  if(url==='/data/live-demo-post.json')return {ok:true,json:async()=>JSON.parse(readFileSync(root+'/docs/site/data/live-demo-post.json','utf8'))};
   if(url==='/api/budget'){budgetReads++;assert.equal(opts.cache,'no-store');return {ok:true,json:async()=>budget()};}
   requests.push({url,opts});
   return new Promise(resolve=>{finish=resolve;});
@@ -229,7 +323,7 @@ remaining=0;
 finish({ok:false,json:async()=>({error:'budget_exhausted'})});await failed;
 assert.equal(budgetReads,3);assert.equal(input.disabled,true);assert.equal(submit.disabled,true);
 assert.equal(tree.querySelector('#live-result').hidden,true);
-assert.ok(tree.querySelector('#recorded-trace').textContent.includes('FY2026Q3'));
+assert.ok(tree.querySelector('#recorded-trace').textContent.includes('FY2025Q4'));
 context.stamps.setLanguage('zh');
 assert.ok(tree.querySelector('#live-status').textContent.includes('重設'));
 context.stamps.setLanguage('en');
@@ -251,7 +345,7 @@ context.sessionStorage={
 context.localStorage.setItem=()=>assert.fail('password must never enter localStorage');
 let requests=[],finish;
 context.fetch=async (url,opts)=>{
-  if(url==='/data/live-demo.json')return {ok:true,json:async()=>demo};
+  if(url==='/data/live-demo-post.json')return {ok:true,json:async()=>JSON.parse(readFileSync(root+'/docs/site/data/live-demo-post.json','utf8'))};
   if(url==='/api/budget'){
     assert.ok(!JSON.stringify(opts).includes(credential));
     return {ok:true,json:async()=>({day:'2026-11-02',daily_limit_usd:3,daily_remaining_usd:3,
@@ -266,7 +360,7 @@ context.liveTest.setupLive();await new Promise(resolve=>setImmediate(resolve));
 const input=tree.querySelector('#live-input');input.value=demo.input;
 assert.equal(password.value,'');assert.equal(password.getAttribute('type'),'password');
 assert.equal(password.getAttribute('autocomplete'),'off');assert.equal(form.getAttribute('method'),'post');
-assert.ok(tree.querySelector('#recorded-trace').textContent.includes('FY2026Q3'));
+assert.ok(tree.querySelector('#recorded-trace').textContent.includes('FY2025Q4'));
 assert.ok(tree.querySelector('#live-budget-text').textContent.includes('$3.00'));
 assert.ok(/submission notes|需要密碼/.test(tree.querySelector('#live-password-note').textContent));
 await form.events.submit({preventDefault(){}});assert.equal(requests.length,0);

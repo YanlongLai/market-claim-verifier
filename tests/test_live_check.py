@@ -1,6 +1,7 @@
 """Offline runner, source identity, recorded replay, and public spend guard tests."""
 import asyncio
 import copy
+import hashlib
 import json
 from pathlib import Path
 import sys
@@ -18,6 +19,7 @@ sys.path.insert(0, str(ROOT / "workers/live/src"))
 from live import LiveError, LiveRun, finish, reservation_for, usage_cost, validate_text  # noqa: E402
 from gate import transition  # noqa: E402
 from scripts.build_live_demo import build as build_demo  # noqa: E402
+from scripts.build_live_demo import build_post  # noqa: E402
 from scripts.build_live_worker import build as build_worker  # noqa: E402
 
 EVIDENCE = ROOT / "docs/evidence/eval-v2-2026-10-27"
@@ -78,6 +80,38 @@ def test_recorded_demo_is_reproducible_and_does_not_publish_reasoning():
     assert demo["corrections"]["original_text"] == demo["input"]
     assert demo["corrections"]["edits"] == []
     assert demo["corrections"]["not_corrected"][0]["reason_code"] == "supported"
+
+
+def test_recorded_post_preserves_sources_and_cites_one_program_derived_edit():
+    demo = build_post()
+    assert json.loads((ROOT / "docs/site/data/live-demo-post.json").read_text()) == demo
+    report = json.loads((ROOT / demo["source"]).read_text())
+    assert demo["input"] == report["post"]
+    assert len(demo["input"]) <= 600
+    assert demo["verdict"] == "contradicted"
+    assert demo["cost_usd"] == report["cost_usd"]
+    assert demo["latency_ms"] == report["wall_clock_s"] * 1000
+    assert len(demo["sources"]) == 5  # report, extraction, three verification traces
+    for source in demo["sources"]:
+        assert hashlib.sha256((ROOT / source["path"]).read_bytes()).hexdigest() == source["sha256"]
+    assert all(event["timestamp"] is None and event["at_ms"] is None for event in demo["events"])
+    assert "reasoning_content" not in json.dumps(demo)
+    assert sum(e["kind"] == "model" for e in demo["events"]) == 10
+    assert {fact["evidence_id"] for fact in demo["evidence"]} == {"C1:E1", "C2:E1", "C2:E4", "C3:E1"}
+    corrections = demo["corrections"]
+    assert corrections["original_text"] == report["post"]
+    edit, = corrections["edits"]
+    assert (edit["original"], edit["replacement"]) == ("$416.2 billion", "$102.5 billion")
+    assert report["post"][edit["start"]:edit["end"]] == edit["original"]
+    assert edit["actual_value"] == 416161000000 - 313695000000
+    assert edit["evidence_ids"] == ["C3:E1"]
+    assert [(c["form"], c["accn"]) for c in edit["citations"]] == [
+        ("10-K", "0000320193-25-000079"), ("10-Q", "0000320193-26-000020")]
+    assert all(c["url"].startswith("https://www.sec.gov/Archives/edgar/data/320193/")
+               for c in edit["citations"])
+    assert [c["reason_code"] for c in corrections["not_corrected"]] == [
+        "supported", "supported", "supported", "not_judged"]
+    assert corrections["not_corrected"][-1]["text"] == report["claims"][-1]["quote"]
 
 
 def test_real_baseten_responses_replay_through_live_runner_without_network():

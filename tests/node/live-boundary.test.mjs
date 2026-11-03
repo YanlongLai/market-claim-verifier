@@ -4,22 +4,30 @@ import test from "node:test";
 import { onRequest, onBudget } from "../../workers/pages/check.mjs";
 
 const demo = JSON.parse(readFileSync(new URL("../../docs/site/data/live-demo.json", import.meta.url)));
+const postDemo = JSON.parse(readFileSync(new URL("../../docs/site/data/live-demo-post.json", import.meta.url)));
 const request = (body = { text: demo.input }, more = {}, host = "localhost") => new Request(`http://${host}/api/check`, {
   method: "POST", headers: { "Content-Type": "application/json", ...more }, body: JSON.stringify(body)
 });
-const assets = { fetch: async () => Response.json(demo) };
+const assets = { fetch: async req => Response.json(new URL(req.url).pathname === "/data/live-demo-post.json" ? postDemo : demo) };
 const origin = { LIVE_ORIGIN_HOST: "live-origin.example.com", LIVE_ACCESS_CLIENT_ID: "access-id-marker",
   LIVE_ACCESS_CLIENT_SECRET: "access-secret-marker", LIVE_ORIGIN_TOKEN: "origin-token-marker" };
 const originHeaders = { "cf-access-client-id": origin.LIVE_ACCESS_CLIENT_ID,
   "cf-access-client-secret": origin.LIVE_ACCESS_CLIENT_SECRET, "x-live-origin-token": origin.LIVE_ORIGIN_TOKEN };
 function envWithFetch(t, fetch) { t.mock.method(globalThis, "fetch", fetch); return { ...origin }; }
 
-test("offline Pages mock is labelled, accepts only the recorded input, and never fetches origin", async t => {
+test("offline Pages mock is labelled, accepts both recorded inputs, and never fetches origin", async t => {
   const env = { ...envWithFetch(t, () => assert.fail("origin")), LIVE_CHECK_MOCK: "1", ASSETS: assets };
   const response = await onRequest({ request: request(), env });
   assert.equal(response.status, 200);
   assert.equal(response.headers.get("Cache-Control"), "no-store");
   assert.equal((await response.json()).mode, "mock");
+  const postResponse = await onRequest({ request: request({ text: postDemo.input }), env });
+  assert.equal(postResponse.status, 200);
+  const postResult = await postResponse.json();
+  assert.deepEqual(postResult, { ...postDemo, mode: "mock" });
+  assert.equal(postResult.corrections.edits.length, 1);
+  const trimmed = await onRequest({ request: request({ text: postDemo.input.trim() }), env });
+  assert.equal(trimmed.status, 200);
   assert.equal((await onRequest({ request: request({ text: "Other claim" }), env })).status, 422);
   const budget = await onBudget({ request: new Request("http://localhost/api/budget"), env });
   assert.equal((await budget.json()).mode, "mock");

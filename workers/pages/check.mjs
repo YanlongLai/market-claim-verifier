@@ -97,11 +97,15 @@ export const onRequest = async ({ request, env }) => {
     if (typeof data?.text !== "string" || !data.text.trim() || Array.from(data.text.trim()).length > 600) return error("invalid_input", 400);
     const mock = env.LIVE_CHECK_MOCK === "1" && ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname);
     if (mock) {
-      const response = await env.ASSETS.fetch(new Request(new URL("/data/live-demo.json", url)));
-      if (!response.ok) return error("unavailable", 503);
-      const demo = await response.json();
-      if (data.text.trim() !== demo.input) return error("mock_input_only", 422);
-      return new Response(JSON.stringify({ ...demo, mode: "mock" }), { headers });
+      for (const path of ["/data/live-demo-post.json", "/data/live-demo.json"]) {
+        const response = await env.ASSETS.fetch(new Request(new URL(path, url)));
+        if (!response.ok) return error("unavailable", 503);
+        const demo = await response.json();
+        if (data.text.trim() === demo.input.trim()) {
+          return new Response(JSON.stringify({ ...demo, mode: "mock" }), { headers });
+        }
+      }
+      return error("mock_input_only", 422);
     }
     const ip = request.headers.get("CF-Connecting-IP");
     if (!ip) return error("unavailable", 503);
