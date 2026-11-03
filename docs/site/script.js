@@ -382,6 +382,7 @@
     bound: "Conservative cost bound", cost: "Model cost", seconds: "s", low: "low", medium: "medium", high: "high",
     savedExamples: "See the saved examples ↓",
     correctedDraft: "Corrected draft — only listed assertions checked",
+    correctionScope: "Only the assertions listed below were checked; nothing else in the text was verified.",
     correctionChanges: "Cited changes", notCorrected: "Not corrected",
     budget: {
       loading: "Loading today's live-check budget…", unavailable: "Today's live-check budget is unavailable. See the saved examples.",
@@ -431,6 +432,7 @@
     bound: "保守費用上限", cost: "模型費用", seconds: "秒", low: "低", medium: "中", high: "高",
     savedExamples: "查看已儲存的範例 ↓",
     correctedDraft: "修正版草稿——僅核對列出的主張",
+    correctionScope: "僅核對下方列出的主張；文中其餘內容均未經查證。",
     correctionChanges: "修改與引用來源", notCorrected: "未修正",
     budget: {
       loading: "正在讀取今日即時查核預算…", unavailable: "暫時無法讀取今日即時查核預算。請查看已儲存的範例。",
@@ -547,7 +549,7 @@
       changes.append(item);
     }
     draft.append(liveNode("span", original.slice(cursor).join("")));
-    section.append(draft);
+    section.append(draft, liveNode("p", liveCopy("correctionScope"), "correction-scope"));
     if (changes.children.length) section.append(liveNode("h6", liveCopy("correctionChanges")), changes);
     if (Array.isArray(corrections.not_corrected) && corrections.not_corrected.length) {
       const unchanged = liveNode("ol", null, "correction-unchanged");

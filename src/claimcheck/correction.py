@@ -21,6 +21,8 @@ LABEL = {
 }
 REASONS = {
     "supported": ("The program supports this assertion; no edit needed.", "程式支持此主張，無須修改。"),
+    "not_judged": ("This assertion was not judged (opinion or out of scope).", "此主張未評判（意見或超出範圍）。"),
+    "insufficient_evidence": ("Insufficient evidence; this assertion was not corrected.", "證據不足，未修正此主張。"),
     "not_contradicted": ("No program contradiction was established.", "程式未確認此主張與證據矛盾。"),
     "non_numeric": ("This assertion has no supported numeric substitution.", "此主張無可支援的數值替換。"),
     "invalid_evidence": ("The program did not validate sufficient numeric evidence.", "程式未確認有充分的數值證據。"),
@@ -243,7 +245,9 @@ def build_corrections(original: str, checks: Sequence[Mapping], evidence: Sequen
     for index, check in enumerate(checks):
         verdict = check.get("program_verdict")
         if verdict != "contradicted":
-            retain(index, check, "supported" if verdict == "supported" else "not_contradicted")
+            reason = {"supported": "supported", "unchecked": "not_judged",
+                      "insufficient_evidence": "insufficient_evidence"}.get(verdict, "not_contradicted")
+            retain(index, check, reason)
             continue
         text = str(check.get("text") or "")
         kind = check.get("claim_type", "value")  # Legacy recorded value checks lack this key.

@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 
 from claimcheck.correction import LABEL, build_corrections
+from scripts.build_corrected_draft_example import build as build_example
 
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE = ROOT / "docs/evidence/posts-2026-10-28/demo-thread-baseten"
@@ -42,6 +43,25 @@ def test_saved_apple_claim_has_original_span_actual_number_and_every_component_f
         "https://www.sec.gov/Archives/edgar/data/320193/000032019326000020/",
     ]
     assert report["not_corrected"] == []
+
+
+def test_full_saved_post_retains_every_check_and_the_unjudged_opinion():
+    envelope = build_example()
+    saved = ROOT / "docs/evidence/corrected-draft-2026-11-03/apple-corrections.json"
+    assert json.loads(saved.read_text()) == envelope
+    assert envelope["original_text"] == REPORT["post"]
+    edit, = envelope["edits"]
+    assert (edit["check_index"], edit["replacement"], edit["evidence_ids"]) == (3, "$102.5 billion", ["C3:E1"])
+    assert [c["value"] for c in edit["citations"]] == [416161000000, 313695000000]
+    assert [item["check_index"] for item in envelope["not_corrected"]] == [0, 1, 2, 4]
+    assert [item["text"] for item in envelope["not_corrected"]] == [
+        *[check["text"] for item in REPORT["claims"][:2] for check in item["program_checks"]],
+        REPORT["claims"][3]["quote"],
+    ]
+    assert [item["reason_code"] for item in envelope["not_corrected"]] == [
+        "supported", "supported", "supported", "not_judged",
+    ]
+    assert all(all(item["reason"].values()) for item in envelope["not_corrected"])
 
 
 @pytest.mark.parametrize("stated,verified", [
@@ -95,8 +115,8 @@ def test_no_new_number_is_inserted_when_original_span_is_missing():
 
 @pytest.mark.parametrize("patch,expected", [
     ({"program_verdict": "supported"}, "supported"),
-    ({"program_verdict": "insufficient_evidence"}, "not_contradicted"),
-    ({"program_verdict": "unchecked"}, "not_contradicted"),
+    ({"program_verdict": "insufficient_evidence"}, "insufficient_evidence"),
+    ({"program_verdict": "unchecked"}, "not_judged"),
     ({"evidence_valid": False}, "invalid_evidence"),
     ({"actual_value": float("nan")}, "invalid_evidence"),
     ({"actual_value": float("inf")}, "invalid_evidence"),

@@ -56,6 +56,30 @@ def test_corrected_draft_keeps_hostile_original_text_and_cites_all_components(la
     run_check(CORRECTIONS, language=language, viewport=viewport, corrections=corrections)
 
 
+@pytest.mark.parametrize("theme", ["light", "dark"])
+def test_correction_deletions_and_insertions_have_aa_text_contrast(theme):
+    run_check(CORRECTION_CONTRAST, theme=theme)
+
+
+CORRECTION_CONTRAST = r"""
+const tokens=declarations(':root');
+const resolveColor=value=>value.replace(/var\((--[\w-]+)\)/g,(_,name)=>tokens[name]);
+const luminance=color=>{
+  assert.match(color,/^#[\da-f]{6}$/i);
+  return [1,3,5].map(i=>parseInt(color.slice(i,i+2),16)/255)
+    .map(v=>v<=.04045?v/12.92:((v+.055)/1.055)**2.4)
+    .reduce((sum,v,i)=>sum+v*[.2126,.7152,.0722][i],0);
+};
+const background=luminance(resolveColor(property('.trace-result','background')));
+for(const selector of ['.corrected-draft-text del','.corrected-draft-text strong',
+                       '.correction-changes del','.correction-changes strong']){
+  const foreground=luminance(resolveColor(property(selector,'color')));
+  const contrast=(Math.max(foreground,background)+.05)/(Math.min(foreground,background)+.05);
+  assert.ok(contrast>=4.5,`${config.theme} ${selector}: ${contrast}`);
+}
+"""
+
+
 CORRECTIONS = r"""
 context.URL=URL;
 const target=tree.querySelector('#live-result');
@@ -64,7 +88,10 @@ context.liveTest.renderLiveTrace(result,target);
 const section=target.querySelector('.live-corrections'),draft=section.querySelector('.corrected-draft-text');
 assert.ok(section.textContent.includes(config.language==='zh'?'修正版草稿——僅核對列出的主張':'Corrected draft — only listed assertions checked'));
 assert.ok(section.textContent.includes(config.language==='zh'?'未修正':'Not corrected'));
-assert.ok(section.textContent.includes(config.language==='zh'?'程式未確認':'No program contradiction'));
+assert.ok(section.textContent.includes(config.language==='zh'?'此主張未評判':'This assertion was not judged'));
+assert.equal(section.querySelector('.correction-scope').textContent,config.language==='zh'?
+  '僅核對下方列出的主張；文中其餘內容均未經查證。':
+  'Only the assertions listed below were checked; nothing else in the text was verified.');
 assert.equal(draft.querySelector('del').textContent,'$416.2B');
 assert.equal(draft.querySelector('strong').textContent,'$102.5B');
 assert.equal(draft.textContent,config.corrections.original_text.replace('$416.2B','$416.2B → $102.5B'));
@@ -100,7 +127,7 @@ await tree.querySelector('#live-form').events.submit({preventDefault(){}});
 assert.equal(target.querySelector('.corrected-draft-text').querySelector('strong').textContent,'$102.5B');
 context.stamps.setLanguage(config.language==='zh'?'en':'zh');
 assert.ok(target.textContent.includes(config.language==='zh'?'Corrected draft — only listed assertions checked':'修正版草稿——僅核對列出的主張'));
-assert.ok(target.textContent.includes(config.language==='zh'?'No program contradiction':'程式未確認'));
+assert.ok(target.textContent.includes(config.language==='zh'?'This assertion was not judged':'此主張未評判'));
 """
 
 
@@ -109,6 +136,13 @@ context.URL=URL;
 const demo=JSON.parse(readFileSync(root+'/docs/site/data/live-demo.json','utf8'));
 const target=tree.querySelector('#recorded-trace');
 context.liveTest.renderLiveTrace(demo,target);
+const corrections=target.querySelector('.live-corrections');
+assert.ok(corrections);
+assert.equal(corrections.querySelector('.corrected-draft-text').textContent,demo.input);
+assert.ok(corrections.querySelector('.correction-unchanged').textContent.includes(config.language==='zh'?
+  '程式支持此主張，無須修改。':'The program supports this assertion; no edit needed.'));
+assert.ok(corrections.querySelector('.correction-scope').textContent.includes(config.language==='zh'?
+  '文中其餘內容均未經查證':'nothing else in the text was verified'));
 assert.equal(target.querySelectorAll('.trace-step').length,7);
 assert.equal(target.querySelectorAll('.trace-model').length,3);
 assert.ok(target.textContent.includes('109,417,000,000'));

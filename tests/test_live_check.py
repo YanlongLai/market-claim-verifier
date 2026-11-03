@@ -75,6 +75,9 @@ def test_recorded_demo_is_reproducible_and_does_not_publish_reasoning():
     assert all(event["timestamp"] is None for event in demo["events"])
     assert "reasoning_content" not in json.dumps(demo)
     assert len([e for e in demo["events"] if e["kind"] == "model"]) == 3
+    assert demo["corrections"]["original_text"] == demo["input"]
+    assert demo["corrections"]["edits"] == []
+    assert demo["corrections"]["not_corrected"][0]["reason_code"] == "supported"
 
 
 def test_real_baseten_responses_replay_through_live_runner_without_network():
@@ -92,6 +95,38 @@ def test_real_baseten_responses_replay_through_live_runner_without_network():
         assert "reasoning_content" not in json.dumps(result)
         assert [e["kind"] for e in result["events"]] == [
             "model", "tool_call", "tool_result", "model", "model", "program_check", "verdict"]
+    asyncio.run(run())
+
+
+def test_single_claim_supported_annual_input_returns_explicit_correction_reason():
+    claim = "Apple revenue was $391 billion in fiscal 2024."
+    responses = [copy.deepcopy(TRACE["requests"][0]["raw_response"]),
+                 copy.deepcopy(TRACE["requests"][-1]["raw_response"])]
+    tool = responses[0]["choices"][0]["message"]["tool_calls"][0]
+    tool["function"]["arguments"] = json.dumps({"ticker": "AAPL", "metric": "revenue", "period": "FY2024"})
+    final = json.loads(responses[1]["choices"][0]["message"]["content"])
+    sub = final["sub_claims"][0]
+    sub.update(text=claim, stated_text="$391 billion", stated_value=391000000000,
+               model_found_value=391035000000)
+    responses[1]["choices"][0]["message"]["content"] = json.dumps(final)
+
+    async def run():
+        gate = Gate()
+        async def model(_):
+            assert gate.actions[-1] == "reserve"
+            return responses.pop(0)
+        result = await LiveRun(model, fixture_sec, gate).bounded(claim)
+        assert responses == []
+        assert result["verdict"] == "supported"
+        assert result["claims"][0]["actual_value"] == 391035000000
+        assert result["corrections"]["original_text"] == claim
+        assert result["corrections"]["edits"] == []
+        unchanged, = result["corrections"]["not_corrected"]
+        assert (unchanged["text"], unchanged["reason_code"]) == (claim, "supported")
+        assert unchanged["reason"] == {
+            "en": "The program supports this assertion; no edit needed.",
+            "zh": "程式支持此主張，無須修改。",
+        }
     asyncio.run(run())
 
 
@@ -222,7 +257,7 @@ def test_missing_period_uses_cli_abstention_without_model_or_sec_io():
         assert "missing_period" in result["claims"][0]["flags"]
         assert result["corrections"]["original_text"] == "Apple revenue reached $109.4 billion"
         assert result["corrections"]["edits"] == []
-        assert result["corrections"]["not_corrected"][0]["reason_code"] == "not_contradicted"
+        assert result["corrections"]["not_corrected"][0]["reason_code"] == "insufficient_evidence"
     asyncio.run(run())
 
 

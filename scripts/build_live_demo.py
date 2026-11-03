@@ -8,8 +8,12 @@ from pathlib import Path
 import argparse
 import hashlib
 import json
+import sys
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "src"))
+from claimcheck.correction import build_corrections  # noqa: E402
+
 EVIDENCE = ROOT / "docs/evidence/eval-v2-2026-10-27"
 SOURCE = EVIDENCE / "R06--agent@baseten.json"
 OUTPUT = ROOT / "docs/site/data/live-demo.json"
@@ -43,11 +47,13 @@ def build():
     events.extend({"kind": "program_check", "at_ms": None, "timestamp": None, "check": c} for c in checks)
     events.append({"kind": "verdict", "at_ms": None, "timestamp": None,
                    "verdict": trace["final_verdict"]["verdict"]})
+    evidence = [t["result"] for t in trace["tool_calls"]]
     return {"mode": "recorded", "input": record["claim"], "provider": trace["provider"],
             "model": trace["model"], "verdict": trace["final_verdict"]["verdict"],
             "model_verdict": trace["final_verdict"].get("model_verdict"),
             "summary": trace["final_verdict"]["summary"], "claims": checks,
-            "evidence": [t["result"] for t in trace["tool_calls"]], "events": events,
+            "evidence": evidence, "events": events,
+            "corrections": build_corrections(record["claim"], checks, evidence),
             "cost_usd": trace["cost_usd"], "cost_is_bound": False, "latency_ms": trace["latency_ms"],
             "started_at": record["started_at"], "finished_at": record["finished_at"],
             "source": str(trace_path.relative_to(ROOT)),
