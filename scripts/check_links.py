@@ -21,7 +21,7 @@ from urllib.request import Request, urlopen
 
 
 ROOT = Path(__file__).resolve().parents[1]
-EXCLUDED = {".git", ".venv", ".cache", ".pytest_cache", "__pycache__", "node_modules"}
+EXCLUDED = {".git", ".venv", ".venv-workers", ".wrangler", ".cache", ".pytest_cache", "__pycache__", "node_modules", "python_modules"}
 
 
 def documents(root: Path) -> list[Path]:

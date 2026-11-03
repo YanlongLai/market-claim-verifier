@@ -12,7 +12,7 @@ import sys
 
 
 ROOT = Path(__file__).resolve().parents[1]
-SKIP = {".git", ".venv", ".cache", ".pytest_cache", "__pycache__", "node_modules"}
+SKIP = {".git", ".venv", ".venv-workers", ".wrangler", ".cache", ".pytest_cache", "__pycache__", "node_modules", "python_modules"}
 DATA_OUTPUTS = (
     "docs/explorer/data.json",
     "docs/site/data/site.json",
@@ -47,6 +47,8 @@ def copy_ignored(folder: str, names: list[str]) -> list[str]:
     ignored = [name for name in names if name in SKIP or (Path(folder) / name).is_symlink()]
     if Path(folder) == ROOT / "demo":
         ignored.extend(name for name in names if name in {"cache", "out"})
+    if Path(folder) == ROOT / "workers/live/src":
+        ignored.extend(name for name in names if name in {"claimcheck", "core-hashes.json"})
     return ignored
 
 
