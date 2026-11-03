@@ -1,0 +1,13 @@
+# Additional password edge review
+
+Offline review, 2026-11-02. No real credentials, deployments, paid calls or new model evaluations. Frozen-response replay does not retest OCR or ASR.
+
+An unpaired Unicode surrogate is valid in a JSON string but cannot use Python's default UTF-8 encoder. Attempted passwords now hash with `surrogatepass`, so those malformed candidates return 401 and count toward the same five-failure lockout. Invalid secret types fail closed before any state is retained. The additional [edge regressions](../../../tests/test_live_password_edges.py) also check that native form fallback uses POST with a masked password input and disabled autocomplete, keeping credentials out of URLs when JavaScript cannot run. These checks passed as part of the full suite.
+
+The form initializes its password to an empty value before attempting sessionStorage restoration. Browsers that block storage can still complete a check without remembering the password. Only successful checks write sessionStorage; 401 clears the remembered value. The application never writes passwords to localStorage.
+
+The [complete verifier run](08-full-verification.log) passed **1,032 product tests, 149 demo tests and 55 standalone Node tests**, figure regeneration/checks, all three byte-identical data outputs and Markdown links. [Source hashes](review-source-hashes.json) record 16 implementation, test and handoff files against the imported budget commit. Those hashes were rechecked after verification. The [working-tree link check](09-current-links.log) also passed.
+
+Earlier logs are retained: [Pages baseline](01-initial-node.log), [initial Python assertions](02-initial-python.log), [authentication assertions](03-auth-tests.log), [combined assertions](06-targeted-tests.log), and [the first full verifier run](07-full-verification.log). That full run passed all product tests and found a stale generated demo source-hash header. Regenerating `hover-source.js` with `motion_v3.hover_source` refreshed that header without changing measured narration or media. No recorded test attempt was overwritten.
+
+[Source lint](04-frontend-lint.log) has no failures and four warnings: outlines identify editable inputs, zero-padding formats timestamps, and the existing em-dash warning concerns localized copy. [Headless inspection](05-frontend-inspect.log) could not launch Chrome. Browser-host access was unavailable, and computer-use approval rejected opening Google Chrome because access to that app was not approved. No visual screenshot pass is claimed; responsive DOM and language tests remain part of the passing offline suite.

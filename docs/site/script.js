@@ -356,12 +356,367 @@
     }
   };
 
+  COPY.en.nav.live = "Live check";
+  COPY.zh.nav.live = "即時查核";
+  COPY.en.live = {
+    cta: "Try a live check →",
+    title: "Try a live check.", lede: "One post. The filed number. A verdict you can follow.",
+    scope: "US equities · SEC financial facts only. No prices, forecasts, crypto or investment advice.",
+    input: "Paste a financial sentence or short post", submit: "Check against SEC", useExample: "Use Apple example",
+    password: "Live-check password",
+    passwordNote: "Live check is password-protected during the hackathon review. After a successful check, the password stays only in this tab's session.",
+    privacy: "Usually within 30 seconds. Text goes to Baseten for this check; we do not save it. Anonymous rate counters expire after 10 minutes. 5 checks / 10 min.",
+    recordedTitle: "Follow a real Apple check.",
+    recordedNote: "Saved run · 28 Oct 2026 · actual model calls and SEC evidence. Available even when the live budget runs out.",
+    loading: "Loading the recorded trace…", loadingFailed: "The saved trace could not load. Try refreshing the page.",
+    pending: "Muse Spark is choosing tools and checking SEC facts…", complete: "Check complete. The program verdict and trace are below.",
+    recorded: "Recorded run", live: "Live check", mock: "Offline replay · saved result for the Apple example only",
+    claims: "Program checks", evidence: "SEC evidence", trace: "Agent trace", model: "Model step", tool_call: "Tool call",
+    tool_result: "Tool result", program_check: "Program check", verdict: "Program verdict", raw: "Inspect data",
+    supported: "Supported", contradicted: "Contradicted", insufficient_evidence: "Insufficient evidence", unchecked: "Unchecked",
+    actual: "Filed / computed", stated: "Stated", tolerance: "Tolerance", period: "Period", strength: "Evidence strength",
+    notRecorded: "Timestamp not recorded", noEvidence: "No matching SEC fact returned.", filing: "Open SEC filing", source: "Original recorded trace",
+    timing: "Run start/end and model-call durations are recorded. Individual tool/check timestamps were not recorded.",
+    honesty: "Meta Muse Spark selects tools and proposes claims. Python checks numbers, periods and evidence IDs. A supported verdict applies only to the assertions extracted; extraction can miss an assertion. Filed evidence can be incomplete or restated. SEC data may be cached for six hours.",
+    bound: "Conservative cost bound", cost: "Model cost", seconds: "s", low: "low", medium: "medium", high: "high",
+    savedExamples: "See the saved examples ↓",
+    budget: {
+      loading: "Loading today's live-check budget…", unavailable: "Today's live-check budget is unavailable. See the saved examples.",
+      mock: "Offline replay budget · no spending",
+      remaining: "Today's live-check budget: {remaining} of {limit} left · resets 00:00 UTC",
+      almost: "Almost used up", budget_exhausted: "Today's budget is used up — see the saved examples. Resets {reset} (00:00 UTC).",
+      total_budget_exhausted: "Live checks paused (total budget). An admin must reset the budget. See the saved examples.",
+      credit_exhausted: "Live checks paused (provider credit). See the saved examples."
+    },
+    errors: {
+      invalid_input: "Enter 1–600 characters.", out_of_scope: "This check covers US equities and SEC financial facts only.",
+      unauthorized: "Enter the live-check password to continue.",
+      auth_rate_limited: "Too many incorrect passwords. Please wait 15 minutes; the saved demo is available below.",
+      budget_exhausted: "Today's budget is used up — see the saved examples. Resets 00:00 UTC.",
+      total_budget_exhausted: "Live checks paused (total budget). See the saved examples.",
+      credit_exhausted: "Live checks paused (provider credit). See the saved examples.",
+      rate_limited: "Five checks per 10 minutes. Please wait 10 minutes; the saved demo is available below.",
+      unavailable: "Live checking is unavailable. Follow the saved demo below.", timeout: "The check reached its time limit. No verdict was issued. Follow the saved demo below.",
+      provider_error: "The model service did not complete this check. No verdict was issued. The saved demo is below.",
+      sec_unavailable: "SEC data is unavailable right now. No verdict was issued. The saved demo is below.",
+      mock_input_only: "Offline mode replays the saved Apple example only. Choose “Use Apple example”.",
+      invalid_model_output: "The model did not return a complete claim report. No verdict was issued. The saved demo is below.",
+      incomplete_model: "The model response was incomplete. No verdict was issued. The saved demo is below.",
+      tool_limit: "This post exceeded the short-check limit. Try one sentence about one US issuer."
+    }
+  };
+  COPY.zh.live = {
+    cta: "試試即時查核 →",
+    title: "試試即時查核。", lede: "一則貼文、申報數字，以及看得見的查核過程。",
+    scope: "限美股 SEC 財務事實。不查股價、預測、加密貨幣，也不提供投資建議。",
+    input: "貼上一句財務敘述或短貼文", submit: "比對 SEC 資料", useExample: "使用 Apple 範例",
+    password: "即時查核密碼",
+    passwordNote: "黑客松評審期間，即時查核需要密碼。查核成功後，密碼只會保留在此分頁的工作階段。",
+    privacy: "通常在 30 秒內完成。文字會傳至 Baseten 進行查核；本站不儲存文字。匿名限流計數於 10 分鐘後刪除。每 10 分鐘限 5 次。",
+    recordedTitle: "跟著一筆真實 Apple 查核。",
+    recordedNote: "已儲存紀錄 · 2026 年 10 月 28 日 · 真實模型呼叫與 SEC 證據。即時預算用完仍可查看。",
+    loading: "正在讀取查核紀錄…", loadingFailed: "無法讀取查核紀錄，請重新整理頁面。",
+    pending: "Muse Spark 正在選擇工具並比對 SEC 事實…", complete: "查核完成。以下是程式裁定與執行過程。",
+    recorded: "已儲存的執行紀錄", live: "即時查核", mock: "離線重播 · 僅回放已儲存的 Apple 範例",
+    claims: "程式檢查", evidence: "SEC 證據", trace: "代理執行過程", model: "模型步驟", tool_call: "工具呼叫",
+    tool_result: "工具回傳", program_check: "程式檢查", verdict: "程式裁定", raw: "檢視資料",
+    supported: "證據支持", contradicted: "證據矛盾", insufficient_evidence: "證據不足", unchecked: "未能檢查",
+    actual: "申報／計算值", stated: "貼文數字", tolerance: "容許誤差", period: "期間", strength: "證據強度",
+    notRecorded: "未記錄時間戳", noEvidence: "未取得符合的 SEC 事實。", filing: "開啟 SEC 申報", source: "原始執行紀錄",
+    timing: "已記錄整次開始／結束時間及各次模型耗時；未記錄個別工具／程式檢查的時間戳。",
+    honesty: "Meta Muse Spark 選擇工具並提出待查敘述；Python 檢查數字、期間與證據 ID。支持裁定僅適用於抽取到的敘述，抽取仍可能遺漏。申報證據可能不完整或經重編。SEC 資料可能快取六小時。",
+    bound: "保守費用上限", cost: "模型費用", seconds: "秒", low: "低", medium: "中", high: "高",
+    savedExamples: "查看已儲存的範例 ↓",
+    budget: {
+      loading: "正在讀取今日即時查核預算…", unavailable: "暫時無法讀取今日即時查核預算。請查看已儲存的範例。",
+      mock: "離線重播預算 · 不產生費用",
+      remaining: "今日即時查核預算：{limit} 中剩餘 {remaining} · UTC 00:00 重設",
+      almost: "預算即將用完", budget_exhausted: "今日預算已用完，請查看已儲存的範例。於 {reset}（UTC 00:00）重設。",
+      total_budget_exhausted: "即時查核暫停（總預算已用完）。需由管理員重設預算。請查看已儲存的範例。",
+      credit_exhausted: "即時查核暫停（供應商額度已用完）。請查看已儲存的範例。"
+    },
+    errors: {
+      invalid_input: "請輸入 1–600 個字元。", out_of_scope: "此功能僅查核美股的 SEC 財務事實。",
+      unauthorized: "請輸入即時查核密碼以繼續。",
+      auth_rate_limited: "密碼錯誤次數過多，請等候 15 分鐘；下方示範仍可查看。",
+      budget_exhausted: "今日預算已用完，請查看已儲存的範例。於 UTC 00:00 重設。",
+      total_budget_exhausted: "即時查核暫停（總預算已用完）。請查看已儲存的範例。",
+      credit_exhausted: "即時查核暫停（供應商額度已用完）。請查看已儲存的範例。",
+      rate_limited: "每 10 分鐘限 5 次，請等候 10 分鐘；下方示範仍可查看。",
+      unavailable: "即時查核暫時無法使用。請查看下方已儲存的示範。", timeout: "查核已達時間上限，未作出裁定。請查看下方示範。",
+      provider_error: "模型服務未完成查核，未作出裁定。請查看下方示範。", sec_unavailable: "SEC 資料暫時無法取得，未作出裁定。請查看下方示範。",
+      mock_input_only: "離線模式僅重播已儲存的 Apple 範例，請選擇「使用 Apple 範例」。",
+      invalid_model_output: "模型未回傳完整報告，未作出裁定。請查看下方示範。", incomplete_model: "模型回應不完整，未作出裁定。請查看下方示範。",
+      tool_limit: "此貼文超過簡短查核上限，請改用一家美股公司的一句敘述。"
+    }
+  };
+
   let pageLanguage = readLanguage();
   let exampleLanguage = pageLanguage;
   let siteData = null;
   let stampConveyor = null;
   let activeFilingClaim = null;
   let filingReturnFocus = null;
+  let savedLiveDemo = null;
+  let liveResult = null;
+  let liveStatus = "";
+  const LIVE_PASSWORD_KEY = "claimcheck.livePassword";
+  let liveBudget = null;
+  let liveBusy = false;
+  let budgetLoaded = false;
+  let budgetRequest = 0;
+  let budgetTimer = null;
+  let budgetDay = "";
+
+  function liveCopy(key) { return COPY[pageLanguage].live[key]; }
+
+  function liveNode(tag, text, className) {
+    const node = document.createElement(tag);
+    if (text !== undefined && text !== null) node.textContent = String(text);
+    if (className) node.className = className;
+    return node;
+  }
+
+  function liveNumber(value) {
+    return typeof value === "number" && Number.isFinite(value)
+      ? value.toLocaleString(pageLanguage === "zh" ? "zh-TW" : "en-US", { maximumFractionDigits: 4 }) : "—";
+  }
+
+  function liveRaw(parent, data) {
+    const details = liveNode("details", null, "trace-data");
+    details.append(liveNode("summary", liveCopy("raw")), liveNode("pre", JSON.stringify(data, null, 2)));
+    parent.append(details);
+  }
+
+  function liveVerdict(value) {
+    return liveCopy(value) || liveCopy("insufficient_evidence");
+  }
+
+  function renderLiveTrace(result, target) {
+    if (!target) return;
+    target.replaceChildren();
+    target.hidden = false;
+    const head = liveNode("div", null, "trace-head");
+    head.append(liveNode("p", liveCopy(result.mode === "recorded" ? "recorded" : result.mode === "mock" ? "mock" : "live"), "trace-mode"));
+    if (result.verdict) head.append(liveNode("h4", liveVerdict(result.verdict), `trace-verdict is-${result.verdict}`));
+    const money = Number.isFinite(result.cost_usd) ? `$${result.cost_usd.toFixed(5)}` : "—";
+    head.append(liveNode("p", `${liveCopy(result.cost_is_bound ? "bound" : "cost")}: ${money} · ${liveNumber(result.latency_ms / 1000)} ${liveCopy("seconds")}`, "trace-metrics"));
+    head.append(liveNode("p", result.model || "", "live-small"));
+    if (result.started_at) head.append(liveNode("p", `${result.started_at} → ${result.finished_at}`, "live-small"));
+    if (result.input) head.append(liveNode("blockquote", result.input, "trace-input"));
+    target.append(head);
+    if (result.claims && result.claims.length) {
+      target.append(liveNode("h5", liveCopy("claims")));
+      const claims = liveNode("ol", null, "live-claims");
+      result.claims.forEach((check) => {
+        const item = liveNode("li");
+        item.append(liveNode("strong", liveVerdict(check.program_verdict), `is-${check.program_verdict}`), liveNode("p", check.text));
+        item.append(liveNode("p", `${liveCopy("stated")}: ${liveNumber(check.stated_value_used)} · ${liveCopy("actual")}: ${liveNumber(check.actual_value)} · ${liveCopy("tolerance")}: ${liveNumber(check.tolerance)}`, "live-small"));
+        item.append(liveNode("p", `${liveCopy("strength")}: ${liveCopy(check.evidence_strength) || "—"} · ${(check.evidence_ids || []).join(", ")}`, "live-small"));
+        liveRaw(item, check);
+        claims.append(item);
+      });
+      target.append(claims);
+    }
+    const evidence = (result.evidence || []).filter((fact) => !fact.error);
+    target.append(liveNode("h5", liveCopy("evidence")));
+    const rows = liveNode("div", null, "live-evidence");
+    if (!evidence.length) rows.append(liveNode("p", liveCopy("noEvidence")));
+    evidence.forEach((fact) => {
+      const row = liveNode("div", null, "live-evidence-row");
+      row.append(liveNode("strong", `${fact.evidence_id} · ${fact.ticker || ""} ${fact.metric || ""}`));
+      row.append(liveNode("span", `${liveNumber(fact.value ?? fact.pct_change ?? fact.abs_change)} ${fact.unit || ""}`));
+      row.append(liveNode("span", `${fact.period || ""} · ${fact.start || ""} → ${fact.end || ""}`, "live-small"));
+      row.append(liveNode("span", [fact.concept, fact.accn, fact.period_type].filter(Boolean).join(" · "), "live-small"));
+      if (fact.filing_url) {
+        try {
+          const url = new URL(fact.filing_url);
+          if (url.protocol === "https:" && url.hostname === "www.sec.gov" && url.pathname.startsWith("/Archives/")) {
+            const link = liveNode("a", `${fact.form || "SEC"} · ${liveCopy("filing")}`);
+            link.href = url.href;
+            link.rel = "noreferrer";
+            row.append(link);
+          }
+        } catch (_error) { /* malformed provider fields stay plain text */ }
+      }
+      liveRaw(row, fact);
+      rows.append(row);
+    });
+    target.append(rows, liveNode("h5", liveCopy("trace")));
+    const steps = liveNode("ol", null, "agent-trace");
+    (result.events || []).forEach((event, i) => {
+      const step = liveNode("li", null, `trace-step trace-${event.kind}`);
+      const label = liveNode("div", null, "trace-step-label");
+      label.append(liveNode("span", String(i + 1).padStart(2, "0"), "trace-step-number"),
+        liveNode("strong", `${liveCopy(event.kind) || event.kind}${event.step ? ` ${event.step}` : ""}`));
+      step.append(label);
+      step.append(liveNode("small", typeof event.at_ms === "number" ? `+${(event.at_ms / 1000).toFixed(3)} ${liveCopy("seconds")} · ${event.timestamp || ""}` : liveCopy("notRecorded"), "trace-time"));
+      if (event.kind === "model") {
+        step.append(liveNode("p", `${(event.latency_ms / 1000).toFixed(3)} ${liveCopy("seconds")} · $${Number(event.cost_usd).toFixed(5)} · ${event.finish_reason || ""}`));
+      } else if (event.kind === "tool_call") {
+        step.append(liveNode("code", `${event.name}(${JSON.stringify(event.arguments)})`));
+      } else if (event.kind === "tool_result") {
+        const fact = event.result || {};
+        step.append(liveNode("p", `${fact.evidence_id || ""} · ${liveNumber(fact.value ?? fact.pct_change ?? fact.abs_change)} ${fact.unit || ""} · ${fact.period || ""}`));
+        liveRaw(step, fact);
+      } else if (event.kind === "program_check") {
+        const check = event.check || {};
+        step.append(liveNode("p", `${liveVerdict(check.program_verdict)} · ${check.reason || ""}`));
+        liveRaw(step, check);
+      } else if (event.kind === "verdict") {
+        step.append(liveNode("strong", liveVerdict(event.verdict), `is-${event.verdict}`));
+      }
+      steps.append(step);
+    });
+    target.append(steps, liveNode("p", liveCopy("honesty"), "live-small"));
+    if (result.mode === "recorded" || result.mode === "mock") {
+      target.append(liveNode("p", liveCopy("timing"), "live-small"));
+      if (typeof result.source === "string" && /^docs\/evidence\/[\w/.-]+\.json$/.test(result.source)) {
+        const link = liveNode("a", liveCopy("source"));
+        link.href = `https://github.com/YanlongLai/market-claim-verifier/blob/main/${result.source}`;
+        target.append(link);
+      }
+    }
+  }
+
+  function liveStop() {
+    const stops = ["credit_exhausted", "total_budget_exhausted", "budget_exhausted"];
+    return stops.find(code => liveBudget?.status === code || liveStatus === code) || "";
+  }
+
+  function budgetStopText(stop) {
+    return (liveCopy("budget")[stop] || "").replace("{reset}", liveBudget?.resets_at?.slice(0, 10) || "00:00 UTC");
+  }
+
+  function renderLiveBudget() {
+    const text = $("#live-budget-text"), meter = $("#live-budget-meter"), note = $("#live-budget-note");
+    if (!text) return;
+    const copy = liveCopy("budget"), stop = liveStop();
+    text.textContent = liveBudget?.mode === "mock" ? copy.mock : liveBudget ? copy.remaining.replace("{remaining}", `$${liveBudget.daily_remaining_usd.toFixed(2)}`)
+      .replace("{limit}", `$${liveBudget.daily_limit_usd.toFixed(2)}`) : copy[budgetLoaded ? "unavailable" : "loading"];
+    meter.hidden = !liveBudget;
+    if (liveBudget) {
+      meter.max = Math.max(liveBudget.daily_limit_usd, 0.01);
+      meter.value = liveBudget.daily_remaining_usd;
+      meter.setAttribute("aria-valuetext", text.textContent);
+    }
+    note.textContent = stop ? budgetStopText(stop) : liveBudget?.daily_remaining_usd < 0.10 ? copy.almost : "";
+    note.hidden = !note.textContent;
+    const disabled = liveBusy || !liveBudget || Boolean(stop);
+    $("#live-input").disabled = disabled;
+    $("#live-submit").disabled = disabled;
+    $("#live-example").disabled = disabled;
+    $("#live-password").disabled = liveBusy;
+  }
+
+  async function refreshLiveBudget() {
+    const id = ++budgetRequest;
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 4000);
+    try {
+      const response = await fetch("/api/budget", {
+        cache: "no-store", headers: { "Cache-Control": "no-cache" }, signal: controller.signal
+      });
+      const data = await response.json();
+      if (!response.ok || !["ready", "budget_exhausted", "total_budget_exhausted", "credit_exhausted"].includes(data.status) ||
+          ![data.daily_limit_usd, data.daily_remaining_usd].every(v => typeof v === "number" && Number.isFinite(v) && v >= 0) ||
+          !Number.isFinite(Date.parse(data.resets_at))) throw new Error("budget unavailable");
+      if (id !== budgetRequest) return;
+      if (budgetDay && data.day !== budgetDay && liveStatus === "budget_exhausted") liveStatus = "";
+      if (data.status === "ready" && ["credit_exhausted", "total_budget_exhausted"].includes(liveStatus)) liveStatus = "";
+      budgetDay = data.day;
+      liveBudget = data;
+      clearTimeout(budgetTimer);
+      // Re-read the server at midnight; the browser never resets a counter.
+      budgetTimer = setTimeout(refreshLiveBudget, Math.max(1000, Date.parse(data.resets_at) - Date.now() + 50));
+      budgetTimer?.unref?.();
+    } catch {
+      if (id === budgetRequest) liveBudget = null;
+    } finally {
+      clearTimeout(timeout);
+      if (id === budgetRequest) { budgetLoaded = true; localizeLive(); }
+    }
+  }
+
+  function localizeLive() {
+    if (savedLiveDemo) renderLiveTrace(savedLiveDemo, $("#recorded-trace"));
+    if (liveResult) renderLiveTrace(liveResult, $("#live-result"));
+    const status = $("#live-status");
+    if (status) status.textContent = liveStop() ? budgetStopText(liveStop()) : liveStatus === "pending" || liveStatus === "complete"
+      ? liveCopy(liveStatus) : (liveCopy("errors")[liveStatus] || "");
+    renderLiveBudget();
+  }
+
+  function setupLive() {
+    const form = $("#live-form");
+    if (!form) return;
+    const input = $("#live-input");
+    const submit = $("#live-submit");
+    const password = $("#live-password");
+    password.value = "";
+    try { password.value = sessionStorage.getItem(LIVE_PASSWORD_KEY) || ""; } catch { /* Storage may be blocked. */ }
+    const count = () => { $("#live-count").textContent = `${Array.from(input.value).length} / 600`; };
+    input.addEventListener("input", count);
+    $("#live-example").addEventListener("click", () => {
+      if (savedLiveDemo && !input.disabled) { input.value = savedLiveDemo.input; count(); input.focus(); }
+    });
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      if (submit.disabled) return;
+      const attemptedPassword = password.value;
+      if (!attemptedPassword) {
+        liveStatus = "unauthorized"; localizeLive(); password.focus(); return;
+      }
+      if (!input.value.trim() || Array.from(input.value.trim()).length > 600) {
+        liveStatus = "invalid_input"; localizeLive(); return;
+      }
+      liveBusy = true;
+      form.setAttribute("aria-busy", "true");
+      liveResult = null;
+      $("#live-result").hidden = true;
+      liveStatus = "pending";
+      localizeLive();
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 32000);
+      try {
+        const response = await fetch("/api/check", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ text: input.value.trim(), password: attemptedPassword }), signal: controller.signal, cache: "no-store"
+        });
+        const result = await response.json();
+        if (result.budget) liveBudget = result.budget;
+        if (!response.ok || result.error) {
+          liveStatus = result.error || "unavailable";
+          if (response.status === 401) {
+            password.value = "";
+            try { sessionStorage.removeItem(LIVE_PASSWORD_KEY); } catch { /* Storage may be blocked. */ }
+          }
+          if (Array.isArray(result.events) && result.events.length) liveResult = result;
+        } else {
+          liveStatus = "complete";
+          liveResult = result;
+          try { sessionStorage.setItem(LIVE_PASSWORD_KEY, attemptedPassword); } catch { /* Check succeeded without storage. */ }
+        }
+      } catch (error) { liveStatus = error.name === "AbortError" ? "timeout" : "unavailable"; }
+      finally {
+        clearTimeout(timer);
+        await refreshLiveBudget();
+        liveBusy = false;
+        form.setAttribute("aria-busy", "false");
+        localizeLive();
+      }
+    });
+    refreshLiveBudget();
+    document.addEventListener("visibilitychange", () => { if (!document.hidden) refreshLiveBudget(); });
+    fetch("data/live-demo.json", { cache: "no-store" }).then((response) => {
+      if (!response.ok) throw new Error("missing trace");
+      return response.json();
+    }).then((data) => {
+      savedLiveDemo = data;
+      $("#recorded-loading").hidden = true;
+      localizeLive();
+    }).catch(() => { $("#recorded-loading").textContent = liveCopy("loadingFailed"); });
+  }
 
   function readLanguage() {
     try {
@@ -419,6 +774,7 @@
     const closeButton = $("#filing-dialog-close");
     if (closeButton) closeButton.setAttribute("aria-label", getCopy("filing.close"));
 
+    localizeLive();
     if (siteData) {
       renderStampScene();
       renderExample(siteData.examples[exampleLanguage]);
@@ -2426,6 +2782,7 @@
     }
   }
 
+  setupLive();
   setupFilingDialog();
   setupControls();
   applyCopy();

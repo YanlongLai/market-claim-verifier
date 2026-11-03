@@ -404,10 +404,11 @@ const context = vm.createContext({
   ResizeObserver: class { constructor(fn) { onResize = fn; } observe() {} },
   requestAnimationFrame: fn => { callbacks.set(++nextFrame,fn); return nextFrame; }, cancelAnimationFrame: id => callbacks.delete(id)
 });
-const boot = '  setupFilingDialog();\n  setupControls();\n  applyCopy();\n  loadData();';
+const boot = '  setupLive();\n  setupFilingDialog();\n  setupControls();\n  applyCopy();\n  loadData();';
 assert.ok(source.includes(boot));
 vm.runInContext(source.replace(boot, `
   globalThis.stamps = { createStampConveyor, setLanguage: language => { pageLanguage = language; applyCopy(); } };
+  globalThis.liveTest = { setupLive, renderLiveTrace, localizeLive, refreshLiveBudget, state: () => ({ liveResult, liveStatus, savedLiveDemo, liveBudget }) };
 `), context);
 const conveyor = context.stamps.createStampConveyor(cards);
 context.stamps.setLanguage(config.language || 'en'); conveyor.localize();

@@ -12,7 +12,7 @@ import sys
 
 
 ROOT = Path(__file__).resolve().parents[1]
-SKIP = {".git", ".venv", ".cache", ".pytest_cache", "__pycache__", "node_modules"}
+SKIP = {".git", ".venv", ".venv-workers", ".wrangler", ".cache", ".pytest_cache", "__pycache__", "node_modules", "python_modules"}
 DATA_OUTPUTS = (
     "docs/explorer/data.json",
     "docs/site/data/site.json",
@@ -49,6 +49,8 @@ def copy_ignored(folder: str, names: list[str]) -> list[str]:
     ignored = [name for name in names if name in SKIP or (Path(folder) / name).is_symlink()]
     if Path(folder) == ROOT / "demo":
         ignored.extend(name for name in names if name in {"cache", "out"})
+    if Path(folder) == ROOT / "workers/live/src":
+        ignored.extend(name for name in names if name in {"claimcheck", "core-hashes.json"})
     return ignored
 
 
@@ -66,7 +68,7 @@ def main() -> int:
     (guard / "offline.cjs").write_text(NODE_GUARD, encoding="utf-8")
     env = {
         key: value for key, value in os.environ.items()
-        if not key.startswith(("CLAIMCHECK_", "BASETEN_", "FIREWORKS_", "MODEL_API_", "OPENAI_"))
+        if not key.startswith(("CLAIMCHECK_", "BASETEN_", "FIREWORKS_", "MODEL_API_", "OPENAI_", "LIVE_"))
         and key not in {"PYTHONPATH", "NODE_OPTIONS"}
     }
     for key in ("MODEL_API_KEY_FILE", "BASETEN_API_KEY_FILE", "FIREWORKS_API_KEY_FILE"):

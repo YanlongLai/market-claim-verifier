@@ -517,8 +517,8 @@ def test_page_sections_nav_and_shared_progress_headings_follow_the_v3_order():
     structure = Structure()
     structure.feed(html)
     assert not structure.stack
-    assert structure.sections == ["top", "how", "capabilities", "example", "results", "trust"]
-    assert structure.nav == ["#how", "#example", "#results", "#trust"]
+    assert structure.sections == ["top", "how", "live-check", "capabilities", "example", "results", "trust"]
+    assert structure.nav == ["#live-check", "#example", "#results", "#trust"]
     assert any(attrs.get("id") == "top" for _, attrs in structure.parents["stamp-scene"])
     assert any(attrs.get("id") == "example" for _, attrs in structure.parents["example-title"])
     assert structure.parents["stamp-pause"][-1][1]["class"] == "stamp-strip"
