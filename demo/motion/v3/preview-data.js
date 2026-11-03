@@ -2465,7 +2465,7 @@ window.MOTION_PREVIEW = {
       "tests/fixtures/multimodal/release-reading.wav": "06dc5144bc0f3d3ebdf0509a679cb53ab76d523ec104a29c68d62997a991c122",
       "demo/storyboard-v3.yaml": "89d8642b7b58b68ce37accf0229283a6b985850a6eb48802fcdaa9ed43e1a95b",
       "docs/evidence/posts-2026-10-28/demo-thread-baseten/traces/20261029T023240Z-12ac28b8.json": "341af6c59b5f65b8a6a6f680e2d8868b3e53d5d0a5a30e57596cbc6b402b261a",
-      "demo/data/realworld.json": "f0bad51288274b9fe985db536e3e22756cb5a0c84d904d9526fb8d200c317990",
+      "demo/data/realworld.json": "0863cf60a0125fff62a07fc1cec222c5c17f4a7537c562af4475168c1e2a3531",
       "docs/evidence/real-world-2026-11-02/baseten/post/RW001/report.json": "e8b78a476d1365394208c0e91c316ad8826247b69fadd62099a1ad360b059f0b",
       "docs/evidence/real-world-2026-11-02/baseten/post/RW001/result.json": "6fa11490db7af185eab31f3a4d23a79e36a47012ab1921613ac5165afa883df8",
       "docs/evidence/real-world-2026-11-02/baseten/post/RW001/traces/20261103T031750Z-79e3dbe7.json": "e9708fc0f9630e5ab97b7de255da858d224ec933648cbb33ff0b2f290111ae3e",
@@ -3536,7 +3536,29 @@ window.MOTION_PREVIEW = {
         "verdict": "contradicted",
         "report": "docs/evidence/real-world-2026-11-02/threads/baseten/post/T03/report.json",
         "input": "docs/evidence/real-world-2026-11-02/threads/claims.jsonl",
-        "claim_index": 2
+        "claim_index": 2,
+        "primary": {
+          "check_index": 0,
+          "claim_type": "value",
+          "verdict": "contradicted",
+          "value": 229000000.0,
+          "unit": "USD",
+          "period": "FY2023",
+          "metric": "revenue",
+          "source_label": "10-K",
+          "source_tier": "L1",
+          "evidence_ids": [
+            "E1"
+          ],
+          "gap": {
+            "gap_kind": "relative",
+            "gap": 9.0,
+            "direction_wrong": false,
+            "severity": "severe",
+            "score": 0.0
+          }
+        },
+        "comparisons": []
       },
       {
         "run_id": "real-world-2026-11-02",
@@ -3548,7 +3570,52 @@ window.MOTION_PREVIEW = {
         "verdict": "contradicted",
         "report": "docs/evidence/real-world-2026-11-02/threads/baseten/post/T09/report.json",
         "input": "docs/evidence/real-world-2026-11-02/threads/claims.jsonl",
-        "claim_index": 1
+        "claim_index": 1,
+        "primary": {
+          "check_index": 0,
+          "claim_type": "value",
+          "verdict": "supported",
+          "value": 11031000000.0,
+          "unit": "USD",
+          "period": "FY2027Q1",
+          "metric": "revenue",
+          "source_label": "10-Q",
+          "source_tier": "L2",
+          "evidence_ids": [
+            "E1"
+          ],
+          "gap": {
+            "gap_kind": "relative",
+            "gap": 0.0,
+            "direction_wrong": false,
+            "severity": "exact",
+            "score": 100.0
+          }
+        },
+        "comparisons": [
+          {
+            "check_index": 1,
+            "claim_type": "change_pct",
+            "verdict": "contradicted",
+            "value": 377.946273830156,
+            "unit": "%",
+            "period": "FY2027Q1",
+            "metric": "revenue",
+            "source_label": "10-Q",
+            "source_tier": "L2",
+            "evidence_ids": [
+              "E4"
+            ],
+            "text": "SanDisk fiscal 2027 Q1 revenue was up 23% year over year",
+            "gap": {
+              "gap_kind": "points",
+              "gap": 354.946273830156,
+              "direction_wrong": false,
+              "severity": "severe",
+              "score": 0.0
+            }
+          }
+        ]
       }
     ],
     "coverage_definition": "Items with at least one program-checked claim / all attempted items; coverage is not accuracy. Verdict counts are claims, not items.",

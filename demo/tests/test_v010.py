@@ -30,7 +30,11 @@ def fixture_run(repo, *, phase='original', run_id='synthetic-original'):
                           text='Synthetic claim: 12.5 dollars; source says 10 dollars.')
             claim = dict(index=1, status='verified', quote=source['text'],
                          verdict='contradicted' if i == 0 else 'insufficient_evidence',
-                         program_checks=[dict(actual_value=10, stated_value=12.5)])
+                         program_checks=[dict(claim_type='value', actual_value=10, stated_value=12.5,
+                                              evidence_valid=True, program_verdict='contradicted',
+                                              evidence_ids=['E1'], gap=dict(gap_kind='relative', gap=.25))],
+                         evidence=[dict(id='E1', value=10, unit='USD', period='FY2025', metric='revenue',
+                                        form='10-K', tier='L1')])
             report = dict(status=status, claims=[claim] if i < 2 else [],
                           cost_usd=cost, wall_clock_s=seconds)
             write_json(folder/(stem+'-input.json'), source)
@@ -78,6 +82,12 @@ def test_all_attempts_feed_coverage_cost_verdicts_and_p50(tmp_path):
     assert all(file_hash(tmp_path/p) == h for p,h in data['provenance'].items())
     example, = data['examples']
     assert example['handle'] == '@synthetic_user'
+    assert example['verdict'] == 'contradicted'
+    assert example['primary'] == dict(check_index=0, claim_type='value', verdict='contradicted',
+                                      value=10, unit='USD', period='FY2025', metric='revenue',
+                                      source_label='10-K', source_tier='L1', evidence_ids=['E1'],
+                                      gap=dict(gap_kind='relative', gap=.25))
+    assert example['comparisons'] == []
     assert 'https://' not in json.dumps(example)
     write_json(tmp_path/rw.OUTPUT, data)
     assert rw.load_snapshot(tmp_path, require_ready=True) == data
@@ -85,6 +95,74 @@ def test_all_attempts_feed_coverage_cost_verdicts_and_p50(tmp_path):
     path.write_text(path.read_text()+'\n')
     with pytest.raises(BuildError, match='Stale real-world snapshot'):
         rw.load_snapshot(tmp_path, require_ready=True)
+
+
+@pytest.mark.parametrize('field', ['actual_value', 'evidence_ids', 'evidence_valid', 'program_verdict',
+                                 'source', 'unit', 'period', 'metric', 'form', 'tier', 'source_value'])
+def test_selected_example_fails_without_recorded_checked_value_or_source(tmp_path, field):
+    descriptor = fixture_run(tmp_path)
+    item = read_json(descriptor)['sources'][1]['items'][0]
+    path = descriptor.parent/item['report']
+    report = read_json(path)
+    claim = report['claims'][0]
+    if field == 'source':
+        claim['evidence'] = []
+    elif field == 'source_value':
+        claim['evidence'][0]['value'] = 999
+    elif field in ('unit', 'period', 'metric', 'form', 'tier'):
+        del claim['evidence'][0][field]
+    else:
+        del claim['program_checks'][0][field]
+    write_json(path, report)
+    with pytest.raises(BuildError, match='example lacks recorded checked evidence'):
+        rw.compile_evidence(tmp_path)
+
+
+def test_example_copies_recorded_differences_and_source_label_without_arithmetic(tmp_path):
+    descriptor = fixture_run(tmp_path)
+    item = read_json(descriptor)['sources'][1]['items'][0]
+    path = descriptor.parent/item['report']
+    report = read_json(path)
+    claim = report['claims'][0]
+    check = claim['program_checks'][0]
+    # Intentionally arbitrary recorded values prove this compiler does not calculate a ratio or gap.
+    check.update(ratio=7.12345, difference=19.23456)
+    check['gap']['gap'] = .87654321
+    claim['evidence'][0].update(form='8-K', exhibit='99.1', tier='L4')
+    write_json(path, report)
+    example, = rw.compile_evidence(tmp_path)['examples']
+    assert example['primary']['ratio'] == check['ratio']
+    assert example['primary']['difference'] == check['difference']
+    assert example['primary']['gap'] == check['gap']
+    assert example['primary']['source_label'] == '8-K Ex 99.1'
+    assert example['primary']['source_tier'] == 'L4'
+
+
+def test_real_examples_bind_values_and_growth_to_the_selected_recorded_claim():
+    data = rw.compile_evidence(v3.ROOT)
+    core, sandisk = data['examples']
+    assert (core['item_id'], core['claim_index'], core['verdict']) == ('T03', 2, 'contradicted')
+    assert (core['primary']['value'], core['primary']['unit'], core['primary']['period'],
+            core['primary']['source_label'], core['primary']['source_tier']) == (
+                229000000., 'USD', 'FY2023', '10-K', 'L1')
+    assert core['primary']['gap']['gap'] == 9.
+    assert (sandisk['item_id'], sandisk['claim_index'], sandisk['verdict']) == ('T09', 1, 'contradicted')
+    assert (sandisk['primary']['value'], sandisk['primary']['unit'], sandisk['primary']['period'],
+            sandisk['primary']['source_label'], sandisk['primary']['source_tier'],
+            sandisk['primary']['verdict']) == (11031000000., 'USD', 'FY2027Q1', '10-Q', 'L2', 'supported')
+    growth, = sandisk['comparisons']
+    assert (growth['value'], growth['unit'], growth['verdict']) == (377.946273830156, '%', 'contradicted')
+    assert growth['gap'] == dict(gap_kind='points', gap=354.946273830156, direction_wrong=False,
+                               severity='severe', score=0.)
+    for example in data['examples']:
+        report = read_json(v3.ROOT/example['report'])
+        claim = next(c for c in report['claims'] if c['index'] == example['claim_index'])
+        for value in [example['primary'], *example['comparisons']]:
+            recorded = claim['program_checks'][value['check_index']]
+            assert value['value'] == recorded['actual_value']
+            assert value['gap'] == recorded['gap']
+            assert value['evidence_ids'] == recorded['evidence_ids']
+        assert data['provenance'][example['report']] == file_hash(v3.ROOT/example['report'])
 
 
 def fixture_runner_receipts(repo):

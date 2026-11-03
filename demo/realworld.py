@@ -73,6 +73,69 @@ def item_input(path: Path, item_id: str) -> dict:
     return matches[0]
 
 
+def checked_values(claim: dict, report: str) -> dict:
+    """Bind recorded program values to their cited source metadata; never rerun a check."""
+    def fail(detail):
+        raise BuildError(f'{report}: example lacks recorded checked evidence: {detail}.')
+
+    def finite(value, field):
+        if type(value) not in (int, float) or not math.isfinite(value):
+            fail(field)
+        return value
+
+    values = []
+    for index, check in enumerate(claim['program_checks']):
+        kind = check.get('claim_type')
+        if (kind not in ('value', 'change_pct') or check.get('evidence_valid') is not True or
+                check.get('program_verdict') not in VERDICTS):
+            fail(f'program check {index} type/validity/verdict')
+        ids = check.get('evidence_ids')
+        if not isinstance(ids, list) or not ids or any(not isinstance(i, str) for i in ids):
+            fail(f'program check {index} evidence IDs')
+        evidence = claim.get('evidence', [])
+        if any(not any(e.get('id') == identifier for e in evidence) for identifier in ids):
+            fail(f'program check {index} missing cited evidence')
+        # Change checks can cite the same ID for current and comparison periods.
+        current = [e for e in evidence if e.get('id') in ids and e.get('role') != 'comparison']
+        if len(current) != 1:
+            fail(f'program check {index} ambiguous/missing primary source')
+        source, = current
+        for field in ('unit', 'period', 'metric', 'form', 'tier'):
+            if not isinstance(source.get(field), str) or not source[field].strip():
+                fail(f'program check {index} source {field}')
+        if source['tier'] not in ('L1', 'L2', 'L3', 'L4'):
+            fail(f'program check {index} source tier')
+        value = finite(check.get('actual_value'), f'program check {index} actual_value')
+        if kind == 'value' and value != finite(source.get('value'), 'primary source value'):
+            fail(f'program check {index} value does not match its cited source')
+        label = source['form']
+        if source.get('exhibit'):
+            label += ' Ex ' + str(source['exhibit'])
+        compiled = dict(check_index=index, claim_type=kind, verdict=check['program_verdict'],
+                        value=value, unit='%' if kind == 'change_pct' else source['unit'],
+                        period=source['period'], metric=source['metric'],
+                        source_label=label, source_tier=source['tier'], evidence_ids=deepcopy(ids))
+        if kind == 'change_pct':
+            text = check.get('text', '')
+            if not isinstance(text, str) or not text.strip():
+                fail(f'program check {index} change description')
+            compiled['text'] = text
+        if 'gap' in check:
+            gap = check['gap']
+            if not isinstance(gap, dict) or gap.get('gap_kind') not in ('relative', 'points', 'absolute'):
+                fail(f'program check {index} gap kind')
+            finite(gap.get('gap'), f'program check {index} gap')
+            compiled['gap'] = deepcopy(gap)
+        for field in ('ratio', 'difference'):
+            if field in check:
+                compiled[field] = finite(check[field], f'program check {index} {field}')
+        values.append(compiled)
+    primary = [v for v in values if v['claim_type'] == 'value']
+    if len(primary) != 1:
+        fail('exactly one checked primary value required')
+    return dict(primary=primary[0], comparisons=[v for v in values if v is not primary[0]])
+
+
 def compile_evidence(repo: Path) -> dict:
     folders = sorted(p for p in (repo / 'docs/evidence').glob('real-world-*') if p.is_dir())
     if not folders:
@@ -177,7 +240,7 @@ def compile_evidence(repo: Path) -> dict:
                     examples.append(dict(run_id=run_id, phase=phase, source_id=source_id,
                                          item_id=item['id'], handle=author, paraphrase=text,
                                          verdict=claim['verdict'], report=report_source, input=input_source,
-                                         claim_index=claim['index']))
+                                         claim_index=claim['index'], **checked_values(claim, report_source)))
             count = len(items)
             source_rows.append(dict(id=source_id, label={'news': 'DappGo News', 'threads': 'Threads'}[source_id],
                                     items_tested=count, items_checked=checked, items_with_errors=errors,

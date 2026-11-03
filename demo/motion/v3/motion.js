@@ -195,11 +195,12 @@
   }
   function realworld(t,s) {
     const data=D.realworld;
-    if(!data||data.status!=='ready')return chrome('Real-world saved runs')+
-      title('Evidence pending.')+surface(64,332,1792,532)+
+    const wrap=html=>`<section data-realworld>${html}</section>`;
+    if(!data||data.status!=='ready')return wrap(chrome('Real-world saved runs')+
+      title('Evidence pending.')+surface(64,332,1792,484)+
       box(96,368,1728,152,'DappGo News + Threads','body mint',80)+
-      box(96,548,1728,200,'No recorded results yet.\nMetrics and narration require the evidence compiler.','source-text muted',64)+
-      box(96,780,1728,68,'Preview only · not ready for film','body amber',56);
+      box(96,548,1728,168,'No recorded results yet.\nMetrics and narration require the evidence compiler.','source-text muted',64)+
+      box(96,740,1728,68,'Preview only · not ready for film','body amber',56));
     const pages=[];
     for(const run of data.runs)for(const source of run.sources) {
       const examples=data.examples.filter(e=>e.run_id===run.id&&e.source_id===source.id);
@@ -207,18 +208,60 @@
     }
     const index=Math.min(pages.length-1,Math.floor(clamp((t-s.start)/(s.end-s.start))*pages.length));
     const {run,source:r,example}=pages[index],posthoc=run.phase!=='original';
-    let html=chrome(posthoc?'Post-hoc · frozen text':'Saved · coverage ≠ accuracy')+title(r.label)+
-      box(64,316,1792,72,esc(`${r.items_tested} tested · ${r.items_checked}/${r.items_tested} checked (${r.coverage_percent.toFixed(1)}%) · ${r.items_with_errors} errors`),'body muted',56);
+    let html=chrome(posthoc?'Post-hoc · frozen text':'Saved · coverage ≠ accuracy')+
+      box(64,176,1792,116,esc(r.label),'headline',96)+
+      box(64,300,1792,54,esc(`${r.items_tested} tested · ${r.items_checked}/${r.items_tested} checked (${r.coverage_percent.toFixed(1)}%) · ${r.items_with_errors} errors`),'body muted',44);
     for(const [i,key] of ['supported','contradicted','insufficient_evidence'].entries()) {
       const x=64+i*608,label=['Supported','Contradicted','Insufficient'][i],color=['mint','coral','amber'][i];
-      html+=box(x,396,576,68,label,'body '+color,56)+
-        box(x,464,576,116,n(r.verdict_counts[key],96),color,96);
+      html+=box(x,360,200,116,n(r.verdict_counts[key],96),color,96)+
+        box(x+216,386,360,52,label,'body '+color,40);
     }
-    html+=box(64,584,1792,68,esc(`~$${r.cost_per_item_usd.toFixed(4)}/item · p50 ${r.p50_latency_s.toFixed(2)}s · claim verdicts`),'body muted',56)+
-      box(64,656,1792,68,esc(example?(example.handle||'Public news item')+(posthoc?' · OCR/ASR not retested':' · paraphrase'):
-        posthoc?'Frozen text · OCR/ASR not retested':'Program-check coverage · not accuracy'),'body mint',56)+
-      box(64,728,1792,144,esc(example?example.paraphrase:'Saved development runs. Coverage is not verdict accuracy.'),'source-text',56);
-    return html;
+    html+=box(64,478,1792,48,esc(`~$${r.cost_per_item_usd.toFixed(4)}/item · p50 ${r.p50_latency_s.toFixed(2)}s · claim verdicts`),'body muted',36);
+    if(example) {
+      const primary=example.primary,color={contradicted:'coral',supported:'mint',insufficient_evidence:'amber'}[example.verdict],
+        label={contradicted:'CONTRADICTED',supported:'SUPPORTED',insufficient_evidence:'INSUFFICIENT'}[example.verdict];
+      html+=surface(64,532,1792,284)+
+        box(88,544,1728,44,esc((example.handle||'Public news item')+' · paraphrase of post'+
+          (posthoc?' · OCR/ASR not retested':'')),'body muted',36)+
+        box(88,594,1728,110,esc(example.paraphrase),'source-text',44)+
+        box(88,714,330,48,esc(label),'claim-verdict '+color,36)+
+        box(442,714,1382,48,esc(`SEC: ${recordedValue(primary)} ${primary.period} ${primary.metric} (${primary.source_label} · ${primary.source_tier})`),'body',36)+
+        box(88,768,1728,44,esc(recordedComparison(example)),'body muted',36);
+    } else {
+      html+=box(64,574,1792,68,esc(posthoc?'Frozen text · OCR/ASR not retested':
+        'Program-check coverage · not accuracy'),'body mint',56)+
+        box(64,654,1792,144,'Saved development runs. Coverage is not verdict accuracy.','source-text',56);
+    }
+    return wrap(html);
+  }
+  const decimal=(value,places=1)=>Number(value.toFixed(places)).toString();
+  function recordedValue(check) {
+    if(check.unit==='USD') {
+      // Presentation units only; the compiler copies the checked amount unchanged.
+      for(const [scale,suffix] of [[1e9,'B'],[1e6,'M'],[1e3,'K']])
+        if(Math.abs(check.value)>=scale)return '$'+decimal(check.value/scale,3)+suffix;
+      return '$'+decimal(check.value,2);
+    }
+    return check.unit==='%'?decimal(check.value)+'%':decimal(check.value,3)+' '+check.unit;
+  }
+  function recordedGap(check) {
+    const recorded=[];
+    if(check.ratio!==undefined)recorded.push(`Recorded ratio: ${decimal(check.ratio,3)}×`);
+    if(check.difference!==undefined)recorded.push(`Recorded difference: ${decimal(check.difference,3)} ${check.unit}`);
+    if(recorded.length)return recorded.join(' · ');
+    if(!check.gap)return '';
+    const {gap,gap_kind:kind}=check.gap;
+    return kind==='relative'?`Recorded relative gap: ${decimal(gap,3)}×`:
+      `Recorded gap: ${decimal(gap)} ${kind==='points'?'pp':check.unit}`;
+  }
+  function recordedComparison(example) {
+    const changes=example.comparisons.map(check=>{
+      const label=/year.over.year/i.test(check.text)?'YoY':'Change';
+      return `${label} ${check.value>0?'+':''}${recordedValue(check)} · ${recordedGap(check)}`;
+    });
+    if(changes.length)return (example.primary.verdict==='supported'?
+      example.primary.metric[0].toUpperCase()+example.primary.metric.slice(1)+' supported · ':'')+changes.join(' · ');
+    return recordedGap(example.primary);
   }
   function qrSVG() {
     const {matrix,quiet_zone:q}=D.qr,size=matrix.length+2*q;
@@ -290,7 +333,8 @@
     let html=typeof output==='string'?output:output.html;
     if(broll) {boxes=[];html=besideBroll(scene.renderer,t,shot,events)+B.panel(broll);}
     stage.className='v3';stage.innerHTML=html;stage.dataset.shot=shot.id;stage.dataset.time=String(t);
-    window.frame={time:t,shot:shot.id,boxes,broll,hover:typeof output==='string'?null:output.state};
+    window.frame={time:t,shot:shot.id,boxes:boxes.map(b=>({...b,realworld:scene.renderer==='realworld'})),broll,
+      hover:typeof output==='string'?null:output.state};
     return {time:t,shot:shot.id};
   };
   window.timeline=D.timing;window.motionReady=true;window.beatAt=beat.beatAt;window.nearestBeat=beat.nearestBeat;

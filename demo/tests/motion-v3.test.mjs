@@ -41,9 +41,9 @@ test('all v007 frames obey safe rectangles/type floors without a browser',()=>{
   for(let i=0;i<Math.ceil(window.timeline.duration*30);i++) {
     window.seek(i/30);
     for(const box of window.frame.boxes) {
-      assert(box.size>=56,box.text);
+      assert(box.size>=(box.realworld?36:56),box.text);
       assert(box.x>=64&&box.x+box.w<=1856,box.text);
-      assert(box.y>=64&&box.y+box.h<=880,box.text);
+      assert(box.y>=64&&box.y+box.h<=(box.realworld?816:880),box.text);
       if(box.className==='headline')assert(box.size>=96);
     }
     assert(!/NaN|Infinity|undefined/.test(stage.innerHTML));
@@ -334,11 +334,17 @@ function syntheticWorld() {
     items_tested:3,items_checked:2,items_with_errors:1,coverage_percent:66.7,
     verdict_counts:{supported:0,contradicted:1,insufficient_evidence:1},
     cost_per_item_usd:.03,p50_latency_s:3}));
+  const primary={check_index:0,claim_type:'value',verdict:'contradicted',value:10,unit:'USD',
+    period:'FY2025',metric:'revenue',source_label:'10-K',source_tier:'L1',evidence_ids:['E1'],
+    gap:{gap_kind:'relative',gap:.25}};
   return {status:'ready',runs:[{id:'synthetic-original',phase:'original',sources},
     {id:'synthetic-fix',phase:'posthoc_frozen_text_recheck',sources:[sources[1]]}],
-    examples:[{run_id:'synthetic-original',source_id:'news',handle:null,paraphrase:'Synthetic news paraphrase.'},
-      {run_id:'synthetic-original',source_id:'threads',handle:'@synthetic_user',paraphrase:'Synthetic: 12.5 claimed; source says 10.'},
-      {run_id:'synthetic-fix',source_id:'threads',handle:'@synthetic_user',paraphrase:'Synthetic known-case frozen-text recheck.'}]};
+    examples:[{run_id:'synthetic-original',source_id:'news',handle:null,paraphrase:'Synthetic news paraphrase.',
+      verdict:'supported',primary,comparisons:[]},
+      {run_id:'synthetic-original',source_id:'threads',handle:'@synthetic_user',paraphrase:'Synthetic: 12.5 claimed; source says 10.',
+        verdict:'contradicted',primary,comparisons:[]},
+      {run_id:'synthetic-fix',source_id:'threads',handle:'@synthetic_user',paraphrase:'Synthetic known-case frozen-text recheck.',
+        verdict:'insufficient_evidence',primary,comparisons:[]}]};
 }
 
 test('compiled-source renderer covers metrics, handles and separately labeled rechecks within the reserve',()=>{
@@ -351,6 +357,11 @@ test('compiled-source renderer covers metrics, handles and separately labeled re
     assert.match(text,/3 tested · 2\/3 checked \(66\.7%\) · 1 errors/);
     assert.match(text,/Supported/);assert.match(text,/Contradicted/);assert.match(text,/Insufficient/);
     assert.match(text,/\$0\.0300\/item · p50 3\.00s/);
+    assert.match(text,/SEC: \$10 FY2025 revenue \(10-K · L1\)/);
+    assert.match(text,/Recorded relative gap: 0\.25×/);
+    const badge=window.frame.boxes.find(b=>b.className.includes('claim-verdict'));
+    const colors={SUPPORTED:'mint',CONTRADICTED:'coral',INSUFFICIENT:'amber'};
+    assert(badge&&badge.className.includes(colors[badge.text]));
     assert(!/https?:\/\/|threads\.(net|com)\//.test(stage.innerHTML));
     if(/DappGo News/.test(text))seen.add('news');
     if(/Threads/.test(text))seen.add('threads');
@@ -359,7 +370,7 @@ test('compiled-source renderer covers metrics, handles and separately labeled re
     } else assert.match(text,/coverage ≠ accuracy/);
     for(const box of window.frame.boxes) {
       assert(box.x>=64&&box.x+box.w<=1856);
-      assert(box.y>=64&&box.y+box.h<=880);assert(box.size>=56);
+      assert(box.y>=64&&box.y+box.h<=816);assert(box.size>=36);
     }
     expected.push([t,stage.innerHTML]);
   }
@@ -367,6 +378,53 @@ test('compiled-source renderer covers metrics, handles and separately labeled re
   assert(expected.some(([,html])=>html.includes('@synthetic_user')));
   for(const [t,html] of expected.reverse()) {
     window.seek(0);window.seek(t);assert.equal(stage.innerHTML,html);
+  }
+});
+
+test('recorded real-world cards show the contradicted claims and their primary SEC values',()=>{
+  const {window,stage}=page(),D=window.MOTION_DATA,
+    shot=window.timeline.shots.find(s=>s.id==='v311b-realworld');
+  const expected=[
+    ['@taiwandata · paraphrase of post',"CoreWeave's annual revenue in 2023 was $2.29 billion.",
+      'SEC: $229M FY2023 revenue (10-K · L1)','Recorded relative gap: 9×'],
+    ['@sky311091 · paraphrase of post','SanDisk fiscal 2027 Q1 revenue was $11.0 billion, up 23% year over year.',
+      'SEC: $11.031B FY2027Q1 revenue (10-Q · L2)',
+      'Revenue supported · YoY +377.9% · Recorded gap: 354.9 pp']];
+  for(const [i,texts] of expected.entries()) {
+    const frame=D.keyframes.find(f=>f.position==='realworld-page-'+(i+2));
+    window.seek(frame.t);
+    const text=plain(stage.innerHTML).replace(/&#39;/g,"'");
+    for(const value of texts)assert(text.includes(value),value);
+    assert.match(stage.innerHTML,/class="abs claim-verdict coral"/);
+    assert.match(text,/CONTRADICTED/);
+    for(const b of window.frame.boxes)assert(b.size>=36&&b.y+b.h<=816,b.text);
+  }
+  for(const page of [1,4]) {
+    window.seek(D.keyframes.find(f=>f.position==='realworld-page-'+page).t);
+    assert.match(stage.innerHTML,/Coverage is not verdict accuracy/);
+    assert(!stage.innerHTML.includes('claim-verdict'));
+    if(page===4)assert.match(stage.innerHTML,/Post-hoc · frozen text/);
+  }
+  assert(shot.end-shot.start<12);
+});
+
+test('real-world cards use recorded ratios and differences without calculating them from values',()=>{
+  const {window,stage}=page('',d=>{
+    d.realworld=syntheticWorld();
+    Object.assign(d.realworld.examples[1].primary,{ratio:7.12345,difference:19.23456});
+  });
+  const shot=window.timeline.shots.find(s=>s.id==='v311b-realworld');
+  window.seek((shot.start+shot.end)/2);
+  assert.match(plain(stage.innerHTML),/Recorded ratio: 7\.123× · Recorded difference: 19\.235 USD/);
+});
+
+test('real-world geometry guard enforces the 36px floor, overflow and 64px caption clearance',()=>{
+  const good={text:[{text:'SEC: $229M FY2023 revenue (10-K · L1)',realworld:true,fontSize:36,
+    left:442,right:1824,top:714,bottom:762,textLeft:442,textRight:1400,textTop:714,textBottom:758}],numbers:[]};
+  assertV3Layout(good);
+  for(const change of [m=>m.text[0].fontSize=35,m=>m.text[0].bottom=817,
+    m=>m.text[0].textRight=1825,m=>m.text[0].textBottom=763,m=>m.text[0].realworld=false]) {
+    const bad=structuredClone(good);change(bad);assert.throws(()=>assertV3Layout(bad));
   }
 });
 

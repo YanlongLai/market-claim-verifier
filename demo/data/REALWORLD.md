@@ -74,6 +74,24 @@ recorded program checks. Paraphrases are short, human-reviewed text, not generat
 tokens must occur in that example's input/check evidence; a changed decimal magnitude fails. The original
 URL stays in evidence, while only its `@handle` is compiled/displayed. No full post URL is shown on screen.
 
+Each example also copies its recorded verdict and a `primary` checked value: program-check index,
+amount, unit, fiscal period, metric, source label/tier and evidence IDs. Other numeric checks appear
+in `comparisons`. Recorded `gap`, `ratio` and `difference` fields are copied unchanged when present;
+the compiler never calculates a correction, ratio or new verdict. Missing checked values, source
+metadata or cited evidence fail compilation. Display rounding and dollar abbreviations affect only
+presentation. A relative gap is labeled as a gap, not converted into a claim/source ratio.
+
+The selected CoreWeave example records **$229M FY2023 revenue (10-K · L1)** and a relative gap of **9**.
+The SanDisk example records **$11.031B FY2027Q1 revenue (10-Q · L2)**: its rounded revenue is supported,
+but the checked YoY growth is **377.946273830156%**, with a recorded **354.946273830156 percentage-point**
+gap. Both overall claim verdicts are `contradicted`. These are saved program results, not new checks.
+
+The renderer shows the post attribution, paraphrase, verdict chip, SEC value and recorded comparison
+inside one claim card. Real-world text is at least **36 px** at 1920×1080 and ends by **y=816**,
+leaving **64 px** above the bottom 200 px caption band. The host's DOM layout guard checks these
+limits, text overflow and overlap before saving every keyframe. Pages without examples retain the
+coverage caveat and the separate post-hoc/OCR-ASR labels.
+
 The narration template is:
 
 > Saved real-world runs: {news} news items, {threads} Threads posts. Coverage is not accuracy.
