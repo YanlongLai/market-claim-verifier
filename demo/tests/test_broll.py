@@ -92,7 +92,7 @@ def test_frame_validation_rejects_wrong_dimensions(tmp_path):
 
 
 def test_proposed_hold_trims_preserve_speech_and_fail_on_preview_or_overrun():
-    story = yaml.safe_load((broll.ROOT/'demo/storyboard-v3.yaml').read_text())
+    story = yaml.safe_load((broll.ROOT/'demo/tests/fixtures/storyboard-v007.yaml').read_text())
     # Synthetic grid/measurements; never relies on the host's local narration outputs.
     beats = [i/2 for i in range(400)]
     lengths = [6, 14, 12, 28, 15, 12, 25, 13, 13, 17, 13, 10]
@@ -127,7 +127,7 @@ def test_proposed_hold_trims_preserve_speech_and_fail_on_preview_or_overrun():
 
 def test_shotlist_budget_replays_retained_voice_measurements_without_host_outputs():
     from test_review_v007 import LENGTHS, pauses
-    story = yaml.safe_load((broll.ROOT/'demo/storyboard-v3.yaml').read_text())
+    story = yaml.safe_load((broll.ROOT/'demo/tests/fixtures/storyboard-v007.yaml').read_text())
     voices = [dict(voice_s=n, key=s['id']) for s,n in zip(story['scenes'], LENGTHS)]
     data = motion_v3.compile_data(broll.ROOT, story, voices=voices,
                                  analyze=lambda scene, voice: pauses(scene['id'], voice['voice_s']))

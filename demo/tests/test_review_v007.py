@@ -11,7 +11,7 @@ import motion_v3 as v3
 from motion_cues import review_frame_plan, snap_event
 from pipeline import BuildError, read_json, write_json
 
-STORY = yaml.safe_load((v3.ROOT/v3.STORY).read_text())
+STORY = yaml.safe_load((v3.ROOT/'demo/tests/fixtures/storyboard-v007.yaml').read_text())
 LENGTHS = [4.16, 7.68, 7.12, 11.04, 10, 6.64, 19.44, 9.84, 9.84, 12, 12, 8.16]
 # Retained pause-aligned host intervals reviewed by AI2; no word-alignment claim.
 SPEECH = {

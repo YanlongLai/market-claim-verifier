@@ -1,21 +1,24 @@
-# Demo v010 — proposed shot list v4 (Owner gate 1 pending)
+# Demo v010 — approved shot list v4
 
-Proposal for the existing [v3 film](storyboard-v3.yaml), with the five Owner-approved local Wan trials.
-Clip approval is recorded in the brief; this **shot placement and hold-trim plan is not yet approved**.
+Owner approval for this placement/hold-trim plan is recorded in the v010 implementation brief.
+The [v3 storyboard](storyboard-v3.yaml) now applies these targets and the five approved local Wan trials.
 The [v3 shot list](SHOTLIST-v3.md), [narration](NARRATION-v007.txt), voice identity, music offset,
 program verdicts, evidence and result qualifiers remain the baseline. No film, keyframes, TTS, push or upload
 was produced here. Claude performs host preparation and rendering after the applicable Owner gates.
 
-**Proposed total: 177.2611 s (2:57.2611)** including an **11.3081 s real-world-test placeholder**.
+**Approved target total: 177.2611 s (2:57.2611)** including an **11.3081 s real-world-test placeholder**.
 Baseline v009: 178.1899 s. These are beat-snapped proposal times calculated from the retained v009
-voice lengths, not newly measured media. [broll.py plan](broll.py) repeats the calculation from the host's
-local timing. Changing measured narration may invalidate the budget; the planner refuses an overrun.
+voice lengths, not newly measured media. The original [broll.py planner](broll.py) is replayed against
+the [historical storyboard fixture](tests/fixtures/storyboard-v007.yaml); active host preparation now uses
+the approved targets directly. Changing measured narration may invalidate the budget; preparation refuses
+an overrun or a changed real-world reserve.
 
-## Proposed timeline
+## Approved target timeline
 
 All times are absolute seconds. The existing twelve spoken paragraphs remain verbatim.
 The hold column is silence **after** narration; Hover also keeps its nine-second narration lead.
-The placeholder carries no narration yet. It is an editing reserve, not a claim that real-world results exist.
+The real-world scene occupies the reserve below. Until its evidence is committed, the data-driven preview
+carries no metrics or narration; the compiler and host film preparation fail clearly.
 
 | Scene | Proposed in–out (s) | Duration | Silent tail | Picture and reason |
 | --- | --- | --- | --- | --- |
@@ -30,22 +33,28 @@ The placeholder carries no narration yet. It is an editing reserve, not a claim 
 | Synthetic audio input | 113.5920–126.5487 | 12.9567 | 3.1167 | Same measured waveform, ASR quote, fiscal quarter and unverified-speaker label; remove 0.0697 s of tail. |
 | Original v2 results | 126.5487–142.8259 | 16.2772 | 4.2772 | **think-approve-s11** starts on the open-weights results cue (about 133–137 s here). Thinking → approval accompanies already revealed recorded results; the three provider rows, 357 claims and includes-dev/corrected-gold qualifiers remain in HTML beside it. It conveys completion of this saved check, not universal reliability. Remove 0.7895 s of tail. |
 | Limits | 142.8259–155.7130 | 12.8871 | 0.8871 | Keep every limitation and coverage qualifier. Beat rounding adds 0.1161 s; no narration is shortened. |
-| **PLACEHOLDER — coming real-world test** | **155.7130–167.0211** | **11.3081** | — | **DappGo News + Threads results. Picture, sources, consented/public input, verdicts and any narration are pending.** Budget roughly 5 s per real view plus transition/read time. Do not fill with invented results or present this reserve as a completed test. Replace this slot after its evidence and shot are reviewed. |
+| **Real-world saved runs · evidence pending** | **155.7130–167.0211** | **11.3081** | ≥1.3081 | **Data-driven News + Threads pages:** tested items, program-check coverage, claim verdict counts, cost/item and p50; up to three retained paraphrases with @handle only. Separate frozen-text post-hoc rechecks. No metrics or narration until the compiler validates the evidence. New locked-voice line ≤10 s. |
 | CTA / QR | 167.0211–177.2611 | 10.2400 | 2.0800 | Keep the URL, matching QR, hackathon line and Meta credits through the last frame. Beat rounding adds 0.0697 s. |
 
 The twelve original scenes recover **12.2369 s** through shorter silent tails and beat rounding;
 the reserve consumes **11.3081 s**, leaving the film **0.9288 s shorter** than v009 and **2.7389 s below 3:00**.
-No narration is accelerated or cut. **Exact narration changes: none.** A future spoken real-world-test line
-would need to fit entirely inside its reserved slot and receive its own approval/captions.
+No narration is accelerated or cut. **Exact narration changes: none.** The [new narration template](data/REALWORLD.md) is filled from retained run counts and must measure ≤10 s
+inside the reserve. Original narration remains verbatim; the new line gets its own captions and locked-voice clip.
 
 ## Frame and layout contract
 
-The committed implementation adds all five inserts to the **existing 178.1899 s v3 timeline now**;
-it does not silently apply this proposed hold edit or manufacture the coming shot. Existing measured
-`data.js`, `timing.json`, `keyframes.json`, `beats.json` and `cues.json` remain local and uncommitted.
-The proposal reserves time on paper/JSON; the placeholder is not yet a thirteenth rendered scene.
-After gate 1, Claude applies the approved edit targets and real-world-shot material on the host, then
-rebuilds timing/cues/captions from the cached voice. Running current v3 preparation alone retains the baseline cuts.
+The committed storyboard now applies the approved hold edit and includes `v311b-realworld` as its
+thirteenth scene at 155.7130–167.0211 s. [The committed preview](motion/v3/preview-data.js) is generated
+without narration/media and shows an explicit pending state while [the snapshot](data/realworld.json)
+has no results. [The evidence compiler](realworld.py) never fills missing numbers.
+
+The Apple [trace compiler](agent_trace.py) binds the real post-check requests, tool name, E1 fact ID,
+cost and latency. A frame-addressed ribbon replaces the Hover title after point-glow exits and before
+narration starts; it adds no time and never presents request latency as measured tool execution time.
+
+Existing measured `data.js`, `timing.json`, `keyframes.json`, `beats.json` and `cues.json` remain local and
+uncommitted. Host preparation rebuilds them from cached voice plus the single new line after real-world
+compilation. The page falls back to the committed preview when old host outputs have stale source hashes.
 
 [Source records and prompts](prompts/broll/README.md) retain all five clips and the exact model revision,
 seeds, steps, source dimensions and first/last references. Every clip drops source frames 45–48:
@@ -61,44 +70,7 @@ Offline tests cover source-frame boundaries, forward/reverse seeks and every 30 
 
 ## Host commands (Claude; not executed for this source handoff)
 
-From the repository root, first preserve the host's existing timing outputs in a new, unused directory:
-
-```sh
-mkdir demo/out/v010-v009-timing-backup
-cp demo/motion/v3/data.js demo/motion/v3/timing.json demo/motion/v3/keyframes.json \
-  demo/motion/v3/beats.json demo/motion/v3/cues.json demo/out/v010-v009-timing-backup/
-uv run --project demo python demo/broll.py check
-uv run --project demo python demo/broll.py plan \
-  --timing demo/out/v010-v009-timing-backup/timing.json --out demo/out/v010-proposed-timeline.json
-uv run --project demo python demo/broll.py extract --ffmpeg /opt/homebrew/bin/ffmpeg
-```
-
-The extraction step runs FFmpeg only on the five approved MP4s. It creates native PNGs and hash receipts,
-not a film. It performs no generation. Reuse the locked clone clips and measure their existing WAVs:
-
-```sh
-uv run --project demo python demo/build.py --storyboard demo/storyboard-v3.yaml \
-  review-frames --prepare-only --out demo/out/review-v010-plan
-```
-
-This requires cached narration, runs pause detection and refreshes local timing, cues, subtitle SRT and the review
-plan. It never synthesizes missing voice; missing cache entries fail. **Do not use `--force` or `build.py voice`**
-for this unchanged script. After gate 1, apply the approved targets/reserved shot before using these commands
-for the edited timeline. They currently prepare the baseline v3 sequence. Keep the five local outputs uncommitted.
-
-For gate 2 keyframes on the current baseline, use the saved host data and sample each insert directly:
-
-```sh
-node demo/motion/render.mjs --entry v3/index.html \
-  --t 0 --t 1.4 --t 2.8 --t 3 --t 33.4 --t 80.4 --t 88.4 --t 146.1 \
-  --out demo/out/keyframes-v010-broll
-uv run --project demo python demo/build.py --storyboard demo/storyboard-v3.yaml \
-  keyframes --out demo/out/keyframes-v010-scenes
-```
-
-The eight insert times are for **v009 measured timing only**. Recompute after any retiming:
-load the v3 page, inspect `BrollLayer.windows(MOTION_DATA)`, and sample each start, start+1.4,
-play_end−0.01 and exit boundary. Use all-scene keyframes plus captioned review frames for phone readability,
-robot continuity, exact stamp contact, spoken cues and evidence labels. Offline tests do not assert those visual checks passed.
-Owner gates continue shot list → keyframes → 2 s motion test → full render → independent review → publication.
-No rendering, pushing or uploading was performed during this source task.
+Use the [v010 handoff](REVISION-v010.md#host-commands) for the evidence compiler, the single new voice line,
+measured timing, keyframes, motion checks and eventual full render. The first evidence command fails until
+real-world records exist. The old v009 absolute insert samples must be recomputed after retiming.
+No voice synthesis, keyframe capture, film render, push or upload was performed in this source task.

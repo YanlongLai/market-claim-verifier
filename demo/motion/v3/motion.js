@@ -1,7 +1,12 @@
 /* Synchronous, frame-addressable product reenactment of committed run reports. */
 (function () {
   'use strict';
-  const D=window.MOTION_DATA,L=window.MotionLogic,H=window.HoverSource,B=window.BrollLayer;
+  // Old local host outputs may precede this edit. Prefer the committed preview
+  // until host preparation supplies the matching storyboard AND evidence hashes.
+  const preview=window.MOTION_PREVIEW,host=window.MOTION_DATA;
+  const matches=preview&&host&&host.revision===preview.revision&&
+    Object.entries(preview.product.provenance).every(([p,hash])=>host.product.provenance[p]===hash);
+  const D=window.MOTION_DATA=preview&&!matches?preview:host,L=window.MotionLogic,H=window.HoverSource,B=window.BrollLayer;
   const stage=document.getElementById('stage'), P=D.product.base;
   const {escapeHTML:esc,highlightQuote:quote,clamp,progress}=L;
   const beat=L.beatHelpers(D.beats.beats_s);
@@ -57,6 +62,20 @@
     }
     return anchors.at(-1)[1];
   }
+  function traceRibbon(t,s) {
+    const trace=D.agent_trace;
+    if(!trace)return null;
+    const start=B.windows(D).find(c=>c.id==='point-glow-s29').end,end=s.voice_start;
+    if(t<start||t>=end)return null;
+    const age=clamp((t-start)/(end-start))*trace.latency_s;
+    const step=trace.steps.find(r=>age<r.start_s+r.latency_s)||trace.steps.at(-1);
+    const detail=`Step ~$${step.cost_usd.toFixed(5)} · ${step.latency_s.toFixed(3)}s · model request`;
+    return {state:{index:step.index,name:step.name,fact_ids:step.fact_ids,age,start,end},html:
+      box(64,172,1792,80,esc(`${step.index}/${trace.steps.length}  ${step.name} → ${step.fact_ids.join(' · ')}`),'body mint trace-step',64)+
+      box(64,252,1792,68,esc(step===trace.steps.at(-1)?
+        `Run ~$${trace.cost_usd.toFixed(5)} · ${trace.latency_s.toFixed(3)}s · saved, compressed`:detail),'body muted trace-detail',56)+
+      box(64,324,1792,4,`<div class="trace-fill" style="width:${100*clamp((age-step.start_s)/step.latency_s)}%"></div>`,'trace-track',56)};
+  }
   function hover(t,s,e) {
     const year={x:480,y:464,width:608,height:138},quarter={x:1184,y:464,width:640,height:138},
       targets={post:year,row:year,quarter,compare:{x:1184,y:632,width:640,height:74},
@@ -71,7 +90,8 @@
       ['post',targets.post,state.postAlpha,visor],
       ['year',targets.row,state.yearAlpha,{x:quarter.x+quarter.width/2,y:quarter.y+quarter.height/2}]]
       .map(([name,target,alpha,origin])=>`<polygon data-beam="${name}" points="${H.conePoints(origin,target,4)}" fill="url(#beam)" opacity="${alpha}"/>`).join('');
-    let html=chrome('Hover · SEC audit')+title('The year is not the quarter.')+
+    const ribbon=traceRibbon(t,s);
+    let html=chrome('Hover · SEC audit')+(ribbon?ribbon.html:title('The year is not the quarter.'))+
       surface(448,332,672,408)+surface(1152,332,704,408)+
       `<img class="abs texture" style="left:448px;top:332px;width:1408px;height:408px" src="${ASSET}stamp-paper.webp" alt="">`+
       `<svg class="spotlight" viewBox="0 0 1920 880" aria-hidden="true"><defs><mask id="stage-hole"><rect x="448" y="332" width="1408" height="408" fill="white"/><rect x="464" y="440" width="640" height="190" rx="16" fill="black"/><rect x="1168" y="440" width="672" height="190" rx="16" fill="black"/></mask></defs><rect x="448" y="332" width="1408" height="408" fill="#050b10" mask="url(#stage-hole)" opacity="${state.shade*.65}"/></svg>`+
@@ -89,7 +109,7 @@
       `<div class="abs" style="left:${x}px;top:${y}px;width:${w}px;height:${h}px;transform:${state.transform}">${images}</div>`+
       `<img class="abs fx" src="${ASSET}fx/lens-flare.webp" alt="" style="left:${visor.x-64}px;top:${visor.y-10}px;width:128px;height:20px;opacity:${Math.max(state.postAlpha,state.filingAlpha)*.45}">`+
       `<img class="hover-thruster" src="${ASSET}auditor/H/thruster-${thruster}.webp" alt="" style="left:${x+w*state.nozzle[0]/704-40}px;top:${y+h*state.nozzle[1]/744-10+state.bob+state.dip}px;transform:scale(${thruster==='burst'?1.6:1})">`;
-    return {html,state:{...state,siteAge:age,struck}};
+    return {html,state:{...state,siteAge:age,struck,trace:ribbon?ribbon.state:null}};
   }
   function proof(t,s,e) {
     const F=P.filing;
@@ -173,6 +193,33 @@
       box(96,780,800,68,'Speaker labels: '+(R.speaker_identity.verified?'verified':'unverified'),'body',56)+
       box(920,780,904,68,'L4: regression test · not held out','body muted',56);
   }
+  function realworld(t,s) {
+    const data=D.realworld;
+    if(!data||data.status!=='ready')return chrome('Real-world saved runs')+
+      title('Evidence pending.')+surface(64,332,1792,532)+
+      box(96,368,1728,152,'DappGo News + Threads','body mint',80)+
+      box(96,548,1728,200,'No recorded results yet.\nMetrics and narration require the evidence compiler.','source-text muted',64)+
+      box(96,780,1728,68,'Preview only · not ready for film','body amber',56);
+    const pages=[];
+    for(const run of data.runs)for(const source of run.sources) {
+      const examples=data.examples.filter(e=>e.run_id===run.id&&e.source_id===source.id);
+      for(const example of examples.length?examples:[null])pages.push({run,source,example});
+    }
+    const index=Math.min(pages.length-1,Math.floor(clamp((t-s.start)/(s.end-s.start))*pages.length));
+    const {run,source:r,example}=pages[index],posthoc=run.phase!=='original';
+    let html=chrome(posthoc?'Post-hoc · frozen text':'Saved · coverage ≠ accuracy')+title(r.label)+
+      box(64,316,1792,72,esc(`${r.items_tested} tested · ${r.items_checked}/${r.items_tested} checked (${r.coverage_percent.toFixed(1)}%) · ${r.items_with_errors} errors`),'body muted',56);
+    for(const [i,key] of ['supported','contradicted','insufficient_evidence'].entries()) {
+      const x=64+i*608,label=['Supported','Contradicted','Insufficient'][i],color=['mint','coral','amber'][i];
+      html+=box(x,396,576,68,label,'body '+color,56)+
+        box(x,464,576,116,n(r.verdict_counts[key],96),color,96);
+    }
+    html+=box(64,584,1792,68,esc(`~$${r.cost_per_item_usd.toFixed(4)}/item · p50 ${r.p50_latency_s.toFixed(2)}s · claim verdicts`),'body muted',56)+
+      box(64,656,1792,68,esc(example?(example.handle||'Public news item')+(posthoc?' · OCR/ASR not retested':' · paraphrase'):
+        posthoc?'Frozen text · OCR/ASR not retested':'Program-check coverage · not accuracy'),'body mint',56)+
+      box(64,728,1792,144,esc(example?example.paraphrase:'Saved development runs. Coverage is not verdict accuracy.'),'source-text',56);
+    return html;
+  }
   function qrSVG() {
     const {matrix,quiet_zone:q}=D.qr,size=matrix.length+2*q;
     const d=matrix.flatMap((row,y)=>[...row].flatMap((bit,x)=>bit==='1'?[`M${x+q},${y+q}h1v1h-1z`]:[])).join('');
@@ -234,7 +281,7 @@
     throw new Error('No product composition for B-roll shot: '+scene);
   }
   const renderers={disclosure,apple,extract,hover,proof,program,l4,
-    screenshot:(t,s,e)=>input(t,s,e,false),audio:(t,s,e)=>input(t,s,e,true),results,limits,cta};
+    screenshot:(t,s,e)=>input(t,s,e,false),audio:(t,s,e)=>input(t,s,e,true),results,limits,realworld,cta};
   window.seek=function(time) {
     const shot=L.shotAt(D.timing,time),index=D.timing.shots.indexOf(shot),t=clamp(time,0,D.timing.duration);
     const scene=D.scenes[index],events=Object.fromEntries(D.cues._events[shot.id].map(e=>[e.event,e.t]));

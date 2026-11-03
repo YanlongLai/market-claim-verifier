@@ -228,3 +228,34 @@ collision was fixed in `2f0bbf2` and checked on the v009 review frame. The narra
 (research/non-commercial licence) and the film is not committed; host-measured timing files remain local outputs.
 
 The Owner later said v009 is not the final version and asked not to upload yet; further improvements are planned before the 2026-11-04 deadline.
+
+## 2026-11-02 — v010 real-world reserve and Apple trace source handoff
+
+Applied the Owner-approved SHOTLIST-v4 hold targets to storyboard-v3.yaml: 13 scenes, 177.2611 s,
+including v311b-realworld at 155.7130–167.0211 s. Original narration, locked voice/music and result
+qualifiers remain unchanged. Added an offline real-world compiler and committed pending snapshot,
+per-source renderer, separately labeled frozen-text recheck pages, numeric/provenance checks, and a
+real Apple request/tool/E1 cost/latency ribbon inside Hover's existing narration lead. No real-world-*
+records exist here yet; compilation fails clearly, and host voice/film preparation refuses pending data.
+
+A separate committed preview lets offline tests exercise the new scene without changing the five local
+host timing outputs. Source tests preserve the historical v007 storyboard and replay retained voice
+lengths plus a synthetic ten-second new line. Keyframe plans include all recorded ribbon steps and
+compiled real-world pages. The full verifier now includes the v3 Node suite explicitly.
+
+Test attempts/logs and host-file hash receipt are retained under docs/evidence/demo-v010/. Standard
+verification passed 929 product tests, 171 demo tests and 83 Node tests, figure rebuild/check, three
+byte-identical data outputs and Markdown links. A subsequent unindexed-recheck regression brought the
+final demo suite to 172 passing tests; final source-copy verification is recorded separately there.
+An initial disconnected dependency bootstrap failed on a missing locked wheel; that attempt is retained.
+
+Direct staging could not create the shared Git index.lock outside the writable workspace. The authorized
+fallback is an isolated local commit/bundle with the requested Claude Opus 5.5 co-author footer. No host
+voice synthesis, frame capture, film render, push or upload was performed. REVISION-v010.md has the
+one-line voice, timing, keyframe and eventual render commands; actual evidence/voice/visual review remains
+pending. This is source work, not a new film export or publication approval.
+
+Final source-copy verification: `UV_OFFLINE=1 sh scripts/verify.sh` passed 929 product tests,
+172 demo tests, all 83 Node tests and every rebuild/link gate. The isolated copy used committed base
+v3 timing/data/keyframes and had no untracked host beats/cues or narration cache. All five original
+host output hashes still matched at delivery. Full log: docs/evidence/demo-v010/verify-03-committed-preview.log.

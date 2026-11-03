@@ -10,7 +10,8 @@ function page(search='',editData=()=>{}) {
   const stage={dataset:{},style:{},innerHTML:''};
   const context={document:{getElementById:()=>stage},URLSearchParams,location:{search}};
   context.window=context;context.globalThis=context;vm.createContext(context);
-  for(const file of ['logic.js','v3/hover-source.js','v3/data.js','v3/broll-data.js','v3/broll.js']) vm.runInContext(read('../motion/'+file),context);
+  for(const file of ['logic.js','v3/hover-source.js','v3/preview-data.js','v3/broll-data.js','v3/broll.js']) vm.runInContext(read('../motion/'+file),context);
+  context.MOTION_DATA=context.MOTION_PREVIEW;
   editData(context.MOTION_DATA);
   vm.runInContext(read('../motion/v3/motion.js'),context);
   return {window:context,stage};
@@ -305,8 +306,99 @@ test('B-roll is recomputed from shifted scene/cue times and refuses invalid host
   broken.cues._events[first.shot]=[];
   assert.throws(()=>B.windows(broken),/Missing B-roll cue/);
   const early=structuredClone(D);
-  early.timing.shots.find(s=>s.id==='v304-hover').voice_start=32.5;
+  const earlyHover=early.timing.shots.find(s=>s.id==='v304-hover');
+  earlyHover.voice_start=earlyHover.start+1;
   assert.throws(()=>B.windows(early),/narration lead/);
+});
+
+test('v010 pending real-world reserve is honest, silent and deterministic',()=>{
+  const {window,stage}=page(),D=window.MOTION_DATA,
+    shot=D.timing.shots.find(s=>s.id==='v311b-realworld');
+  assert.equal(D.timing.shots.length,13);assert.equal(D.timing.duration,177.2611);
+  assert(Math.abs(shot.end-shot.start-11.3081)<1e-7);
+  assert.equal(D.realworld.status,'awaiting_evidence');
+  assert.equal(D.cues[shot.id].length,0);
+  for(const t of [shot.start,shot.end-.001,shot.start+5,shot.start]) {
+    window.seek(t);
+    assert.match(stage.innerHTML,/Evidence pending/);
+    assert.match(stage.innerHTML,/No recorded results yet/);
+    assert(!/p50|cost.per.item|tested ·|@/.test(stage.innerHTML));
+  }
+});
+
+function syntheticWorld() {
+  const sources=['news','threads'].map(id=>({id,label:id==='news'?'DappGo News':'Threads',
+    items_tested:3,items_checked:2,items_with_errors:1,coverage_percent:66.7,
+    verdict_counts:{supported:0,contradicted:1,insufficient_evidence:1},
+    cost_per_item_usd:.03,p50_latency_s:3}));
+  return {status:'ready',runs:[{id:'synthetic-original',phase:'original',sources},
+    {id:'synthetic-fix',phase:'posthoc_frozen_text_recheck',sources:[sources[1]]}],
+    examples:[{run_id:'synthetic-original',source_id:'news',handle:null,paraphrase:'Synthetic news paraphrase.'},
+      {run_id:'synthetic-original',source_id:'threads',handle:'@synthetic_user',paraphrase:'Synthetic: 12.5 claimed; source says 10.'},
+      {run_id:'synthetic-fix',source_id:'threads',handle:'@synthetic_user',paraphrase:'Synthetic known-case frozen-text recheck.'}]};
+}
+
+test('compiled-source renderer covers metrics, handles and separately labeled rechecks within the reserve',()=>{
+  const {window,stage}=page('',d=>d.realworld=syntheticWorld()),
+    shot=window.timeline.shots.find(s=>s.id==='v311b-realworld'),seen=new Set();
+  const expected=[];
+  for(let i=0;i<Math.ceil((shot.end-shot.start)*30);i++) {
+    const t=Math.min(shot.end-.00001,shot.start+i/30);window.seek(t);
+    const text=plain(stage.innerHTML);
+    assert.match(text,/3 tested · 2\/3 checked \(66\.7%\) · 1 errors/);
+    assert.match(text,/Supported/);assert.match(text,/Contradicted/);assert.match(text,/Insufficient/);
+    assert.match(text,/\$0\.0300\/item · p50 3\.00s/);
+    assert(!/https?:\/\/|threads\.(net|com)\//.test(stage.innerHTML));
+    if(/DappGo News/.test(text))seen.add('news');
+    if(/Threads/.test(text))seen.add('threads');
+    if(/Post-hoc · frozen text/.test(text)) {
+      seen.add('recheck');assert.match(text,/OCR\/ASR not retested/);
+    } else assert.match(text,/coverage ≠ accuracy/);
+    for(const box of window.frame.boxes) {
+      assert(box.x>=64&&box.x+box.w<=1856);
+      assert(box.y>=64&&box.y+box.h<=880);assert(box.size>=56);
+    }
+    expected.push([t,stage.innerHTML]);
+  }
+  assert.deepEqual([...seen].sort(),['news','recheck','threads']);
+  assert(expected.some(([,html])=>html.includes('@synthetic_user')));
+  for(const [t,html] of expected.reverse()) {
+    window.seek(0);window.seek(t);assert.equal(stage.innerHTML,html);
+  }
+});
+
+test('Apple ribbon animates recorded steps and fact IDs during the existing lead with seek-stable cost/latency',()=>{
+  const {window,stage}=page(),D=window.MOTION_DATA,T=D.agent_trace,
+    shot=D.timing.shots.find(s=>s.id==='v304-hover'),
+    start=window.BrollLayer.windows(D).find(c=>c.id==='point-glow-s29').end,end=shot.voice_start;
+  assert(start<end&&end-shot.start>=9);
+  const samples=T.steps.map(step=>start+(step.start_s+step.latency_s*.5)/T.latency_s*(end-start));
+  const expected=samples.map((t,i)=>{
+    window.seek(t);const step=T.steps[i],state=window.frame.hover.trace;
+    assert.equal(window.frame.broll,null);
+    assert.equal(state.index,step.index);assert.equal(state.name,step.name);
+    assert.deepEqual(Array.from(state.fact_ids),Array.from(step.fact_ids));
+    assert(stage.innerHTML.includes(step.name));assert.match(stage.innerHTML,/E1/);
+    assert.match(stage.innerHTML,/class="trace-fill"/);
+    if(i===T.steps.length-1) {
+      assert(stage.innerHTML.includes('$'+T.cost_usd.toFixed(5)));
+      assert(stage.innerHTML.includes(T.latency_s.toFixed(3)+'s'));
+    } else {
+      assert(stage.innerHTML.includes('$'+step.cost_usd.toFixed(5)));
+      assert(stage.innerHTML.includes(step.latency_s.toFixed(3)+'s'));
+    }
+    for(const b of window.frame.boxes.filter(b=>/trace-/.test(b.className))) {
+      assert(b.x>=64&&b.x+b.w<=1856&&b.y>=150&&b.y+b.h<=332);
+      if(b.text)assert(b.h>=b.size*1.2);
+    }
+    return [stage.innerHTML,JSON.stringify(window.frame)];
+  });
+  for(let i=samples.length-1;i>=0;i--) {
+    window.seek(shot.end-.001);window.seek(samples[i]);
+    assert.deepEqual([stage.innerHTML,JSON.stringify(window.frame)],expected[i]);
+  }
+  window.seek(end);assert.equal(window.frame.hover.trace,null);
+  assert.equal(window.timeline.duration,177.2611);
 });
 
 test('host B-roll guard rejects text occlusion, subtitle incursions and wrong decoded PNGs',()=>{

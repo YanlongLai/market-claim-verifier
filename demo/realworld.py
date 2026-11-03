@@ -1,0 +1,230 @@
+"""Offline compiler for the v010 real-world shot; absent evidence is an error.
+
+Each real-world-* run exposes demo-shot.json (see data/REALWORLD.md). Reports,
+inputs, failures and selected examples remain in the evidence directory. Nothing
+here calls a model, downloads a post, or assigns gold/accuracy labels.
+"""
+from __future__ import annotations
+
+import argparse
+from copy import deepcopy
+import json
+import math
+from pathlib import Path
+import re
+from statistics import median
+import sys
+from urllib.parse import unquote, urlparse
+
+from pipeline import BuildError, file_hash, read_json
+
+ROOT = Path(__file__).resolve().parents[1]
+OUTPUT = 'demo/data/realworld.json'
+SCENE = 'v311b-realworld'
+VERDICTS = ('supported', 'contradicted', 'insufficient_evidence')
+NARRATION_TEMPLATE = 'Saved real-world runs: {news} news items, {threads} Threads posts. Coverage is not accuracy.'
+MAX_VOICE_S = 10.
+PENDING = dict(schema_version=1, status='awaiting_evidence',
+               reason='News and Threads real-world run records have not been committed.',
+               sources=[], examples=[], narration=None, provenance={})
+
+
+def encoded(value: dict) -> str:
+    return json.dumps(value, ensure_ascii=False, indent=2, allow_nan=False) + '\n'
+
+
+def number(value, name: str) -> float:
+    if type(value) not in (int, float) or not math.isfinite(value) or value < 0:
+        raise BuildError(f'Real-world {name} must be a recorded nonnegative finite number.')
+    return value
+
+
+def record_path(repo: Path, folder: Path, relative: str) -> Path:
+    path = (folder / relative).resolve()
+    evidence = (repo / 'docs/evidence').resolve()
+    if (not path.is_relative_to(evidence) or
+            not path.relative_to(evidence).parts[0].startswith('real-world-') or not path.is_file()):
+        raise BuildError(f'Real-world evidence path is missing or outside real-world-*: {relative}')
+    return path
+
+
+def handle(url: str) -> str | None:
+    parsed = urlparse(url)
+    if parsed.scheme != 'https' or parsed.hostname not in ('www.threads.net', 'threads.net',
+                                                          'www.threads.com', 'threads.com'):
+        return None
+    match = re.match(r'/@([A-Za-z0-9_.]{1,30})(?:/|$)', unquote(parsed.path))
+    return '@' + match[1] if match else None
+
+
+def numeric_tokens(text: str) -> set[str]:
+    # Preserve decimal magnitudes: 1.144 cannot be supplied by a 114.4 source.
+    return set(re.findall(r'(?<![\w.])-?\d[\d,]*(?:\.\d+)?', text))
+
+
+def compile_evidence(repo: Path) -> dict:
+    folders = sorted(p for p in (repo / 'docs/evidence').glob('real-world-*') if p.is_dir())
+    if not folders:
+        raise BuildError('Missing real-world evidence: expected docs/evidence/real-world-*/demo-shot.json '
+                         'with News + Threads item reports. No metrics or narration were generated.')
+    missing = [p.name for p in folders if not (p/'demo-shot.json').is_file()]
+    if missing:
+        raise BuildError('Unindexed real-world evidence: '+', '.join(missing)+
+                         '. Every original/post-hoc run requires demo-shot.json; rechecks cannot be ignored.')
+    descriptors = [p/'demo-shot.json' for p in folders]
+    provenance, runs, examples, run_ids = {}, [], [], set()
+
+    def retain(path):
+        relative = path.relative_to(repo).as_posix()
+        provenance[relative] = file_hash(path)
+        return relative
+
+    for descriptor in descriptors:
+        config = read_json(descriptor)
+        run_id, phase = config['run_id'], config['phase']
+        if (config.get('schema_version') != 1 or run_id in run_ids or
+                phase not in ('original', 'posthoc_frozen_text_recheck')):
+            raise BuildError(f'{descriptor}: invalid/duplicate run or phase.')
+        run_ids.add(run_id)
+        retain(descriptor)
+        source_rows = []
+        for source in config['sources']:
+            source_id = source['id']
+            if source_id not in ('news', 'threads') or any(r['id'] == source_id for r in source_rows):
+                raise BuildError(f'{run_id}: expected unique news/threads sources.')
+            items = source['items']
+            if not items:
+                raise BuildError(f'{run_id}/{source_id}: no retained attempts.')
+            totals = dict.fromkeys(VERDICTS, 0)
+            checked, errors, costs, latencies, seen = 0, 0, [], [], set()
+            for item in items:
+                if item['id'] in seen:
+                    raise BuildError(f'{run_id}: duplicate item {item["id"]}.')
+                seen.add(item['id'])
+                report_path = record_path(repo, descriptor.parent, item['report'])
+                input_path = record_path(repo, descriptor.parent, item['input'])
+                report, original = read_json(report_path), read_json(input_path)
+                report_source, input_source = retain(report_path), retain(input_path)
+                # Includes partial/failed items: a missing spend/latency receipt is not zero.
+                costs.append(number(report.get('cost_usd'), 'cost_usd'))
+                latencies.append(number(report.get('wall_clock_s'), 'wall_clock_s'))
+                status = report.get('status', 'completed')
+                if status not in ('completed', 'partial', 'failed', 'error', 'provider_error'):
+                    raise BuildError(f'{report_source}: unrecognized recorded status {status!r}.')
+                claims = report.get('claims', [])
+                errors += bool(status != 'completed' or report.get('error') or
+                               any(c.get('status') in ('failed', 'error', 'provider_error') for c in claims))
+                # Trace files stay in evidence; bind them into the snapshot receipt too.
+                trace_paths = [report.get('extraction_trace')] + [c.get('trace_path') for c in claims]
+                for trace_path in trace_paths:
+                    if trace_path:
+                        retain(record_path(repo, report_path.parent, trace_path))
+                verified = [c for c in claims if c.get('status') == 'verified']
+                for claim in verified:
+                    if claim.get('verdict') not in VERDICTS:
+                        raise BuildError(f'{report_source}: unknown recorded verdict.')
+                    totals[claim['verdict']] += 1
+                program_checked = [c for c in verified if c.get('program_checks')]
+                checked += bool(program_checked)
+                for example in item.get('examples', []):
+                    claim = next((c for c in verified if c['index'] == example['claim_index']), None)
+                    if not claim or not claim.get('program_checks'):
+                        raise BuildError(f'{report_source}: example lacks a recorded program check.')
+                    text = example['paraphrase']
+                    # Curated paraphrases are retained alongside raw evidence, never authored by this compiler.
+                    if (not isinstance(text, str) or not text.strip() or len(text) > 100 or
+                            '\n' in text or re.search(r'https?://|@[\w.]', text)):
+                        raise BuildError('Real-world example must be a short paraphrase without a URL/handle.')
+                    evidence_text = json.dumps([original, claim], ensure_ascii=False)
+                    if not numeric_tokens(text) <= numeric_tokens(evidence_text):
+                        raise BuildError(f'{report_source}: example contains a number absent from its evidence.')
+                    author = handle(original.get('url', '')) if source_id == 'threads' else None
+                    if source_id == 'threads' and not author:
+                        raise BuildError(f'{input_source}: Threads example needs its retained public URL.')
+                    examples.append(dict(run_id=run_id, phase=phase, source_id=source_id,
+                                         item_id=item['id'], handle=author, paraphrase=text,
+                                         verdict=claim['verdict'], report=report_source, input=input_source,
+                                         claim_index=claim['index']))
+            count = len(items)
+            source_rows.append(dict(id=source_id, label={'news': 'DappGo News', 'threads': 'Threads'}[source_id],
+                                    items_tested=count, items_checked=checked, items_with_errors=errors,
+                                    coverage_percent=round(100*checked/count, 1), verdict_counts=totals,
+                                    cost_usd=sum(costs), cost_per_item_usd=sum(costs)/count,
+                                    p50_latency_s=median(latencies)))
+        if phase == 'original' and {r['id'] for r in source_rows} != {'news', 'threads'}:
+            raise BuildError('Original real-world run must contain both News and Threads results.')
+        if phase != 'original' and not config.get('rechecks_run'):
+            raise BuildError('Post-hoc run must name the original run it rechecks.')
+        runs.append(dict(id=run_id, phase=phase, rechecks_run=config.get('rechecks_run'), sources=source_rows))
+    originals = [r for r in runs if r['phase'] == 'original']
+    if len(originals) != 1:
+        raise BuildError('Real-world shot needs exactly one original run; disambiguate its demo-shot.json.')
+    for run in runs:
+        if run['phase'] != 'original' and run['rechecks_run'] != originals[0]['id']:
+            raise BuildError('Post-hoc recheck does not reference the retained original run.')
+    runs.sort(key=lambda r: (r['phase'] != 'original', r['id']))
+    if len(examples) > 3:
+        raise BuildError('Real-world shot supports at most three explicitly selected examples.')
+    sources = sorted(originals[0]['sources'], key=lambda r: r['id'])
+    counts = {r['id']: r['items_tested'] for r in sources}
+    narration = NARRATION_TEMPLATE.format(**counts)
+    if len(narration.split()) > 22:
+        raise BuildError('Real-world narration exceeds the ten-second template word budget.')
+    return dict(schema_version=1, status='ready', sources=sources, runs=runs, examples=examples,
+                coverage_definition='Items with at least one program-checked claim / all attempted items; '
+                                    'coverage is not accuracy. Verdict counts are claims, not items.',
+                latency_definition='Median item wall time, including retained partial/failed attempts.',
+                cost_definition='Recorded report estimates/reservations including all retained item attempts; '
+                                'not provider invoices.',
+                recheck_note='Post-hoc frozen-text rechecks do not retest OCR/ASR or establish fresh accuracy.',
+                narration=narration, narration_template=NARRATION_TEMPLATE, max_voice_s=MAX_VOICE_S,
+                provenance=dict(sorted(provenance.items())))
+
+
+def load_snapshot(repo: Path, *, require_ready=False) -> dict:
+    data = read_json(repo / OUTPUT)
+    if data == PENDING:
+        if require_ready:
+            raise BuildError('Real-world evidence pending. Run demo/realworld.py after committing News + Threads '
+                             'records; do not synthesize the placeholder or render this preview.')
+        return data
+    expected = compile_evidence(repo)
+    if data != expected:
+        raise BuildError('Stale real-world snapshot. Run uv run --project demo python demo/realworld.py.')
+    return data
+
+
+def resolve_story(repo: Path, story: dict, *, require_ready=False) -> dict:
+    story = deepcopy(story)
+    scenes = [s for s in story['scenes'] if s.get('data_source') == OUTPUT]
+    if not scenes:
+        return story
+    data = load_snapshot(repo, require_ready=require_ready)
+    for scene in scenes:
+        scene['narration'] = data['narration'] or 'Real-world evidence pending.'
+        scene['evidence_pending'] = data['status'] != 'ready'
+    return story
+
+
+def main() -> int:
+    cli = argparse.ArgumentParser(description=__doc__)
+    cli.add_argument('--check', action='store_true')
+    args = cli.parse_args()
+    try:
+        data = compile_evidence(ROOT)
+        target = ROOT / OUTPUT
+        if args.check:
+            if not target.is_file() or target.read_text() != encoded(data):
+                raise BuildError('Stale real-world snapshot; run demo/realworld.py.')
+        else:
+            target.write_text(encoded(data))
+        print(f'Real-world {"checked" if args.check else "compiled"}: {len(data["sources"])} sources; '
+              f'narration ≤ {MAX_VOICE_S:g} s must be measured with the locked voice.')
+        return 0
+    except (BuildError, KeyError, TypeError, ValueError, OSError) as error:
+        print(f'ERROR: real-world compiler: {error}', file=sys.stderr)
+        return 1
+
+
+if __name__ == '__main__':
+    sys.exit(main())
