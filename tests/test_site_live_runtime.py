@@ -74,7 +74,7 @@ const budget=()=>({day:'2026-11-02',daily_limit_usd:3,daily_remaining_usd:remain
 // Keep rollover timers inert in this DOM test; the real browser owns them.
 context.setTimeout=(fn,ms)=>ms>32000?0:setTimeout(fn,ms);context.clearTimeout=clearTimeout;
 context.fetch=async (url,opts)=>{
-  if(url==='data/live-demo.json')return {ok:true,json:async()=>demo};
+  if(url==='/data/live-demo.json')return {ok:true,json:async()=>demo};
   if(url==='/api/budget'){budgetReads++;assert.equal(opts.cache,'no-store');return {ok:true,json:async()=>budget()};}
   requests.push({url,opts});
   return new Promise(resolve=>{finish=resolve;});
@@ -122,7 +122,7 @@ context.sessionStorage={
 context.localStorage.setItem=()=>assert.fail('password must never enter localStorage');
 let requests=[],finish;
 context.fetch=async (url,opts)=>{
-  if(url==='data/live-demo.json')return {ok:true,json:async()=>demo};
+  if(url==='/data/live-demo.json')return {ok:true,json:async()=>demo};
   if(url==='/api/budget'){
     assert.ok(!JSON.stringify(opts).includes(credential));
     return {ok:true,json:async()=>({day:'2026-11-02',daily_limit_usd:3,daily_remaining_usd:3,

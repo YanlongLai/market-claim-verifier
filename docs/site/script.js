@@ -715,7 +715,7 @@
     });
     refreshLiveBudget();
     document.addEventListener("visibilitychange", () => { if (!document.hidden) refreshLiveBudget(); });
-    fetch("data/live-demo.json", { cache: "no-store" }).then((response) => {
+    fetch("/data/live-demo.json", { cache: "no-store" }).then((response) => {
       if (!response.ok) throw new Error("missing trace");
       return response.json();
     }).then((data) => {
