@@ -1,18 +1,16 @@
 """Offline protections for phase-2 sampling, gold, privacy and shared budgets."""
-import importlib
 import json
 import os
 from pathlib import Path
 import subprocess
 import sys
 
-import pytest
-
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts/real_world"))
 from prepare_threads import sample
 from build_threads_gold import build
 from run_threads import public_media
+from report_threads import summarize
 
 
 def test_selection_is_order_independent_and_preserves_media_and_types():
@@ -73,3 +71,56 @@ def test_public_media_projection_never_copies_verbatim_text(tmp_path):
                  {"command": ["claimcheck", "ingest"], "started_at": "a", "finished_at": "b", "exit_code": 0}, 1, {"meta": .01})
     assert all(secret_text not in p.read_text() for p in public.rglob("*.json"))
     assert json.loads((public / "requests.json").read_text())[0]["reservation"]["reservation_id"] == "r1"
+
+
+def test_compound_false_support_keeps_true_components_separate_from_scope():
+    cases = [{"id": "compound"}, {"id": "scope"}, {"id": "missing"}]
+    gold = {"compound": {"gold_basis": "primary_release", "gold_verdict": "contradicted"},
+            "scope": {"gold_basis": "scope_policy", "gold_verdict": "insufficient_evidence"},
+            "missing": {"gold_basis": "primary_release", "gold_verdict": "supported"}}
+    row = {"status": "completed", "verdict": "contradicted", "any_supported": True,
+           "path": "post", "cost_usd": .1, "wall_seconds": 2, "verified_claims": 2, "proposed_count": 3}
+    results = {"compound": {**row, "id": "compound"}, "scope": {**row, "id": "scope"}}
+    block = summarize(cases, gold, results)
+    assert block["primary_factual_accuracy"]["numerator"] == 1
+    assert block["primary_factual_accuracy"]["denominator"] == 2
+    assert block["primary_false_supported_rate"]["numerator"] == 0
+    assert block["any_supported_component_on_negative_post_NOT_false_support"]["numerator"] == 1
+    assert block["false_supported_vs_scope_policy"]["numerator"] == 1
+    assert block["extraction_item_coverage"]["denominator"] == 3
+    assert block["failure_items"] == 1
+    results["compound"]["verdict"] = "supported"
+    assert summarize(cases, gold, results)["primary_false_supported_rate"]["numerator"] == 1
+
+
+def test_complete_budget_stop_report_keeps_every_pair_and_no_media_accuracy(tmp_path):
+    import shutil
+    from report_threads import build as report
+    parent, out = tmp_path, tmp_path / "threads"
+    out.mkdir()
+    source = ROOT / "docs/evidence/real-world-2026-11-02"
+    for name in ("REPORT.md", "metrics.json"):
+        shutil.copyfile(source / name, parent / name)
+    for name in ("claims.jsonl", "gold.jsonl", "media-gold.jsonl", "media-inputs.json"):
+        shutil.copyfile(source / "threads" / name, out / name)
+    cases = [json.loads(line) for line in (out / "claims.jsonl").read_text().splitlines()]
+    def stopped(id, path):
+        return {"id": id, "path": path, "status": "budget_stopped", "cost_usd": 0, "wall_seconds": 0, "model_calls": 0}
+    for provider in ("baseten", "fireworks", "meta"):
+        for path in ("agent", "post"):
+            target = out / provider / path
+            target.mkdir(parents=True)
+            (target / "results.jsonl").write_text("".join(json.dumps(stopped(c["id"], path)) + "\n" for c in cases))
+        target = out / "media" / provider
+        target.mkdir(parents=True)
+        (target / "results.jsonl").write_text("".join(json.dumps(stopped(id, "ingest")) + "\n" for id in ("M01", "M02")))
+    (out / "ledger.jsonl").write_text("")
+    (out / "RUN_END.json").write_text("{}")
+    result = report(out)
+    assert result["systems"]["baseten/agent"]["budget_stopped_items"] == 78
+    assert result["systems"]["baseten/agent"]["primary_factual_accuracy"]["rate"] == 0
+    assert result["systems"]["meta/ingest"]["primary_factual_accuracy"]["rate"] is None
+    assert result["total_cost_usd"] == 0
+    before = (parent / "REPORT.md").read_bytes()
+    report(out)
+    assert (parent / "REPORT.md").read_bytes() == before
