@@ -18,6 +18,18 @@ def test_live_submit_busy_success_failure_and_language_switch(language):
 
 
 @pytest.mark.parametrize("language", ["en", "zh"])
+@pytest.mark.parametrize("blocked", [False, True])
+def test_password_session_storage_errors_and_public_demo(language, blocked):
+    run_check(PASSWORD, language=language, blocked=blocked)
+
+
+@pytest.mark.parametrize("language", ["en", "zh"])
+@pytest.mark.parametrize("remembered", [False, True])
+def test_password_restores_only_from_current_tab_session(language, remembered):
+    run_check(RESTORE_PASSWORD, language=language, remembered=remembered)
+
+
+@pytest.mark.parametrize("language", ["en", "zh"])
 @pytest.mark.parametrize("viewport", [390, 768, 1440])
 def test_budget_remaining_progress_low_warning_midnight_and_stops(language, viewport):
     run_check(BUDGET, language=language, viewport=viewport)
@@ -71,10 +83,11 @@ context.liveTest.setupLive();
 await new Promise(resolve=>setImmediate(resolve));
 const input=tree.querySelector('#live-input'),form=tree.querySelector('#live-form'),submit=tree.querySelector('#live-submit');
 input.value=demo.input;
+tree.querySelector('#live-password').value='offline-password';
 const pending=form.events.submit({preventDefault(){}});
 assert.equal(submit.disabled,true);assert.equal(form.getAttribute('aria-busy'),'true');
 assert.equal(requests.length,1);assert.equal(requests[0].url,'/api/check');
-assert.deepEqual(JSON.parse(requests[0].opts.body),{text:demo.input});
+assert.deepEqual(JSON.parse(requests[0].opts.body),{text:demo.input,password:'offline-password'});
 remaining=2.41;
 finish({ok:true,json:async()=>({...demo,mode:'live'})});await pending;
 assert.equal(budgetReads,2);
@@ -93,6 +106,85 @@ assert.ok(tree.querySelector('#live-status').textContent.includes('重設'));
 context.stamps.setLanguage('en');
 assert.ok(tree.querySelector('#live-status').textContent.includes('00:00 UTC'));
 await form.events.submit({preventDefault(){}});assert.equal(requests.length,2);
+"""
+
+PASSWORD = r"""
+context.URL=URL;context.AbortController=AbortController;
+context.setTimeout=()=>0;context.clearTimeout=()=>{};
+const demo=JSON.parse(readFileSync(root+'/docs/site/data/live-demo.json','utf8'));
+const key='claimcheck.livePassword',credential='offline-password-marker';
+const saved=new Map(),writes=[];
+context.sessionStorage={
+  getItem(key){if(config.blocked)throw new Error('blocked');return saved.get(key)||null;},
+  setItem(key,value){if(config.blocked)throw new Error('blocked');writes.push({key,value});saved.set(key,value);},
+  removeItem(key){if(config.blocked)throw new Error('blocked');saved.delete(key);}
+};
+context.localStorage.setItem=()=>assert.fail('password must never enter localStorage');
+let requests=[],finish;
+context.fetch=async (url,opts)=>{
+  if(url==='data/live-demo.json')return {ok:true,json:async()=>demo};
+  if(url==='/api/budget'){
+    assert.ok(!JSON.stringify(opts).includes(credential));
+    return {ok:true,json:async()=>({day:'2026-11-02',daily_limit_usd:3,daily_remaining_usd:3,
+      resets_at:'2099-11-03T00:00:00Z',status:'ready'})};
+  }
+  requests.push({url,opts});
+  return new Promise(resolve=>{finish=resolve;});
+};
+const password=tree.querySelector('#live-password'),form=tree.querySelector('#live-form');
+password.value='';password.focus=()=>{};
+context.liveTest.setupLive();await new Promise(resolve=>setImmediate(resolve));
+const input=tree.querySelector('#live-input');input.value=demo.input;
+assert.equal(password.value,'');assert.equal(password.getAttribute('type'),'password');
+assert.equal(password.getAttribute('autocomplete'),'off');assert.equal(form.getAttribute('method'),'post');
+assert.ok(tree.querySelector('#recorded-trace').textContent.includes('FY2026Q3'));
+assert.ok(tree.querySelector('#live-budget-text').textContent.includes('$3.00'));
+assert.ok(/password-protected|需要密碼/.test(tree.querySelector('#live-password-note').textContent));
+await form.events.submit({preventDefault(){}});assert.equal(requests.length,0);
+password.value=credential;
+const denied=form.events.submit({preventDefault(){}});
+assert.equal(password.disabled,true);assert.equal(writes.length,0);
+finish({ok:false,status:401,json:async()=>({error:'unauthorized'})});await denied;
+assert.equal(writes.length,0);assert.equal(saved.size,0);assert.equal(password.value,'');
+password.value=credential;
+const locked=form.events.submit({preventDefault(){}});
+finish({ok:false,status:429,json:async()=>({error:'auth_rate_limited'})});await locked;
+assert.equal(writes.length,0);assert.ok(tree.querySelector('#live-status').textContent.includes('15'));
+const success=form.events.submit({preventDefault(){}});
+assert.equal(writes.length,0);
+finish({ok:true,status:200,json:async()=>({...demo,mode:'live'})});await success;
+assert.equal(password.disabled,false);
+assert.deepEqual(writes,config.blocked?[]:[{key,value:credential}]);
+for(const {url,opts} of requests){
+  assert.equal(url,'/api/check');assert.ok(!JSON.stringify(opts.headers).includes(credential));
+  assert.deepEqual(JSON.parse(opts.body),{text:demo.input,password:credential});
+}
+assert.ok(!JSON.stringify(context.liveTest.state()).includes(credential));
+assert.ok(!tree.textContent.includes(credential));
+if(!config.blocked){
+  // Rotation clears a previously remembered password on the next 401.
+  const rotated=form.events.submit({preventDefault(){}});
+  finish({ok:false,status:401,json:async()=>({error:'unauthorized'})});await rotated;
+  assert.equal(saved.size,0);assert.equal(password.value,'');
+}
+"""
+
+RESTORE_PASSWORD = r"""
+context.URL=URL;context.AbortController=AbortController;
+context.setTimeout=()=>0;context.clearTimeout=()=>{};
+context.sessionStorage={
+  getItem(key){assert.equal(key,'claimcheck.livePassword');return config.remembered?'session-only-marker':null;},
+  setItem(){assert.fail('reading a saved password must not save anything');}
+};
+context.fetch=async url=>{
+  assert.notEqual(url,'/api/check');
+  if(url==='/api/budget')return {ok:true,json:async()=>({day:'2026-11-02',daily_limit_usd:3,daily_remaining_usd:3,
+    resets_at:'2099-11-03T00:00:00Z',status:'ready'})};
+  return {ok:false};
+};
+context.liveTest.setupLive();await new Promise(resolve=>setImmediate(resolve));
+assert.equal(tree.querySelector('#live-password').value,config.remembered?'session-only-marker':'');
+assert.ok(!tree.textContent.includes('session-only-marker'));
 """
 
 BUDGET = r"""

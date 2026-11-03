@@ -9,6 +9,43 @@ from datetime import datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation, ROUND_CEILING, ROUND_FLOOR
 
 NANOS = 1_000_000_000
+AUTH_WINDOW = 15 * 60
+AUTH_FAILURES = 5
+
+
+def password_matches(value, secret):
+    # Always compare fixed-size digests, including for missing/non-string input.
+    attempted = value.encode("utf-8", errors="surrogatepass") if isinstance(value, str) else b""
+    return hmac.compare_digest(hashlib.sha256(attempted).digest(),
+                               hashlib.sha256(secret.encode("utf-8")).digest())
+
+
+def ip_key(state, ip):
+    if "salt" not in state:
+        state["salt"] = secrets.token_hex(32)
+    return hmac.new(state["salt"].encode(), str(ip).encode(), hashlib.sha256).hexdigest()
+
+
+def authenticate(state, data, now, secret):
+    if not isinstance(secret, str) or not secret:
+        return {"error": "unavailable"}, 503
+    if not data.get("ip"):
+        return {"error": "unavailable"}, 503
+    # Only expiring counts/timestamps and a salted IP bucket enter storage.
+    # Neither the password nor its digest is retained or logged.
+    failures = state["auth_failures"] = {
+        key: row for key, row in state.get("auth_failures", {}).items() if row["expires"] > now}
+    key = ip_key(state, data["ip"])
+    row = failures.get(key)
+    if row and row.get("locked_until", 0) > now:
+        return {"error": "auth_rate_limited", "retry_after": math.ceil(row["locked_until"] - now)}, 429
+    if password_matches(data.get("password"), secret):
+        return {"ok": True}, 200
+    row = failures.setdefault(key, {"count": 0, "expires": now + AUTH_WINDOW})
+    row["count"] += 1
+    if row["count"] >= AUTH_FAILURES:
+        row["locked_until"] = row["expires"] = now + AUTH_WINDOW
+    return {"error": "unauthorized"}, 401
 
 
 def money(value, rounding=ROUND_CEILING):
@@ -33,13 +70,17 @@ def snapshot(state, now, daily_limit, total_limit):
 
 
 def prune(state: dict, now: float):
+    state["auth_failures"] = {k: v for k, v in state.get("auth_failures", {}).items() if v["expires"] > now}
     state["rates"] = {k: v for k, v in state.get("rates", {}).items() if v["expires"] > now}
     state["holds"] = {k: v for k, v in state.get("holds", {}).items() if v["expires"] > now}
     state["days"] = {k: v for k, v in state.get("days", {}).items() if v["expires"] > now}
 
 
 def transition(state: dict, action: str, data: dict, *, now: float, budget: str,
-               total_budget: str = "20", reset_id: str = "") -> tuple[dict, int]:
+               total_budget: str = "20", reset_id: str = "", password_secret: str = "") -> tuple[dict, int]:
+    # Authentication cannot reserve, reconcile, reset or inspect spending.
+    if action == "authenticate":
+        return authenticate(state, data, now, password_secret)
     # Adopt all retained spending from the v1 ledger before pruning old days.
     # Lifetime spend and stop flags never expire, even when alarms prune holds.
     for row in state.get("days", {}).values():
@@ -73,9 +114,7 @@ def transition(state: dict, action: str, data: dict, *, now: float, budget: str,
             return {"error": "unavailable"}, 503
         # No raw IP or user text in storage. The HMAC bucket expires after ten
         # minutes, including across UTC midnight; an alarm also erases it.
-        if "salt" not in state:
-            state["salt"] = secrets.token_hex(32)
-        key = hmac.new(state["salt"].encode(), str(data["ip"]).encode(), hashlib.sha256).hexdigest()
+        key = ip_key(state, data["ip"])
         row = state["rates"].setdefault(key, {"count": 0, "expires": now + 600})
         if row["count"] >= 5:
             return {"error": "rate_limited", "retry_after": math.ceil(row["expires"] - now)}, 429

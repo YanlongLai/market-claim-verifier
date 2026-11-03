@@ -189,9 +189,10 @@ class Storage:
         await asyncio.sleep(0)  # concurrent fetches may run after the write
 
 
-def durable(adapter, daily="3", total="20", storage=None):
+def durable(adapter, daily="3", total="20", storage=None, password="offline-password"):
     storage = storage or Storage()
-    gate = adapter.SpendGate(SimpleNamespace(storage=storage), SimpleNamespace(DAILY_BUDGET_USD=daily, TOTAL_BUDGET_USD=total))
+    gate = adapter.SpendGate(SimpleNamespace(storage=storage), SimpleNamespace(
+        DAILY_BUDGET_USD=daily, TOTAL_BUDGET_USD=total, LIVE_CHECK_PASSWORD=password))
     async def call(action, data=None):
         return await gate.fetch(Request("https://gate.internal/", {"method": "POST", "body": json.dumps({"action": action, "data": data or {}})}))
     return gate, call, storage
@@ -223,7 +224,9 @@ def test_actual_worker_refuses_before_model_and_budget_get_needs_no_key(adapter,
             def get(self, _):
                 return SimpleNamespace(fetch=lambda req: call(**json.loads(req.body)))
         worker = adapter.Default(env=SimpleNamespace(SPEND_GATE=Namespace(), BASETEN_API_KEY="offline-dummy"))
-        response = await worker.fetch(Request("https://live.internal/api/check", {"method": "POST", "body": json.dumps({"text": "Apple fiscal Q3 2026 revenue was $109.4 billion."})}))
+        response = await worker.fetch(Request("https://live.internal/api/check", {
+            "method": "POST", "headers": {"X-Live-Client-IP": "192.0.2.1"},
+            "body": json.dumps({"text": "Apple fiscal Q3 2026 revenue was $109.4 billion.", "password": "offline-password"})}))
         assert response.status == (429 if stop == "daily" else 503)
         assert (await response.json())["error"] == {"daily": "budget_exhausted", "lifetime": "total_budget_exhausted", "credit": "credit_exhausted"}[stop]
         del worker.env.BASETEN_API_KEY
@@ -237,7 +240,7 @@ def test_actual_worker_refuses_before_model_and_budget_get_needs_no_key(adapter,
 def test_provider_response_sets_durable_pause_then_blocks_next_run_and_survives_alarm(adapter, monkeypatch, status, body, paused):
     async def run():
         gate, call, storage = durable(adapter)
-        worker = adapter.Default(env=SimpleNamespace(BASETEN_API_KEY="offline-dummy"))
+        worker = adapter.Services(SimpleNamespace(BASETEN_API_KEY="offline-dummy"))
         async def internal(action, data):
             response = await call(action, data)
             value = await response.json()

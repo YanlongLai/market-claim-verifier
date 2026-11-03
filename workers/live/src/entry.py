@@ -40,7 +40,7 @@ class SpendGate(DurableObject):
         self.ctx.storage.sql.exec("INSERT OR REPLACE INTO ledger (id, body) VALUES (1, ?)", json.dumps(state))
 
     async def schedule(self, state):
-        expiries = [v["expires"] for group in ("rates", "days", "holds") for v in state.get(group, {}).values()]
+        expiries = [v["expires"] for group in ("auth_failures", "rates", "days", "holds") for v in state.get(group, {}).values()]
         if expiries:
             await self.ctx.storage.setAlarm(int(min(expiries) * 1000))
 
@@ -52,7 +52,8 @@ class SpendGate(DurableObject):
         result, status = transition(state, data["action"], data["data"], now=time.time(),
                                     budget=str(getattr(self.env, "DAILY_BUDGET_USD", "3")),
                                     total_budget=str(getattr(self.env, "TOTAL_BUDGET_USD", "20")),
-                                    reset_id=str(getattr(self.env, "BUDGET_RESET_ID", "")))
+                                    reset_id=str(getattr(self.env, "BUDGET_RESET_ID", "")),
+                                    password_secret=getattr(self.env, "LIVE_CHECK_PASSWORD", ""))
         self.save(state)
         await self.schedule(state)
         return reply(result, status)
@@ -66,7 +67,11 @@ class SpendGate(DurableObject):
         await self.schedule(state)
 
 
-class Default(WorkerEntrypoint):
+class Services:
+    # Plain helper, not a WorkerEntrypoint: no model/gate RPC entry points.
+    def __init__(self, env):
+        self.env = env
+
     async def gate(self, action, data):
         # One globally named object across all Pages regions and visitors.
         stub = self.env.SPEND_GATE.get(self.env.SPEND_GATE.idFromName("baseten-live-global-v1"))
@@ -110,18 +115,18 @@ class Default(WorkerEntrypoint):
             raise LiveError("provider_error")
         return json.loads(await response.text())
 
+class Default(WorkerEntrypoint):
     async def fetch(self, request):
+        services = Services(self.env)
         if request.method == "GET" and urlparse(request.url).path == "/api/budget":
             try:
-                return reply(await self.gate("budget", {}), public=True)
+                return reply(await services.gate("budget", {}), public=True)
             except Exception:
                 return reply({"error": "unavailable"}, 503)
         if request.method != "POST" or urlparse(request.url).path != "/api/check":
             return reply({"error": "not_found"}, 404)
         run = None
         try:
-            if not getattr(self.env, "BASETEN_API_KEY", None):
-                raise LiveError("unavailable")
             raw = await request.text()
             if len(raw.encode()) > 4096:
                 raise LiveError("invalid_input", 400)
@@ -129,12 +134,18 @@ class Default(WorkerEntrypoint):
                 data = json.loads(raw)
             except (ValueError, TypeError):
                 raise LiveError("invalid_input", 400) from None
-            claim = validate_text(data.get("text") if isinstance(data, dict) else None)
-            budget = await self.gate("budget", {})
+            if not isinstance(data, dict):
+                raise LiveError("invalid_input", 400)
+            await services.gate("authenticate", {"ip": request.headers.get("X-Live-Client-IP"),
+                                                  "password": data.pop("password", None)})
+            if not getattr(self.env, "BASETEN_API_KEY", None):
+                raise LiveError("unavailable")
+            claim = validate_text(data.get("text"))
+            budget = await services.gate("budget", {})
             if budget["status"] != "ready":
                 raise LiveError(budget["status"], 429 if budget["status"] == "budget_exhausted" else 503, budget)
-            await self.gate("rate", {"ip": request.headers.get("X-Live-Client-IP")})
-            run = LiveRun(self.model, self.sec, self.gate)
+            await services.gate("rate", {"ip": request.headers.get("X-Live-Client-IP")})
+            run = LiveRun(services.model, services.sec, services.gate)
             return reply(await run.bounded(claim))
         except LiveError as error:
             fields = run.envelope() if run else {}

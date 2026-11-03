@@ -29,15 +29,34 @@ test("production cannot enable the local mock or supply its own forwarded IP", a
     assert.equal(req.url, "https://live.internal/api/check");
     assert.equal(req.headers.get("X-Live-Client-IP"), "192.0.2.1");
     assert.equal(req.headers.get("Authorization"), null);
-    assert.deepEqual(await req.json(), { text: demo.input });
+    assert.deepEqual(await req.json(), { text: demo.input, password: "offline-password" });
     return Response.json({ verdict: "supported", mode: "live" });
   } } };
-  const response = await onRequest({ request: request({ text: demo.input, secret: "drop" }, {
+  const response = await onRequest({ request: request({ text: demo.input, password: "offline-password", secret: "drop" }, {
     "CF-Connecting-IP": "192.0.2.1", "X-Live-Client-IP": "spoofed"
   }, "hackathon.dappgo.com"), env });
   assert.equal(response.status, 200);
   assert.equal((await response.json()).mode, "live");
   assert.equal(calls, 1);
+});
+
+test("password goes only in the private request body, with no browser headers or URL forwarding", async () => {
+  for (const password of [undefined, "", "wrong-test-password"]) {
+    const env = { LIVE_CHECK: { async fetch(req) {
+      assert.equal(req.url, "https://live.internal/api/check");
+      assert.equal(req.headers.get("Authorization"), null);
+      assert.equal(req.headers.get("Cookie"), null);
+      assert.equal(req.headers.get("X-Live-Password"), null);
+      assert.deepEqual(await req.json(), { text: demo.input, password: password || "" });
+      return Response.json({ error: "unauthorized" }, { status: 401 });
+    } } };
+    const response = await onRequest({ request: request({ text: demo.input, password }, {
+      "CF-Connecting-IP": "192.0.2.1", "X-Live-Password": "spoofed", Cookie: "private", Authorization: "private"
+    }, "hackathon.dappgo.com"), env });
+    assert.equal(response.status, 401);
+    assert.equal(response.headers.get("Cache-Control"), "no-store");
+    assert.deepEqual(await response.json(), { error: "unauthorized" });
+  }
 });
 
 test("origin, length, byte size, JSON and content-type checks happen before forwarding", async () => {

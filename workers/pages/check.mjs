@@ -75,7 +75,7 @@ export const onRequest = async ({ request, env }) => {
     if (!ip) return error("unavailable", 503);
     const forwarded = new Request("https://live.internal/api/check", {
       method: "POST", headers: { "Content-Type": "application/json", "X-Live-Client-IP": ip },
-      body: JSON.stringify({ text: data.text.trim() }),
+      body: JSON.stringify({ text: data.text.trim(), password: typeof data.password === "string" ? data.password : "" }),
     });
     const response = await env.LIVE_CHECK.fetch(forwarded);
     return new Response(response.body, { status: response.status, headers });

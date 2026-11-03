@@ -363,6 +363,8 @@
     title: "Try a live check.", lede: "One post. The filed number. A verdict you can follow.",
     scope: "US equities · SEC financial facts only. No prices, forecasts, crypto or investment advice.",
     input: "Paste a financial sentence or short post", submit: "Check against SEC", useExample: "Use Apple example",
+    password: "Live-check password",
+    passwordNote: "Live check is password-protected during the hackathon review. After a successful check, the password stays only in this tab's session.",
     privacy: "Usually within 30 seconds. Text goes to Baseten for this check; we do not save it. Anonymous rate counters expire after 10 minutes. 5 checks / 10 min.",
     recordedTitle: "Follow a real Apple check.",
     recordedNote: "Saved run · 28 Oct 2026 · actual model calls and SEC evidence. Available even when the live budget runs out.",
@@ -388,6 +390,8 @@
     },
     errors: {
       invalid_input: "Enter 1–600 characters.", out_of_scope: "This check covers US equities and SEC financial facts only.",
+      unauthorized: "Enter the live-check password to continue.",
+      auth_rate_limited: "Too many incorrect passwords. Please wait 15 minutes; the saved demo is available below.",
       budget_exhausted: "Today's budget is used up — see the saved examples. Resets 00:00 UTC.",
       total_budget_exhausted: "Live checks paused (total budget). See the saved examples.",
       credit_exhausted: "Live checks paused (provider credit). See the saved examples.",
@@ -406,6 +410,8 @@
     title: "試試即時查核。", lede: "一則貼文、申報數字，以及看得見的查核過程。",
     scope: "限美股 SEC 財務事實。不查股價、預測、加密貨幣，也不提供投資建議。",
     input: "貼上一句財務敘述或短貼文", submit: "比對 SEC 資料", useExample: "使用 Apple 範例",
+    password: "即時查核密碼",
+    passwordNote: "黑客松評審期間，即時查核需要密碼。查核成功後，密碼只會保留在此分頁的工作階段。",
     privacy: "通常在 30 秒內完成。文字會傳至 Baseten 進行查核；本站不儲存文字。匿名限流計數於 10 分鐘後刪除。每 10 分鐘限 5 次。",
     recordedTitle: "跟著一筆真實 Apple 查核。",
     recordedNote: "已儲存紀錄 · 2026 年 10 月 28 日 · 真實模型呼叫與 SEC 證據。即時預算用完仍可查看。",
@@ -431,6 +437,8 @@
     },
     errors: {
       invalid_input: "請輸入 1–600 個字元。", out_of_scope: "此功能僅查核美股的 SEC 財務事實。",
+      unauthorized: "請輸入即時查核密碼以繼續。",
+      auth_rate_limited: "密碼錯誤次數過多，請等候 15 分鐘；下方示範仍可查看。",
       budget_exhausted: "今日預算已用完，請查看已儲存的範例。於 UTC 00:00 重設。",
       total_budget_exhausted: "即時查核暫停（總預算已用完）。請查看已儲存的範例。",
       credit_exhausted: "即時查核暫停（供應商額度已用完）。請查看已儲存的範例。",
@@ -452,6 +460,7 @@
   let savedLiveDemo = null;
   let liveResult = null;
   let liveStatus = "";
+  const LIVE_PASSWORD_KEY = "claimcheck.livePassword";
   let liveBudget = null;
   let liveBusy = false;
   let budgetLoaded = false;
@@ -597,6 +606,7 @@
     $("#live-input").disabled = disabled;
     $("#live-submit").disabled = disabled;
     $("#live-example").disabled = disabled;
+    $("#live-password").disabled = liveBusy;
   }
 
   async function refreshLiveBudget() {
@@ -642,6 +652,9 @@
     if (!form) return;
     const input = $("#live-input");
     const submit = $("#live-submit");
+    const password = $("#live-password");
+    password.value = "";
+    try { password.value = sessionStorage.getItem(LIVE_PASSWORD_KEY) || ""; } catch { /* Storage may be blocked. */ }
     const count = () => { $("#live-count").textContent = `${Array.from(input.value).length} / 600`; };
     input.addEventListener("input", count);
     $("#live-example").addEventListener("click", () => {
@@ -650,6 +663,10 @@
     form.addEventListener("submit", async (event) => {
       event.preventDefault();
       if (submit.disabled) return;
+      const attemptedPassword = password.value;
+      if (!attemptedPassword) {
+        liveStatus = "unauthorized"; localizeLive(); password.focus(); return;
+      }
       if (!input.value.trim() || Array.from(input.value.trim()).length > 600) {
         liveStatus = "invalid_input"; localizeLive(); return;
       }
@@ -664,16 +681,21 @@
       try {
         const response = await fetch("/api/check", {
           method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ text: input.value.trim() }), signal: controller.signal, cache: "no-store"
+          body: JSON.stringify({ text: input.value.trim(), password: attemptedPassword }), signal: controller.signal, cache: "no-store"
         });
         const result = await response.json();
         if (result.budget) liveBudget = result.budget;
         if (!response.ok || result.error) {
           liveStatus = result.error || "unavailable";
+          if (response.status === 401) {
+            password.value = "";
+            try { sessionStorage.removeItem(LIVE_PASSWORD_KEY); } catch { /* Storage may be blocked. */ }
+          }
           if (Array.isArray(result.events) && result.events.length) liveResult = result;
         } else {
           liveStatus = "complete";
           liveResult = result;
+          try { sessionStorage.setItem(LIVE_PASSWORD_KEY, attemptedPassword); } catch { /* Check succeeded without storage. */ }
         }
       } catch (error) { liveStatus = error.name === "AbortError" ? "timeout" : "unavailable"; }
       finally {

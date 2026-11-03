@@ -252,7 +252,7 @@ def test_rate_limit_privacy_expiry_daily_reset_and_invalid_config():
     assert op("reserve", {"id": "d", "amount": .001}, cap="NaN")[1] == 503
     assert op("reserve", {"id": "d", "amount": .001}, cap="-1")[1] == 503
     # No user text, IP addresses, provider keys or model bodies enter the ledger.
-    assert set(state) <= {"rates", "days", "holds", "salt", "salt_day", "lifetime_nanos"}
+    assert set(state) <= {"auth_failures", "rates", "days", "holds", "salt", "salt_day", "lifetime_nanos"}
 
 
 def test_gate_uses_integer_money_and_rate_windows_span_utc_midnight():
