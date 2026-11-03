@@ -32,7 +32,7 @@ test("production cannot enable the local mock or supply its own forwarded IP; or
   const env = { ...envWithFetch(t, async req => {
     calls++;
     assert.equal(req.url, "https://live-origin.example.com/api/check");
-    assert.equal(req.redirect, "error");
+    assert.equal(req.redirect, "manual");
     assert.deepEqual(Object.fromEntries(req.headers), { ...originHeaders,
       "content-type": "application/json", "x-live-client-ip": "192.0.2.1" });
     assert.deepEqual(await req.json(), { text: demo.input, password: "offline-password" });
@@ -112,7 +112,7 @@ test("public budget sends only origin credentials, excludes private data, and ca
     calls++;
     assert.equal(req.url, "https://live-origin.example.com/api/budget");
     assert.equal(req.method, "GET");
-    assert.equal(req.redirect, "error");
+    assert.equal(req.redirect, "manual");
     assert.deepEqual(Object.fromEntries(req.headers), originHeaders);
     return Response.json({ ...budget, holds: "private", salt: "private", lifetime_nanos: 12345,
       secret: origin.LIVE_ACCESS_CLIENT_SECRET });
@@ -197,4 +197,9 @@ test("dashboard-pasted values with trailing newlines still reach the origin as c
   const response = await onBudget({ request: new Request("https://hackathon.dappgo.com/api/budget"), env });
   assert.equal(response.status, 200);
   assert.equal((await response.json()).daily_remaining_usd, 3);
+});
+
+test("origin fetch uses a redirect mode the Workers runtime accepts", () => {
+  const source = readFileSync(new URL("../../workers/pages/check.mjs", import.meta.url), "utf8");
+  assert.ok(!/redirect:\s*"error"/.test(source), "Workers fetch throws on redirect: \"error\"");
 });

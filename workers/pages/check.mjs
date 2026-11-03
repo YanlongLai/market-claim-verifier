@@ -24,7 +24,8 @@ async function originFetch(env, path, options = {}) {
   const timer = setTimeout(() => controller.abort(), 25000);
   try {
     const response = await fetch(new Request(`https://${host}${path}`, {
-      ...options, redirect: "error", signal: controller.signal,
+      // Workers fetch supports only "follow"|"manual"; "error" throws. A 3xx is not ok, so it fails closed.
+      ...options, redirect: "manual", signal: controller.signal,
       headers: { ...options.headers,
         "CF-Access-Client-Id": env.LIVE_ACCESS_CLIENT_ID,
         "CF-Access-Client-Secret": env.LIVE_ACCESS_CLIENT_SECRET,
