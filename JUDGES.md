@@ -33,7 +33,7 @@ Day 5: [delivery plan](docs/DAY5_PLAN.md) · [provider capabilities and prices](
 | --- | --- |
 | **Best Build on Meta Open Weight Models** | The [held-out comparison](docs/evidence/eval-v2-2026-10-27/REPORT.md#metrics) puts Muse Spark Open ahead of hosted Muse Spark 1.3 in this workflow, at similar observed cost. [Same-loop provider diagram](docs/diagrams/providers.mmd) and [recorded model IDs](docs/evidence/eval-v2-2026-10-27/manifest.json) make the portability claim inspectable. |
 | **Best Agentic Use-Case** | The agent chooses which evidence to retrieve and which calculation to request; Python owns arithmetic and evidence acceptance. Follow the [real trace](docs/evidence/2026-10-27/20261027T222758Z-8959a100.json), [tool-loop prompt](prompts/agent-tool-loop-instructions.md), [extraction prompt](prompts/post-extraction.md) and [prompt registry](src/claimcheck/prompts.py). |
-| **Most Viral** | The [Apple quarter/year correction](docs/evidence/posts-2026-10-28/demo-thread-baseten/report.json) gives a shareable explanation with a receipt. [In the wild — TODO (Claude)](#in-the-wild-todo); no measured reach, adoption or virality is claimed. |
+| **Most Viral** | The [Apple quarter/year correction](docs/evidence/posts-2026-10-28/demo-thread-baseten/report.json) gives a shareable explanation with a receipt. [In the wild](https://hackathon.dappgo.com/wild/) shows real Threads posts whose displayed numbers conflict with SEC filings (e.g. ~10× unit errors in auto-translated displays; cause unconfirmed); no measured reach, adoption or virality is claimed. |
 
 ## Publication links — TODO (Claude)
 
@@ -47,7 +47,7 @@ Day 5: [delivery plan](docs/DAY5_PLAN.md) · [provider capabilities and prices](
 
 <a id="in-the-wild-todo"></a>
 
-- **In the wild — TODO (Claude):** add the findings link. Current real-media development studies are listed under [Limits](#media-studies).
+- **In the wild:** [https://hackathon.dappgo.com/wild/](https://hackathon.dappgo.com/wild/) ([source](docs/wild/index.html), [rebuild notes](docs/wild/README.md)) — 80 News + 78 Threads posts, independent primary-source conflict cards, full coverage per provider/path, and the separately labelled post-hoc fix recheck. Current real-media development studies are listed under [Limits](#media-studies).
 
 ## What is new during the hackathon
 
