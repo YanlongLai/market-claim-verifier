@@ -22,6 +22,8 @@ def timestamp(value):
 
 def compile_scale(root=ROOT):
     sources = {}
+    report_path=BASE+'/REPORT.md'
+    sources[report_path]=dict(path=report_path,sha256=hashlib.sha256((root/report_path).read_bytes()).hexdigest())
 
     def read(path):
         raw = (root / path).read_bytes()
@@ -57,7 +59,7 @@ def compile_scale(root=ROOT):
         finished = max(timestamp(s['finished_at']) for s in summaries)
         envelope['finished_at'] = finished.isoformat()
         envelope['wall_seconds'] = (finished-timestamp(envelope['started_at'])).total_seconds()
-        parallel[label] = dict(**envelope, workers=3, jobs=len(all_rows),
+        parallel[label] = dict(**envelope, workers=3, recorded_text_jobs=len(all_rows),
             sources=[f'{folder}/{p}/execution-summary.json' for p in ('baseten','fireworks','meta')],
             worker_basis=f'{BASE}/REPORT.md',
             scope='Observed envelope of three provider comparison workers, including agent/post/media; '
@@ -85,7 +87,8 @@ def compile_scale(root=ROOT):
     eval_timing = dict(unit='claim', provider='baseten', split='test',
         items=len(heldout), completed=len(completed),
         median_completed_latency_seconds=statistics.median(r['latency_ms']/1000 for r in completed),
-        all_result_timestamp_envelope=span(eval_rows),
+        baseten_agent_result_timestamp_envelope=span(eval_rows),
+        recorded_run_envelope_from_manifest_timestamps=span([manifest]),
         manifest_wall_clock_s=manifest['wall_clock_s'],
         declared_concurrency=manifest['concurrency'],
         limitation='The manifest wall_clock_s is a resumed invocation, not the complete result envelope. '

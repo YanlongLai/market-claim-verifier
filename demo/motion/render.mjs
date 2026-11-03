@@ -14,7 +14,7 @@ export function parseArgs(args) {
     if(!['--t','--from','--to','--fps','--out','--entry'].includes(flag)||value===undefined) throw new Error('Usage: node render.mjs [--entry v3/index.html] --t 3 --out dir | --from A --to B --fps 30 --out dir');
     if(flag==='--out') out.out=path.resolve(value);
     else if(flag==='--entry') {
-      if(!['index.html','v3/index.html'].includes(value)) throw new Error('Choose index.html or v3/index.html.');
+      if(!['index.html','v3/index.html','v4/index.html'].includes(value)) throw new Error('Choose index.html, v3/index.html or v4/index.html.');
       out.entry=value;
     }
     else {
@@ -52,6 +52,7 @@ export async function renderFrames(options) {
     for(let i=0;i<times.length;i++) {
       const t=times[i];
       const state=await page.evaluate(t=>window.seek(t),t); // seek is synchronous; screenshot flushes layout.
+      await page.evaluate(async()=>{if(window.settleMotion)await window.settleMotion();});
       await page.evaluate(async()=>{await Promise.all([...document.images].map(image=>image.decode()));});
       if(errors.length) throw new Error(errors.join('\n'));
       const layout=await checkLayout(page);

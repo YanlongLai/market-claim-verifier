@@ -21,15 +21,20 @@ def require_v2(builder) -> None:
 
 
 def motion_folder(builder) -> Path:
-    return builder.demo / ('motion/v3' if builder.story.get('motion_variant') == 'v3' else 'motion')
+    variant=builder.story.get('motion_variant')
+    return builder.demo / (f'motion/{variant}' if variant in ('v3','v4') else 'motion')
 
 
 def renderer_args(builder) -> list:
-    return (['--entry', 'v3/index.html'] if builder.story.get('motion_variant') == 'v3' else [])
+    variant=builder.story.get('motion_variant')
+    return (['--entry', f'{variant}/index.html'] if variant in ('v3','v4') else [])
 
 
 def prepare(builder, *, require_voice: bool = False) -> dict:
     require_v2(builder)
+    if builder.story.get('motion_variant') == 'v4':
+        from motion_v4 import prepare as prepare_v4
+        return prepare_v4(builder, require_voice=require_voice)
     if builder.story.get('motion_variant') == 'v3':
         from motion_v3 import prepare as prepare_v3
         return prepare_v3(builder, require_voice=require_voice)
@@ -111,13 +116,14 @@ def output_path(builder, default: Path) -> Path:
 
 def keyframes(builder) -> None:
     timing=prepare(builder,require_voice=True)
-    if builder.story.get('motion_variant') == 'v3':
+    if builder.story.get('motion_variant') in ('v3','v4'):
         times=builder.args.t or [f['t'] for f in read_json(motion_folder(builder)/'keyframes.json')]
     else:
         times=builder.args.t or keyframe_times(timing,builder.scenes)
     if any(not math.isfinite(t) or t<0 or t>timing['duration'] for t in times):
         raise BuildError('Keyframe time must be finite and within the timeline.')
-    output=output_path(builder,builder.demo/('out/keyframes-v007' if builder.story.get('motion_variant')=='v3' else 'out/keyframes-v2'))
+    variant=builder.story.get('motion_variant')
+    output=output_path(builder,builder.demo/('out/keyframes-v4' if variant=='v4' else 'out/keyframes-v007' if variant=='v3' else 'out/keyframes-v2'))
     args=['node',builder.demo/'motion/render.mjs',*renderer_args(builder)]
     for t in times:
         args += ['--t',f'{t:.9f}']
@@ -220,6 +226,10 @@ def render(builder, *, test: bool = False) -> dict:
         from motion_v3 import evidence_data
         implementation['motion_v3.py']=file_hash(builder.demo/'motion_v3.py')
         evidence=evidence_data(builder.repo)['provenance']
+    elif builder.story.get('motion_variant') == 'v4':
+        from motion_v4 import compile_data
+        implementation['motion_v4.py']=file_hash(builder.demo/'motion_v4.py')
+        evidence=compile_data(builder.repo,builder.story)['provenance']
     else:
         evidence=product_data(builder.repo)['provenance']
     key=cache_key('motion-v2',source_hashes,implementation,evidence,start,end,[v['key'] for v in voices],file_hash(music),builder.story['music']['gain_db'])
