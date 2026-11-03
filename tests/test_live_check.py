@@ -113,6 +113,14 @@ def test_three_outcomes_are_decided_by_python_not_model(value, expected):
 
 
 def test_all_357_v2_baseten_tool_transcripts_use_the_cli_evaluator():
+    def recorded_sources_only(url):
+        # These historical runs retained companyfacts, not L4 releases. The
+        # merged core can now probe a release fallback; model its unavailable
+        # evidence explicitly without fetching or inventing a release fixture.
+        if not url.startswith("https://data.sec.gov/submissions/"):
+            pytest.fail("unexpected source outside the frozen replay")
+        raise RuntimeError("no earnings-release evidence in this recorded run")
+
     count = 0
     for path in sorted(EVIDENCE.glob("*--agent@baseten.json")):
         record = json.loads(path.read_text())
@@ -121,7 +129,7 @@ def test_all_357_v2_baseten_tool_transcripts_use_the_cli_evaluator():
         trace = json.loads((EVIDENCE / record["trace_path"]).read_text())
         final = trace["final_verdict"]
         def runner():
-            r = ToolRunner(EdgarClient(cache_dir=FIXTURES, fetcher=lambda _: pytest.fail("network")))
+            r = ToolRunner(EdgarClient(cache_dir=FIXTURES, fetcher=recorded_sources_only))
             for tool in trace["tool_calls"]:
                 result = tool.get("result", {})
                 if result.get("evidence_id"):

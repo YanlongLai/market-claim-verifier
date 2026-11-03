@@ -68,7 +68,7 @@ def main() -> int:
     (guard / "offline.cjs").write_text(NODE_GUARD, encoding="utf-8")
     env = {
         key: value for key, value in os.environ.items()
-        if not key.startswith(("CLAIMCHECK_", "BASETEN_", "FIREWORKS_", "MODEL_API_", "OPENAI_", "LIVE_CHECK_"))
+        if not key.startswith(("CLAIMCHECK_", "BASETEN_", "FIREWORKS_", "MODEL_API_", "OPENAI_", "LIVE_"))
         and key not in {"PYTHONPATH", "NODE_OPTIONS"}
     }
     for key in ("MODEL_API_KEY_FILE", "BASETEN_API_KEY_FILE", "FIREWORKS_API_KEY_FILE"):

@@ -1,2 +1,2 @@
-// The shared boundary is plain JavaScript so Node 22 can test it offline.
+// Free Pages proxy to the Access-protected origin; shared JS is tested offline.
 export { onRequest } from "../../workers/pages/check.mjs";

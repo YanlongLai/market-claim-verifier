@@ -8,6 +8,28 @@ const headers = {
 };
 const error = (code, status) => new Response(JSON.stringify({ error: code, demo: "data/live-demo.json" }), { status, headers });
 
+async function originFetch(env, path, options = {}) {
+  const host = env.LIVE_ORIGIN_HOST;
+  if (typeof host !== "string" || host.length > 253 ||
+      !/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$/i.test(host) ||
+      ![env.LIVE_ACCESS_CLIENT_ID, env.LIVE_ACCESS_CLIENT_SECRET, env.LIVE_ORIGIN_TOKEN]
+        .every(value => typeof value === "string" && value.length > 0)) throw Error("unavailable");
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 25000);
+  try {
+    const response = await fetch(new Request(`https://${host}${path}`, {
+      ...options, redirect: "error", signal: controller.signal,
+      headers: { ...options.headers,
+        "CF-Access-Client-Id": env.LIVE_ACCESS_CLIENT_ID,
+        "CF-Access-Client-Secret": env.LIVE_ACCESS_CLIENT_SECRET,
+        "X-Live-Origin-Token": env.LIVE_ORIGIN_TOKEN },
+    }));
+    // Include body consumption in the timeout. Access HTML/redirects fail closed.
+    const data = await response.json();
+    return { response, data };
+  } finally { clearTimeout(timer); }
+}
+
 export const onBudget = async ({ request, env }) => {
   if (request.method !== "GET") return error("method_not_allowed", 405);
   const url = new URL(request.url);
@@ -17,12 +39,10 @@ export const onBudget = async ({ request, env }) => {
     return Response.json({ day: now.toISOString().slice(0, 10), daily_limit_usd: 3, daily_spent_usd: 0,
       daily_remaining_usd: 3, resets_at: reset.toISOString(), status: "ready", mode: "mock" }, { headers });
   }
-  if (!env.LIVE_CHECK) return error("unavailable", 503);
   try {
-    // No visitor headers, IP, cookies or credentials enter the budget request.
-    const response = await env.LIVE_CHECK.fetch(new Request("https://live.internal/api/budget"));
+    // Only origin credentials enter this request; no visitor headers or IP.
+    const { response, data } = await originFetch(env, "/api/budget");
     if (!response.ok) return error("unavailable", 503);
-    const data = await response.json();
     // Allowlist the public daily counters; never forward internal ledger data.
     const { day, daily_limit_usd, daily_spent_usd, daily_remaining_usd, resets_at, status } = data;
     if (!/^\d{4}-\d{2}-\d{2}$/.test(day) || !Number.isFinite(Date.parse(resets_at)) ||
@@ -70,15 +90,24 @@ export const onRequest = async ({ request, env }) => {
       if (data.text.trim() !== demo.input) return error("mock_input_only", 422);
       return new Response(JSON.stringify({ ...demo, mode: "mock" }), { headers });
     }
-    if (!env.LIVE_CHECK) return error("unavailable", 503);
     const ip = request.headers.get("CF-Connecting-IP");
     if (!ip) return error("unavailable", 503);
-    const forwarded = new Request("https://live.internal/api/check", {
+    const { response, data: result } = await originFetch(env, "/api/check", {
       method: "POST", headers: { "Content-Type": "application/json", "X-Live-Client-IP": ip },
       body: JSON.stringify({ text: data.text.trim(), password: typeof data.password === "string" ? data.password : "" }),
     });
-    const response = await env.LIVE_CHECK.fetch(forwarded);
-    return new Response(response.body, { status: response.status, headers });
+    const errors = ["invalid_input", "unauthorized", "auth_rate_limited", "out_of_scope", "unavailable",
+      "budget_exhausted", "total_budget_exhausted", "credit_exhausted", "rate_limited", "provider_error",
+      "sec_unavailable", "incomplete_model", "tool_limit", "invalid_model_output", "timeout"];
+    if (!result || typeof result !== "object" || Array.isArray(result) ||
+        (response.status === 200 ? !["supported", "contradicted", "insufficient_evidence"].includes(result.verdict) :
+          ![400, 401, 422, 429, 503, 504].includes(response.status) || !errors.includes(result.error))) {
+      return error("unavailable", 503);
+    }
+    const fields = ["mode", "model", "provider", "events", "evidence", "cost_usd", "cost_is_bound", "latency_ms",
+      "verdict", "model_verdict", "summary", "claims", "scope", "error", "demo", "budget"];
+    const publicResult = Object.fromEntries(fields.filter(key => key in result).map(key => [key, result[key]]));
+    return Response.json(publicResult, { status: response.status, headers });
   } catch {
     return error("unavailable", 503);
   }
