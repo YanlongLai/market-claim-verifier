@@ -1,7 +1,7 @@
 /* Synchronous, frame-addressable product reenactment of committed run reports. */
 (function () {
   'use strict';
-  const D=window.MOTION_DATA,L=window.MotionLogic,H=window.HoverSource;
+  const D=window.MOTION_DATA,L=window.MotionLogic,H=window.HoverSource,B=window.BrollLayer;
   const stage=document.getElementById('stage'), P=D.product.base;
   const {escapeHTML:esc,highlightQuote:quote,clamp,progress}=L;
   const beat=L.beatHelpers(D.beats.beats_s);
@@ -25,12 +25,11 @@
   }
   function disclosure() {
     return chrome('Built during the hackathon')+
-      box(64,184,1792,400,esc(D.product.disclosure),'body disclosure',64)+
-      surface(64,600,1792,264)+
-      box(96,612,1040,232,'Market Claim<br><span class="mint">Verifier</span>','headline',96)+
-      box(1192,608,632,72,'Apple · claimed quarter','body muted',56)+
-      box(1192,680,632,116,n(dollars(P.apple.claimed_b),96),'coral',96)+
-      box(1192,796,632,68,'Open saved check ↗','body mint',56);
+      box(656,184,1200,464,esc(D.product.disclosure),'body disclosure',64)+
+      surface(656,664,1200,200)+
+      box(680,680,680,72,'Apple · claimed quarter','body muted',56)+
+      box(1408,676,416,116,n(dollars(P.apple.claimed_b),96),'coral',96)+
+      box(680,788,1144,68,'Open saved check ↗','body mint',56);
   }
   function apple(t,s,e) {
     return chrome('Paste a post')+title('Apple. One quarter?')+
@@ -186,15 +185,67 @@
       box(64,716,1792,72,'Built during the Meta Global AI Developer Hackathon','body',56)+
       box(64,796,1792,76,'Muse Spark · Meta open weights','body muted',56);
   }
+  // During an insert the same recorded data occupies the right-hand product pane.
+  // Text is HTML outside the image; the panel never obscures a claim or disclosure.
+  function besideBroll(scene,t,s,e) {
+    const heading=text=>box(704,188,1152,128,esc(text),'headline',96);
+    if(scene==='disclosure')return disclosure();
+    if(scene==='hover')return chrome('Hover · SEC audit')+heading('Follow the evidence.')+
+      surface(704,332,1152,532)+
+      box(728,360,1104,80,'Apple · claimed quarter','body muted',56)+
+      box(728,470,1104,138,n(dollars(P.apple.claimed_b)),'coral',112)+
+      box(728,636,1104,80,'Search SEC → compare periods','body mint',56)+
+      box(728,752,1104,80,'Exact source + fiscal quarter','body muted',56);
+    if(scene==='program') {
+      const checked=show(t,e,'checks'),final=show(t,e,'verdict');
+      return chrome('Program audit')+heading('Program decides.')+
+        surface(704,332,1152,532)+
+        box(728,344,1104,80,'Number check','body muted',56)+
+        box(728,432,1104,138,checked?'<span class="coral">'+n(dollars(P.apple.claimed_b),96)+'</span> ≠ <span class="mint">'+n(dollars(P.apple.quarter_b),96)+'</span>':'Reading source number…','body',64)+
+        box(728,584,1104,80,'FY2025 · fiscal Q4','body',64)+
+        box(728,672,1104,72,'Citations: '+esc(D.product.apple_evidence_ids.join(' · ')),'body muted',56)+
+        box(728,760,1104,104,final?'Claim: '+verdict(P.apple.verdict):'Program checks…','status '+(final?'claim-verdict coral':'muted'),80);
+    }
+    if(scene==='l4') {
+      const row=D.product.releases[show(t,e,'adobe')?1:0],src=row.excerpt.source_evidence,
+        guidance=row.kind==='guidance';
+      return chrome('L4 · furnished / unaudited')+heading('Earnings releases.')+
+        surface(704,332,1152,532)+
+        box(728,352,1104,80,guidance?'META · revenue guidance':'Adobe · non-GAAP EPS','body',64)+
+        box(728,456,1104,72,esc(src.period)+' · Regression example','body muted',56)+
+        box(728,556,1104,136,guidance?n(row.excerpt.value,96):n('$'+src.value.toFixed(2),96),'mint',96)+
+        box(728,708,1104,68,'MATCHES RELEASE','body mint',56)+
+        box(728,788,1104,68,'Unaudited · not future performance','body amber',56);
+    }
+    if(scene==='results') {
+      let html=chrome('Saved v2 results')+heading('Measured accuracy.')+
+        box(704,320,1152,68,'Original v2 · '+P.claim_count+' claims','body muted',56)+
+        box(704,392,1152,68,'includes dev / corrected gold','body muted',56)+
+        surface(704,464,1152,400)+
+        box(728,472,336,68,'Muse Spark','body muted',56)+
+        box(1088,472,336,68,'Model alone','body muted',56)+
+        box(1448,472,384,68,'With checks','body mint',56);
+      for(const [i,row] of D.product.scores.entries()) {
+        const y=548+i*100,visible=show(t,e,i===0?'meta':'open');
+        html+=box(728,y+16,336,80,esc(row.label),'body',56)+
+          box(1088,y,336,116,n(row.alone.percent.toFixed(1)+'%',96),'muted',96)+
+          box(1448,y,384,116,visible?n(row.checked.percent.toFixed(1)+'%',96):'Checks…','mint',56);
+      }
+      return html;
+    }
+    throw new Error('No product composition for B-roll shot: '+scene);
+  }
   const renderers={disclosure,apple,extract,hover,proof,program,l4,
     screenshot:(t,s,e)=>input(t,s,e,false),audio:(t,s,e)=>input(t,s,e,true),results,limits,cta};
   window.seek=function(time) {
     const shot=L.shotAt(D.timing,time),index=D.timing.shots.indexOf(shot),t=clamp(time,0,D.timing.duration);
     const scene=D.scenes[index],events=Object.fromEntries(D.cues._events[shot.id].map(e=>[e.event,e.t]));
     boxes=[];
-    const output=renderers[scene.renderer](t,shot,events),html=typeof output==='string'?output:output.html;
+    const output=renderers[scene.renderer](t,shot,events),broll=B.select(D,t);
+    let html=typeof output==='string'?output:output.html;
+    if(broll) {boxes=[];html=besideBroll(scene.renderer,t,shot,events)+B.panel(broll);}
     stage.className='v3';stage.innerHTML=html;stage.dataset.shot=shot.id;stage.dataset.time=String(t);
-    window.frame={time:t,shot:shot.id,boxes,hover:typeof output==='string'?null:output.state};
+    window.frame={time:t,shot:shot.id,boxes,broll,hover:typeof output==='string'?null:output.state};
     return {time:t,shot:shot.id};
   };
   window.timeline=D.timing;window.motionReady=true;window.beatAt=beat.beatAt;window.nearestBeat=beat.nearestBeat;

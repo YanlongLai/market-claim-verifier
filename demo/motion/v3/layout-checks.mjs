@@ -2,6 +2,19 @@
 import assert from 'node:assert/strict';
 
 export function assertV3Layout(metrics) {
+  for(const panel of metrics.broll||[]) {
+    assert(panel.left>=64&&panel.right<=1856&&panel.top>=64&&panel.bottom<=880,
+      'B-roll enters edge/subtitle zone');
+    assert(panel.width>=560&&panel.width<=640&&Math.abs(panel.width-panel.height)<.5,
+      'B-roll must remain a framed square panel');
+    assert(panel.naturalWidth===480&&panel.naturalHeight===480,'B-roll PNG is missing or scaled at extraction');
+    assert(!panel.text.trim(),'B-roll panel must contain no text');
+    for(const box of metrics.text) {
+      const width=Math.min(panel.right,box.right)-Math.max(panel.left,box.left),
+        height=Math.min(panel.bottom,box.bottom)-Math.max(panel.top,box.top);
+      assert(width<=0||height<=0,`B-roll covers product text: ${box.text}`);
+    }
+  }
   for(const box of metrics.text) {
     assert(box.fontSize>=56,`Unreadable label: ${box.text}`);
     assert(box.left>=63.5&&box.right<=1856.5&&box.top>=63.5&&box.bottom<=880,
@@ -45,6 +58,12 @@ export async function checkV3Layout(page) {
         left:box.left,right:box.right,top:box.top,bottom:box.bottom,
         imageLeft:image.left,imageRight:image.right,imageTop:image.top,imageBottom:image.bottom};
     });
-    return {text,numbers,sourceCrops};
+    const broll=[...document.querySelectorAll('[data-broll-panel]')].map(el=>{
+      const box=el.getBoundingClientRect(),img=el.querySelector('img');
+      return {left:box.left,right:box.right,top:box.top,bottom:box.bottom,
+        width:box.width,height:box.height,naturalWidth:img.naturalWidth,naturalHeight:img.naturalHeight,
+        text:el.textContent};
+    });
+    return {text,numbers,sourceCrops,broll};
   }));
 }

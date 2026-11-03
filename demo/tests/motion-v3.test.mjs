@@ -10,7 +10,7 @@ function page(search='',editData=()=>{}) {
   const stage={dataset:{},style:{},innerHTML:''};
   const context={document:{getElementById:()=>stage},URLSearchParams,location:{search}};
   context.window=context;context.globalThis=context;vm.createContext(context);
-  for(const file of ['logic.js','v3/hover-source.js','v3/data.js']) vm.runInContext(read('../motion/'+file),context);
+  for(const file of ['logic.js','v3/hover-source.js','v3/data.js','v3/broll-data.js','v3/broll.js']) vm.runInContext(read('../motion/'+file),context);
   editData(context.MOTION_DATA);
   vm.runInContext(read('../motion/v3/motion.js'),context);
   return {window:context,stage};
@@ -67,7 +67,7 @@ test('Hover uses real H assets, site pose clock, thruster and spotlight alphas',
   for(const [t,age] of a.slice(0,-1)) {
     window.seek(t+.001);
     assert(Math.abs(window.frame.hover.siteAge-age)<10);
-    assert.match(stage.innerHTML,/docs\/site\/img\/auditor\/H\//);
+    if(!window.frame.broll)assert.match(stage.innerHTML,/docs\/site\/img\/auditor\/H\//);
   }
   window.seek(a.find(a=>a[1]===3700)[0]+.2);
   assert.equal(window.frame.hover.phase,'compare');
@@ -229,5 +229,94 @@ test('host geometry guard rejects clipping, small numbers and subtitle collision
                       m=>m.sourceCrops[0].bottom=881,
                       m=>m.sourceCrops[0].imageLeft=65]) {
     const bad=structuredClone(good);change(bad);assert.throws(()=>assertV3Layout(bad));
+  }
+});
+
+test('all five B-roll inserts select each native frame identically in forward and reverse order',()=>{
+  const {window,stage}=page(),B=window.BrollLayer,D=window.MOTION_DATA,
+    windows=B.windows(D);
+  assert.equal(windows.length,5);
+  for(const clip of windows) {
+    assert(D.beats.beats_s.includes(clip.start));assert(D.beats.beats_s.includes(clip.end));
+    assert.equal(clip.play_end-clip.start,45/16);
+    assert(clip.end<=D.timing.shots.find(s=>s.id===clip.shot).end);
+    const expected=[];
+    for(let index=0;index<45;index++) {
+      const t=clip.start+(index+.5)/16;
+      window.seek(t);
+      assert.equal(window.frame.broll.frameIndex,index);
+      assert.match(window.frame.broll.src,new RegExp(`frame-${String(index).padStart(4,'0')}\\.png$`));
+      expected.push([stage.innerHTML,JSON.stringify(window.frame)]);
+    }
+    for(let index=44;index>=0;index--) {
+      window.seek(100);window.seek(clip.start+(index+.5)/16);
+      assert.deepEqual([stage.innerHTML,JSON.stringify(window.frame)],expected[index]);
+    }
+    window.seek(clip.start);assert.equal(window.frame.broll.frameIndex,0);
+    for(let index=1;index<45;index++) {
+      window.seek(clip.start+index/16);assert.equal(window.frame.broll.frameIndex,index);
+    }
+    window.seek(clip.play_end);assert.equal(window.frame.broll.frameIndex,44);
+    window.seek(clip.end-1e-8);assert.equal(window.frame.broll.frameIndex,44);
+    window.seek(clip.end);assert.equal(window.frame.broll,null);
+    if(clip.start>0){window.seek(clip.start-1e-8);assert.equal(window.frame.broll,null);}
+  }
+  assert.throws(()=>B.select(D,NaN),/finite/);
+  assert.throws(()=>B.select(D,Infinity),/finite/);
+  assert(!/<video|<canvas/.test(stage.innerHTML));
+  const point=windows.find(c=>c.id==='point-glow-s29');
+  assert(point.end<=D.timing.shots.find(s=>s.id===point.shot).voice_start);
+});
+
+test('B-roll and product remain disjoint above captions at every film frame; product appears before 3 s',()=>{
+  const {window,stage}=page();let inserts=0;
+  for(let i=0;i<Math.ceil(window.timeline.duration*30);i++) {
+    window.seek(i/30);const frame=window.frame,b=frame.broll?.rect;
+    if(i<=90) {
+      assert.match(stage.innerHTML,/416\.2B/);assert.match(stage.innerHTML,/Open saved check/);
+      assert.match(plain(stage.innerHTML),/Market Claim Verifier/);
+    }
+    if(!b)continue;
+    inserts++;
+    assert(b.x>=64&&b.y>=64&&b.x+b.w<=1856&&b.y+b.h<=880);
+    assert(b.w>=560&&b.w<=640&&b.h===b.w);
+    assert(frame.broll.frameIndex>=0&&frame.broll.frameIndex<45);
+    const panel=stage.innerHTML.match(/<div class="broll-panel"[^>]*>(.*?)<\/div>/)[1];
+    assert.equal(plain(panel).trim(),'');assert.match(panel,/<img /);
+    for(const box of frame.boxes) {
+      const overlapX=Math.min(b.x+b.w,box.x+box.w)-Math.max(b.x,box.x),
+        overlapY=Math.min(b.y+b.h,box.y+box.h)-Math.max(b.y,box.y);
+      assert(overlapX<=0||overlapY<=0,box.text);
+    }
+  }
+  assert(inserts>300);
+});
+
+test('B-roll is recomputed from shifted scene/cue times and refuses invalid host windows',()=>{
+  const {window}=page(),B=window.BrollLayer,D=window.MOTION_DATA,
+    first=B.windows(D).find(c=>c.id==='stamp-press-s29');
+  const changed=structuredClone(D),shot=changed.timing.shots.find(s=>s.id===first.shot);
+  changed.cues._events[shot.id].find(e=>e.event==='verdict').t=shot.start+3;
+  const shifted=B.windows(changed).find(c=>c.id===first.id);
+  assert(shifted.start<first.start);
+  shot.end=shot.start+2;
+  assert.throws(()=>B.windows(changed),/cannot fit/);
+  const broken=structuredClone(D);
+  broken.cues._events[first.shot]=[];
+  assert.throws(()=>B.windows(broken),/Missing B-roll cue/);
+  const early=structuredClone(D);
+  early.timing.shots.find(s=>s.id==='v304-hover').voice_start=32.5;
+  assert.throws(()=>B.windows(early),/narration lead/);
+});
+
+test('host B-roll guard rejects text occlusion, subtitle incursions and wrong decoded PNGs',()=>{
+  const metrics={text:[{text:'Product',fontSize:64,left:704,right:1856,top:332,bottom:500,
+    textLeft:704,textRight:1200,textTop:332,textBottom:420}],numbers:[],
+    broll:[{left:64,right:664,top:256,bottom:856,width:600,height:600,naturalWidth:480,naturalHeight:480,text:''}]};
+  assertV3Layout(metrics);
+  for(const change of [m=>m.broll[0].bottom=881,m=>m.broll[0].right=900,
+    m=>m.broll[0].width=1920,m=>m.broll[0].height=560,m=>m.broll[0].naturalWidth=0,
+    m=>m.broll[0].text='Text inside clip']) {
+    const bad=structuredClone(metrics);change(bad);assert.throws(()=>assertV3Layout(bad));
   }
 });
