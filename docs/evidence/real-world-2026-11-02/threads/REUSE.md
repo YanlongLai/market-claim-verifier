@@ -2,6 +2,8 @@
 
 The frozen protocol contains inherited News-only metadata; use the [protocol provenance errata](PROTOCOL_METADATA_ERRATA.md) for the Threads registration commit and actual sample/gold counts. The original protocol bytes are preserved.
 
+Pre-OCR visual review was performed by the authoring agent; the original field calling it human review is corrected in the [media provenance notice](MEDIA_REVIEW_PROVENANCE.md). No independent human reference transcript was supplied.
+
 The [development-check record](development-validation.json) retains every observed development test run, including which terminal output was separately saved. Full-suite and offline-verifier logs are linked from [validation.json](validation.json).
 
 The [protocol](protocol.json), [selection](selection.json), [paraphrases](claims.jsonl), [original gold](gold.jsonl), [freeze](FREEZE.json) and [pre-call commit proof](RUN_START.json) belong to the original phase-2 execution. Do not overwrite the frozen source, labels, inputs or failed attempts. [Source-tier metadata errata](GOLD_METADATA_ERRATA.md) correct L1/L2/L3 classification without changing numeric truth labels. [Scoring notes](SCORING_NOTE.json) distinguish whole-item false support from supported true components inside compound posts; the phase-1 exposure count remains available.

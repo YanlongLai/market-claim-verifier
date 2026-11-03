@@ -29,6 +29,9 @@ def audit(out, local=None, original=None, secrets=False):
     protocol_errata = json.loads((out / "PROTOCOL_METADATA_ERRATA.json").read_text())
     if protocol_errata["original_protocol_sha256"] != sha((out / "protocol.json").read_bytes()):
         raise ValueError("protocol metadata errata not bound to frozen protocol")
+    media_provenance = json.loads((out / "MEDIA_REVIEW_PROVENANCE.json").read_text())
+    if media_provenance["original_media_gold_sha256"] != sha((out / "media-gold.jsonl").read_bytes()):
+        raise ValueError("media provenance correction not bound to frozen review notes")
     with tempfile.TemporaryDirectory(prefix="threads-gold-audit-") as directory:
         target = Path(directory)
         shutil.copytree(out / "sources", target / "sources")
