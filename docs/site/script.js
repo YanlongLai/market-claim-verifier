@@ -7,7 +7,7 @@
 
   const COPY = {
     en: {
-      metaTitle: "Market claim verifier",
+      metaTitle: "Market claim verifier · DappGo",
       metaDescription: "Paste a finance post and check its numbers against SEC filings.",
       a11y: {
         skip: "Skip to content",
@@ -175,11 +175,13 @@
         github: "GitHub repo ↗",
         run: "Run it yourself",
         hackathon: "Built for the Meta Global AI Developer Hackathon 2026.",
+        builtBy: "Built by DappGo",
+        source: "GitHub repo",
         top: "Back to top ↑"
       }
     },
     zh: {
-      metaTitle: "Market claim verifier｜財經說法查核",
+      metaTitle: "財經說法查核 · DappGo",
       metaDescription: "貼上財經貼文，將其中的數字與 SEC 申報文件比對。",
       a11y: {
         skip: "跳到主要內容",
@@ -347,6 +349,8 @@
         github: "GitHub 程式庫 ↗",
         run: "自己執行",
         hackathon: "為 Meta Global AI Developer Hackathon 2026 打造。",
+        builtBy: "由 DappGo 打造",
+        source: "GitHub 程式庫",
         top: "回到頂端 ↑"
       }
     }
@@ -492,6 +496,7 @@
     const LEDGER_STAGGER = 200;
     const FIND_SWEEP = 600;
     const FIND_LOCK = FIND + FIND_SWEEP;
+    const INITIAL = FIND_LOCK + FADE;
     const BLOOM = 180;
     const AMBER_SWEEP = 660;
     const LETTERBOX = 12;
@@ -534,7 +539,9 @@
       approve: "idle", concern: "idle", shrug: "idle" };
     const facing = { idle: "front", inspect: "post", present: "filing", reach: "filing", point: "filing",
       think: "front", stamp: "post", "stamp-down": "post", approve: "front", concern: "front", shrug: "front" };
-    let elapsed = 0;
+    // Begin with the post and all filing rows visible. Absolute seek times and
+    // subsequent loop boundaries stay unchanged, including explicit ?stamp-t=0.
+    let elapsed = INITIAL;
     let frame = null;
     let lastFrame = null;
     let inView = false;
@@ -1229,6 +1236,7 @@
         const lit = offset + 1 === step;
         node.classList.toggle("is-active", lit);
         node.classList.toggle("is-skipped", !canCheck && (offset === 1 || offset === 2));
+        node.querySelector("button").disabled = !canCheck && (offset === 1 || offset === 2);
         if (lit) node.setAttribute("aria-current", "step");
         else node.removeAttribute("aria-current");
       });
@@ -1568,7 +1576,7 @@
       return elapsed / 1000;
     }
 
-    window.__stampScene = Object.freeze({ seek, timing: Object.freeze({ checkable: CHECKABLE / 1000,
+    window.__stampScene = Object.freeze({ seek, timing: Object.freeze({ initial: INITIAL / 1000, checkable: CHECKABLE / 1000,
       uncheckable: UNCHECKABLE / 1000, read: READ / 1000, reach: REACH / 1000, find: FIND / 1000,
       compare: COMPARE / 1000, windup: WINDUP / 1000, strike: STRIKE / 1000, react: REACT / 1000,
       exit: EXIT / 1000, rest: REST / 1000, unknownStrike: UNKNOWN_STRIKE / 1000, unknownExit: UNKNOWN_EXIT / 1000,
@@ -1579,6 +1587,14 @@
       getState: () => ({ seconds: elapsed / 1000, cardId: scene.dataset.cardId, phase: scene.dataset.phase,
         pose: robot.dataset.pose, facing: robot.dataset.facing, step: Number(scene.dataset.step), localTime: currentCard().age / 1000 }) });
     pause.addEventListener("click", () => { userPaused = !userPaused; updatePlayback(); });
+    progress.forEach((node, index) => {
+      node.querySelector("button").addEventListener("click", () => {
+        const { index: cardIndex } = currentCard();
+        const canCheck = checkable(cards[cardIndex]);
+        const beats = canCheck ? [READ, FIND, COMPARE, STRIKE] : [READ, REACH, REACH, UNKNOWN_STRIKE];
+        seek((starts[cardIndex] + beats[index] + FADE) / 1000);
+      });
+    });
     document.addEventListener("visibilitychange", updatePlayback);
     motion.addEventListener("change", () => { updatePlayback(); measure(); });
     phone.addEventListener("change", measure);

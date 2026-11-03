@@ -1,5 +1,5 @@
 // Generated from docs/site/script.js; run demo/motion_v3.py to refresh.
-// Site SHA-256: b7db32513a4352239a6d53ff6a6892778b147adca92ac4f54b040b982a18ffe1
+// Site SHA-256: 7164dcef1aa46f5f81ae5142830aac1022d61998fb00df487c8b2641e459aa0c
 (function(root) {
 "use strict";
 const emptyBox = { x: 0, y: 0, width: 0, height: 0 };
@@ -44,6 +44,7 @@ const CHECKABLE = 8000;
     const LEDGER_STAGGER = 200;
     const FIND_SWEEP = 600;
     const FIND_LOCK = FIND + FIND_SWEEP;
+    const INITIAL = FIND_LOCK + FADE;
     const BLOOM = 180;
     const AMBER_SWEEP = 660;
     const LETTERBOX = 12;
@@ -86,6 +87,8 @@ const CHECKABLE = 8000;
       approve: "idle", concern: "idle", shrug: "idle" };
     const facing = { idle: "front", inspect: "post", present: "filing", reach: "filing", point: "filing",
       think: "front", stamp: "post", "stamp-down": "post", approve: "front", concern: "front", shrug: "front" };
+    // Begin with the post and all filing rows visible. Absolute seek times and
+    // subsequent loop boundaries stay unchanged, including explicit ?stamp-t=0.
     function phaseAt(age, canCheck) {
       if (age < READ) return "enter";
       if (age < REACH) return "read";
