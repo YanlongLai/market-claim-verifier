@@ -7,7 +7,7 @@
   const COPY = {
     en: {
       metaTitle: "SEC fact-checks for finance posts · Market claim verifier",
-      metaDescription: "Paste a finance post. Every number is checked against SEC filings, and you get a corrected draft with citations. Held-out text: 240/266 (90.2%); false support 1/139. Corrected gold.",
+      metaDescription: "Paste a finance post. Every number is checked against SEC filings, and you get a corrected draft with citations. Held-out text: 90.2% (240/266); false support 1/139. Corrected gold.",
       metaImageAlt: "Market claim verifier comparing an example finance post with its saved SEC filing, alongside the auditor robot.",
       a11y: {
         skip: "Skip to content",
@@ -182,7 +182,7 @@
     },
     zh: {
       metaTitle: "財經貼文查核：用 SEC 申報文件驗證數字 · DappGo",
-      metaDescription: "貼上財經貼文，逐一用 SEC 申報資料核對數字，並產出附出處的修正版草稿。 保留文字測試：240/266（90.2%）；誤判為「支持」1/139。使用修正後參考答案。",
+      metaDescription: "貼上財經貼文，逐一用 SEC 申報資料核對數字，並產出附出處的修正版草稿。 保留文字測試：90.2% (240/266)；誤判為「支持」1/139。使用修正後參考答案。",
       metaImageAlt: "財經貼文查核示範：對照貼文與已保存的 SEC 申報文件，旁邊是查核機器人。",
       a11y: {
         skip: "跳到主要內容",
@@ -361,7 +361,7 @@
   COPY.zh.nav.live = "即時查核";
   COPY.en.live = {
     cta: "Try a live check →",
-    title: "Try a live check.", lede: "One post. The filed number. A verdict you can follow.",
+    title: "Try a live check.",
     scope: "US equities · SEC financial facts only. No prices, forecasts, crypto or investment advice.",
     input: "Paste a financial sentence or short post", submit: "Check against SEC", useExample: "Use Apple example",
     password: "Live-check password",
@@ -408,7 +408,7 @@
   };
   COPY.zh.live = {
     cta: "試試即時查核 →",
-    title: "試試即時查核。", lede: "一則貼文、申報數字，以及看得見的查核過程。",
+    title: "試試即時查核。",
     scope: "限美股 SEC 財務事實。不查股價、預測、加密貨幣，也不提供投資建議。",
     input: "貼上一句財務敘述或短貼文", submit: "比對 SEC 資料", useExample: "使用 Apple 範例",
     password: "即時查核密碼",
@@ -452,30 +452,30 @@
     }
   };
 
-  // Approved product copy (DESIGN-final.md, sections 1–3, 2026-11-03).
+  // Product copy, simplified for review round 2 (2026-11-03).
   COPY.en.facts = {
   "title": "Facts",
   "caption": "Eight answers about the verifier",
   "question": "Question",
   "answer": "Answer",
   "question1": "What it does",
-  "answer1": "Extracts each financial claim → Muse Spark picks SEC tools → Python computes the verdict (supported / contradicted / insufficient evidence) → corrected draft for contradicted numbers.",
+  "answer1": "Checks financial claims against SEC filings; returns verdicts and cited corrections.",
   "question2": "Time span",
-  "answer2": "Any period the company has reported in SEC XBRL (generally 2009 onward, earlier when restated) up to its latest 10-Q/10-K. Annual, quarterly and growth comparisons. Live SEC data refreshes every 6 h.",
+  "answer2": "SEC XBRL periods, generally 2009 onward, through the latest filing.",
   "question3": "Which US stocks",
-  "answer3": "US-listed companies filing 10-K/10-Q with US-GAAP XBRL — the SEC ticker map lists ≈8,000 companies. Deeply tested on 23. Not ETFs/funds; IFRS foreign filers limited.",
+  "answer3": "US-GAAP SEC filers: ≈8,000 companies; 23 tested.",
   "question4": "Inputs",
-  "answer4": "Website: pasted text ≤600 characters. CLI: text, screenshots (Muse OCR), PDFs with text, audio/video (Muse Voice Transcribe).",
+  "answer4": "Website: text ≤600 characters. CLI: text, images, PDFs, audio and video.",
   "question5": "Price",
-  "answer5": "≈$0.01 per live check (measured $0.0099); $0.020 per claim on the 266-claim benchmark (Baseten).",
+  "answer5": "$0.01 per live check; $0.02 per claim in the benchmark.",
   "question6": "Speed",
-  "answer6": "Live: 6.3 s (verified production run). Benchmark: median 10 s, p95 21 s per claim.",
+  "answer6": "6 s live; 10 s median in the benchmark.",
   "question7": "Accuracy",
-  "answer7": "90.2% (240/266) on held-out claims; wrongly says \"supported\" 1 in 139 times. Benchmark text, not a guarantee on every post; real-world coverage reported separately.",
+  "answer7": "90.2% (240/266) held out; false support 1/139.",
   "question8": "Fix the article?",
-  "answer8": "Yes, for numbers it disproves: a corrected draft strikes the wrong number, inserts the filed value and cites the filing. Only checked assertions are changed; never labelled \"approved\"."
+  "answer8": "Corrects disproved numbers and cites the filing."
 };
-  COPY.en.metaDescription = "Paste a finance post. Every number is checked against SEC filings, and you get a corrected draft with citations. Held-out text: 240/266 (90.2%); false support 1/139. Corrected gold.";
+  COPY.en.metaDescription = "Paste a finance post. Every number is checked against SEC filings, and you get a corrected draft with citations. Held-out text: 90.2% (240/266); false support 1/139. Corrected gold.";
   COPY.en.workflow = {
   "label": "How it works",
   "paste": "Paste",
@@ -484,8 +484,7 @@
 };
   COPY.en.draft = {
   "title": "Corrected draft",
-  "rule": "A corrected draft changes only disproved numbers, inserts the filed value and cites the filing. Only checked assertions are changed; never labelled \"approved\".",
-  "note": "A draft is shown only when a check returns a correction with a filed value and citation. Review the verdict and SEC evidence for every checked assertion."
+  "rule": "A corrected draft replaces disproved numbers with filed values and cites the filing.",
 };
   COPY.en.evidence = {
   "title": "Evidence",
@@ -495,17 +494,17 @@
   "cost": "Mean / claim",
   "speed": "Median / claim",
   "seconds": "s",
-  "benchmarkNote": "Baseten · Muse Spark Open · corrected gold (two changes); failures count as wrong. False support counts reference contradicted/insufficient claims accepted as supported. Benchmark text, not a guarantee on every post.",
+  "benchmarkNote": "Corrected gold; failures count as wrong.",
   "report": "Read the benchmark and limits",
   "realworld": "Real-world coverage",
-  "coverage": "Coverage ≠ accuracy. Real posts include unchecked assertions and abstentions. Primary truth labels and scope-only expectations are reported separately; post-hoc rechecks are not held out and do not retest OCR/ASR.",
+  "coverage": "Coverage ≠ accuracy; rechecks are post-hoc.",
   "wild": "Read the real-world study",
   "wildNav": "In the wild",
   "links": "Evidence links",
   "index": "Evidence index",
   "tour": "Saved demos and methodology",
   "origin": "DappGo publishes US-market commentary. An internal fact check found posts with the right number but the wrong period, unit or comparison. The model proposes, the program decides.",
-  "earlier": "Earlier section links",
+  "earlier": "Earlier anchors →",
   "stamps": "Stamp walkthrough"
 };
   Object.assign(COPY.en.nav, {"try": "Try", "facts": "Facts", "evidence": "Evidence"});
@@ -518,23 +517,23 @@
   "question": "問題",
   "answer": "答案",
   "question1": "功能",
-  "answer1": "擷取每個財務主張 → Muse Spark 選擇 SEC 工具 → Python 計算判定（支持／矛盾／證據不足）→ 為矛盾的數字產出修正版草稿。",
+  "answer1": "用 SEC 申報核對財務主張，提供判定與附出處的修正。",
   "question2": "可查期間",
-  "answer2": "公司在 SEC XBRL 申報過的期間皆可（大致 2009 年起，較早期間若被後續申報重述也可），直到最新 10-Q/10-K。支援年度、季度與成長比較。即時版 SEC 資料每 6 小時更新。",
+  "answer2": "SEC XBRL 申報期間，大致自 2009 年起至最新申報。",
   "question3": "支援哪些美股",
-  "answer3": "以 US-GAAP XBRL 申報 10-K/10-Q 的美股公司——SEC 代號表約 8,000 家。深入測試 23 家。不含 ETF／基金；IFRS 外國公司支援有限。",
+  "answer3": "US-GAAP 美股申報公司：約 8,000 家，已測試 23 家。",
   "question4": "輸入格式",
-  "answer4": "網站：貼上 600 字內文字。CLI：文字、截圖（Muse OCR）、文字型 PDF、音訊／影片（Muse Voice Transcribe）。",
+  "answer4": "網站：≤600 字元。CLI：文字、圖片、PDF、音訊與影片。",
   "question5": "費用",
-  "answer5": "即時查核每次約 $0.01（實測 $0.0099）；266 題基準平均每題 $0.020（Baseten）。",
+  "answer5": "即時查核每次 $0.01；基準測試每題 $0.02。",
   "question6": "速度",
-  "answer6": "即時：6.3 秒（正式環境實測）。基準：每題中位數 10 秒、p95 21 秒。",
+  "answer6": "即時 6 秒；基準測試中位數 10 秒。",
   "question7": "準確率",
-  "answer7": "保留測試 90.2%（240/266）；誤判為「支持」僅 1/139。 為基準測試文字，不保證每篇貼文；真實貼文的涵蓋率另列。",
+  "answer7": "保留測試 90.2% (240/266)；誤判為支持 1/139。",
   "question8": "能修正文章嗎？",
-  "answer8": "可以，限被證明錯誤的數字：修正版草稿刪除錯誤數字、填入申報值並附出處。只修改核對過的主張，不標示為「已核准」。"
+  "answer8": "修正被證明錯誤的數字，並附申報出處。"
 };
-  COPY.zh.metaDescription = "貼上財經貼文，逐一用 SEC 申報資料核對數字，並產出附出處的修正版草稿。 保留文字測試：240/266（90.2%）；誤判為「支持」1/139。使用修正後參考答案。";
+  COPY.zh.metaDescription = "貼上財經貼文，逐一用 SEC 申報資料核對數字，並產出附出處的修正版草稿。 保留文字測試：90.2% (240/266)；誤判為「支持」1/139。使用修正後參考答案。";
   COPY.zh.workflow = {
   "label": "查核流程",
   "paste": "貼上貼文",
@@ -543,8 +542,7 @@
 };
   COPY.zh.draft = {
   "title": "修正版草稿",
-  "rule": "修正版草稿只改被證明錯誤的數字、填入申報值並附出處。只修改核對過的主張，不標示為「已核准」。",
-  "note": "只有查核回傳附申報值與出處的修正時，才會顯示草稿。請逐一檢視每項已核對主張的判定與 SEC 證據。"
+  "rule": "修正版草稿只將被證明錯誤的數字換成申報值，並附出處。",
 };
   COPY.zh.evidence = {
   "title": "證據",
@@ -554,17 +552,17 @@
   "cost": "每題平均費用",
   "speed": "每題中位時間",
   "seconds": "秒",
-  "benchmarkNote": "Baseten · Muse Spark Open · 使用修正後參考答案（兩項變更），失敗計為錯誤。誤判為支持的分母是參考答案為矛盾或證據不足的主張。此為基準文字測試，不保證每篇貼文。",
+  "benchmarkNote": "採用修正後參考答案；失敗計為錯誤。",
   "report": "閱讀基準測試與限制",
   "realworld": "真實貼文涵蓋率",
-  "coverage": "涵蓋率 ≠ 準確率。真實貼文含未核對主張與棄權結果；主要事實標籤與僅依範圍預期的結果分開報告。事後重查不等於保留測試，也沒有重測 OCR／ASR。",
+  "coverage": "涵蓋率 ≠ 準確率；事後重查未重測 OCR／ASR。",
   "wild": "閱讀真實貼文研究",
   "wildNav": "真實貼文",
   "links": "證據連結",
   "index": "證據索引",
   "tour": "已儲存展示與方法",
   "origin": "DappGo 發布美股評論。內部事實查核發現，數字正確也可能配錯期間、單位或比較方式。模型提出，程式判定。",
-  "earlier": "原章節連結",
+  "earlier": "Earlier anchors →",
   "stamps": "印章查核導覽"
 };
   Object.assign(COPY.zh.nav, {"try": "試用", "facts": "事實", "evidence": "證據"});

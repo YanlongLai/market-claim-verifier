@@ -10,6 +10,44 @@ Day 5: [delivery plan](../DAY5_PLAN.md) · [provider capabilities and prices](..
 
 [Open-weight LoRA attempt (Nov 3 UTC)](lora-2026-11-03/REPORT.md): Fireworks NVFP4 LoRA initialization confirmed; tokenizer access blocked training. $0 estimated spend, no trained adapter or extraction improvement claim. [Feasibility and rates](lora-2026-11-03/FEASIBILITY.md).
 
+## Facts in detail
+
+The short Facts table on the homepage, README and judge guide uses the
+same rounded observations. These qualifications are part of those facts.
+
+- **What it does:** Muse Spark extracts claims and chooses SEC tools.
+  Python validates periods, units, evidence IDs and calculations before
+  returning supported, contradicted or insufficient evidence.
+- **Time span:** SEC XBRL periods generally start in 2009. Earlier periods
+  can appear in later restatements. Annual, quarterly and growth checks
+  extend through the company's latest 10-Q/10-K. Live SEC data uses a
+  6-hour cache; saved examples remain frozen.
+- **Companies:** The SEC ticker map lists approximately 8,000 companies.
+  The supported scope is US-listed 10-K/10-Q filers using US-GAAP XBRL;
+  23 companies were deeply tested. ETFs and funds are outside this scope;
+  IFRS foreign filers have limited support. The ticker count does not
+  establish tested coverage for every company.
+- **Inputs:** The website accepts pasted text, up to 600 characters.
+  The CLI also accepts screenshots through Muse OCR, PDFs with text, and
+  audio/video through Muse Voice Transcribe. Browser uploads are planned.
+- **Price and speed:** The [production check](live-prod-2026-11-03/REPORT.md)
+  recorded $0.00988 and 6.34 seconds, rounded to $0.01 and 6 seconds.
+  The [held-out benchmark](eval-v2-2026-10-27/REPORT.md#metrics) recorded
+  $0.019880 mean cost per claim, rounded to $0.02; median latency was
+  10 seconds and p95 was 21 seconds. These are observations, not service
+  guarantees. The live budget is $3/day.
+- **Accuracy:** Baseten Muse Spark Open scored 90.2% (240/266) on held-out
+  text with corrected gold (two changes); failures count as wrong.
+  False support was 1/139 reference contradicted/insufficient claims.
+  [Registered-gold scores](eval-v2-2026-10-27/REPORT-registered-gold.md)
+  remain available, and the manifest records a dirty working tree.
+  Extraction can miss assertions. Coverage is distinct from accuracy;
+  real-world rechecks are post-hoc and do not retest OCR/ASR.
+- **Corrected drafts:** Only disproved numbers with a filed replacement
+  value and citation are changed. Other assertions remain unchanged;
+  the draft is never labelled "approved". Review each verdict and filing.
+  Saved traces show only the output actually recorded.
+
 ## 3-minute path
 
 1. **Try a check.** Apple’s “$416.2B in one quarter” uses the full-year figure; fiscal Q4 2025 was $102.5B, making the claim about 4× the quarter. Open the [saved check](posts-2026-10-28/demo-thread-baseten/report.json) or [readable post report](posts-2026-10-28/demo-thread-baseten/report.html), then the [demo](https://hackathon.dappgo.com/). The [three-outcome walkthrough](judge-walkthrough/REPORT.md) is an offline program example, not a live model run.

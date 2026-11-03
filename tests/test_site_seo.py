@@ -54,7 +54,7 @@ def test_static_chinese_page_cannot_drift_from_template_or_copy():
                             cwd=ROOT, capture_output=True, text=True)
     assert result.returncode == 0, result.stdout + result.stderr
     source = (ROOT / "docs/zh/index.html").read_text()
-    for text in ("貼上財經貼文，逐一用 SEC 申報資料核對數字，並產出附出處的修正版草稿。", "即時查核", "保留測試 90.2%（240/266）", "1/139"):
+    for text in ("貼上財經貼文，逐一用 SEC 申報資料核對數字，並產出附出處的修正版草稿。", "即時查核", "保留測試 90.2% (240/266)", "1/139"):
         assert text in source
     assert 'src="/script.js?v=' in source
     assert 'href="/explorer/index.zh.html"' in source
