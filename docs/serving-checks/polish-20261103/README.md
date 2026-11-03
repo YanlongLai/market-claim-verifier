@@ -22,7 +22,7 @@ Each after-run records both panels populated on the first painted scene frame. T
 The [final browser log](browser-final.log) and [structured results](browser-final.json) cover `/` and `/explorer/`, EN/中文, 1440×900 and 375×812: **zero CSP violations, console errors, failed requests, or horizontal overflow**. Additional checks exercise the filing dialog, all four step buttons, pause/resume, seek times 0 / 12.94 / 25.5 / 33.5 / 49.5, reduced motion, dark mode, language titles, and explorer search (1/357 then 357/357). First-frame and eight-second screenshots, full pages, and supplemental dark/no-JS images are retained at:
 
 ```text
-/private/tmp/claude-501/-Users-yan-git/8d31d2e6-e330-47b1-860e-dd1fecbc04fe/scratchpad/hk-polish-shots/final-reviewed/
+<local-scratch>/hk-polish-shots/final-reviewed/
 ```
 
 The CSP inventory is based on source inspection and the actual requests in `browser-final.json`. External hyperlink destinations are not subresource origins and were not fetched.
