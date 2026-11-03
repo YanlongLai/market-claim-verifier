@@ -109,12 +109,14 @@ def prepare(out, declaration):
 
 
 def retain_cache(cache, out):
-    archive = out / "runtime-cache.tar.gz"
+    # Pages rejects files over 25 MiB under docs/, so the archive lives outside it.
+    archive = ROOT / "evidence-archive" / out.relative_to(ROOT / "docs/evidence") / "runtime-cache.tar.gz"
+    archive.parent.mkdir(parents=True, exist_ok=True)
     with tarfile.open(archive, "x:gz") as tar:
         for p in sorted(cache.rglob("*")):
             if p.is_file() and not p.is_symlink():
                 tar.add(p, arcname=str(p.relative_to(cache)), recursive=False)
-    write(out / "runtime-cache.json", {"archive": archive.name, "sha256": digest(archive),
+    write(out / "runtime-cache.json", {"archive": str(archive.relative_to(ROOT)), "sha256": digest(archive),
                                        "files": {str(p.relative_to(cache)): digest(p) for p in sorted(cache.rglob("*")) if p.is_file()}})
 
 
