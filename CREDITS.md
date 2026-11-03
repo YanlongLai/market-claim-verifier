@@ -28,6 +28,12 @@ Offline production of demo media used Breeze-TTS-2 narration, ACE-Step music and
 
 Website paper textures, stationery, the fictional Banana News Flash masthead, finance illustrations and Hover spot illustrations were generated with built-in Codex `image_gen`. Their [exact reusable prompts](docs/prompts/site/polish.md), [export hashes and sizes](docs/site/img/polish/manifest.json), and [processing script](docs/site/img/polish/process-assets.py) record this decorative artwork separately from saved claims and SEC evidence. The footer reuses the existing Hover palm-out pose; personas and activity counts are labelled as examples.
 
+The v010 demo source adds five Owner-selected, locally generated Hover B-roll trials using Wan 2.2 TI2V-5B
+at 480×480 (49 frames at 16 fps). The generation receipts record Apache-2.0 weights and the exact revision;
+[reusable prompts, parameters and reference/source hashes](demo/prompts/broll/README.md) preserve their provenance.
+They are decorative animation, separate from Meta-only claim verification. The [v4 shot placement](demo/SHOTLIST-v4.md)
+is proposed for Owner review; no v010 film render or publication is claimed.
+
 Third-party packages remain under their own licenses. Exact Python dependencies are locked in [uv.lock](uv.lock) and [demo/uv.lock](demo/uv.lock); rendering/encoding tooling is documented in the [media process](docs/PROCESS-media.md#tools-and-licences).
 
 The small [multimodal test fixtures](tests/fixtures/multimodal/manifest.json) are self-made Pillow images and synthesized release readings encoded with ffmpeg. macOS `say` failed under the managed sandbox; the recorded fallback is [eSpeak NG](https://github.com/espeak-ng/espeak-ng), version 1.53.0, an offline formant synthesizer distributed under GPLv3 or later. No eSpeak program/voice package is bundled. [Generation provenance](tests/fixtures/multimodal/generation.json) records its exact source revision and the failed `say` attempts. The narration excerpts Apple's credited SEC release, with one disclosed number perturbation; it is not executive audio or a voice clone. This fixture-production tooling is separate from Meta-only verifier inference.

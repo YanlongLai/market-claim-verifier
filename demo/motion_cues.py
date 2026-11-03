@@ -120,10 +120,18 @@ def cue_document(scenes: list[dict], timing: dict, local: dict, analysis: dict,
         events = []
         for spec in scene.get('cue_events', []):
             cue = phrase_cue(absolute, spec['cue'])
+            # A picture may wait for reading time while the retained speech clock stays intact.
+            minimum = spec.get('min_scene_s', 0)
+            if type(minimum) not in (int, float) or not math.isfinite(minimum) or minimum < 0:
+                raise BuildError('Minimum scene reading time must be finite and nonnegative.')
             event = dict(event=spec['event'], cue=spec['cue'], cue_start=cue['start'],
                          cue_end=cue['end'], alignment=cue['alignment'],
                          t=snap_event(cue['start'], beats, voice_start, shot['end'],
                                       cue_end=cue['end'] if spec.get('within_cue') else None))
+            if minimum:
+                event['t'] = max(event['t'], next_beat(beats, shot['start'] + minimum))
+                if event['t'] >= shot['end'] or (spec.get('within_cue') and event['t'] >= cue['end']):
+                    raise BuildError('Minimum scene reading time crosses the shot or spoken cue.')
             if spec.get('review_at_start'):
                 event['review_at_start'] = True
             events.append(event)

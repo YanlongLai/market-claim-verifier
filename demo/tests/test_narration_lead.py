@@ -18,7 +18,7 @@ from motion_timing import narration_start, next_beat, presentation_timing, video
 import motion_v3 as v3
 from pipeline import BuildError, read_json, receipt, write_json
 
-STORY = yaml.safe_load((v3.ROOT/v3.STORY).read_text())
+STORY = yaml.safe_load((v3.ROOT/'demo/tests/fixtures/storyboard-v007.yaml').read_text())
 _, BEATS = video_beats(read_json(v3.ROOT/STORY['music']['beats']))
 
 

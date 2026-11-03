@@ -51,13 +51,25 @@ class ReplayMeta:
         # Legacy extraction output replay under the current prompt tests the
         # deterministic downstream checks, not what a new model would extract.
         from claimcheck.post import EXTRACTION_PROMPT
+        from claimcheck.agent import SYSTEM_INSTRUCTIONS
         extraction = str(expected['request'].get('instructions', '')).startswith('You extract financial claims')
-        assert payload.get("instructions") == (EXTRACTION_PROMPT if extraction else expected["request"].get("instructions"))
+        old_instructions = expected["request"].get("instructions")
+        # Frozen responses replay the deterministic downstream verifier under
+        # the current prompt, not fresh OCR/ASR or model behavior.
+        wanted_instructions = EXTRACTION_PROMPT if extraction else SYSTEM_INSTRUCTIONS if str(old_instructions).startswith('You verify financial claims') else old_instructions
+        assert payload.get("instructions") == wanted_instructions
         if "image_sha256" in json.dumps(expected["request"]):
             assert payload["input"][0]["content"][1]["image_url"].startswith("data:image/png;base64,")
         elif "input" in payload:
-            assert payload["input"] == expected["request"]["input"]
+            expected_input = copy.deepcopy(expected['request']['input'])
+            _allow_added_calculation_metadata(payload['input'], expected_input, 'output')
+            assert payload["input"] == expected_input
         else:
+            expected_messages = copy.deepcopy(expected['request']['messages'])
+            if expected_messages and str(expected_messages[0].get('content', '')).startswith('You verify financial claims'):
+                assert payload['messages'][0]['content'].startswith(SYSTEM_INSTRUCTIONS)
+                expected_messages[0]['content'] = payload['messages'][0]['content']
+            _allow_added_calculation_metadata(payload['messages'], expected_messages, 'content')
             if self.allow_extraction_context_update and payload['messages'][0]['content'].startswith(EXTRACTION_PROMPT):
                 # Archived long extraction put a stated period into a synthetic
                 # source prefix. Current requests keep it outside quoted text.
@@ -65,12 +77,29 @@ class ReplayMeta:
                 old = expected['request']['messages'][1]['content']
                 assert old == actual or old.endswith('\n\n' + actual)
             else:
-                assert payload["messages"] == expected["request"]["messages"]
+                assert payload["messages"] == expected_messages
         if expected.get('status') == 'error':
             exc = RuntimeError(expected['raw_response']['message'])
             exc.status_code = expected['retry']['http_status']
             raise exc
         return expected.get("raw_response", expected.get("response"))
+
+
+def _allow_added_calculation_metadata(actual, expected, field):
+    """Archived computations lack the new formula/input fields; numbers must match."""
+    def trim(a, b):
+        if isinstance(a, dict) and isinstance(b, dict):
+            return {k: trim(v, b.get(k)) for k, v in a.items() if k in b or k not in {'formula', 'inputs'}}
+        if isinstance(a, list) and isinstance(b, list):
+            return [trim(x, y) for x, y in zip(a, b)] if len(a) == len(b) else a
+        return a
+    for a, b in zip(actual, expected):
+        if a.get('role') != 'tool' and a.get('type') != 'function_call_output':
+            continue
+        if isinstance(a.get(field), str) and isinstance(b.get(field), str):
+            av, bv = json.loads(a[field]), json.loads(b[field])
+            assert trim(av, bv) == bv
+            b[field] = a[field]
 
 
 @pytest.mark.parametrize("run,file", [("text", "post.txt"), ("screenshot", "example-post.png")])

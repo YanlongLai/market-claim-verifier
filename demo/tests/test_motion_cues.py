@@ -92,6 +92,19 @@ def test_cue_document_links_phrase_events_to_absolute_sentence_times():
     assert doc['_events']['s'][0]['cue_start'] == 10.6
 
 
+def test_reading_floor_moves_picture_cue_without_moving_sentence_or_spoken_cue():
+    scenes = [dict(id='s', cue_events=[dict(event='opinion', cue='Opinions', min_scene_s=5)])]
+    timing = dict(shots=[dict(id='s', start=10., end=20.)])
+    local = {'s': ([dict(text='Opinions.', start=4., end=7.)], 'silence')}
+    doc = cue_document(scenes, timing, local, {'s': {}}, [10., 13.9, 14.95, 15.5, 20.])
+    assert doc['s'] == [dict(text='Opinions.', start=14., end=17.)]
+    assert doc['_events']['s'][0]['cue_start'] == 14.
+    assert doc['_events']['s'][0]['t'] == 15.5
+    scenes[0]['cue_events'][0]['min_scene_s'] = 10
+    with pytest.raises(BuildError, match='reading time'):
+        cue_document(scenes, timing, local, {'s': {}}, [10., 13.9, 15.5, 20.])
+
+
 @pytest.mark.skipif(not media.FFMPEG.exists(), reason='Homebrew ffmpeg required')
 def test_real_ffmpeg_detects_two_speech_runs_in_a_synthetic_audio_fixture(tmp_path):
     rate = 16000

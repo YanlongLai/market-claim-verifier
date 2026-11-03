@@ -17,6 +17,8 @@ import wave
 
 import yaml
 
+from agent_trace import compile_trace
+from realworld import MAX_VOICE_S, OUTPUT as REALWORLD, SCENE as REALWORLD_SCENE, load_snapshot, resolve_story
 from motion_cues import cue_document, detect_silences, map_sentences
 from motion_data import product_data
 from motion_timing import narration_start, next_beat, presentation_timing, video_beats
@@ -238,7 +240,7 @@ def hover_anchors(shot: dict, events: dict, beats: list[float]) -> list[tuple[fl
     return anchors
 
 
-def keyframes(timing: dict, anchors: list) -> list[dict]:
+def keyframes(timing: dict, anchors: list, *, trace=None, trace_start=None, realworld=None) -> list[dict]:
     frames = []
     poses = dict((age, t) for t, age in anchors)
     hover = next(s for s in timing['shots'] if s['id']=='v304-hover')
@@ -253,16 +255,43 @@ def keyframes(timing: dict, anchors: list) -> list[dict]:
                  [shot['start']+(shot['end']-shot['start'])*f for f in (.08, .5, .92)])
         frames.extend(dict(shot=shot['id'], t=round(t, 6), position=label)
                       for t, label in zip(times, ('opening', 'middle', 'end')))
+    if trace is not None:
+        span = hover['voice_start'] - 2.5 - trace_start
+        if span <= 0:
+            raise BuildError('Apple trace ribbon must fit inside the existing Hover narration lead.')
+        frames.extend(dict(shot=hover['id'],
+                           t=round(trace_start+(s['start_s']+s['latency_s']/2)/trace['latency_s']*span, 6),
+                           position='recorded-trace-step-'+str(s['index'])) for s in trace['steps'])
+        frames.append(dict(shot=hover['id'], t=round(hover['voice_start']-1.25, 6),
+                           position='recorded-trace-receipt'))
+    if timing.get('revision') == 'v010':
+        extract = next(s for s in timing['shots'] if s['id'] == 'v303-extract')
+        # The first two cards have fixed reading holds; the opinion cue may land later.
+        frames.extend(dict(shot=extract['id'], t=round(extract['start']+offset, 6), position=label)
+                      for offset, label in [(1.25, 'extract-amazon'), (3.75, 'extract-nvidia')])
+    if realworld is not None and realworld['status'] == 'ready':
+        shot = next(s for s in timing['shots'] if s['id'] == REALWORLD_SCENE)
+        pages = len(realworld['runs']) + len(realworld['examples'])
+        if (shot['end']-shot['start'])/pages < 2.5:
+            raise BuildError('Real-world pages need at least 2.5 s each inside the approved reserve.')
+        frames.extend(dict(shot=shot['id'], t=round(shot['start']+(shot['end']-shot['start'])*(i+.5)/pages, 6),
+                           position='realworld-page-'+str(i+1)) for i in range(pages))
     return frames
 
 
 def compile_data(repo: Path, story: dict, *, voices=None, analyze=None) -> dict:
+    story = resolve_story(repo, story, require_ready=bool(voices))
     grid = read_json(repo / story['music']['beats'])
     offset, beats = video_beats(grid)
     if story['site_url'] != 'https://hackathon.dappgo.com/' or story['music']['music_offset_s'] != offset:
         raise BuildError('v007 requires the new CTA and the first measured music beat.')
     scenes = story['scenes']
     if voices:
+        if len(voices) != len(scenes):
+            raise BuildError('Every scene requires exactly one measured narration record.')
+        for scene, voice in zip(scenes, voices):
+            if scene['id'] == REALWORLD_SCENE and voice['voice_s'] > MAX_VOICE_S:
+                raise BuildError('Real-world narration must measure ≤ 10 s with the locked voice; never speed it up.')
         timing = presentation_timing(scenes, {s['id']:v['voice_s'] for s,v in zip(scenes, voices)}, beats)
         timing['voice_keys'] = {s['id']:v['key'] for s,v in zip(scenes, voices)}
     else:
@@ -273,12 +302,17 @@ def compile_data(repo: Path, story: dict, *, voices=None, analyze=None) -> dict:
                              for i,s in enumerate(scenes)])
     if not 170 <= timing['duration'] <= min(180, story['max_total_s']):
         raise BuildError('v007 must fit 170–180 s. Review the script/holds on the host; never accelerate speech.')
-    timing.update(version=2, revision='v007', music_offset_s=offset,
+    revision = story.get('revision', 'v007')
+    timing.update(version=2, revision=revision, music_offset_s=offset,
                   voice_rule='first detected beat >= scene start + narration_lead_s (default 0)',
                   cut_rule='first detected beat >= max(absolute target end, narration end + 0.3 s)')
     local, analysis = {}, {}
     for i, (scene, shot) in enumerate(zip(scenes, timing['shots'])):
         shot['voice_start'] = narration_start(scene, shot['start'], beats)
+        if scene.get('evidence_pending'):
+            local[scene['id']] = ([], 'evidence pending; no narration')
+            analysis[scene['id']] = dict(source='silent pending preview', voice_start=shot['voice_start'])
+            continue
         duration = voices[i]['voice_s'] if voices else shot['end']-shot['voice_start']-.6
         silences = analyze(scene, voices[i]) if voices and analyze else []
         local[scene['id']] = map_sentences(scene['narration'], duration, silences)
@@ -294,19 +328,43 @@ def compile_data(repo: Path, story: dict, *, voices=None, analyze=None) -> dict:
         raise BuildError('QR URL differs from the v007 storyboard.')
     evidence = evidence_data(repo)
     evidence['provenance'][STORY] = file_hash(repo/STORY)
-    return dict(revision='v007', scenes=scenes, timing=timing, cues=cues,
+    trace = compile_trace(repo)
+    evidence['provenance'].update(trace['provenance'])
+    realworld = load_snapshot(repo) if any(s['id'] == REALWORLD_SCENE for s in scenes) else None
+    if realworld is not None:
+        evidence['provenance'][REALWORLD] = file_hash(repo/REALWORLD)
+        evidence['provenance'].update(realworld['provenance'])
+        reserved = next(s for s in timing['shots'] if s['id'] == REALWORLD_SCENE)
+        target = next(s['target_s'] for s in scenes if s['id'] == REALWORLD_SCENE)
+        if not math.isclose(reserved['end'] - reserved['start'], target, abs_tol=1e-6):
+            raise BuildError('Real-world shot must fit its approved 11.3081 s reserve. Review host timing.')
+    trace_start = None
+    if revision == 'v010':
+        broll_source = 'demo/prompts/broll/manifest.json'
+        broll = read_json(repo/broll_source)
+        trace_start = next_beat(beats, hover['start'] + broll['retained_frames']/broll['fps'])
+        evidence['provenance'][broll_source] = file_hash(repo/broll_source)
+    return dict(revision=revision, scenes=scenes, timing=timing, cues=cues,
                 beats=dict(beats_s=beats, music_offset_s=offset, source_sha256=file_hash(repo/story['music']['beats'])),
-                product=evidence, qr=qr, hover_anchors=anchors, keyframes=keyframes(timing, anchors))
+                product=evidence, agent_trace=trace, realworld=realworld,
+                qr=qr, hover_anchors=anchors,
+                keyframes=keyframes(timing, anchors, trace=trace if trace_start is not None else None,
+                                    trace_start=trace_start, realworld=realworld))
 
 
 def artifacts(repo: Path, story: dict, data: dict) -> dict[str, str]:
-    narration = '\n\n'.join(s['narration'] for s in story['scenes'])+'\n'
+    narration = '\n\n'.join(s['narration'] for s in data['scenes'] if not s.get('evidence_pending'))+'\n'
     return {f'{OUT}/data.js': '// Generated by demo/motion_v3.py; no network or inference.\nwindow.MOTION_DATA = '+
                               json_text(data).rstrip().replace('</', '<\\/')+';\n',
             f'{OUT}/timing.json': json_text(data['timing']),
             f'{OUT}/keyframes.json': json_text(data['keyframes']),
             f'{OUT}/hover-source.js': hover_source(repo),
-            'demo/NARRATION-v007.txt': narration}
+            f'demo/NARRATION-{data["revision"]}.txt': narration}
+
+
+def preview_artifact(data: dict) -> str:
+    return ('// Offline target preview; generated by demo/motion_v3.py --preview-only.\n'
+            'window.MOTION_PREVIEW = ' + json_text(data).rstrip().replace('</', '<\\/') + ';\n')
 
 
 def prepare(builder, *, require_voice=False):
@@ -332,11 +390,14 @@ def prepare(builder, *, require_voice=False):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--check', action='store_true')
+    parser.add_argument('--preview-only', action='store_true',
+                        help='Update/check the committed preview without touching host data/timing/cues.')
     args = parser.parse_args()
     story = yaml.safe_load((ROOT/STORY).read_text())
     data = compile_data(ROOT, story)
     stale = []
-    for relative, content in artifacts(ROOT, story, data).items():
+    outputs = ({f'{OUT}/preview-data.js': preview_artifact(data)} if args.preview_only else artifacts(ROOT, story, data))
+    for relative, content in outputs.items():
         destination = ROOT/relative
         if args.check:
             if not destination.is_file() or destination.read_text() != content:
@@ -346,7 +407,7 @@ def main():
             destination.write_text(content)
     if stale:
         raise BuildError('Stale v007 preview artifacts: '+', '.join(stale))
-    print(f'v007 {"checked" if args.check else "prepared"}: {len(data["scenes"])} scenes, '
+    print(f'{data["revision"]} {"checked" if args.check else "prepared"}: {len(data["scenes"])} scenes, '
           f'{data["timing"]["duration"]:.4f} s; target preview only, no voice/browser/media generated.')
 
 

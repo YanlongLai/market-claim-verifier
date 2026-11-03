@@ -12,13 +12,18 @@ from .release_text import Document, SCALE, date_labels, number, parse_html, peri
 
 RELEASE_KINDS = ("guidance", "non_gaap", "reported_in_release")
 METRIC_PATTERNS = {
-    "adjusted_eps": r"(?:non[ -]gaap|adjusted)\s+(?:(?:basic\s+and\s+)?diluted\s+)?(?:eps|(?:net\s+income|earnings)\s+per\s+(?:diluted\s+)?share)",
+    "adjusted_eps": r"(?:non[ -]gaap|adjusted)\s+(?:(?:basic\s+and\s+)?diluted\s+)?(?:eps|(?:net\s+(?:income|earnings)|earnings)\s+per\s+(?:diluted\s+)?share|(?:net\s+)?earnings(?=.{0,55}\bper\s+share))",
+    "investment_income": r"\b(?<!net )(?:(?:total)\s+)?investment\s+income\b",
+    "us_comparable_sales_growth": r"\b(?:U\.?S\.?|United States)\s+comparable[ -](?:store|coffeehouse)(?:\s+sales)?(?:\s+(?:sales|growth))?\b",
+    "aws_revenue": r"\b(?:AWS|Amazon Web Services)(?:\s+(?:net\s+sales|revenues?))?\b",
+    "google_cloud_revenue": r"\bGoogle Cloud(?:\s+(?:revenues?|net\s+sales))?\b",
+    "data_center_revenue": r"\bData Center(?:\s+(?:revenues?|net\s+sales))?\b",
     "adjusted_operating_income": r"(?:non[ -]gaap|adjusted)\s+(?:operating\s+(?:income|profit)(?:\s*\(loss\))?|income\s+from\s+operations)",
     "adjusted_free_cash_flow": r"adjusted\s+free\s+cash\s+flow",
     "free_cash_flow": r"(?<!adjusted )\bfree\s+cash\s+flow\b",
     "revenue": r"\b(?:(?:total|gaap)\s+)?(?:revenue[s]?|(?:total\s+)?net\s+sales)\b",
     "operating_income": r"\boperating\s+(?:income|profit)\b",
-    "net_income": r"\bnet\s+income\b",
+    "net_income": r"\b(?:net\s+income|income attributable to (?:Shell plc )?shareholders)\b",
     "eps_diluted": r"\b(?:diluted\s+(?:eps|(?:net\s+income|earnings)\s+per\s+share)|(?:earnings|net\s+income)\s+per\s+diluted\s+share|eps)\b",
 }
 METRICS = tuple(METRIC_PATTERNS)
@@ -49,6 +54,10 @@ def _short_years(text: str) -> str:
 def claim_periods(text: str) -> set[str]:
     periods = set(re.findall(r"\b(?:FY20\d{2}(?:Q[1-4])?|20\d{2}Q[1-4])\b", text.upper()))
     periods.update(period_labels(text))
+    if not periods and not re.search(r"\bQ[1-4]|quarter", text, re.I):
+        # Calendar annual claims are accepted only with issuer calendar proof
+        # in release_checks; an unqualified year is never fiscal by assumption.
+        periods.update("FY" + y for y in re.findall(r"\b(20\d{2})\b", text))
     if re.search(r"\bcalendar\b", text, re.I):
         periods = {p.removeprefix("FY") if "Q" in p else p for p in periods}
     return periods
@@ -69,11 +78,21 @@ def claim_number(text: str, metric: str) -> dict[str, Any] | None:
 
 def _scope(doc: Document) -> tuple[str | None, str | None]:
     report = None
-    for span in doc.spans[:60]:
+    for span in doc.spans[:80]:
         text = _short_years(span["text"])
+        # Some SEC HTML exports flatten the release into one long paragraph.
+        # A reporting title before any comparative tables establishes scope;
+        # labels buried later in the paragraph cannot override that title.
+        title = re.match(r"^.{0,90}?\breports?\b.{0,60}?\b(?:first|second|third|fourth)[ -]+quarter.{0,30}?\b20\d{2}\b", text, re.I)
+        if title and len(quarters := {p for p in period_labels(title[0]) if "Q" in p}) == 1:
+            report = next(iter(quarters))
+            break
         labels = period_labels(text)
-        if len(labels) == 1 and not _OUTLOOK.search(text):
-            report = next(iter(labels))
+        if re.search(r"\bdividend\b", text, re.I):
+            continue
+        quarters = {p for p in labels if "Q" in p}
+        if len(quarters) == 1 and (not _OUTLOOK.search(text) or re.search(r"reports?|reported|results", text, re.I)):
+            report = next(iter(quarters))
             break
         if re.search(r"quarter\s+ended", text, re.I) and (dates := date_labels(text)):
             q = re.search(r"(first|second|third|fourth)[ -]+quarter\s+ended", text, re.I)
@@ -82,7 +101,7 @@ def _scope(doc: Document) -> tuple[str | None, str | None]:
                 break
     end = None
     for span in doc.spans[:80]:
-        if re.search(r"quarter.{0,40}ended", span["text"], re.I):
+        if re.search(r"(?:quarter.{0,40}|three(?:\s+and\s+nine)?[ -]+months?(?:\s+periods?)?\s+)ended", span["text"], re.I):
             # Filing/press-release date can precede period end in the same
             # sentence; take the date after 'ended'.
             tail = re.split(r"\bended\b", span["text"], maxsplit=1, flags=re.I)[-1]
@@ -164,15 +183,33 @@ def extract_candidates(doc: Document, metric: str, kind: str, period: str, *, ca
     by_table: dict[int, list[dict[str, Any]]] = {}
     table_prefix: dict[int, str] = {}
     outlook_heading: dict[str, Any] | None = None
+    reporting_heading: dict[str, Any] | None = None
+    segment_heading: dict[int, dict[str, Any]] = {}
     for i, span in enumerate(doc.spans):
         text = span["text"]
         labels = period_labels(_short_years(text), context=report)
+        if span["kind"] == "text" and len(text) < 200 and len(labels) == 1 and not _OUTLOOK.search(text):
+            reporting_heading = span
         if span["kind"] == "text" and labels and _OUTLOOK.search(text) and len(text) < 350 and "$" not in text:
             outlook_heading = span
         if span["kind"] == "text" and (re.search(r"financial (?:statements|highlights)|consolidated|about (?:nvidia|adobe|amd|intel|amazon|salesforce)", text, re.I)
                                            or "forward-looking" in text.lower()):
             outlook_heading = None
         if span["kind"] != "table_row":
+            if metric == "us_comparable_sales_growth" and kind == "reported_in_release":
+                m = metric_match(text, metric)
+                target = period_labels((reporting_heading or {}).get("text", ""))
+                if m and _period_matches(period, target, calendar):
+                    tail = text[m.end():]
+                    parsed = number(tail)
+                    if parsed and parsed["unit"] == "percent" and parsed["number_start"] < 40:
+                        start = span["start"] + m.start()
+                        end = span["start"] + m.end() + parsed["number_end"]
+                        found.append({"start": start, "end": end, "quote": doc.text[start:end],
+                                      "highlight_offsets": [[span["start"] + m.end() + parsed["number_start"], end]],
+                                      "period": period, "period_type": "quarter", "label": m[0],
+                                      "context_spans": [reporting_heading], **parsed})
+                continue
             if kind != "guidance" or not metric_match(text, metric) or not _OUTLOOK.search(text):
                 continue
             for sentence in re.finditer(r".+?(?:[.!?](?=\s+[A-Z]|$)|$)", text):
@@ -199,6 +236,10 @@ def extract_candidates(doc: Document, metric: str, kind: str, period: str, *, ca
                 parsed = number(tail, per_share=metric in {"adjusted_eps", "eps_diluted"})
                 if parsed is None:
                     continue
+                from .numbers import infer_comparator
+                bound = infer_comparator(parsed["literal"], tail)
+                if bound not in {"eq", "approx"}:
+                    parsed["bound"] = bound
                 # Reject a second metric before the first financial number.
                 if any(metric_match(tail[:parsed["number_start"]], other) for other in METRICS if other != metric):
                     continue
@@ -219,7 +260,20 @@ def extract_candidates(doc: Document, metric: str, kind: str, period: str, *, ca
         cells = [c for c in span.get("cells", []) if c["text"]]
         if not cells:
             continue
-        label = cells[0]["text"]
+        label_cells = [c for c in cells if metric_match(c["text"], metric)]
+        segment_context = None
+        if metric in {"aws_revenue", "google_cloud_revenue", "data_center_revenue"}:
+            if len(cells) == 1 and metric_match(cells[0]["text"], metric):
+                segment_heading[span["table"]] = span
+            elif len(cells) == 1 and re.search(r"north america|international|consolidated|google services|gaming|client", cells[0]["text"], re.I):
+                segment_heading.pop(span["table"], None)
+            if not label_cells and span["table"] in segment_heading and re.fullmatch(r"(?:net sales|revenues?)", cells[0]["text"], re.I):
+                label_cells = [cells[0]]
+                segment_context = segment_heading[span["table"]]
+        if len(label_cells) != 1:
+            continue
+        label_cell = label_cells[0]
+        label = label_cell["text"]
         if len(label) > 140 or not metric_match(label, metric):
             continue
         # Entire-company totals only. A familiar word in a segment, margin,
@@ -230,6 +284,10 @@ def extract_candidates(doc: Document, metric: str, kind: str, period: str, *, ca
             continue
         if metric == "free_cash_flow" and re.search(r"adjusted", label, re.I):
             continue
+        if metric == "investment_income" and not re.fullmatch(r"total investment income(?:\s*\(\d+\))?", label, re.I):
+            continue
+        if metric in {"aws_revenue", "google_cloud_revenue", "data_center_revenue"} and re.search(r"income|profit|margin|change|growth", label, re.I):
+            continue
         if metric == "revenue" and not re.fullmatch(r"(?:(?:gaap|total)\s+)?(?:revenues?|(?:total\s+)?net\s+sales)(?:\s*\(\d+\))?", label, re.I):
             continue
         if metric == "revenue" and re.fullmatch(r"net sales", label, re.I):
@@ -238,7 +296,7 @@ def extract_candidates(doc: Document, metric: str, kind: str, period: str, *, ca
                 continue
         if metric in {"adjusted_eps", "eps_diluted"} and not re.search(r"\bdiluted\b", label, re.I):
             continue
-        for cell in cells[1:]:
+        for cell in [c for c in cells if c is not label_cell]:
             if not _numeric_cell(cell["text"]):
                 continue
             col_context, headers = _column_context(previous, cell)
@@ -258,7 +316,7 @@ def extract_candidates(doc: Document, metric: str, kind: str, period: str, *, ca
                 continue
             nearby = " ".join(s["text"] for s in doc.spans[max(0, i - 7):i] if s["table"] in {None, span["table"]})
             table_text = " ".join(s["text"] for s in previous[:15]) + " " + nearby + " " + table_prefix[span["table"]]
-            scale_match = re.search(r"\bin\s+(thousands|millions|billions)\b", table_text, re.I)
+            scale_match = re.search(r"(?:\bin\s+|\$\s*)(thousands?|millions?|billions?)\b", table_text, re.I)
             per_share = metric in {"adjusted_eps", "eps_diluted"}
             if not per_share and not scale_match and not re.search(r"million|billion|thousand", cell["text"], re.I):
                 continue
@@ -266,14 +324,14 @@ def extract_candidates(doc: Document, metric: str, kind: str, period: str, *, ca
             parsed = number(cell["text"], scale=scale, per_share=per_share)
             if parsed is None:
                 continue
-            start, end = cells[0]["start"], cell["end"]
+            start, end = min(label_cell["start"], cell["start"]), max(label_cell["end"], cell["end"])
             if end - start > 450:
                 continue
             found.append({"start": start, "end": end, "quote": doc.text[start:end],
                           "highlight_offsets": [[cell["start"] + parsed["number_start"], cell["start"] + parsed["number_end"]]],
                           "period": period, "period_type": period_type, "label": label,
                           "period_end": (date_labels(col_context) or [report_end])[-1],
-                          "context_spans": headers + ([outlook_heading] if kind == "guidance" and outlook_heading else []), **parsed})
+                          "context_spans": headers + ([segment_context] if segment_context else []) + ([outlook_heading] if kind == "guidance" and outlook_heading else []), **parsed})
     return found
 
 
@@ -289,7 +347,8 @@ class ReleaseService:
         from .policy import policy_for
         self.policy = policy_for(edgar)
         self.edgar = edgar
-        self.client = client or ReleaseClient(edgar.cache_dir, user_agent=edgar.user_agent, timeout=edgar.timeout)
+        self.client = client or ReleaseClient(edgar.cache_dir, fetcher=getattr(edgar, "fetcher", None),
+                                              user_agent=edgar.user_agent, timeout=edgar.timeout)
         self.candidates: dict[str, dict[str, Any]] = {}
 
     def find(self, ticker: str, metric: str, period: str, claim_kind: str) -> dict[str, Any]:
@@ -327,10 +386,19 @@ class ReleaseService:
                     candidates.append(value)
             # All same-period revisions must be considered; never silently
             # pick one value just because it was returned first.
-        return {"ticker": company["ticker"], "metric": metric, "period": period,
+        superseded = []
+        if claim_kind == "guidance" and candidates:
+            latest = max(c["filed"] for c in candidates)
+            superseded = [c for c in candidates if c["filed"] < latest]
+            candidates = [c for c in candidates if c["filed"] == latest]
+        result = {"ticker": company["ticker"], "metric": metric, "period": period,
                 "claim_kind": claim_kind, "candidates": candidates[:24], "inspected": inspected,
                 "failures": failures, "search_truncated": len(filings) > 32,
                 "error": None if candidates else "insufficient_evidence"}
+        if superseded:
+            result["superseded_guidance"] = superseded
+            result["guidance_selection"] = "latest eligible SEC filing date for the same issuer/metric/target period; older guidance retained as superseded"
+        return result
 
     def quote(self, candidate_id: str, start: int, end: int) -> dict[str, Any]:
         stored = self.candidates.get(candidate_id)

@@ -2,13 +2,19 @@
 
 [English](README.md) · [繁體中文](README.zh-TW.md)
 
-**Check financial claims against SEC filings, with the evidence behind each result.**
+**Check financial claims against SEC filings with Meta’s open-weight Muse Spark Open, and inspect the evidence behind each verdict.**
 
-A financial statement can use the right number with the wrong quarter, unit or accounting basis. Market Claim Verifier extracts claims from US equity research and company materials, retrieves filing evidence, and checks the numbers in Python. Each result preserves the original quotation, source, calculation and any unresolved questions.
+Baseten · Muse Spark Open verifier, original held-out text split, corrected reference labels:
 
-**[Explore a recorded review](https://hackathon.dappgo.com/explorer/#G0119)** · [Product demo](https://hackathon.dappgo.com/) · [Run a live check](#run-it) · [Judge guide](JUDGES.md)
+| Correct | False support | Mean cost / claim |
+| --- | --- | --- |
+| **[240/266 = 90.2%](docs/evidence/eval-v2-2026-10-27/REPORT.md#metrics)** | **[1/139](docs/evidence/eval-v2-2026-10-27/REPORT.md#per-gold-class-precision-and-recall)** non-supported claims accepted | **[≈ $0.02](docs/evidence/eval-v2-2026-10-27/REPORT.md#metrics)** ($0.019880 recorded) |
 
-The website presents saved results and requires no API key. Live checks run through the local CLI; a browser upload workflow is still planned.
+**Apple: “$416.2B in one quarter” → the full year.** Fiscal Q4 2025 revenue was **$102.5B**; the claim is about **4×** the quarter. [Saved check and calculation](docs/evidence/posts-2026-10-28/demo-thread-baseten/report.json) · [Readable report](docs/evidence/posts-2026-10-28/demo-thread-baseten/report.html).
+
+**[Live demo](https://hackathon.dappgo.com/)** · **[Judge guide](JUDGES.md)** · [Video — TODO (Claude)](JUDGES.md#demo-video-todo) · [Run it locally](#run-it)
+
+The website replays saved checks without a key; live verification uses the local CLI. Browser uploads are planned. [Study and product limits](JUDGES.md#limits).
 
 <p align="center">
   <a href="https://hackathon.dappgo.com/"><img src="docs/figures/review-process-dark-3x-v3.gif" width="1012" alt="Recorded review showing a financial claim, SEC evidence and the program verdict"></a>
@@ -18,9 +24,37 @@ The website presents saved results and requires no API key. Live checks run thro
 
 ## Try it
 
-Start with [Amazon's Q3 2023 revenue claim](https://hackathon.dappgo.com/explorer/#G0119). Compare the sentence with its SEC evidence, then inspect the recorded model and program decisions. The [three-outcome walkthrough](docs/evidence/judge-walkthrough/REPORT.md) shows what happens to a matching number, an altered number and a wrong-period claim.
+Start with [Amazon's Q3 2023 revenue claim](https://hackathon.dappgo.com/explorer/#G0119). Compare the sentence with its SEC evidence, then inspect the recorded model and program decisions. The [three-outcome walkthrough](docs/evidence/judge-walkthrough/REPORT.md) shows a matching number, an altered number and a wrong-period claim through offline program checks.
 
-For a real-media example, follow the [Microsoft earnings-call review](docs/evidence/real-av-context-live/REPORT.md): the original recording, extracted claims, separately supplied event period, and subsequent filing checks are all retained. The result includes both supported claims and a claim that still lacks enough context.
+For real company materials, open the [Microsoft earnings-call review](docs/evidence/real-av-context-live/REPORT.md) or [Tesla multi-document review](docs/evidence/stock-context-posthoc-2026-10-30/REPORT.md). Each preserves the original quotation, evidence, calculations and unresolved questions.
+
+[In the wild](https://hackathon.dappgo.com/wild/): real posts checked against SEC filings, with every abstention and failure kept. Pending link: [Live check — TODO (Claude)](JUDGES.md#live-check-todo).
+
+<a id="key-results"></a>
+<a id="text-verification-266-held-out-claims"></a>
+
+## Why Meta open weights
+
+On the same [held-out claims](docs/evidence/eval-v2-2026-10-27/REPORT.md#metrics), **Muse Spark Open with tools and program checks scored 90.2% on Baseten, versus 82.0% for hosted Muse Spark 1.3**, at similar observed cost: about **$0.020 vs $0.026 per claim**.
+
+| Platform / model | Verifier correct | No-tool baseline correct | False support¹ | Mean verifier cost | Evidence |
+| --- | ---: | ---: | ---: | ---: | --- |
+| Baseten · Muse Spark Open | 240/266 · **90.2%** | 56/266 · 21.1% | 1/139 | $0.019880 | [Recorded results](docs/evidence/eval-v2-2026-10-27/REPORT.md) |
+| Fireworks · Muse Spark Open | 237/266 · **89.1%** | 51/266 · 19.2% | 1/139 | $0.019973 | [Recorded results](docs/evidence/eval-v2-2026-10-27/REPORT.md) |
+| Meta · Muse Spark 1.3 | 218/266 · **82.0%** | 111/266 · 41.7% | 4/139 | $0.025880 | [Recorded results](docs/evidence/eval-v2-2026-10-27/REPORT.md) |
+
+¹ False support means accepting a claim whose reference label is contradicted or insufficient. This table uses only the [266 held-out claims](docs/evidence/eval-v2-2026-10-27/REPORT.md#metrics); failures count as wrong.
+
+**Portability:** the same agent loop runs on Baseten and Fireworks with the same tools, evidence IDs, budget recording and Python checks. The recorded open-weight results above demonstrate both host routes. [Provider adapters](src/claimcheck/providers.py) · [Exact model IDs and run manifest](docs/evidence/eval-v2-2026-10-27/manifest.json).
+
+Meta also supplies audio transcription through **`muse-voice-transcribe-1.0`**, plus Muse Spark OCR for images and sampled video frames, before text verification on the selected host. [Media adapter](src/claimcheck/ingest_media.py) · [Recorded audio/video review](docs/evidence/real-av-context-live/REPORT.md).
+
+## Agentic: Muse chooses the next check; Python checks the answer
+
+- **Muse decides what to investigate.** It selects tools and arguments: `lookup_fact`, `list_periods` to resolve available periods, `compute_change` for comparisons, `history_rank` for record claims, or `find_earnings_release` then `quote_release` for eligible guidance and non-GAAP evidence. It cites the returned evidence in a draft verdict. [Tool definitions](src/claimcheck/tools.py) · [Release tools](src/claimcheck/release_tools.py).
+- **Python executes and validates.** It performs calculations, checks periods, units, precision, direction and evidence IDs, validates release bytes and quote offsets, and determines the final verdict. Budget reservations happen before model calls. [Program checks](src/claimcheck/checks.py) · [Release checks](src/claimcheck/release_checks.py) · [Budget ledger](src/claimcheck/budget.py).
+
+In a [real Alphabet trace](docs/evidence/2026-10-27/20261027T222758Z-8959a100.json), Muse first chooses `lookup_fact`, then `history_rank` to investigate “for the first time”; Python checks the cited evidence before returning the verdict. [Sequence diagram](docs/diagrams/real-run-sequence.mmd).
 
 ## What it does
 
@@ -37,72 +71,13 @@ For a real-media example, follow the [Microsoft earnings-call review](docs/evide
 
 Uploaded documents supply the claims to examine. They do not automatically become trusted financial evidence.
 
-## Key results
-
-### Text verification: 266 held-out claims
-
-The original evaluation contains 357 claims across 23 companies: 91 development claims and **266 held-out claims**. The table below uses only the held-out split. The no-tool baseline and verifier use the same model within each platform; the verifier adds retrieval and program checks.
-
-| Platform / model | Verifier correct | No-tool baseline correct | False support¹ |
-| --- | ---: | ---: | ---: |
-| Meta · Muse Spark 1.3 | 218/266 · **82.0%** | 111/266 · 41.7% | 4/139 |
-| Baseten · Muse Spark Open | 240/266 · **90.2%** | 56/266 · 21.1% | 1/139 |
-| Fireworks · Muse Spark Open | 237/266 · **89.1%** | 51/266 · 19.2% | 1/139 |
-
-¹ Claims labeled contradicted or insufficient in the reference set but accepted as supported by the verifier; denominator includes all 139 such test cases.
-
-Failures and incomplete responses count as wrong. These are recorded results from the original evaluation, using corrected reference labels; two label corrections and later post-hoc runs are disclosed in the [full report](docs/evidence/eval-v2-2026-10-27/REPORT.md). The corpus combines generated financial cases and paraphrased source sentences. These scores do not establish real-world multimedia accuracy.
-
-### Real company materials: what improved, what remains unresolved
-
-In a genuine Microsoft earnings-call excerpt, the audio says “this quarter” while the slide says “FY27 Q1.” The initial workflow could read the numbers but could not safely bind the period. A separate, reviewed event-context record made the period explicit without changing the original quotation.
-
-In the subsequent six-claim check, **Baseten and Fireworks each supported five claims**: revenue, net income, diluted EPS, operating income and revenue growth. Both kept the unchanged, undated adjusted-EPS control as insufficient evidence. Meta returned one supported, two insufficient and three HTTP 500 failures.
-
-For example, the filing value **$92.279B** supports the slide's **$92.3B revenue** at its displayed precision. That conclusion is conditional on the supplied fiscal Q1 2027 context. It does not certify the whole recording. [Results, evidence and failures](docs/evidence/real-av-context-live/REPORT.md) · [Original WAV and MP4](eval/real-av-v1/README.md).
-
-Three real Tesla slides also have a [multi-document review](docs/evidence/stock-context-posthoc-2026-10-30/REPORT.md). Its unresolved chart led to an explicit coverage warning: reading chart labels does not verify bar heights or series values. [Chart diagnosis](docs/evidence/chart-diagnosis-2026-10-30/REPORT.md).
-
-<details>
-<summary>Controlled comparison across nine input formats</summary>
-
-<!-- multimodal-v1:start -->
-
-Six issuers, 24 underlying assertions, nine encodings—not 216 independent facts. Cells show correct / 24; missing, incomplete and wrong outcomes remain in the denominator. All providers use the same files and frozen Meta OCR/ASR text.
-
-| Format | Meta | Baseten | Fireworks |
-| --- | ---: | ---: | ---: |
-| TXT | 22/24 | 24/24 | 24/24 |
-| Markdown | 22/24 | 24/24 | 24/24 |
-| PDF | 23/24 | 24/24 | 24/24 |
-| PNG | 24/24 | 24/24 | 24/24 |
-| JPEG | 22/24 | 24/24 | 24/24 |
-| WebP | 23/24 | 24/24 | 24/24 |
-| WAV | 18/24 | 23/24 | 24/24 |
-| MP3 | 14/24 | 24/24 | 24/24 |
-| MP4 | 19/24 | 24/24 | 24/24 |
-
-One controlled run on clean inputs, with synthetic audio and video. Separate native-image probes completed 6/6 PNG, JPEG and WebP inputs per provider; response completion is not financial accuracy. Native audio/video endpoints were not tested in this comparison.
-
-[Methods, failures and limits](docs/evidence/fair-multimodal-v1/REPORT.md) · [Reusable inputs, outputs and offline replay](docs/evidence/fair-multimodal-v1/REUSE.md).
-
-<!-- multimodal-v1:end -->
-
-</details>
-
 ## Support and boundaries
 
-All three text-verifier routes accept the same repository formats. Images and media use **Meta OCR/ASR**, including when Baseten or Fireworks performs the text verification.
+Try text, Markdown, images, native-text PDFs, audio or video through the CLI. All verifier routes share these input adapters; images and media use Meta OCR/ASR. [Supported formats](docs/PROVIDERS.md#current-repository-input-contract) · [Input and source boundaries](JUDGES.md#input-and-source-boundaries) · [Real company materials and controlled studies](JUDGES.md#media-studies).
 
-| Input | Processing | Main boundary |
-| --- | --- | --- |
-| Text / Markdown | Local text → chosen verifier | Claim extraction is bounded. |
-| PNG / JPEG / WebP | Meta OCR → chosen verifier | Chart geometry and image authenticity are not verified. |
-| Text PDF | Local page extraction → chosen verifier | No scanned-PDF OCR or cross-page context. |
-| Audio | Meta ASR → chosen verifier | Speaker labels do not establish identity; timestamps cover turns. |
-| Video | Audio transcription + three OCR frames → chosen verifier | Unsampled visuals can be missed; audio and frames are checked separately. |
-
-Scanned PDFs and general webpage URLs are not integrated. The local job queue is not a provider's discounted Batch API. [Detailed format limits and provider capabilities](docs/PROVIDERS.md).
+<!-- multimodal-v1:start -->
+[Controlled-format results and limits](JUDGES.md#controlled-format-study) · [Reuse frozen inputs and outputs](docs/evidence/fair-multimodal-v1/REUSE.md).
+<!-- multimodal-v1:end -->
 
 ## Run it
 
@@ -146,27 +121,41 @@ For a single image, audio file, video or text PDF, use `ingest`. [Commands and l
 
 ## Cost, speed and provider choice
 
-A document's cost includes preprocessing, claim extraction and every verification turn. The historical 357-claim text study averaged approximately **$0.020 per claim** for Baseten/Fireworks and **$0.026** for Meta. Those are observed workflow costs, not per-document prices or service guarantees. [Recorded costs and latency](docs/evidence/eval-v2-2026-10-27/REPORT.md).
+A document's cost includes preprocessing, claim extraction and every verification turn. The headline is the [recorded held-out text-verifier mean](docs/evidence/eval-v2-2026-10-27/REPORT.md#metrics). [Costs, latency and dated provider rates](docs/PROVIDERS.md) · [Cost accounting and Batch limits](JUDGES.md#cost-accounting) · [Latest recorded follow-up spend](docs/evidence/real-av-context-live/REPORT.md#spend-usd-estimatedreserved).
 
-Published rate snapshot, checked 2026-10-30; USD per million tokens:
+## Real-world test
 
-| Platform / model | Input | Cached input | Output |
-| --- | ---: | ---: | ---: |
-| Meta · Muse Spark 1.3 Standard | $1.25 | $0.15 | $4.25 |
-| Baseten · Muse Spark Open | $1.25 | $0.15 | $4.25 |
-| Fireworks · Muse Spark Open | $1.25 | $0.15 | $4.25 |
+The original [DappGo News study](docs/evidence/real-world-2026-11-02/REPORT.md) recorded the pre-fix agent and post CLI on **80 paraphrased stories**: 60 numerical financial statements and 20 support controls, across Baseten, Fireworks and Meta API. Gold and runtime hashes were locally committed before model execution; original third-party headlines and summaries remain only in ignored cache.
 
-Meta ASR was listed at $0.18/hour; image OCR uses tokens. Ledger estimates include failed attempts and reservations and are not vendor invoices. [Official rate sources and Batch caveats](docs/PROVIDERS.md#price-comparison) · [Latest recorded follow-up spend](docs/evidence/real-av-context-live/REPORT.md#spend-usd-estimatedreserved).
+Only **four** items have independently resolved SEC truth labels. **23 US financial items need review**, and **53 scope-only labels measure expected abstention**, including Taiwan claims and non-financial controls. Coverage, latency, costs, failures and source/type breakdowns are reported for every item; scope agreement is not broad factual accuracy. [Gold review list](docs/evidence/real-world-2026-11-02/GOLD_REVIEW.md) · [Next Owner-provided Reels and YouTube inputs](docs/evidence/real-world-2026-11-02/NEXT_SOURCES.md).
+
+All six provider/path combinations abstained on the four SEC-confirmed positive cases. The study also exposes an issuer-binding failure: five combinations compare Taiwan's Hon Precision with **Honeywell (`HON`)** and return a contradiction. This is an invalid correction. [Retained traces and next work](docs/evidence/real-world-2026-11-02/findings.md).
+
+A post-freeze input review found one translated company-name error and one ambiguous forecast issuer. The [errata](docs/evidence/real-world-2026-11-02/PARAPHRASE_REVIEW.md) retain the original runs, provide the known correction, and mark corrected-input behavior untested; these cases have no factual truth score.
+
+The 480 item/path evaluations used **$5.3361 in ledger estimates/reservations**: Baseten $1.5528, Fireworks $1.5872 and Meta $2.1961, each below its $10 task cap. Failed attempts and unknown-usage reservations remain included; these are not provider invoices.
+
+Phase 2 adds **30 of 107 own Threads posts, all 48 supplied third-party paraphrases and two real own-post cards**, through three providers and actual image ingest. The external collection came from logged-in, Owner-authorised **Top** search results; reliable engagement counts were unavailable. Five third-party items have independent SEC truth labels, 36 items have scope expectations, and 37 need review. Own-post and media factual accuracy are not estimable from this gold. The [combined source tables](docs/evidence/real-world-2026-11-02/REPORT.md#threads) retain every result and cost. Displayed auto-translations contain confirmed unit/period discrepancies; original-language translation causation remains unverified. All six image routes failed before verification: four incomplete claim extractions, one extraction timeout and one incomplete OCR response. Every route and cost is retained under a shared $8 cap per billed provider. [Frozen phase-2 protocol](docs/evidence/real-world-2026-11-02/threads/protocol.json) · [Owner-provided audio/video plan](docs/evidence/real-world-2026-11-02/NEXT_SOURCES.md).
+
+On the five truth-labelled Threads items, each provider scored **2/5 direct** (40%; Wilson 95% CI 11.8–76.9%) and **3/5 post** (60%; 23.1–88.2%). Failures count wrong; these selected, correlated items do not establish broad accuracy. Phase-2 ledger estimates/reservations total **$10.537241**: Baseten $3.311842, Fireworks $3.316011 and Meta $3.909388, including all media calls and failures. Both phases total **$15.873363**.
+
+The separately recorded [POST-HOC FIX RECHECK](docs/evidence/real-world-2026-11-03-fixcheck/REPORT.md) uses these same seen inputs after repairs. **The inputs and failures were seen before the fixes; this is not held-out evidence.** Original text and gold are unchanged; publication dates are now supplied as separate context. Both the initial recheck and separately registered adaptive routing repair retain before/after counts, failures and costs for all three providers on both paths. News and later Threads sets share a $5-per-provider ledger, including failed calls and unknown usage.
+
+The adaptive repeat supports **4/4 original SEC-confirmed positives on five paths** and **3/4 on Fireworks post**, where UnitedHealth timed out and counts wrong. Every original path scored 0/4. Across both retained attempts, ledger estimates/reservations are **$2.1730 Baseten, $2.6954 Fireworks and $2.7280 Meta**, each below $5. This four-positive development panel does not establish broad accuracy or a factual false-supported rate.
+
+The repairs add exact SEC issuer binding, filing-date-backed relative periods, component-derived net/operating/gross margins and YoY growth, narrowly scoped segment revenue, 6-K releases, investment income, US comparable sales, annual minimum guidance and explicit unit-error notes on contradictions. A missing date, ambiguous period or unsupported issuer/metric still yields insufficient evidence. The [frozen recheck protocol](docs/evidence/real-world-2026-11-03-fixcheck/sets/news/protocol.json) discloses changed date context and concurrency. Threads phase 2 ran on the pre-fix agent; a post-fix Threads recheck can use a separately frozen set under the same remaining caps. No OCR/ASR was retested.
+
+For dated text, `verify` and `post` accept `--published-at 2026-10-29T22:13:49Z`; this supplies the source date separately and limits eligible filing dates. Add `--issuer-country` and `--issuer-exchange` when known. These are constraints to check against SEC identity evidence, not substitutes for a matching company name.
 
 ## Limitations
 
-The current scope is US equities and supported SEC/issuer evidence. Tagging errors, restatements, fiscal calendars and missing non-GAAP evidence can change the result. Context supplied for an event is recorded as conditional metadata, not authenticated evidence.
-
-Media extraction and claim recall remain incomplete. The real audio/video study uses one scene; the controlled format study uses synthetic media. Neither supports a claim of general financial-media accuracy. Reports are intended for reviewing statements, not issuing investment ratings.
+See [JUDGES.md — Limits](JUDGES.md#limits) for study design, source scope, media recall, conditional event context and cost accounting.
 
 ## Reproduce or extend
 
 Run `sh scripts/verify.sh` to check fixtures, Python/Node tests, figures, data rebuilds and links. The complete verifier also needs Node 22+. Dependency installation may use the network; verification then runs offline without model credentials. [Verification guide](AGENTS.md) · [Test records and reusable inputs/outputs](docs/TEST_RECORDS.md).
+
+[Claim-extraction LoRA attempt (Nov 3 UTC)](docs/evidence/lora-2026-11-03/REPORT.md): Fireworks Muse Spark Open NVFP4 LoRA initialization succeeded, but matching tokenizer access blocked training. Estimated spend $0; no trained adapter, extraction scores, or provider change. [Support, rates, and feasibility evidence](docs/evidence/lora-2026-11-03/FEASIBILITY.md).
 
 For new financial sources, start with the [extension guide](docs/EXTENDING.md), [evidence contract](docs/EVIDENCE_RECORDS.md) and [source policy](docs/DATA_SOURCES.md). The [delivery plan](docs/DAY5_PLAN.md) separates implemented features from the upload UI, wider real-data evaluation and cross-modal work still to come.
 
@@ -190,7 +179,7 @@ The material below preserves the detailed study history and reproducible figures
 
 ## L4 earnings-release evidence
 
-Guidance and non-GAAP claims can use the issuer's SEC **8-K Item 2.02 Ex 99.1** earnings release (plus HTML Ex 99.2). Muse selects a candidate quote; Python rechecks the cached bytes, offsets, metric, period and numbers. L4 is furnished, unaudited and medium strength at most. Consolidated reported totals are also checked against XBRL; L1/L2 wins a conflict with `release_vs_filing_mismatch`. Missing outlooks and verbal ranges such as “low to mid single digits” return insufficient evidence.
+Guidance and non-GAAP claims can use the issuer's SEC **8-K Item 2.02** or **6-K** earnings release, through SEC-indexed HTML Ex 99.1/99.2. Muse selects a candidate quote; Python rechecks the cached bytes, offsets, metric, period and numbers. A failed XBRL lookup can also trigger the same verified release route in program checks. L4 is furnished, unaudited and medium strength at most. Consolidated reported totals are also checked against XBRL; L1/L2 wins a conflict with `release_vs_filing_mismatch`. Missing outlooks and verbal ranges such as “low to mid single digits” return insufficient evidence.
 
 The [source and comparison rules](docs/DATA_SOURCES.md#l4-parsing-and-decision-rules) and [independent 32-claim gold builder](eval/l4/GOLD_REVIEW.md) describe the supported scope. Rebuild gold with `.venv/bin/python eval/l4/build_gold.py`. After committing the gold and source fixtures, run `.venv/bin/python eval/l4/run_agent.py`; it uses Baseten's Meta Muse Spark Open, offline SEC snapshots, and one $5 budget for the entire run. Results belong in `docs/evidence/eval-l4-2026-10-29/`.
 
@@ -204,62 +193,13 @@ The [registered L4 run](docs/evidence/eval-l4-2026-10-29/ANALYSIS.md) scored **3
 
 ## Real results
 
-**357 claims about 23 companies.** 260 are generated from SEC data across 10 trap families. 54 are model paraphrases of those. 43 are real sentences from news, aggregator and investor-relations pages, paraphrased.
-
-- **Gold answers** come from an [independent script](eval/build_gold.py) and were **committed before any v2 run** ([`5d90b3b`](https://github.com/YanlongLai/market-claim-verifier/commit/5d90b3b)).
-- **The run:** six systems, one code version, 2,142 verdicts ([report](docs/evidence/eval-v2-2026-10-27/REPORT.md)).
-
-| System | Accuracy (95% CI) | Says "supported" when false | Mean cost / claim | Mean latency |
-| --- | --- | --- | --- | --- |
-| **Agent · Muse Spark Open on Baseten** | **323/357 = 90.5%** (87.0–93.1) | 1 / 186 | $0.020 | 12 s |
-| **Agent · Muse Spark Open on Fireworks** | **323/357 = 90.5%** (87.0–93.1) | 1 / 186 | $0.020 | 67 s |
-| **Agent · Muse Spark 1.3 on Meta Model API** | **297/357 = 83.2%** (79.0–86.7) | 4 / 186 | $0.026 | 39 s |
-| Single-shot · Muse Spark 1.3 (no tools) | 158/357 = 44.3% (39.2–49.4) | 9 / 186 | $0.019 | 20 s |
-| Single-shot · Muse Spark Open, Baseten | 74/357 = 20.7% (16.8–25.2) | 1 / 186 | $0.012 | 9 s |
-| Single-shot · Muse Spark Open, Fireworks | 71/357 = 19.9% (16.1–24.3) | 0 / 186 | $0.012 | 51 s |
+The headline above uses the original held-out split. The figure below includes development claims as well; [historical totals, corrections, failures and post-hoc reruns](JUDGES.md#historical-results-and-failure-review) remain separately labeled in the judge guide.
 
 <!-- figure:eval-summary:start -->
 ![Evaluation cost, latency, accuracy, and false-supported rate](docs/figures/eval-summary.svg)
 
 *Evaluation: n = 357 all claims, run 2026-10-28.*
 <!-- figure:eval-summary:end -->
-
-- **The complete agent path outperformed single-shot on this recorded set.** On the same claims, agent accuracy beats single-shot by:
-  - Meta API: **+38 points** (95% paired bootstrap CI +33 to +44).
-  - Baseten: **+70** (+65 to +74).
-  - Fireworks: **+70** (+65 to +76).
-
-  McNemar p < 0.0001 for all three.
-- **Real-world sentences:** the agent was right on 43/43 (Baseten, Fireworks) and 39/43 (Meta API). Single-shot was right on 6/43, because it mostly answers "insufficient evidence" for 2025–2026 numbers it cannot know.
-- **Without tools, the hosted model guesses more.** Single-shot Muse Spark 1.3 said "supported" for 9 false claims. The open-weights model refused instead (0–1 false "supported").
-- **Open weights are production-viable.** Muse Spark Open with the agent beat the hosted Muse Spark 1.3 agent by 7 points (paired CI +4 to +10, p = 0.0001). On Baseten it was also the fastest and cheapest.
-- **Where the agent still fails:**
-  - "First time / record" claims: 16–18 of 31 right.
-  - Year-over-year claims on the Meta API: 29/48, against 45/48 on Baseten and Fireworks.
-  - Fiscal-vs-calendar traps: 23–24 of 30.
-
-  Per-family tables are in the [report](docs/evidence/eval-v2-2026-10-27/REPORT.md).
-- **The remaining false "supported" verdicts trace to two causes.**
-  - **A lookup-tool bug, now fixed.** Apple's quarter ending 2023-07-01 was treated as calendar Q3 instead of Q2.
-  - **"Q2 2024" for a non-calendar issuer.** The Meta API agent checked only the fiscal reading. Both readings disagree here, so the gold answer is "insufficient evidence". Now fixed: the program fetches the missing reading itself (see the post-hoc rerun below).
-- **Post-hoc rerun after both fixes (not pre-registered).** Same 357 claims, same corrected gold, the three agents only ([report](docs/evidence/eval-v2-2026-10-28-r2-posthoc/REPORT.md)). The fixes were made after seeing v2 failures, so treat this as a regression check, not a new held-out score.
-
-  | Agent | v2 | Rerun | Says "supported" when false |
-  | --- | --- | --- | --- |
-  | Muse Spark Open on Fireworks | 90.5% | **329/357 = 92.2%** | 1 → **0** / 186 |
-  | Muse Spark Open on Baseten | 90.5% | **325/357 = 91.0%** | 1 → **0** / 186 |
-  | Muse Spark 1.3 on Meta Model API | 83.2% | **305/357 = 85.4%** | 4 → **0** / 186 |
-
-  - All ambiguous-quarter claims the agents had called "supported" (G0235, G0240, G0249) are now "insufficient evidence".
-  - The accuracy gains are within run-to-run noise (paired McNemar p = 0.15–0.79); the drop to zero false "supported" is the point.
-  - The Meta API had 3 provider errors (two 400 tool-call errors, one 503), counted as wrong. Cost: $7–9 per provider.
-- **Two gold answers were wrong, and the run exposed them.** The gold script had mistaken Amazon for a June year-end issuer: it read a trailing-twelve-month figure in a 10-Q as an annual period. That made two true Amazon claims "contradicted".
-  - The frozen set is unchanged. Corrections are listed with reasons in [`eval/v2/claims-v2-corrected.jsonl`](eval/v2/claims-v2-corrected.jsonl), and the table above uses them.
-  - Scores against the registered gold are in [`REPORT-registered-gold.md`](docs/evidence/eval-v2-2026-10-27/REPORT-registered-gold.md). Every system moves by at most 2 claims.
-- **Honest scope:**
-  - The held-out split is 266 claims: agent 90.2% on Baseten, 89.1% on Fireworks and 82.0% on the Meta API.
-  - Meta API spend hit the run's $15 cap after 262 claims. The 95 stopped pairs were kept as evidence and resumed under a $30 cap ([`budget-stopped-attempt1/`](docs/evidence/eval-v2-2026-10-27/budget-stopped-attempt1/)).
-  - The v1 set of 30 hand-reviewed claims and its six runs remain in [`docs/evidence/`](docs/evidence/). Run 4 there: agent 30/30 (Baseten, Fireworks), 26/30 (Meta API).
 
 ### How the system got there
 
@@ -433,7 +373,7 @@ Every number in a verdict carries its provenance ([`docs/DATA_SOURCES.md`](docs/
 | L2 | 10-Q (quarterly report) | Reviewed, not audited |
 | L3 | Derived by the program | e.g. Q4 = annual − nine-month YTD; formula and source filings listed |
 
-Each fact also reports how many filings confirm it, whether a later filing revised it, and an overall strength (high / medium / low). Guidance, non-GAAP figures, segment KPIs, deliveries, market share and share prices are outside SEC XBRL facts, so claims about them come back `insufficient_evidence` rather than a guess.
+Each fact also reports how many filings confirm it, whether a later filing revised it, and an overall strength (high / medium / low). Guidance and non-GAAP figures are outside SEC XBRL facts; eligible claims can use [L4 issuer-release evidence](docs/DATA_SOURCES.md#l4-parsing-and-decision-rules). Claims without a supported source or check remain `insufficient_evidence`.
 
 **The data itself is checked.** [`docs/DATA_QUALITY.md`](docs/DATA_QUALITY.md) runs consistency checks over 24 issuers' SEC data (quarters summing to the year, year-to-date totals, revisions). It found that **Oracle's 10-Ks filed in 2020–2022 tag full-year revenue for fiscal 2018, 2019, 2021 and 2022 on the fourth-quarter period** (e.g. $39.4B for March–May 2018). The verifier excludes those rows, derives the real quarter ($11.0B) and shows the excluded row in the evidence.
 

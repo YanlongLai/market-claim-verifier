@@ -1,7 +1,12 @@
 /* Synchronous, frame-addressable product reenactment of committed run reports. */
 (function () {
   'use strict';
-  const D=window.MOTION_DATA,L=window.MotionLogic,H=window.HoverSource;
+  // Old local host outputs may precede this edit. Prefer the committed preview
+  // until host preparation supplies the matching storyboard AND evidence hashes.
+  const preview=window.MOTION_PREVIEW,host=window.MOTION_DATA;
+  const matches=preview&&host&&host.revision===preview.revision&&
+    Object.entries(preview.product.provenance).every(([p,hash])=>host.product.provenance[p]===hash);
+  const D=window.MOTION_DATA=preview&&!matches?preview:host,L=window.MotionLogic,H=window.HoverSource,B=window.BrollLayer;
   const stage=document.getElementById('stage'), P=D.product.base;
   const {escapeHTML:esc,highlightQuote:quote,clamp,progress}=L;
   const beat=L.beatHelpers(D.beats.beats_s);
@@ -25,12 +30,11 @@
   }
   function disclosure() {
     return chrome('Built during the hackathon')+
-      box(64,184,1792,400,esc(D.product.disclosure),'body disclosure',64)+
-      surface(64,600,1792,264)+
-      box(96,612,1040,232,'Market Claim<br><span class="mint">Verifier</span>','headline',96)+
-      box(1192,608,632,72,'Apple · claimed quarter','body muted',56)+
-      box(1192,680,632,116,n(dollars(P.apple.claimed_b),96),'coral',96)+
-      box(1192,796,632,68,'Open saved check ↗','body mint',56);
+      box(656,184,1200,464,esc(D.product.disclosure),'body disclosure',64)+
+      surface(656,664,1200,200)+
+      box(680,680,680,72,'Apple · claimed quarter','body muted',56)+
+      box(1408,676,416,116,n(dollars(P.apple.claimed_b),96),'coral',96)+
+      box(680,788,1144,68,'Open saved check ↗','body mint',56);
   }
   function apple(t,s,e) {
     return chrome('Paste a post')+title('Apple. One quarter?')+
@@ -40,9 +44,10 @@
       box(64,758,1792,106,show(t,e,'paste')?'Post pasted → extract claims':'Check the period before sharing.','body mint',64);
   }
   function extract(t,s,e) {
-    const b=D.beats.beats_s.filter(b=>b>=s.start&&b<s.end),
-      index=show(t,e,'opinion')?3:t>=b[8]?2:t>=b[4]?1:0,
+    const opinionAt=Math.max(e.opinion,s.start+5),
+      index=t>=opinionAt?3:t>=s.start+2.5?1:0,
       claim=P.english_claims[index];
+    if(s.end-opinionAt<2.5)throw new Error('Extraction opinion needs at least 2.5 s; review the cue.');
     return chrome('Extract claims')+title('Keep the exact quote.')+
       surface(64,332,1792,430)+
       box(96,360,1728,80,esc(claim.ticker||'NVDA')+' · '+(index===3?'opinion':'checkable claim'),'body muted',64)+
@@ -58,6 +63,22 @@
     }
     return anchors.at(-1)[1];
   }
+  function traceRibbon(t,s) {
+    const trace=D.agent_trace;
+    if(!trace)return null;
+    const start=B.windows(D).find(c=>c.id==='point-glow-s29').end,end=s.voice_start;
+    if(t<start||t>=end)return null;
+    const receiptStart=end-2.5;
+    if(receiptStart<=start)throw new Error('Saved trace needs room for a 2.5 s final receipt.');
+    const receipt=t>=receiptStart,age=clamp((t-start)/(receiptStart-start))*trace.latency_s;
+    const step=trace.steps.find(r=>age<r.start_s+r.latency_s)||trace.steps.at(-1);
+    return {state:{index:step.index,name:step.name,fact_ids:step.fact_ids,age,start,end,receipt,receiptStart},html:
+      box(64,172,1792,80,esc(receipt?
+        `Run ~$${trace.cost_usd.toFixed(5)} · ${trace.steps.length} requests · ${trace.fact_ids.join(' · ')}`:
+        `${step.index}/${trace.steps.length}  ${step.name} → ${step.fact_ids.join(' · ')}`),'body mint trace-step',64)+
+      box(64,252,1792,68,esc(`Saved trace · recorded ${trace.latency_s.toFixed(3)} s, compressed`),'body muted trace-detail',56)+
+      box(64,324,1792,4,`<div class="trace-fill" style="width:${100*clamp((age-step.start_s)/step.latency_s)}%"></div>`,'trace-track',56)};
+  }
   function hover(t,s,e) {
     const year={x:480,y:464,width:608,height:138},quarter={x:1184,y:464,width:640,height:138},
       targets={post:year,row:year,quarter,compare:{x:1184,y:632,width:640,height:74},
@@ -72,7 +93,8 @@
       ['post',targets.post,state.postAlpha,visor],
       ['year',targets.row,state.yearAlpha,{x:quarter.x+quarter.width/2,y:quarter.y+quarter.height/2}]]
       .map(([name,target,alpha,origin])=>`<polygon data-beam="${name}" points="${H.conePoints(origin,target,4)}" fill="url(#beam)" opacity="${alpha}"/>`).join('');
-    let html=chrome('Hover · SEC audit')+title('The year is not the quarter.')+
+    const ribbon=traceRibbon(t,s);
+    let html=chrome('Hover · SEC audit')+(ribbon?ribbon.html:title('The year is not the quarter.'))+
       surface(448,332,672,408)+surface(1152,332,704,408)+
       `<img class="abs texture" style="left:448px;top:332px;width:1408px;height:408px" src="${ASSET}stamp-paper.webp" alt="">`+
       `<svg class="spotlight" viewBox="0 0 1920 880" aria-hidden="true"><defs><mask id="stage-hole"><rect x="448" y="332" width="1408" height="408" fill="white"/><rect x="464" y="440" width="640" height="190" rx="16" fill="black"/><rect x="1168" y="440" width="672" height="190" rx="16" fill="black"/></mask></defs><rect x="448" y="332" width="1408" height="408" fill="#050b10" mask="url(#stage-hole)" opacity="${state.shade*.65}"/></svg>`+
@@ -90,7 +112,7 @@
       `<div class="abs" style="left:${x}px;top:${y}px;width:${w}px;height:${h}px;transform:${state.transform}">${images}</div>`+
       `<img class="abs fx" src="${ASSET}fx/lens-flare.webp" alt="" style="left:${visor.x-64}px;top:${visor.y-10}px;width:128px;height:20px;opacity:${Math.max(state.postAlpha,state.filingAlpha)*.45}">`+
       `<img class="hover-thruster" src="${ASSET}auditor/H/thruster-${thruster}.webp" alt="" style="left:${x+w*state.nozzle[0]/704-40}px;top:${y+h*state.nozzle[1]/744-10+state.bob+state.dip}px;transform:scale(${thruster==='burst'?1.6:1})">`;
-    return {html,state:{...state,siteAge:age,struck}};
+    return {html,state:{...state,siteAge:age,struck,trace:ribbon?ribbon.state:null}};
   }
   function proof(t,s,e) {
     const F=P.filing;
@@ -174,6 +196,68 @@
       box(96,780,800,68,'Speaker labels: '+(R.speaker_identity.verified?'verified':'unverified'),'body',56)+
       box(920,780,904,68,'L4: regression test · not held out','body muted',56);
   }
+  function realworld(t,s) {
+    const data=D.realworld;
+    const wrap=html=>`<section data-realworld>${html}</section>`;
+    if(!data||data.status!=='ready')return wrap(chrome('Real-world saved runs')+
+      title('Evidence pending.')+surface(64,332,1792,484)+
+      box(96,368,1728,152,'DappGo News + Threads','body mint',80)+
+      box(96,548,1728,168,'No recorded results yet.\nMetrics and narration require the evidence compiler.','source-text muted',64)+
+      box(96,740,1728,68,'Preview only · not ready for film','body amber',56));
+    const pages=[];
+    for(const run of data.runs) {
+      pages.push({run});
+      for(const example of data.examples.filter(e=>e.run_id===run.id))pages.push({run,example});
+    }
+    if((s.end-s.start)/pages.length<2.5)throw new Error('Real-world pages need at least 2.5 s each.');
+    const index=Math.min(pages.length-1,Math.floor(clamp((t-s.start)/(s.end-s.start))*pages.length));
+    const {run,example}=pages[index],posthoc=run.phase!=='original';
+    let html=chrome(`${run.provider==='baseten'?'Baseten':run.provider} · ${run.path} route`);
+    if(example) {
+      const check=example.comparisons.find(c=>c.claim_type==='change_pct')||example.primary,
+        color={contradicted:'coral',supported:'mint',insufficient_evidence:'amber'}[check.verdict],
+        label={contradicted:'CONTRADICTED',supported:'SUPPORTED',insufficient_evidence:'INSUFFICIENT'}[check.verdict],
+        name=example.paraphrase.split(/['’]|\s/)[0],growth=check.claim_type==='change_pct';
+      html+=box(64,176,1792,116,`<a href="../../../${esc(example.report)}">${esc(name)}</a>`,'headline',96)+
+        box(64,300,1792,68,esc(`${example.handle||'Public news item'} · paraphrase of post`),'body muted',56)+
+        box(96,404,736,68,'Claimed'+(growth?' YoY':''),'body muted',56)+
+        box(944,404,880,68,esc(`SEC ${check.source_label} · ${check.period}`),'body mint',56)+
+        box(96,480,640,138,n(recordedValue({...check,value:check.stated_value})),'coral',112)+
+        box(760,480,152,138,'→','body muted',112)+
+        box(944,480,880,138,n(recordedValue(check)),'mint',112)+
+        box(64,632,752,104,esc(label),'claim-verdict '+color,64)+
+        box(872,650,984,80,growth?'Recorded YoY revenue growth':'Annual revenue','body',56)+
+        box(64,748,1792,68,posthoc?'Post-hoc · frozen text · OCR/ASR not retested':
+          'Saved original · coverage ≠ accuracy','body muted',56);
+    } else {
+      html+=box(64,176,1792,116,`<a href="../../../docs/evidence/${esc(run.id)}/REPORT.md">${posthoc?'Post-hoc · frozen text':'Original · News + Threads'}</a>`,'headline',96)+
+        box(64,300,1792,68,'Coverage ≠ accuracy · verdict counts are claims','body muted',56);
+      for(const [row,r] of run.sources.entries()) {
+        const y=396+row*220;
+        html+=box(64,y,464,80,esc(r.label),'body',64)+
+          box(552,y+8,840,70,esc(`${r.items_checked}/${r.items_tested} items checked (${r.coverage_percent.toFixed(1)}%)`),'body mint',56)+
+          box(1416,y+16,440,64,esc(`${r.items_with_errors} run failures`),'body muted aggregate-label',48);
+        for(const [i,key] of ['supported','contradicted','insufficient_evidence'].entries()) {
+          const x=64+i*608,label=['Supported','Contradicted','Insufficient'][i],color=['mint','coral','amber'][i];
+          html+=box(x,y+84,192,116,n(r.verdict_counts[key],96),color,96)+
+            box(x+208,y+110,368,64,label,'body '+color+' aggregate-label',48);
+        }
+      }
+      if(posthoc)html+=box(64,652,1792,68,'Frozen text · OCR/ASR not retested','body mint',56)+
+        box(64,748,1792,68,'Previously seen inputs · claim verdict counts','body muted',56);
+    }
+    return `<section data-realworld data-realworld-page="${index}" data-realworld-kind="${example?'example':'aggregate'}">${html}</section>`;
+  }
+  const decimal=(value,places=1)=>Number(value.toFixed(places)).toString();
+  function recordedValue(check) {
+    if(check.unit==='USD') {
+      // Presentation units only; the compiler copies the checked amount unchanged.
+      for(const [scale,suffix] of [[1e9,'B'],[1e6,'M'],[1e3,'K']])
+        if(Math.abs(check.value)>=scale)return '$'+decimal(check.value/scale,3)+suffix;
+      return '$'+decimal(check.value,2);
+    }
+    return check.unit==='%'?decimal(check.value)+'%':decimal(check.value,3)+' '+check.unit;
+  }
   function qrSVG() {
     const {matrix,quiet_zone:q}=D.qr,size=matrix.length+2*q;
     const d=matrix.flatMap((row,y)=>[...row].flatMap((bit,x)=>bit==='1'?[`M${x+q},${y+q}h1v1h-1z`]:[])).join('');
@@ -186,15 +270,66 @@
       box(64,716,1792,72,'Built during the Meta Global AI Developer Hackathon','body',56)+
       box(64,796,1792,76,'Muse Spark · Meta open weights','body muted',56);
   }
+  // During an insert the same recorded data occupies the right-hand product pane.
+  // Text is HTML outside the image; the panel never obscures a claim or disclosure.
+  function besideBroll(scene,t,s,e) {
+    const heading=text=>box(704,188,1152,128,esc(text),'headline',96);
+    if(scene==='disclosure')return disclosure();
+    if(scene==='hover')return chrome('Hover · SEC audit')+heading('Follow the evidence.')+
+      surface(704,332,1152,532)+
+      box(728,360,1104,80,'Apple · claimed quarter','body muted',56)+
+      box(728,470,1104,138,n(dollars(P.apple.claimed_b)),'coral',112)+
+      box(728,636,1104,80,'Search SEC → compare periods','body mint',56)+
+      box(728,752,1104,80,'Exact source + fiscal quarter','body muted',56);
+    if(scene==='program') {
+      const checked=show(t,e,'checks'),final=show(t,e,'verdict');
+      return chrome('Program audit')+heading('Program decides.')+
+        surface(704,332,1152,532)+
+        box(728,344,1104,80,'Number check','body muted',56)+
+        box(728,432,1104,138,checked?'<span class="coral">'+n(dollars(P.apple.claimed_b),96)+'</span> ≠ <span class="mint">'+n(dollars(P.apple.quarter_b),96)+'</span>':'Reading source number…','body',64)+
+        box(728,584,1104,80,'FY2025 · fiscal Q4','body',64)+
+        box(728,672,1104,72,'Citations: '+esc(D.product.apple_evidence_ids.join(' · ')),'body muted',56)+
+        box(728,760,1104,104,final?'Claim: '+verdict(P.apple.verdict):'Program checks…','status '+(final?'claim-verdict coral':'muted'),80);
+    }
+    if(scene==='l4') {
+      const row=D.product.releases[show(t,e,'adobe')?1:0],src=row.excerpt.source_evidence,
+        guidance=row.kind==='guidance';
+      return chrome('L4 · furnished / unaudited')+heading('Earnings releases.')+
+        surface(704,332,1152,532)+
+        box(728,352,1104,80,guidance?'META · revenue guidance':'Adobe · non-GAAP EPS','body',64)+
+        box(728,456,1104,72,esc(src.period)+' · Regression example','body muted',56)+
+        box(728,556,1104,136,guidance?n(row.excerpt.value,96):n('$'+src.value.toFixed(2),96),'mint',96)+
+        box(728,708,1104,68,'MATCHES RELEASE','body mint',56)+
+        box(728,788,1104,68,'Unaudited · not future performance','body amber',56);
+    }
+    if(scene==='results') {
+      let html=chrome('Saved v2 results')+heading('Measured accuracy.')+
+        box(704,320,1152,68,P.claim_count+' claims · includes dev / corrected gold','body muted',56)+
+        box(1088,392,336,68,'Model alone','body muted',56)+
+        box(1448,392,384,68,'With checks','body mint',56)+
+        surface(704,464,1152,400);
+      for(const [i,row] of D.product.scores.entries()) {
+        const y=476+i*124,visible=show(t,e,i===0?'meta':'open');
+        html+=box(728,y+16,336,80,esc(row.label),'body',56)+
+          box(1088,y,336,116,n(row.alone.percent.toFixed(1)+'%',96),'muted',96)+
+          box(1448,y,384,116,visible?n(row.checked.percent.toFixed(1)+'%',96):'Checks…','mint',56);
+      }
+      return html;
+    }
+    throw new Error('No product composition for B-roll shot: '+scene);
+  }
   const renderers={disclosure,apple,extract,hover,proof,program,l4,
-    screenshot:(t,s,e)=>input(t,s,e,false),audio:(t,s,e)=>input(t,s,e,true),results,limits,cta};
+    screenshot:(t,s,e)=>input(t,s,e,false),audio:(t,s,e)=>input(t,s,e,true),results,limits,realworld,cta};
   window.seek=function(time) {
     const shot=L.shotAt(D.timing,time),index=D.timing.shots.indexOf(shot),t=clamp(time,0,D.timing.duration);
     const scene=D.scenes[index],events=Object.fromEntries(D.cues._events[shot.id].map(e=>[e.event,e.t]));
     boxes=[];
-    const output=renderers[scene.renderer](t,shot,events),html=typeof output==='string'?output:output.html;
+    const output=renderers[scene.renderer](t,shot,events),broll=B.select(D,t);
+    let html=typeof output==='string'?output:output.html;
+    if(broll) {boxes=[];html=besideBroll(scene.renderer,t,shot,events)+B.panel(broll);}
     stage.className='v3';stage.innerHTML=html;stage.dataset.shot=shot.id;stage.dataset.time=String(t);
-    window.frame={time:t,shot:shot.id,boxes,hover:typeof output==='string'?null:output.state};
+    window.frame={time:t,shot:shot.id,boxes:boxes.map(b=>({...b,realworld:scene.renderer==='realworld'})),broll,
+      hover:typeof output==='string'?null:output.state};
     return {time:t,shot:shot.id};
   };
   window.timeline=D.timing;window.motionReady=true;window.beatAt=beat.beatAt;window.nearestBeat=beat.nearestBeat;

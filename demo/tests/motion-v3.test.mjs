@@ -10,7 +10,8 @@ function page(search='',editData=()=>{}) {
   const stage={dataset:{},style:{},innerHTML:''};
   const context={document:{getElementById:()=>stage},URLSearchParams,location:{search}};
   context.window=context;context.globalThis=context;vm.createContext(context);
-  for(const file of ['logic.js','v3/hover-source.js','v3/data.js']) vm.runInContext(read('../motion/'+file),context);
+  for(const file of ['logic.js','v3/hover-source.js','v3/preview-data.js','v3/broll-data.js','v3/broll.js']) vm.runInContext(read('../motion/'+file),context);
+  context.MOTION_DATA=context.MOTION_PREVIEW;
   editData(context.MOTION_DATA);
   vm.runInContext(read('../motion/v3/motion.js'),context);
   return {window:context,stage};
@@ -40,9 +41,9 @@ test('all v007 frames obey safe rectangles/type floors without a browser',()=>{
   for(let i=0;i<Math.ceil(window.timeline.duration*30);i++) {
     window.seek(i/30);
     for(const box of window.frame.boxes) {
-      assert(box.size>=56,box.text);
+      assert(box.size>=(box.className.includes('aggregate-label')?48:56),box.text);
       assert(box.x>=64&&box.x+box.w<=1856,box.text);
-      assert(box.y>=64&&box.y+box.h<=880,box.text);
+      assert(box.y>=64&&box.y+box.h<=(box.realworld?816:880),box.text);
       if(box.className==='headline')assert(box.size>=96);
     }
     assert(!/NaN|Infinity|undefined/.test(stage.innerHTML));
@@ -62,12 +63,46 @@ test('v007 seek is deterministic after arbitrary backwards and forwards seeks',(
   window.seek(1000);assert.equal(window.frame.time,window.timeline.duration);
 });
 
+function encodedHolds(window,stage,start,end,identity) {
+  const holds=[];
+  for(let frame=Math.ceil(start*30);frame<Math.ceil(end*30);frame++) {
+    window.seek(frame/30);
+    const key=identity(window.frame,stage.innerHTML),last=holds.at(-1);
+    if(last?.key===key)last.frames++;else holds.push({key,frames:1});
+  }
+  return holds;
+}
+
+test('Amazon, NVIDIA and opinion each hold for 75 encoded frames, including the reviewed early speech cue',()=>{
+  for(const useReviewedCue of [false,true]) {
+    const {window,stage}=page('',d=>{
+      if(useReviewedCue)d.cues._events['v303-extract'][0].t=21.8176;
+    }),shot=window.timeline.shots.find(s=>s.id==='v303-extract');
+    const holds=encodedHolds(window,stage,shot.start,shot.end,(_,html)=>
+      /AMZN/.test(html)?'Amazon':/opinion<\/div>/.test(html)?'Opinion':/NVDA/.test(html)?'NVIDIA':'Unexpected');
+    assert.deepEqual(holds.map(h=>h.key),['Amazon','NVIDIA','Opinion']);
+    for(const h of holds)assert(h.frames>=75,`${h.key}: ${h.frames}/30 s`);
+    window.seek(shot.start+4.9);assert(!/416\.2B/.test(stage.innerHTML),'Repeated Apple extraction card returns.');
+    window.seek(shot.start+5);assert(!/AMZN/.test(stage.innerHTML));
+  }
+});
+
+test('each real-world page holds at least 75 encoded frames in the unchanged 11.3081 s reserve',()=>{
+  const {window,stage}=page(),shot=window.timeline.shots.find(s=>s.id==='v311b-realworld');
+  assert(Math.abs(shot.end-shot.start-11.3081)<1e-8);
+  const holds=encodedHolds(window,stage,shot.start,shot.end,(_,html)=>html.match(/data-realworld-page="(\d+)"/)[1]);
+  assert.deepEqual(holds.map(h=>h.key),['0','1','2','3']);
+  for(const h of holds)assert(h.frames>=75,`Real-world page ${h.key}: ${h.frames}/30 s`);
+  const {window:overcrowded}=page('',d=>d.realworld.examples.push(structuredClone(d.realworld.examples[0])));
+  assert.throws(()=>overcrowded.seek(shot.start),/at least 2.5 s/);
+});
+
 test('Hover uses real H assets, site pose clock, thruster and spotlight alphas',()=>{
   const {window,stage}=page(),a=window.MOTION_DATA.hover_anchors;
   for(const [t,age] of a.slice(0,-1)) {
     window.seek(t+.001);
     assert(Math.abs(window.frame.hover.siteAge-age)<10);
-    assert.match(stage.innerHTML,/docs\/site\/img\/auditor\/H\//);
+    if(!window.frame.broll)assert.match(stage.innerHTML,/docs\/site\/img\/auditor\/H\//);
   }
   window.seek(a.find(a=>a[1]===3700)[0]+.2);
   assert.equal(window.frame.hover.phase,'compare');
@@ -229,5 +264,295 @@ test('host geometry guard rejects clipping, small numbers and subtitle collision
                       m=>m.sourceCrops[0].bottom=881,
                       m=>m.sourceCrops[0].imageLeft=65]) {
     const bad=structuredClone(good);change(bad);assert.throws(()=>assertV3Layout(bad));
+  }
+});
+
+test('all five B-roll inserts select each native frame identically in forward and reverse order',()=>{
+  const {window,stage}=page(),B=window.BrollLayer,D=window.MOTION_DATA,
+    windows=B.windows(D);
+  assert.equal(windows.length,5);
+  for(const clip of windows) {
+    assert(D.beats.beats_s.includes(clip.start));assert(D.beats.beats_s.includes(clip.end));
+    assert.equal(clip.play_end-clip.start,45/16);
+    assert(clip.end<=D.timing.shots.find(s=>s.id===clip.shot).end);
+    const expected=[];
+    for(let index=0;index<45;index++) {
+      const t=clip.start+(index+.5)/16;
+      window.seek(t);
+      assert.equal(window.frame.broll.frameIndex,index);
+      assert.match(window.frame.broll.src,new RegExp(`frame-${String(index).padStart(4,'0')}\\.png$`));
+      expected.push([stage.innerHTML,JSON.stringify(window.frame)]);
+    }
+    for(let index=44;index>=0;index--) {
+      window.seek(100);window.seek(clip.start+(index+.5)/16);
+      assert.deepEqual([stage.innerHTML,JSON.stringify(window.frame)],expected[index]);
+    }
+    window.seek(clip.start);assert.equal(window.frame.broll.frameIndex,0);
+    for(let index=1;index<45;index++) {
+      window.seek(clip.start+index/16);assert.equal(window.frame.broll.frameIndex,index);
+    }
+    window.seek(clip.play_end);assert.equal(window.frame.broll.frameIndex,44);
+    window.seek(clip.end-1e-8);assert.equal(window.frame.broll.frameIndex,44);
+    window.seek(clip.end);assert.equal(window.frame.broll,null);
+    if(clip.start>0){window.seek(clip.start-1e-8);assert.equal(window.frame.broll,null);}
+  }
+  assert.throws(()=>B.select(D,NaN),/finite/);
+  assert.throws(()=>B.select(D,Infinity),/finite/);
+  assert(!/<video|<canvas/.test(stage.innerHTML));
+  const point=windows.find(c=>c.id==='point-glow-s29');
+  assert(point.end<=D.timing.shots.find(s=>s.id===point.shot).voice_start);
+});
+
+test('B-roll and product remain disjoint above captions at every film frame; product appears before 3 s',()=>{
+  const {window,stage}=page();let inserts=0;
+  for(let i=0;i<Math.ceil(window.timeline.duration*30);i++) {
+    window.seek(i/30);const frame=window.frame,b=frame.broll?.rect;
+    if(i<=90) {
+      assert.match(stage.innerHTML,/416\.2B/);assert.match(stage.innerHTML,/Open saved check/);
+      assert.match(plain(stage.innerHTML),/Market Claim Verifier/);
+    }
+    if(!b)continue;
+    inserts++;
+    assert(b.x>=64&&b.y>=64&&b.x+b.w<=1856&&b.y+b.h<=880);
+    assert(b.w>=560&&b.w<=640&&b.h===b.w);
+    assert(frame.broll.frameIndex>=0&&frame.broll.frameIndex<45);
+    const panel=stage.innerHTML.match(/<div class="broll-panel"[^>]*>(.*?)<\/div>/)[1];
+    assert.equal(plain(panel).trim(),'');assert.match(panel,/<img /);
+    for(const box of frame.boxes) {
+      const overlapX=Math.min(b.x+b.w,box.x+box.w)-Math.max(b.x,box.x),
+        overlapY=Math.min(b.y+b.h,box.y+box.h)-Math.max(b.y,box.y);
+      assert(overlapX<=0||overlapY<=0,box.text);
+    }
+  }
+  assert(inserts>300);
+});
+
+test('B-roll is recomputed from shifted scene/cue times and refuses invalid host windows',()=>{
+  const {window}=page(),B=window.BrollLayer,D=window.MOTION_DATA,
+    first=B.windows(D).find(c=>c.id==='stamp-press-s29');
+  const changed=structuredClone(D),shot=changed.timing.shots.find(s=>s.id===first.shot);
+  changed.cues._events[shot.id].find(e=>e.event==='verdict').t=shot.start+3;
+  const shifted=B.windows(changed).find(c=>c.id===first.id);
+  assert(shifted.start<first.start);
+  shot.end=shot.start+2;
+  assert.throws(()=>B.windows(changed),/cannot fit/);
+  const broken=structuredClone(D);
+  broken.cues._events[first.shot]=[];
+  assert.throws(()=>B.windows(broken),/Missing B-roll cue/);
+  const early=structuredClone(D);
+  const earlyHover=early.timing.shots.find(s=>s.id==='v304-hover');
+  earlyHover.voice_start=earlyHover.start+1;
+  assert.throws(()=>B.windows(early),/narration lead/);
+});
+
+test('L4 insert uses the contained approved point-glow PNGs at every source-frame index',()=>{
+  const {window}=page(),D=window.MOTION_DATA,B=window.BrollLayer;
+  const insert=B.windows(D).find(c=>c.shot==='v307-l4'),approved=window.BROLL_DATA.clips.find(c=>c.id==='point-glow-s29');
+  assert.equal(insert.asset_id,'point-glow-s29');
+  assert.equal(insert.source_sha256,approved.source_sha256);
+  assert.equal(insert.receipt_sha256,approved.receipt_sha256);
+  for(let frame=0;frame<45;frame++) {
+    const chosen=B.select(D,insert.start+(frame+.5)/16);
+    assert(chosen.src.includes('/point-glow-s29/'));
+    assert(!chosen.src.includes('/turn-point-s11/'));
+    assert.equal(chosen.frameIndex,frame);
+  }
+});
+
+test('v010 pending real-world reserve is honest, silent and deterministic',()=>{
+  const {window,stage}=page('',d=>{
+    d.realworld={status:'awaiting_evidence',sources:[],examples:[],narration:null,provenance:{}};
+    d.cues['v311b-realworld']=[];
+  }),D=window.MOTION_DATA,
+    shot=D.timing.shots.find(s=>s.id==='v311b-realworld');
+  assert.equal(D.timing.shots.length,13);assert.equal(D.timing.duration,177.2611);
+  assert(Math.abs(shot.end-shot.start-11.3081)<1e-7);
+  assert.equal(D.realworld.status,'awaiting_evidence');
+  assert.equal(D.cues[shot.id].length,0);
+  for(const t of [shot.start,shot.end-.001,shot.start+5,shot.start]) {
+    window.seek(t);
+    assert.match(stage.innerHTML,/Evidence pending/);
+    assert.match(stage.innerHTML,/No recorded results yet/);
+    assert(!/p50|cost.per.item|tested ·|@/.test(stage.innerHTML));
+  }
+});
+
+function syntheticWorld() {
+  const sources=['news','threads'].map(id=>({id,label:id==='news'?'DappGo News':'Threads',
+    items_tested:3,items_checked:2,items_with_errors:1,coverage_percent:66.7,
+    verdict_counts:{supported:0,contradicted:1,insufficient_evidence:1},
+    cost_per_item_usd:.03,p50_latency_s:3}));
+  const primary={check_index:0,claim_type:'value',verdict:'contradicted',value:10,stated_value:12.5,unit:'USD',
+    period:'FY2025',metric:'revenue',source_label:'10-K',source_tier:'L1',evidence_ids:['E1'],
+    gap:{gap_kind:'relative',gap:.25}};
+  return {status:'ready',runs:[{id:'synthetic-original',phase:'original',provider:'baseten',path:'post',sources},
+    {id:'synthetic-fix',phase:'posthoc_frozen_text_recheck',provider:'baseten',path:'post',sources:[sources[1]]}],
+    examples:[{run_id:'synthetic-original',source_id:'news',report:'synthetic-report.json',handle:null,paraphrase:'Synthetic news paraphrase.',
+      verdict:'supported',primary,comparisons:[]},
+      {run_id:'synthetic-original',source_id:'threads',report:'synthetic-report.json',handle:'@synthetic_user',paraphrase:'Synthetic: 12.5 claimed; source says 10.',
+        verdict:'contradicted',primary,comparisons:[]}]};
+}
+
+test('compiled-source renderer covers metrics, handles and separately labeled rechecks within the reserve',()=>{
+  const {window,stage}=page('',d=>d.realworld=syntheticWorld()),
+    shot=window.timeline.shots.find(s=>s.id==='v311b-realworld'),seen=new Set();
+  const expected=[];
+  for(let i=0;i<Math.ceil((shot.end-shot.start)*30);i++) {
+    const t=Math.min(shot.end-.00001,shot.start+i/30);window.seek(t);
+    const text=plain(stage.innerHTML);
+    assert.match(text,/Baseten · post route/);
+    assert.match(text,/coverage ≠ accuracy/i);
+    assert(!/p50|\/item| errors/.test(text),'Receipt detail belongs in linked evidence.');
+    const badge=window.frame.boxes.find(b=>b.className.includes('claim-verdict'));
+    const colors={SUPPORTED:'mint',CONTRADICTED:'coral',INSUFFICIENT:'amber'};
+    if(badge) {
+      assert(badge.className.includes(colors[badge.text]));
+      for(const label of ['$12.5','$10','SEC 10-K · FY2025'])assert(text.includes(label));
+      assert(!/Supported|Insufficient|run failures/.test(text),'Example must have one comparison.');
+    } else {
+      assert.match(text,/2\/3 items checked \(66\.7%\)/);assert.match(text,/1 run failures/);
+      for(const label of ['Supported','Contradicted','Insufficient','verdict counts'])assert(text.includes(label));
+    }
+    assert(!/https?:\/\/|threads\.(net|com)\//.test(stage.innerHTML));
+    if(/DappGo News/.test(text))seen.add('news');
+    if(/Threads/.test(text))seen.add('threads');
+    if(/Post-hoc · frozen text/.test(text)) {
+      seen.add('recheck');assert.match(text,/OCR\/ASR not retested/);
+    }
+    for(const box of window.frame.boxes) {
+      assert(box.x>=64&&box.x+box.w<=1856);
+      assert(box.y>=64&&box.y+box.h<=816);
+      assert(box.size>=(box.className.includes('aggregate-label')?48:56));
+    }
+    expected.push([t,stage.innerHTML]);
+  }
+  assert.deepEqual([...seen].sort(),['news','recheck','threads']);
+  assert(expected.some(([,html])=>html.includes('@synthetic_user')));
+  for(const [t,html] of expected.reverse()) {
+    window.seek(0);window.seek(t);assert.equal(stage.innerHTML,html);
+  }
+});
+
+test('recorded examples give one large comparison; original and post-hoc aggregates keep counts distinct',()=>{
+  const {window,stage}=page(),D=window.MOTION_DATA,
+    shot=window.timeline.shots.find(s=>s.id==='v311b-realworld');
+  const expected=[
+    ['@taiwandata · paraphrase of post','CoreWeave','$2.29B','$229M','SEC 10-K · FY2023','Annual revenue'],
+    ['@sky311091 · paraphrase of post','SanDisk','23%','377.9%','SEC 10-Q · FY2027Q1','Recorded YoY revenue growth']];
+  for(const [i,texts] of expected.entries()) {
+    const frame=D.keyframes.find(f=>f.position==='realworld-page-'+(i+2));
+    window.seek(frame.t);
+    const text=plain(stage.innerHTML).replace(/&#39;/g,"'");
+    for(const value of texts)assert(text.includes(value),value);
+    assert.match(stage.innerHTML,/class="abs claim-verdict coral"/);
+    assert.match(text,/CONTRADICTED/);
+    assert.match(text,/Saved original · coverage ≠ accuracy/);
+    assert(!/items checked|run failures|Supported|Insufficient|\$11\.0|354\.9/.test(text));
+    assert.equal([...stage.innerHTML.matchAll(/class="number"/g)].length,2);
+    assert(stage.innerHTML.includes(`href="../../../${D.realworld.examples[i].report}"`));
+    const badge=window.frame.boxes.find(b=>b.className.includes('claim-verdict'));
+    assert(badge.size>=56&&badge.w>=700&&badge.h>=96);
+    for(const b of window.frame.boxes)assert(b.size>=56&&b.y+b.h<=816,b.text);
+  }
+  for(const page of [1,4]) {
+    window.seek(D.keyframes.find(f=>f.position==='realworld-page-'+page).t);
+    assert.match(stage.innerHTML,/Coverage ≠ accuracy/);
+    assert.match(stage.innerHTML,/Baseten · post route/);
+    assert.match(stage.innerHTML,/verdict counts are claims/);
+    assert(!stage.innerHTML.includes('claim-verdict'));
+    if(page===4) {
+      for(const label of ['Post-hoc · frozen text','43/80 items checked (53.8%)','0 run failures',
+        'OCR/ASR not retested','Previously seen inputs'])assert(stage.innerHTML.includes(label));
+    } else {
+      for(const label of ['DappGo News','Threads','44/80 items checked (55.0%)',
+        '42/78 items checked (53.8%)','0 run failures','6 run failures'])assert(stage.innerHTML.includes(label));
+    }
+  }
+  assert(shot.end-shot.start<12);
+});
+
+test('comparison values come from recorded checks rather than the paraphrase or a new calculation',()=>{
+  const {window,stage}=page('',d=>{
+    d.realworld=syntheticWorld();
+    Object.assign(d.realworld.examples[1].primary,{stated_value:9876,value:1234});
+  });
+  const shot=window.timeline.shots.find(s=>s.id==='v311b-realworld');
+  window.seek((shot.start+shot.end)/2);
+  assert.match(plain(stage.innerHTML),/\$9\.876K/);
+  assert.match(plain(stage.innerHTML),/\$1\.234K/);
+});
+
+test('real-world geometry guard enforces 56px example text, 96px values and scoped 48px aggregate labels',()=>{
+  const good={text:[{text:'SEC 10-K · FY2023',realworld:true,fontSize:56,
+    left:944,right:1824,top:404,bottom:472,textLeft:944,textRight:1500,textTop:404,textBottom:471}],numbers:[]};
+  assertV3Layout(good);
+  for(const change of [m=>m.text[0].fontSize=55,m=>m.text[0].bottom=817,
+    m=>m.text[0].textRight=1825,m=>m.text[0].textBottom=473,
+    m=>{m.text[0].fontSize=95;m.text[0].exampleValue=true;}]) {
+    const bad=structuredClone(good);change(bad);assert.throws(()=>assertV3Layout(bad));
+  }
+  const aggregate=structuredClone(good);Object.assign(aggregate.text[0],{aggregateLabel:true,fontSize:48});
+  assertV3Layout(aggregate);
+  aggregate.text[0].fontSize=47;assert.throws(()=>assertV3Layout(aggregate));
+});
+
+test('Apple ribbon animates recorded steps and fact IDs during the existing lead with seek-stable cost/latency',()=>{
+  const {window,stage}=page(),D=window.MOTION_DATA,T=D.agent_trace,
+    shot=D.timing.shots.find(s=>s.id==='v304-hover'),
+    start=window.BrollLayer.windows(D).find(c=>c.id==='point-glow-s29').end,end=shot.voice_start;
+  assert(start<end&&end-shot.start>=9);
+  const samples=T.steps.map(step=>start+(step.start_s+step.latency_s*.5)/T.latency_s*(end-2.5-start));
+  const expected=samples.map((t,i)=>{
+    window.seek(t);const step=T.steps[i],state=window.frame.hover.trace;
+    assert.equal(window.frame.broll,null);
+    assert.equal(state.index,step.index);assert.equal(state.name,step.name);
+    assert.deepEqual(Array.from(state.fact_ids),Array.from(step.fact_ids));
+    assert(stage.innerHTML.includes(step.name));assert.match(stage.innerHTML,/E1/);
+    assert.match(stage.innerHTML,/class="trace-fill"/);
+    assert(stage.innerHTML.includes('Saved trace · recorded 8.080 s, compressed'));
+    assert(!stage.innerHTML.includes('Step ~$'));
+    for(const b of window.frame.boxes.filter(b=>/trace-/.test(b.className))) {
+      assert(b.x>=64&&b.x+b.w<=1856&&b.y>=150&&b.y+b.h<=332);
+      if(b.text)assert(b.h>=b.size*1.2);
+    }
+    return [stage.innerHTML,JSON.stringify(window.frame)];
+  });
+  for(let i=samples.length-1;i>=0;i--) {
+    window.seek(shot.end-.001);window.seek(samples[i]);
+    assert.deepEqual([stage.innerHTML,JSON.stringify(window.frame)],expected[i]);
+  }
+  window.seek(end);assert.equal(window.frame.hover.trace,null);
+  assert.equal(window.timeline.duration,177.2611);
+});
+
+test('Apple trace label is fixed throughout and final run receipt holds at least 75 encoded frames',()=>{
+  const {window,stage}=page(),D=window.MOTION_DATA,shot=D.timing.shots.find(s=>s.id==='v304-hover'),
+    start=window.BrollLayer.windows(D).find(c=>c.id==='point-glow-s29').end;
+  const holds=encodedHolds(window,stage,start,shot.voice_start,(frame,html)=>{
+    assert(html.includes('Saved trace · recorded 8.080 s, compressed'));
+    if(frame.hover.trace.receipt) {
+      assert(html.includes('Run ~$'+D.agent_trace.cost_usd.toFixed(5)));
+      assert(html.includes('3 requests · E1'));
+    }
+    return frame.hover.trace.receipt?'receipt':'steps';
+  });
+  assert.deepEqual(holds.map(h=>h.key),['steps','receipt']);
+  assert(holds.at(-1).frames>=75,`Receipt: ${holds.at(-1).frames}/30 s`);
+  for(const frame of D.keyframes.filter(f=>f.position.startsWith('recorded-trace-'))) {
+    window.seek(frame.t);
+    if(frame.position==='recorded-trace-receipt')assert(window.frame.hover.trace.receipt);
+    else assert.equal(window.frame.hover.trace.index,Number(frame.position.at(-1)));
+  }
+});
+
+test('host B-roll guard rejects text occlusion, subtitle incursions and wrong decoded PNGs',()=>{
+  const metrics={text:[{text:'Product',fontSize:64,left:704,right:1856,top:332,bottom:500,
+    textLeft:704,textRight:1200,textTop:332,textBottom:420}],numbers:[],
+    broll:[{left:64,right:664,top:256,bottom:856,width:600,height:600,naturalWidth:480,naturalHeight:480,text:''}]};
+  assertV3Layout(metrics);
+  for(const change of [m=>m.broll[0].bottom=881,m=>m.broll[0].right=900,
+    m=>m.broll[0].width=1920,m=>m.broll[0].height=560,m=>m.broll[0].naturalWidth=0,
+    m=>m.broll[0].text='Text inside clip']) {
+    const bad=structuredClone(metrics);change(bad);assert.throws(()=>assertV3Layout(bad));
   }
 });

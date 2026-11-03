@@ -1600,6 +1600,66 @@ def _history_reason(prefix: str, history: Mapping[str, Any]) -> str:
     return f"{prefix} over periods_considered={window}"
 
 
+def _program_release_fallback(sub: Mapping[str, Any], runner: Any) -> dict[str, Any] | None:
+    """Complete an omitted release route; do not trust a model's chosen value."""
+    if sub.get("claim_type") not in {"value", *RELEASE_KINDS}:
+        return None
+    ids = _normalise_evidence_ids(sub.get("evidence_ids"))
+    if any(_has_numeric_value(runner.evidence.get(eid)) or
+           getattr(runner, "evidence_kind", {}).get(eid) == "quote_release" for eid in ids):
+        return None
+    if not any(isinstance(runner.evidence.get(eid), Mapping) and runner.evidence[eid].get("error")
+               and getattr(runner, "evidence_kind", {}).get(eid) in {"lookup_fact", "find_earnings_release"}
+               for eid in ids):
+        return None
+    original = str(sub.get("original_claim") or sub.get("text") or "")
+    # Do not turn third-party forecasts/estimates into issuer guidance.
+    if re.search(r"\b(?:analyst|consensus|estimate|street|broker|price target)s?\b", original, re.I):
+        return None
+    atomic = original
+    periods = claim_periods(atomic)
+    if len(periods) > 1:
+        proposed = str(sub.get("text") or "")
+        if not proposed or proposed not in original:
+            return None
+        atomic, periods = proposed, claim_periods(proposed)
+    metric = infer_metric(atomic)
+    literal = str(sub.get("stated_text") or "")
+    if len(periods) != 1 or metric is None or not literal or literal not in atomic:
+        return None
+    edgar = getattr(runner, "edgar", None)
+    if edgar is None or not callable(getattr(edgar, "_ticker_document", None)):
+        return None
+    from .issuer import identify_issuer
+    from .release import _OUTLOOK
+    try:
+        company = identify_issuer(edgar, getattr(runner, "claim_text", None) or original)
+    except Exception:  # optional route cannot turn unavailable identity evidence into a crash
+        return None
+    if company.get("error"):
+        return None
+    kind = "guidance" if _OUTLOOK.search(atomic) else "non_gaap" if metric.startswith("adjusted_") or metric == "free_cash_flow" else "reported_in_release"
+    found = _program_dispatch(runner, "find_earnings_release", {
+        "ticker": company["ticker"], "metric": metric, "period": next(iter(periods)), "claim_kind": kind})
+    if not found or found.get("error"):
+        return None
+    candidates = found.get("candidates", [])
+    if not candidates or len({(c["low"], c["high"]) for c in candidates}) != 1:
+        return None
+    candidate = candidates[0]
+    quote = _program_dispatch(runner, "quote_release", {
+        "candidate_id": candidate["candidate_id"], "start": candidate["start"], "end": candidate["end"]})
+    if not quote or not quote.get("span_verified"):
+        return None
+    from .release_checks import evaluate_release_claim
+    result = evaluate_release_claim({**sub, "evidence_ids": [quote["evidence_id"]]}, runner)
+    result["program_release_fallback"] = True
+    result["program_evidence_ids"] = [found["evidence_id"], quote["evidence_id"]]
+    result["release_search_status"] = {"failures": found.get("failures", []),
+                                      "search_truncated": bool(found.get("search_truncated"))}
+    return result
+
+
 def evaluate_sub_claim(
     sub_claim: Mapping[str, Any],
     runner: Any,
@@ -1609,7 +1669,19 @@ def evaluate_sub_claim(
 ) -> dict[str, Any]:
     """Evaluate one normalized model sub-claim against cited evidence."""
 
+    if fallback := _program_release_fallback(sub_claim, runner):
+        return fallback
     original = str(sub_claim.get("original_claim") or sub_claim.get("text") or "")
+    scope = str(sub_claim.get("text") or original)
+    margin_match = re.search(r"\b(net(?:\s+profit)?|operating|gross)\s+margin\b", scope, re.I)
+    if margin_match and sub_claim.get("claim_type") in {"value", "reported_in_release"}:
+        expected = margin_match[1].lower().split()[0] + "_margin"
+        ids = _normalise_evidence_ids(sub_claim.get("evidence_ids"))
+        numeric = [runner.evidence[eid] for eid in ids if eid in runner.evidence and _has_numeric_value(runner.evidence[eid])]
+        if not numeric or any(e.get("metric") != expected or not e.get("components") or not e.get("formula") for e in numeric):
+            return {"text": scope, "claim_type": "value", "evidence_ids": ids, "evidence_valid": False,
+                    "program_verdict": "insufficient_evidence", "reason": "margin requires program-computed filed components and formula",
+                    "evidence_strength": "low", "flags": []}
     if sub_claim.get("claim_type") == "reported_in_release" and not requires_release(original):
         # A failed release search is not a quote and must not hide a cited
         # authoritative GAAP fact. Re-enter the normal value checker, retaining
@@ -1955,6 +2027,20 @@ def evaluate_verdict(
         evaluate_sub_claim(sub_claim, runner, sub_claims)
         for sub_claim in sub_claims
     ]
+    for sub, check in zip(sub_claims, checks):
+        # Unit diagnostics never change the numeric verdict or repair the input.
+        if check.get("program_verdict") != "contradicted":
+            continue
+        stated = check.get("stated_value_used")
+        actual = check.get("actual_value")
+        if not all(_is_number(v) for v in (stated, actual)) or not actual or not stated:
+            continue
+        factor = abs(float(stated) / float(actual))
+        if any(math.isclose(factor, target, rel_tol=0.05) for target in (10, 100, 1000, 0.1, 0.01, 0.001)):
+            note = f"likely unit/translation error: stated/filed magnitude ratio {factor:g}; check 億 (100 million), 萬 (10 thousand), billion/million"
+            check["unit_translation_note"] = note
+            check["reason"] += "; " + note
+            check["flags"] = list(dict.fromkeys([*check.get("flags", []), "likely_unit_translation_error"]))
     return checks, overall_program_verdict(checks)
 
 

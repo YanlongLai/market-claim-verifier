@@ -19,7 +19,7 @@ from motion_timing import motiontest_window, next_beat
 from PIL import ImageFont
 
 ROOT=v3.ROOT
-STORY=yaml.safe_load((ROOT/v3.STORY).read_text())
+STORY=yaml.safe_load((ROOT/'demo/tests/fixtures/storyboard-v007.yaml').read_text())
 
 
 @pytest.fixture(scope='module')
