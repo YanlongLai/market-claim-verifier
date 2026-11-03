@@ -1600,6 +1600,66 @@ def _history_reason(prefix: str, history: Mapping[str, Any]) -> str:
     return f"{prefix} over periods_considered={window}"
 
 
+def _program_release_fallback(sub: Mapping[str, Any], runner: Any) -> dict[str, Any] | None:
+    """Complete an omitted release route; do not trust a model's chosen value."""
+    if sub.get("claim_type") not in {"value", *RELEASE_KINDS}:
+        return None
+    ids = _normalise_evidence_ids(sub.get("evidence_ids"))
+    if any(_has_numeric_value(runner.evidence.get(eid)) or
+           getattr(runner, "evidence_kind", {}).get(eid) == "quote_release" for eid in ids):
+        return None
+    if not any(isinstance(runner.evidence.get(eid), Mapping) and runner.evidence[eid].get("error")
+               and getattr(runner, "evidence_kind", {}).get(eid) in {"lookup_fact", "find_earnings_release"}
+               for eid in ids):
+        return None
+    original = str(sub.get("original_claim") or sub.get("text") or "")
+    # Do not turn third-party forecasts/estimates into issuer guidance.
+    if re.search(r"\b(?:analyst|consensus|estimate|street|broker|price target)s?\b", original, re.I):
+        return None
+    atomic = original
+    periods = claim_periods(atomic)
+    if len(periods) > 1:
+        proposed = str(sub.get("text") or "")
+        if not proposed or proposed not in original:
+            return None
+        atomic, periods = proposed, claim_periods(proposed)
+    metric = infer_metric(atomic)
+    literal = str(sub.get("stated_text") or "")
+    if len(periods) != 1 or metric is None or not literal or literal not in atomic:
+        return None
+    edgar = getattr(runner, "edgar", None)
+    if edgar is None or not callable(getattr(edgar, "_ticker_document", None)):
+        return None
+    from .issuer import identify_issuer
+    from .release import _OUTLOOK
+    try:
+        company = identify_issuer(edgar, getattr(runner, "claim_text", None) or original)
+    except Exception:  # optional route cannot turn unavailable identity evidence into a crash
+        return None
+    if company.get("error"):
+        return None
+    kind = "guidance" if _OUTLOOK.search(atomic) else "non_gaap" if metric.startswith("adjusted_") or metric == "free_cash_flow" else "reported_in_release"
+    found = _program_dispatch(runner, "find_earnings_release", {
+        "ticker": company["ticker"], "metric": metric, "period": next(iter(periods)), "claim_kind": kind})
+    if not found or found.get("error"):
+        return None
+    candidates = found.get("candidates", [])
+    if not candidates or len({(c["low"], c["high"]) for c in candidates}) != 1:
+        return None
+    candidate = candidates[0]
+    quote = _program_dispatch(runner, "quote_release", {
+        "candidate_id": candidate["candidate_id"], "start": candidate["start"], "end": candidate["end"]})
+    if not quote or not quote.get("span_verified"):
+        return None
+    from .release_checks import evaluate_release_claim
+    result = evaluate_release_claim({**sub, "evidence_ids": [quote["evidence_id"]]}, runner)
+    result["program_release_fallback"] = True
+    result["program_evidence_ids"] = [found["evidence_id"], quote["evidence_id"]]
+    result["release_search_status"] = {"failures": found.get("failures", []),
+                                      "search_truncated": bool(found.get("search_truncated"))}
+    return result
+
+
 def evaluate_sub_claim(
     sub_claim: Mapping[str, Any],
     runner: Any,
@@ -1609,6 +1669,8 @@ def evaluate_sub_claim(
 ) -> dict[str, Any]:
     """Evaluate one normalized model sub-claim against cited evidence."""
 
+    if fallback := _program_release_fallback(sub_claim, runner):
+        return fallback
     original = str(sub_claim.get("original_claim") or sub_claim.get("text") or "")
     scope = str(sub_claim.get("text") or original)
     margin_match = re.search(r"\b(net(?:\s+profit)?|operating|gross)\s+margin\b", scope, re.I)

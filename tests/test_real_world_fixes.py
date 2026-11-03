@@ -39,6 +39,8 @@ def client(tmp_path, *, ticker="META", cik="0001326801", name="Meta Platforms In
         facts["us-gaap"][key] = {"units": {"USD": value}}
     (tmp_path / f"companyfacts-CIK{cik}.json").write_text(json.dumps({"entityName": name, "facts": facts}))
     def no_network(url):
+        if "data.sec.gov/submissions/" in url:
+            return {"filings": {"recent": {"form": []}}}
         raise AssertionError("Unexpected retrieval: " + url)
     return EdgarClient(tmp_path, fetcher=no_network)
 
@@ -208,6 +210,7 @@ def test_segment_release_fallback_retains_table_unit_and_header(tmp_path):
     ev = runner.dispatch('lookup_fact', dict(ticker='AMZN', metric='aws_revenue', period='FY2026Q3'))
     assert ev['value'] == 30000e6 and ev['provenance']['tier'] == 'L4'
     assert ev['release_evidence']['span_verified'] and ev['context_spans']
+    assert not isinstance(ev['end'], int) and isinstance(ev['release_evidence']['end'], int)
     assert runner.dispatch('lookup_fact', dict(ticker='AMZN', metric='data_center_revenue', period='FY2026Q3')).get('error')
 
 
@@ -289,3 +292,71 @@ def test_unit_note_does_not_change_contradiction(tmp_path, stated):
     sub = dict(text=f"Meta fiscal Q3 2026 revenue was {stated}", claim_type="value", stated_text=stated, comparator="eq", evidence_ids=[ev["evidence_id"]])
     checks, verdict = evaluate_verdict([sub], runner)
     assert verdict == "contradicted" and "likely unit/translation error" in checks[0]["reason"]
+
+
+def recorded_cache(tmp_path):
+    import tarfile
+    for archive in (RECORDED / 'runtime-cache-baseten.tar.gz',
+                    ROOT / 'docs/evidence/real-world-2026-11-03-fixcheck/source-supplement.tar.gz'):
+        with tarfile.open(archive) as tar:
+            tar.extractall(tmp_path, filter='data')
+    def missing(url):
+        raise AssertionError('retrieval outside retained SEC snapshots: ' + url)
+    return EdgarClient(tmp_path, fetcher=missing)
+
+
+def test_actual_post_default_period_discovery_sees_newer_release(tmp_path):
+    edgar = recorded_cache(tmp_path)
+    claim = 'Starbucks US comparable-store sales grew 7.7% last quarter.'
+    resolved, period = resolve_relative_period(claim, edgar, '2026-10-29T22:13:49Z')
+    assert 'fiscal Q4 2026' in resolved
+    assert (period['end'], period['filed']) == ('2026-09-27', '2026-10-29')
+    # The same just-furnished quarter is not eligible a day earlier.
+    _, earlier = resolve_relative_period(claim, edgar, '2026-10-28')
+    assert earlier['period'] == 'FY2026Q3'
+    _, ambiguous = resolve_relative_period('Starbucks US comparable-store sales grew 7.7% in the third quarter.', edgar, '2026-10-29')
+    assert ambiguous['error'] and 'fiscal and calendar' in ambiguous['reason']
+
+
+def test_release_scope_flattened_title_and_ifrs_three_months():
+    from claimcheck.release import _scope
+    doc = parse_html('<p>UnitedHealth Group Reports Third Quarter 2026 Results. Compared with third quarter 2025 and full year 2025, results improved.</p>')
+    assert _scope(doc)[0] == 'FY2026Q3'
+    doc = parse_html('<h1>Shell third quarter 2026 results</h1><p>Three and nine month periods ended September 30, 2026</p>')
+    assert _scope(doc) == ('FY2026Q3', '2026-09-30')
+
+
+def test_relative_discovery_failure_cannot_silently_select_old_facts(tmp_path):
+    edgar = client(tmp_path)
+    def unavailable(url):
+        raise RuntimeError('SEC submissions unavailable')
+    edgar.fetcher = unavailable
+    _, period = resolve_relative_period('Meta revenue last quarter was $100.', edgar, '2026-10-29')
+    assert period['error'] and 'submissions unavailable' in period['reason']
+
+
+def test_first_fixcheck_shell_failed_xbrl_gets_program_verified_6k_route(tmp_path):
+    edgar = recorded_cache(tmp_path)
+    runner = ToolRunner(edgar, claim_text="Shell's Q3 2026 net income was $12.1 billion.")
+    ev = runner.dispatch('lookup_fact', dict(ticker='SHEL', metric='net_income', period='FY2026Q3'))
+    assert ev.get('error')
+    claim = "Shell's Q3 2026 net income was $12.1 billion."
+    check = evaluate_sub_claim(dict(text=claim, original_claim=claim, stated_text='$12.1 billion',
+        claim_type='value', evidence_ids=[ev['evidence_id']], verdict='insufficient_evidence'), runner)
+    assert check['program_verdict'] == 'supported' and check['program_release_fallback']
+    source = check['release_evidence']
+    assert source['span_verified'] and source['form'].startswith('6-K')
+    gold = next(json.loads(line) for line in (RECORDED / 'gold.jsonl').read_text().splitlines()
+                if json.loads(line)['id'] == 'RW050')
+    assert source['sha256'] == gold['source']['sha256']
+    assert check['actual_value'] == 12057e6
+    assert all(e.startswith('P') for e in check['program_evidence_ids'])
+    assert any(c.get('role') == 'program' and c['name'] == 'quote_release' for c in runner.calls)
+    wrong = claim.replace('Q3 2026', 'Q3 2027')
+    no = evaluate_sub_claim(dict(text=wrong, original_claim=wrong, stated_text='$12.1 billion',
+        claim_type='value', evidence_ids=[ev['evidence_id']]), runner)
+    assert no['program_verdict'] != 'supported'
+    third_party = 'Analysts estimate ' + claim
+    no = evaluate_sub_claim(dict(text=third_party, original_claim=third_party, stated_text='$12.1 billion',
+        claim_type='value', evidence_ids=[ev['evidence_id']]), runner)
+    assert not no.get('program_release_fallback')

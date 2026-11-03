@@ -80,6 +80,13 @@ def _scope(doc: Document) -> tuple[str | None, str | None]:
     report = None
     for span in doc.spans[:80]:
         text = _short_years(span["text"])
+        # Some SEC HTML exports flatten the release into one long paragraph.
+        # A reporting title before any comparative tables establishes scope;
+        # labels buried later in the paragraph cannot override that title.
+        title = re.match(r"^.{0,90}?\breports?\b.{0,60}?\b(?:first|second|third|fourth)[ -]+quarter.{0,30}?\b20\d{2}\b", text, re.I)
+        if title and len(quarters := {p for p in period_labels(title[0]) if "Q" in p}) == 1:
+            report = next(iter(quarters))
+            break
         labels = period_labels(text)
         if re.search(r"\bdividend\b", text, re.I):
             continue
@@ -94,7 +101,7 @@ def _scope(doc: Document) -> tuple[str | None, str | None]:
                 break
     end = None
     for span in doc.spans[:80]:
-        if re.search(r"quarter.{0,40}ended", span["text"], re.I):
+        if re.search(r"(?:quarter.{0,40}|three(?:\s+and\s+nine)?[ -]+months?(?:\s+periods?)?\s+)ended", span["text"], re.I):
             # Filing/press-release date can precede period end in the same
             # sentence; take the date after 'ended'.
             tail = re.split(r"\bended\b", span["text"], maxsplit=1, flags=re.I)[-1]
@@ -340,7 +347,8 @@ class ReleaseService:
         from .policy import policy_for
         self.policy = policy_for(edgar)
         self.edgar = edgar
-        self.client = client or ReleaseClient(edgar.cache_dir, user_agent=edgar.user_agent, timeout=edgar.timeout)
+        self.client = client or ReleaseClient(edgar.cache_dir, fetcher=getattr(edgar, "fetcher", None),
+                                              user_agent=edgar.user_agent, timeout=edgar.timeout)
         self.candidates: dict[str, dict[str, Any]] = {}
 
     def find(self, ticker: str, metric: str, period: str, claim_kind: str) -> dict[str, Any]:

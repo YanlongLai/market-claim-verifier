@@ -53,8 +53,8 @@ def cases_from(path):
 
 def prepare(out, declaration):
     name, source = declaration.split("=", 1)
-    if name not in {"news", "threads"}:
-        raise ValueError("input set must be news or threads")
+    if name not in {"news", "news-r2", "threads"}:
+        raise ValueError("input set must be news, news-r2 or threads")
     source = Path(source).resolve()
     cases = cases_from(source / "claims.jsonl")
     gold = [json.loads(l) for l in (source / "gold.jsonl").read_text().splitlines()]
@@ -76,7 +76,7 @@ def prepare(out, declaration):
                 "source_directory": str(source.relative_to(ROOT)),
                 "models": MODELS, "budget_usd_per_provider": CAP,
                 "ledger": str((out / "ledger.jsonl").relative_to(ROOT)),
-                "budget_scope": "All News/Threads direct-agent and actual post-CLI calls, application retries, failures and unknown-usage reservations in this root. Stop at cap; no outcome-driven repeats.",
+                "budget_scope": "All News/Threads direct-agent and actual post-CLI calls, application retries, failures and unknown-usage reservations in this root. Stop at cap. Every adaptive repeat needs a separate frozen registration; never overwrite prior attempts.",
                 "order": "Frozen input order, split by index modulo 4; each shard serial, agent then post. Four independent caches/workers per provider.",
                 "workers_per_provider": WORKERS, "max_turns": 6, "max_output_tokens": 3000,
                 "sdk_retries": 0, "request_timeout_seconds": 90,
@@ -87,13 +87,23 @@ def prepare(out, declaration):
                            "News contains handwritten paraphrases, not full articles. No OCR/ASR or feed-summary fidelity retest.",
                            "Concurrency and source-date context changed; before/after is not a causal model/provider comparison.",
                            "No Threads inputs available at News registration; later Threads execution must freeze a separate set and reuse this ledger."]}
+    if name == "news-r2":
+        adaptation = out / "ADAPTATION.json"
+        if not adaptation.exists() or not (out / "sets/news/RUN_END.json").exists():
+            raise ValueError("adaptive repair requires retained first attempt and decision record")
+        protocol["adaptive_repair"] = {"previous_attempt": "news", "decision_record": "ADAPTATION.json",
+                                      "sha256": digest(adaptation), "full_inventory_repeat": True,
+                                      "further_paid_repeats_planned": False,
+                                      "disclosure": "First-attempt outcomes were inspected before this additional routing repair. Both complete attempts are reported; no best-of selection."}
     write(target / "protocol.json", protocol)
     sources = [*sorted((ROOT / "src/claimcheck").glob("*.py")), *sorted((ROOT / "prompts").glob("*.md")),
                *sorted((ROOT / "scripts/real_world").rglob("*.py")), ROOT / "uv.lock", ROOT / "pyproject.toml",
-               ROOT / "tests/test_real_world_fixes.py", *sorted(out.glob("source-supplement*")),
+               ROOT / "tests/test_real_world_fixes.py", ROOT / "sources/registry.yaml", *sorted(out.glob("source-supplement*")),
                *sorted(target.glob("*.json*")), *sorted(inputs.glob("*.txt"))]
     # Freeze original evidence too, including archives used to seed the caches.
     sources += [p for p in source.rglob("*") if p.is_file()]
+    if name == "news-r2":
+        sources += [out / "ADAPTATION.json", out / "sets/news/FREEZE.json", out / "sets/news/RUN_START.json", out / "sets/news/RUN_END.json"]
     write(target / "FREEZE.json", {"prepared_at": now(), "sha256": {str(p.relative_to(ROOT)): digest(p) for p in sources}})
     print(f"Prepared {name}: {len(cases)} seen frozen inputs; commit manifest before paid execution.")
 
@@ -155,7 +165,8 @@ def execute(out, name, cache, git_dir):
             except Exception as exc:
                 # Other workers finish; a failure is retained, never retried.
                 errors.append({"worker": jobs[future], "error": type(exc).__name__, "message": str(exc)})
-    write(target / "RUN_END.json", {"finished_at": now(), "workers": summaries, "errors": errors})
+    write(target / "RUN_END.json", {"finished_at": now(), "workers": summaries, "errors": errors,
+                                    "ending_ledger_usd": {p: Ledger(out / "ledger.jsonl", provider=p).spent_for_provider(p) for p in MODELS}})
     retain_cache(cache, target)
     # Check that neither frozen inputs nor runtime were edited while running.
     freeze_proof(target, git_dir)
@@ -169,7 +180,8 @@ def build_report(out):
         raise ValueError("provider budget exceeded")
     data, lines = {}, ["# POST-HOC FIX RECHECK", "", "**Inputs were seen before these fixes. This is not a held-out result.** Original text and gold are unchanged; publication-date context is now supplied. No OCR/ASR was retested.", "",
                        "One append-only ledger covers News and later Threads sets, including retries, failures and unreconciled reservations. Cap: $5 per provider.", "",
-                       "| Set / provider / path | Primary SEC positives before → after | Supported / contradicted / insufficient after | Failed / stopped |", "|---|---:|---:|---:|"]
+                       "The first attempt (`news`) and adaptive routing repair (`news-r2`) are separate, fully retained executions. First-attempt outputs were inspected before the second repair; see [decision record](ADAPTATION.json) and [diagnosis](FINDINGS.md). Each row compares with the original 2026-11-02 run, never with a selected best result.", "",
+                       "| Attempt / provider / path | Primary SEC positives before → after | Supported before → after | Contradicted before → after | Insufficient before → after | Failed before → after / stopped after |", "|---|---:|---:|---:|---:|---:|"]
     for target in sorted((out / "sets").iterdir()):
         if not (target / "RUN_START.json").exists():
             continue
@@ -184,7 +196,9 @@ def build_report(out):
                 blocks[key] = summarize(cases, gold, records)
                 b, a = before.get(key, {}).get("primary_factual_accuracy", {}), blocks[key]["primary_factual_accuracy"]
                 counts = blocks[key]["outcomes"]
-                lines.append(f"| {target.name}/{key} | {b.get('numerator', '—')}/{b.get('denominator', '—')} → {a['numerator']}/{a['denominator']} | {counts.get('supported', 0)} / {counts.get('contradicted', 0)} / {counts.get('insufficient_evidence', 0)} | {blocks[key]['failure_items']} / {blocks[key]['budget_stopped_items']} |")
+                prior = before.get(key, {})
+                comparisons = [f"{prior.get('outcomes', {}).get(v, '—')} → {counts.get(v, 0)}" for v in ('supported', 'contradicted', 'insufficient_evidence')]
+                lines.append(f"| {target.name}/{key} | {b.get('numerator', '—')}/{b.get('denominator', '—')} → {a['numerator']}/{a['denominator']} | " + " | ".join(comparisons) + f" | {prior.get('failure_items', '—')} → {blocks[key]['failure_items']} / {blocks[key]['budget_stopped_items']} |")
         data[target.name] = {"systems": blocks, "items": len(cases)}
     lines += ["", "Costs include unknown-usage reservations (estimates, not invoices): " + ", ".join(f"{p} ${v:.6f}" for p, v in costs.items()) + ".", "",
               "The News truth panel has only four independently SEC-confirmed positives. The other labels are scope expectations or unresolved review cases. Before/after fixes, source-date context and execution concurrency changed together; these counts do not establish broad real-world accuracy or a hosting effect.", "",
@@ -199,7 +213,7 @@ def main():
     parser.add_argument("action", choices=("prepare", "run", "report"))
     parser.add_argument("--out", type=Path, default=DEFAULT_OUT)
     parser.add_argument("--input-set")
-    parser.add_argument("--set", choices=("news", "threads"))
+    parser.add_argument("--set", choices=("news", "news-r2", "threads"))
     parser.add_argument("--cache", type=Path)
     parser.add_argument("--git-dir", type=Path)
     args = parser.parse_args()

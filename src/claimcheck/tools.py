@@ -711,6 +711,7 @@ class ToolRunner:
         c = candidates[0]
         quote = self.release_service.quote(c["candidate_id"], c["start"], c["end"])
         return {**quote, "period": valid["period"], "period_basis": _period_basis_for_label(valid["period"]),
+                "start": None, "end": quote.get("period_end"),
                 "release_evidence": quote, "derived": False, "filing_url": quote["exhibit_url"]}
 
     def _dispatch_result(

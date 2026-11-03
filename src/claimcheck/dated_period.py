@@ -5,7 +5,9 @@ import re
 from datetime import date
 from typing import Any
 
-from .edgar import EdgarClient
+from httpx import HTTPError
+
+from .edgar import EdgarClient, _quarter_for_end
 from .issuer import identify_issuer
 
 RELATIVE = re.compile(r"\b(?:(?:last|latest|most recent)\s+(?:fiscal\s+|calendar\s+)?quarter|this\s+(?:fiscal\s+|calendar\s+)?year|(?:first|second|third|fourth)[ -]quarter|Q[1-4])\b", re.I)
@@ -55,18 +57,24 @@ def resolve_relative_period(claim: str, edgar: EdgarClient, published_at: str | 
                                "filing_url": fact.get("filing_url")})
         # A just-furnished quarterly report may precede companyfacts. Its
         # stated reporting quarter and SEC filing date are also period evidence.
-        if release_client is not None:
-            from .release import _scope
-            from .release_text import parse_html
-            for filing in release_client.filings(company["cik"], f"FY{source_date.year}")[:32]:
-                if not eligible.policy.admits(filing.get("filingDate")):
-                    continue
-                for exhibit in release_client.exhibits(company["cik"], filing):
-                    label, end = _scope(parse_html(exhibit["raw"]))
-                    if label and end and "Q" in label:
-                        candidates.append({"period": label, "end": end, "filed": exhibit["filed"],
-                                           "period_type": "quarter", "source_sha256": exhibit["sha256"],
-                                           "filing_url": exhibit["exhibit_url"]})
+        from .release import _scope
+        from .release_fetch import ReleaseClient
+        from .release_text import parse_html
+        releases = release_client or ReleaseClient(eligible.cache_dir, fetcher=eligible.fetcher,
+                                                   user_agent=eligible.user_agent, timeout=eligible.timeout)
+        filings = [f for f in releases.filings(company["cik"], f"FY{source_date.year}")
+                   if eligible.policy.admits(f.get("filingDate"))]
+        if len(filings) > 32:
+            return fail("dated period discovery truncated; latest eligible reporting period cannot be established")
+        for filing in filings:
+            for exhibit in releases.exhibits(company["cik"], filing):
+                label, end = _scope(parse_html(exhibit["raw"]))
+                if label and end and "Q" in label:
+                    candidate = {"period": label, "end": end, "filed": exhibit["filed"],
+                                 "period_type": "quarter", "source_sha256": exhibit["sha256"],
+                                 "filing_url": exhibit["exhibit_url"]}
+                    candidates.append(candidate)
+                    candidates.append({**candidate, "period": _quarter_for_end(date.fromisoformat(end))})
         annual = "year" in phrase[0].lower()
         wanted = "annual" if annual else "quarter"
         candidates = [c for c in candidates if c["period_type"] == wanted and c["end"] <= source_date.isoformat()]
@@ -117,5 +125,5 @@ def resolve_relative_period(claim: str, edgar: EdgarClient, published_at: str | 
         resolved = claim[:phrase.start()] + label_text + claim[phrase.end():]
         note = f"period resolved from post date {source_date} → {label}, filed {chosen['filed']}"
         return resolved, {**record, **chosen, "period": label, "resolved_claim": resolved, "reason": note}
-    except (ValueError, RuntimeError, OSError, KeyError) as exc:
+    except (ValueError, RuntimeError, OSError, KeyError, HTTPError) as exc:
         return fail(f"dated period resolution unavailable: {type(exc).__name__}: {exc}")
