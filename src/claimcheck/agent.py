@@ -159,6 +159,21 @@ AGENT_FINAL_VERDICT_PROMPT = (
 )
 
 SYSTEM_INSTRUCTIONS += RELEASE_INSTRUCTIONS
+SYSTEM_INSTRUCTIONS += """
+Issuer names must agree exactly with the SEC issuer (or a reviewed CIK alias).
+Never infer HON from Hon Precision or use a ticker substring as company identity.
+Use lookup_fact metrics net_margin, operating_margin, gross_margin for program
+calculations from filed components. For segment sales use aws_revenue,
+google_cloud_revenue or data_center_revenue; never substitute consolidated sales.
+For total investment income use the separate investment_income release metric.
+US comparable-store/coffeehouse sales growth uses us_comparable_sales_growth,
+not global or North America sales and not consolidated revenue growth.
+Release discovery includes SEC 6-K exhibits for registered foreign issuers.
+An annual calendar year such as 2026 may use FY2026 only when SEC facts prove
+fiscal/calendar equivalence. A guidance minimum must retain 'at least' wording.
+Relative periods supplied with source-date resolution must use that recorded
+period. Without resolution do not choose a convenient period from a matching value.
+"""
 
 
 def _validate_output_tokens(value: Any) -> int:
@@ -720,25 +735,43 @@ def verify_claim(
     reasoning_effort: str | None = None,
     provider: str | ProviderAdapter = "meta",
     release_client: Any = None,
+    published_at: str | None = None,
+    issuer_country: str | None = None,
+    issuer_exchange: str | None = None,
+    issuer_text: str | None = None,
 ) -> dict[str, Any]:
     """Run the model/tool loop, then apply program checks to its verdict."""
 
     from .policy import policy_for
+    from .dated_period import dated_client, resolve_relative_period
+    from .issuer import outside_sec_scope
+    if published_at:
+        edgar = dated_client(edgar, published_at)
     active_policy = policy_for(edgar).to_dict()
     active_provider = get_provider(provider)
     recorder = trace or TraceRecorder(claim, model, provider=active_provider.name)
     recorder.provider = active_provider.name
     recorder.verification_policy = active_policy
-    reason = missing_period_reason(claim)
+    claim, resolution = resolve_relative_period(claim, edgar, published_at, release_client)
+    reason = ("issuer not in SEC coverage" if outside_sec_scope(claim, issuer_country) else
+              resolution["reason"] if resolution and resolution.get("error") else missing_period_reason(claim))
     if reason:
+        flag = "issuer_not_in_sec_coverage" if reason.startswith("issuer not in SEC coverage") else "missing_period"
         check = {"text": claim, "claim_type": "unresolved_period", "program_verdict": "insufficient_evidence",
-                 "reason": reason, "evidence_ids": [], "flags": ["missing_period"], "evidence_strength": "low"}
+                 "reason": reason, "evidence_ids": [], "flags": [flag], "evidence_strength": "low"}
         result = {"verdict": "insufficient_evidence", "summary": reason, "sub_claims": [],
-                  "program_checks": [check], "flags": ["missing_period"], "evidence_strength": "low"}
+                  "program_checks": [check], "flags": [flag], "evidence_strength": "low"}
         result["verification_policy"] = active_policy
+        if resolution:
+            result["period_resolution"] = resolution
         recorder.finish(result)
         return result
-    runner = ToolRunner(edgar, release_client=release_client)
+    runner = ToolRunner(edgar, release_client=release_client, claim_text=issuer_text or claim,
+                        issuer_country=issuer_country, issuer_exchange=issuer_exchange)
+    if resolution:
+        evidence = runner._number_result(resolution, "period_resolution", prefix="P")
+        recorder.record_tool_call(name="period_resolution", arguments={"published_at": published_at},
+                                  call_id=None, result=evidence, role="program")
     configured_max = _configured_max_output_tokens(max_output_tokens)
     tool_output_tokens = configured_max or MAX_TOOL_OUTPUT_TOKENS
     final_output_tokens = configured_max or MAX_FINAL_OUTPUT_TOKENS
@@ -861,6 +894,10 @@ def verify_claim(
             max_output_tokens=final_output_tokens,
             reasoning_effort=configured_reasoning_effort,
         )
+        if active_provider.name == "meta" and response.tool_calls:
+            # At the turn limit the last response still has pending calls.
+            # Their outputs must accompany finalization, including on replay.
+            final_payload["input"] = [*tool_input_items, *final_payload["input"]]
         final_fallback_payload: dict[str, Any] | None = None
         if active_provider.name == "meta":
             final_input = [
@@ -870,7 +907,7 @@ def verify_claim(
             ]
             final_fallback_payload = active_provider.fallback_request(
                 final_payload,
-                [*meta_history, *final_input],
+                [*meta_history, *(item for item in final_input if item.get("type") != "function_call_output")],
                 model=model,
                 max_output_tokens=final_output_tokens,
                 reasoning_effort=configured_reasoning_effort,
@@ -950,6 +987,10 @@ def verify_claim(
     from .program_summary import program_summary
     verdict["model_summary"] = verdict.get("summary", "")
     verdict["summary"] = program_summary(program_verdict, checks)
+    unit_notes = list(dict.fromkeys(c["unit_translation_note"] for c in checks if c.get("unit_translation_note")))
+    if unit_notes:
+        verdict["summary"] += " " + "; ".join(unit_notes)
+        verdict["flags"] = list(dict.fromkeys([*verdict.get("flags", []), "likely_unit_translation_error"]))
     strength_order = {"low": 0, "medium": 1, "high": 2}
     strengths = [
         str(check.get("evidence_strength"))
@@ -985,5 +1026,8 @@ def verify_claim(
         or any(check.get("disagreement") for check in checks)
     )
     verdict["verification_policy"] = active_policy
+    if resolution:
+        verdict["period_resolution"] = resolution
+        verdict["summary"] += " " + resolution["reason"]
     recorder.finish(verdict)
     return verdict

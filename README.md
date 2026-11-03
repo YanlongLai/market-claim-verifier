@@ -123,6 +123,30 @@ For a single image, audio file, video or text PDF, use `ingest`. [Commands and l
 
 A document's cost includes preprocessing, claim extraction and every verification turn. The headline is the [recorded held-out text-verifier mean](docs/evidence/eval-v2-2026-10-27/REPORT.md#metrics). [Costs, latency and dated provider rates](docs/PROVIDERS.md) · [Cost accounting and Batch limits](JUDGES.md#cost-accounting) · [Latest recorded follow-up spend](docs/evidence/real-av-context-live/REPORT.md#spend-usd-estimatedreserved).
 
+## Real-world test
+
+The original [DappGo News study](docs/evidence/real-world-2026-11-02/REPORT.md) recorded the pre-fix agent and post CLI on **80 paraphrased stories**: 60 numerical financial statements and 20 support controls, across Baseten, Fireworks and Meta API. Gold and runtime hashes were locally committed before model execution; original third-party headlines and summaries remain only in ignored cache.
+
+Only **four** items have independently resolved SEC truth labels. **23 US financial items need review**, and **53 scope-only labels measure expected abstention**, including Taiwan claims and non-financial controls. Coverage, latency, costs, failures and source/type breakdowns are reported for every item; scope agreement is not broad factual accuracy. [Gold review list](docs/evidence/real-world-2026-11-02/GOLD_REVIEW.md) · [Next Owner-provided Reels and YouTube inputs](docs/evidence/real-world-2026-11-02/NEXT_SOURCES.md).
+
+All six provider/path combinations abstained on the four SEC-confirmed positive cases. The study also exposes an issuer-binding failure: five combinations compare Taiwan's Hon Precision with **Honeywell (`HON`)** and return a contradiction. This is an invalid correction. [Retained traces and next work](docs/evidence/real-world-2026-11-02/findings.md).
+
+A post-freeze input review found one translated company-name error and one ambiguous forecast issuer. The [errata](docs/evidence/real-world-2026-11-02/PARAPHRASE_REVIEW.md) retain the original runs, provide the known correction, and mark corrected-input behavior untested; these cases have no factual truth score.
+
+The 480 item/path evaluations used **$5.3361 in ledger estimates/reservations**: Baseten $1.5528, Fireworks $1.5872 and Meta $2.1961, each below its $10 task cap. Failed attempts and unknown-usage reservations remain included; these are not provider invoices.
+
+Phase 2 adds **30 of 107 own Threads posts, all 48 supplied third-party paraphrases and two real own-post cards**, through three providers and actual image ingest. The external collection came from logged-in, Owner-authorised **Top** search results; reliable engagement counts were unavailable. Five third-party items have independent SEC truth labels, 36 items have scope expectations, and 37 need review. Own-post and media factual accuracy are not estimable from this gold. The [combined source tables](docs/evidence/real-world-2026-11-02/REPORT.md#threads) retain every result and cost. Displayed auto-translations contain confirmed unit/period discrepancies; original-language translation causation remains unverified. All six image routes failed before verification: four incomplete claim extractions, one extraction timeout and one incomplete OCR response. Every route and cost is retained under a shared $8 cap per billed provider. [Frozen phase-2 protocol](docs/evidence/real-world-2026-11-02/threads/protocol.json) · [Owner-provided audio/video plan](docs/evidence/real-world-2026-11-02/NEXT_SOURCES.md).
+
+On the five truth-labelled Threads items, each provider scored **2/5 direct** (40%; Wilson 95% CI 11.8–76.9%) and **3/5 post** (60%; 23.1–88.2%). Failures count wrong; these selected, correlated items do not establish broad accuracy. Phase-2 ledger estimates/reservations total **$10.537241**: Baseten $3.311842, Fireworks $3.316011 and Meta $3.909388, including all media calls and failures. Both phases total **$15.873363**.
+
+The separately recorded [POST-HOC FIX RECHECK](docs/evidence/real-world-2026-11-03-fixcheck/REPORT.md) uses these same seen inputs after repairs. **The inputs and failures were seen before the fixes; this is not held-out evidence.** Original text and gold are unchanged; publication dates are now supplied as separate context. Both the initial recheck and separately registered adaptive routing repair retain before/after counts, failures and costs for all three providers on both paths. News and later Threads sets share a $5-per-provider ledger, including failed calls and unknown usage.
+
+The adaptive repeat supports **4/4 original SEC-confirmed positives on five paths** and **3/4 on Fireworks post**, where UnitedHealth timed out and counts wrong. Every original path scored 0/4. Across both retained attempts, ledger estimates/reservations are **$2.1730 Baseten, $2.6954 Fireworks and $2.7280 Meta**, each below $5. This four-positive development panel does not establish broad accuracy or a factual false-supported rate.
+
+The repairs add exact SEC issuer binding, filing-date-backed relative periods, component-derived net/operating/gross margins and YoY growth, narrowly scoped segment revenue, 6-K releases, investment income, US comparable sales, annual minimum guidance and explicit unit-error notes on contradictions. A missing date, ambiguous period or unsupported issuer/metric still yields insufficient evidence. The [frozen recheck protocol](docs/evidence/real-world-2026-11-03-fixcheck/sets/news/protocol.json) discloses changed date context and concurrency. Threads phase 2 ran on the pre-fix agent; a post-fix Threads recheck can use a separately frozen set under the same remaining caps. No OCR/ASR was retested.
+
+For dated text, `verify` and `post` accept `--published-at 2026-10-29T22:13:49Z`; this supplies the source date separately and limits eligible filing dates. Add `--issuer-country` and `--issuer-exchange` when known. These are constraints to check against SEC identity evidence, not substitutes for a matching company name.
+
 ## Limitations
 
 See [JUDGES.md — Limits](JUDGES.md#limits) for study design, source scope, media recall, conditional event context and cost accounting.
@@ -155,7 +179,7 @@ The material below preserves the detailed study history and reproducible figures
 
 ## L4 earnings-release evidence
 
-Guidance and non-GAAP claims can use the issuer's SEC **8-K Item 2.02 Ex 99.1** earnings release (plus HTML Ex 99.2). Muse selects a candidate quote; Python rechecks the cached bytes, offsets, metric, period and numbers. L4 is furnished, unaudited and medium strength at most. Consolidated reported totals are also checked against XBRL; L1/L2 wins a conflict with `release_vs_filing_mismatch`. Missing outlooks and verbal ranges such as “low to mid single digits” return insufficient evidence.
+Guidance and non-GAAP claims can use the issuer's SEC **8-K Item 2.02** or **6-K** earnings release, through SEC-indexed HTML Ex 99.1/99.2. Muse selects a candidate quote; Python rechecks the cached bytes, offsets, metric, period and numbers. A failed XBRL lookup can also trigger the same verified release route in program checks. L4 is furnished, unaudited and medium strength at most. Consolidated reported totals are also checked against XBRL; L1/L2 wins a conflict with `release_vs_filing_mismatch`. Missing outlooks and verbal ranges such as “low to mid single digits” return insufficient evidence.
 
 The [source and comparison rules](docs/DATA_SOURCES.md#l4-parsing-and-decision-rules) and [independent 32-claim gold builder](eval/l4/GOLD_REVIEW.md) describe the supported scope. Rebuild gold with `.venv/bin/python eval/l4/build_gold.py`. After committing the gold and source fixtures, run `.venv/bin/python eval/l4/run_agent.py`; it uses Baseten's Meta Muse Spark Open, offline SEC snapshots, and one $5 budget for the entire run. Results belong in `docs/evidence/eval-l4-2026-10-29/`.
 

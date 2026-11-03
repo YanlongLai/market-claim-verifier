@@ -27,7 +27,7 @@ _NUMBER_PATTERN = re.compile(
         billion|billions|bn|b|
         million|millions|mn|m|
         thousand|thousands|k|
-        percent|%
+        percent|%|億|亿|萬|万|兆
     )?
     (?![A-Za-z0-9])
     """,
@@ -35,6 +35,7 @@ _NUMBER_PATTERN = re.compile(
 )
 
 _UNIT_MULTIPLIERS = {
+    "億": 1e8, "亿": 1e8, "萬": 1e4, "万": 1e4, "兆": 1e12,
     "thousand": 1e3,
     "thousands": 1e3,
     "k": 1e3,

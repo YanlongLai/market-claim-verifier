@@ -456,6 +456,9 @@ def check_post(
     bounded_extraction: bool = False,
     event_context: dict | None = None,
     extraction_reasoning_effort: str | None = None,
+    published_at: str | None = None,
+    issuer_country: str | None = None,
+    issuer_exchange: str | None = None,
 ) -> dict[str, Any]:
     if event_context is not None:
         from .event_context import validate_event_context
@@ -522,11 +525,19 @@ def check_post(
         window_counts[available] = window_counts.get(available, 0) + 1
         verified += 1
         recorder = TraceRecorder(item["claim"], model, provider=provider, secrets=secrets)
+        from .issuer import quote_issuer_context
+        issuer_text, issuer_context = quote_issuer_context(edgar, item["quote"], post)
+        if issuer_context:
+            item["issuer_context"] = issuer_context
         try:
             result = verify_claim(
                 item["claim"], client, edgar, ledger, model, trace=recorder, provider=provider,
                 max_output_tokens=max_output_tokens, reasoning_effort=reasoning_effort,
                 release_client=release_client,
+                **({"published_at": published_at} if published_at else {}),
+                **({"issuer_country": issuer_country} if issuer_country else {}),
+                **({"issuer_exchange": issuer_exchange} if issuer_exchange else {}),
+                issuer_text=issuer_text,
             )
         except Exception as exc:
             item.update(status="failed", error=f"provider/check failed ({type(exc).__name__})",
@@ -549,6 +560,7 @@ def check_post(
             evidence_strength=result.get("evidence_strength"),
             flags=result.get("flags") or [],
             program_checks=result.get("program_checks") or [],
+            **({"period_resolution": result["period_resolution"]} if result.get("period_resolution") else {}),
             evidence=_evidence_rows(trace_dict, cited),
             cost_usd=summary.get("cost_usd"),
             latency_ms=summary.get("latency_ms"),
