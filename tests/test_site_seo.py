@@ -13,7 +13,7 @@ PAGES = {
     "docs/site/index.html": ("/", "en", "WebApplication"),
     "docs/zh/index.html": ("/zh/", "zh-Hant", "WebApplication"),
     "docs/explorer/index.html": ("/explorer/", "en", "Dataset"),
-    "docs/explorer/index.zh.html": ("/explorer/index.zh.html", "zh-Hant", "Dataset"),
+    "docs/explorer/index.zh.html": ("/explorer/index.zh", "zh-Hant", "Dataset"),
 }
 
 
@@ -72,7 +72,7 @@ def test_all_pages_have_consistent_canonical_metadata_and_valid_schema():
         assert "claude:viewport-fit-sides" not in page.meta
         assert [link["href"] for link in page.links if link.get("rel") == "canonical"] == [ORIGIN + path]
         group = "/explorer/" if schema_type == "Dataset" else "/"
-        zh = "/explorer/index.zh.html" if schema_type == "Dataset" else "/zh/"
+        zh = "/explorer/index.zh" if schema_type == "Dataset" else "/zh/"
         assert {link["hreflang"]: link["href"] for link in page.links if link.get("rel") == "alternate"} == {
             "en": ORIGIN + group, "zh-Hant": ORIGIN + zh, "x-default": ORIGIN + group,
         }
