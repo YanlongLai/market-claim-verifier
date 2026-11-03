@@ -118,6 +118,14 @@ HTML／JSON 報告保留原文、證據與程式檢查。[英文與中文保存�
 
 文件費用包含前處理、主張抽取與每次查核呼叫。開頭費用來自[保留文字測試組的保存平均值](docs/evidence/eval-v2-2026-10-27/REPORT.md#metrics)。[費用、延遲與有日期的平台價格快照](docs/PROVIDERS.md) · [費用計算與 Batch 限制](JUDGES.md#cost-accounting) · [最近一輪查核費用](docs/evidence/real-av-context-live/REPORT.md#spend-usd-estimatedreserved)。
 
+## 真實世界測試
+
+[News 與 Threads 評測](docs/evidence/real-world-2026-11-02/REPORT.md)保留了 80 則新聞改寫，以及第二階段的 30 則自家貼文、48 則第三方 Threads 改寫與兩張真實卡片。三個平台分別執行主張查核、貼文抽取查核及圖片匯入。Threads 來自 Owner 授權的登入瀏覽與 Top 搜尋結果，沒有可靠的互動數據，不能視為已驗證的高互動樣本。
+
+第二階段只有 **5 筆**獨立 SEC 事實標籤，另有 36 筆僅評估範圍外的預期棄答、37 筆待審；自家貼文與圖片的事實準確率無法估計。六條圖片路徑均未完成主張查核：四條主張抽取未完成、一條抽取逾時、一條 OCR 未完成；所有失敗與費用均保留，每個計費平台共用 $8 上限。報告分開呈現翻譯顯示中的單位／比較期間錯誤、覆蓋、失敗、延遲及完整費用；原始貼文、卡片與逐字 OCR 留在本地忽略目錄。[合併結果](docs/evidence/real-world-2026-11-02/REPORT.md#threads) · [待提供的自家 Reels／YouTube 檔案](docs/evidence/real-world-2026-11-02/NEXT_SOURCES.md)。
+
+在五筆事實標籤中，三個平台皆為直接查核 **2/5**（40%；Wilson 95% CI 11.8–76.9%）、貼文查核 **3/5**（60%；23.1–88.2%）；失敗計為錯誤，不能推論廣泛準確率。第二階段估計／保留費用共 **$10.537241**（Baseten $3.311842、Fireworks $3.316011、Meta $3.909388），兩階段合計 **$15.873363**。
+
 ## 限制
 
 [JUDGES.md — Limits](JUDGES.md#limits)集中說明評測設計、來源範圍、媒體漏抽、附條件的事件期間與費用計算。

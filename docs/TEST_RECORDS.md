@@ -20,6 +20,7 @@ Retain every paid attempt, including failed extraction, provider errors, abstent
 | [Offline judge walkthrough](evidence/judge-walkthrough/REPORT.md) | Deterministic evidence-to-verdict checks; no model calls |
 | [Real-world DappGo News probe](evidence/real-world-2026-11-02/REPORT.md) | 80 paraphrased feed items, original pre-fix agent plus post CLI, all three providers; four primary truth labels, 53 scope expectations and 23 unresolved US review cases |
 | [Real-world POST-HOC FIX RECHECK](evidence/real-world-2026-11-03-fixcheck/REPORT.md) | Seen News inputs after fixes, unchanged text/gold and newly supplied publication context; separate manifests accept later Threads inputs, all paths/sets share a $5/provider ledger; no held-out or OCR/ASR claim |
+| [Threads phase 2 and real cards](evidence/real-world-2026-11-02/REPORT.md#threads) | 78 paraphrased posts through agent/post on three providers plus six fresh image routes; pre-call gold commit, shared $8/provider ledger, every failure, primary sources and local media-response hashes retained |
 
 [2026-10-30 SEC refresh](evidence/sec-refresh-2026-10-30/REPORT.md) retains compressed raw snapshots for offline restoration. [Real issuer media catalogue](evidence/real-media-2026-10-30/README.md) distinguishes prepared images from link-only webcast candidates; neither is a new accuracy benchmark.
 
