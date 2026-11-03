@@ -31,6 +31,8 @@ def summarize(cases, gold, results):
     block["extraction_item_coverage"] = rate(block["items_with_extracted_proposals"], len(cases))
     block["verification_item_coverage"] = rate(block["items_with_verified_claims"], len(cases))
     block["proposed_claims"] = sum(results.get(c["id"], {}).get("proposed_count", 0) for c in cases)
+    block["supported_share"] = rate(block["outcomes"].get("supported", 0), len(cases))
+    block["contradicted_share"] = rate(block["outcomes"].get("contradicted", 0), len(cases))
     return block
 
 
@@ -207,11 +209,17 @@ def build(out):
     (parent / "REPORT.md").write_text(existing + "\n\n" + "\n".join(section))
     (out / "REPORT.md").write_text("# Threads phase 2\n\nThe complete report, source comparison, limits and spend are in the [Threads section](../REPORT.md#threads).\n\n[Metrics](metrics.json) · [findings](FINDINGS.md) · [audit](audit.json) · [validation](validation.json)\n")
     lines = ["# Threads breakdowns", "", "All selected strata retained. Primary truth excludes scope and review. Small selected samples; no credibility ranking. Full Wilson intervals, latency and costs are in metrics.json.", ""]
+    coverage_header = [header[0] + " Extracted items/n | Checked items/n | Mean seconds |",
+                       header[1] + "---:|---:|---:|"]
     for title, store in [("Claim type", by_type), ("Scope", by_scope), ("Translation display", by_translation)]:
-        lines += [f"## {title}", "", *header]
+        lines += [f"## {title}", "", *coverage_header]
         for key, groups in store.items():
             for group, block in groups.items():
-                lines.append(table_row(f"{group} · {key}", block))
+                extracted = f"{block['items_with_extracted_proposals']}/{block['items']}" if not key.endswith('/agent') else "—"
+                checked = f"{block['items_with_verified_claims']}/{block['items']}" if not key.endswith('/agent') else "—"
+                mean = block["latency_seconds"]["mean"]
+                latency = f"{mean:.2f}" if mean is not None else "—"
+                lines.append(table_row(f"{group} · {key}", block) + f" {extracted} | {checked} | {latency} |")
         lines.append("")
     (out / "BREAKDOWNS.md").write_text("\n".join(lines))
     # Synthetic report tests use budget-stopped rows without per-item artifacts.
