@@ -91,6 +91,10 @@ def test_compound_false_support_keeps_true_components_separate_from_scope():
     assert block["failure_items"] == 1
     results["compound"]["verdict"] = "supported"
     assert summarize(cases, gold, results)["primary_false_supported_rate"]["numerator"] == 1
+    results["compound"]["status"] = "partial_failure"
+    partial = summarize(cases, gold, results)
+    assert partial["primary_false_supported_rate"]["numerator"] == 0
+    assert partial["negative_item_supported_output_exposure_phase1_definition"]["numerator"] == 1
 
 
 def test_complete_budget_stop_report_keeps_every_pair_and_no_media_accuracy(tmp_path):

@@ -22,10 +22,9 @@ def now():
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--out", type=Path, required=True)
+    parser.add_argument("--phase", choices=("product", "offline", "all"), default="all")
     args = parser.parse_args()
     out = args.out.resolve()
-    if (out / "validation.json").exists():
-        raise RuntimeError("retain prior validation; choose a separately named attempt")
     code = runpy.run_path(str(ROOT / "scripts/verify.py"))
     with tempfile.TemporaryDirectory(prefix="threads-validation-") as temp:
         guard = Path(temp)
@@ -38,9 +37,14 @@ def main():
         env.update(PYTHONDONTWRITEBYTECODE="1", PYTHONPATH=os.pathsep.join([str(guard), str(ROOT / "src")]),
                    NODE_OPTIONS=f'--require="{guard / "offline.cjs"}"', MPLCONFIGDIR=str(guard / "mpl"),
                    XDG_CACHE_HOME=str(guard / "cache"))
+        selected = [("product-suite", [sys.executable, "-m", "pytest", "-q", "-ra"], {}),
+                    ("verify-offline", ["sh", "scripts/verify.sh"], {"UV_OFFLINE": "1"})]
+        if args.phase != "all":
+            selected = [selected[0 if args.phase == "product" else 1]]
+        if any((out / f"{name}.json").exists() or (out / f"{name}.log").exists() for name, _, _ in selected):
+            raise RuntimeError("retain prior validation; choose a separately named attempt")
         logs = []
-        for name, command, extra in [("product-suite", [sys.executable, "-m", "pytest", "-q", "-ra"], {}),
-                                     ("verify-offline", ["sh", "scripts/verify.sh"], {"UV_OFFLINE": "1"})]:
+        for name, command, extra in selected:
             started = now()
             log = out / f"{name}.log"
             print(f"Starting {name}", flush=True)
@@ -52,12 +56,14 @@ def main():
             (out / f"{name}.json").write_text(json.dumps(row, indent=2) + "\n")
             logs.append(row)
             print(f"Finished {name}: exit {p.returncode}", flush=True)
-        receipt = {"status": "passed" if all(r["exit_code"] == 0 for r in logs) else "failed",
-                   "completed_at": now(), "checks": logs, "new_paid_calls": 0, "new_sec_fetches": 0,
+        saved = [json.loads((out / f"{name}.json").read_text()) for name in ("product-suite", "verify-offline") if (out / f"{name}.json").exists()]
+        status = "failed" if any(r["exit_code"] for r in saved) else "passed" if len(saved) == 2 else "partial"
+        receipt = {"status": status,
+                   "completed_at": now(), "checks": saved, "new_paid_calls": 0, "new_sec_fetches": 0,
                    "scope": "Full product suite and complete UV_OFFLINE=1 sh scripts/verify.sh, including demo Python/Node, figures, byte-identical site outputs and links.",
                    "preserved_symlinks": {p: os.readlink(ROOT / p) for p in (".cache", ".venv")}}
         (out / "validation.json").write_text(json.dumps(receipt, indent=2) + "\n")
-        return 0 if receipt["status"] == "passed" else 1
+        return 0 if all(r["exit_code"] == 0 for r in logs) else 1
 
 
 if __name__ == "__main__":

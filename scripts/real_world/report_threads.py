@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import argparse
 import json
-from collections import Counter
 from pathlib import Path
 
 from report import PROVIDERS, PATHS, fmt_rate, rate, summarize as phase1_summary
@@ -15,11 +14,18 @@ def summarize(cases, gold, results):
     # A true extracted component of a false conjunction is not false support.
     # Keep phase-1 any-supported handling for scope items, where all support is
     # outside the intended domain. Primary false support uses aggregate verdict.
-    scored = {id: {**r, **({"any_supported": False} if gold[id]["gold_basis"] == "primary_release" else {})}
-              for id, r in results.items()}
+    scored = {}
+    for id, row in results.items():
+        score = dict(row)
+        if gold[id]["gold_basis"] == "primary_release":
+            score["any_supported"] = False
+            if row["status"] != "completed":
+                score["verdict"] = None
+        scored[id] = score
     block = phase1_summary(cases, gold, scored)
     primary_negative = [c for c in cases if gold[c["id"]]["gold_basis"] == "primary_release" and gold[c["id"]]["gold_verdict"] == "contradicted"]
     block["any_supported_component_on_negative_post_NOT_false_support"] = rate(sum(bool(results.get(c["id"], {}).get("any_supported")) for c in primary_negative), len(primary_negative))
+    block["negative_item_supported_output_exposure_phase1_definition"] = rate(sum(results.get(c["id"], {}).get("verdict") == 'supported' or bool(results.get(c["id"], {}).get("any_supported")) for c in primary_negative), len(primary_negative))
     block["items_with_extracted_proposals"] = sum(results.get(c["id"], {}).get("proposed_count", 0) > 0 for c in cases)
     block["items_with_verified_claims"] = sum(results.get(c["id"], {}).get("verified_claims", 0) > 0 for c in cases)
     block["extraction_item_coverage"] = rate(block["items_with_extracted_proposals"], len(cases))
@@ -139,7 +145,8 @@ def build(out):
                "combined_phase1_phase2_cost_usd": news["total_cost_usd"] + ledger_cost,
                "gold_source_metadata": "Frozen gold.jsonl verdicts unchanged; quarterly/derived tier metadata corrected separately in gold-source-tiers-corrected.jsonl and GOLD_METADATA_ERRATA.md.",
                "cost_basis": "Configured token rates plus all retained reservations; not a provider invoice. Media route cost includes Meta OCR; ledger attributes it to Meta.",
-               "primary_false_supported_definition": "Overall supported aggregate on an independently refuted item; true subclaims within false compound posts are not false-supported. Any supported component is still retained separately. Scope any-supported handling matches phase 1.",
+               "latency_basis": "Observed wall time includes startup, retrieval/cache work and retries. Three provider workers ran concurrently; a guarded full product test suite overlapped part of execution. These are not isolated API/server latency measurements or a controlled speed ranking.",
+               "primary_false_supported_definition": "Completed overall supported aggregate on an independently refuted item; true subclaims within false compound posts and incomplete/partial aggregates are not established false-supported statements without component alignment. Phase-1 any-supported exposure, including partial failures, is retained separately. Scope any-supported handling matches phase 1.",
                "coverage_limit": "Extracted rows and item coverage only; full-content recall unknown. Abstentions, skips, failures and all unattempted budget pairs stay in denominators."}
     (out / "metrics.json").write_text(json.dumps(metrics, ensure_ascii=False, indent=2) + "\n")
     header = ["| Source · provider/path | Items | Truth correct/n (Wilson 95%) | False supported/n (Wilson 95%) | Scope abstention/n | S/C/I/skip | Failed/budget | USD route |",
@@ -158,7 +165,8 @@ def build(out):
                "[Phase-2 protocol](threads/protocol.json) · [seed and full own-post population hashes](threads/selection.json) · [paraphrases](threads/claims.jsonl) · [gold](threads/gold.jsonl) · [review list](threads/GOLD_REVIEW.md) · [pre-call commit proof](threads/RUN_START.json) · [metrics](threads/metrics.json) · [ledger](threads/ledger.jsonl)", "",
                "The registered seed is `dappgo-threads-2026-11-02-v1`. Own-post selection uses post-type and ticker strata, plus two certainty selections corresponding to the supplied cards. Repeated issuers and subjects are not independent observations. Only paraphrases are public; original post bodies, cards and verbatim media extraction remain local and ignored. Ticker strata preserve the collection's labels and are not authenticated issuer identity. No additional Threads acquisition or third-party video download occurred.", "",
                "**Gold: five independent primary-source truth labels (two supported, three contradicted), 36 scope expectations, 37 unresolved review items.** All five truth cases are in the third-party sample; own posts have zero resolved truth cases (28 scope, two review), so their factual accuracy is not estimable. Both media cases remain review-only. Missing reporting years are never inferred from post dates. N07 remains review despite its collector N label: SEC releases can establish buyback authorizations, but dates are missing here. Annual 10-K facts (L1), quarterly 10-Q facts (L2), derived growth (L3), and release anchors (L4), exact coordinates, hashes, Decimal arithmetic and rounding are recorded. The frozen builder initially mislabelled quarterly facts and derived growth as L1; a [source-tier metadata erratum](threads/GOLD_METADATA_ERRATA.md) and [corrected metadata copy](threads/gold-source-tiers-corrected.jsonl) preserve all original bytes and unchanged verdict labels.", "",
-               "Direct claims use one complete paraphrased item each, matching phase 1. The post CLI separately extracts up to eight claims. A contradiction in a known component refutes a compound item. Post accuracy uses the aggregate verdict; it does not establish that every statement was extracted. False-supported uses an overall supported verdict on independently refuted gold. Correctly supporting one true component of an otherwise false post is separately counted and is not itself false support. Any supported extraction on an entirely out-of-scope item still counts as false support versus scope. Failures and budget stops count wrong; review items remain in coverage and cost denominators.", "",
+               "Direct claims use one complete paraphrased item each, matching phase 1. The post CLI separately extracts up to eight claims. A contradiction in a known component refutes a compound item. Post accuracy uses the aggregate verdict; it does not establish that every statement was extracted. False-supported uses a completed overall supported verdict on independently refuted gold. Correctly supporting one true component of an otherwise false post is separately counted and is not itself false support. Partial-failure aggregates are not established factual false support without component alignment; their supported-output exposure remains in metrics under the phase-1 definition. Any supported extraction on an entirely out-of-scope item still counts as false support versus scope. Failures and budget stops count wrong; review items remain in coverage and cost denominators. [Scoring clarification](threads/SCORING_NOTE.json).", "",
+               "The compound-item false-support interpretation was clarified during execution; both the phase-1 supported-output exposure and the completed whole-item count remain available. This reporting clarification did not change frozen truth labels or discard outcomes. The timestamps and post-result counts at clarification are retained in SCORING_NOTE.json.", "",
                "### Combined table across sources", "", *combined, "",
                "Wilson 95% intervals are descriptive and do not adjust for repeated issuers or overlapping cards. A dash means no eligible denominator, not zero error. News retains its original four truth labels and input-quality errata; phase-2 results do not replace phase 1. There is no pooled broad financial-accuracy claim.", "",
                "### Threads extraction, latency and cost", "",
@@ -171,11 +179,11 @@ def build(out):
         extracted = f"{b['items_with_extracted_proposals']}/{b['items']}" if not key.endswith('/agent') else "—"
         checked = f"{b['items_with_verified_claims']}/{b['items']}" if not key.endswith('/agent') else "—"
         section.append(f"| {key} | {extracted} | {checked} | {b['proposed_claims']} | {b['verified_claims_or_agent_attempts']} | {b['model_calls']} | {times(lat)} | {times(model_lat)} | {b['cost_usd']:.6f} |")
-    section += ["", "Coverage counts extracted rows and items, not unique facts or full-content recall. Direct-agent zero-call scope abstentions are included in all-item latency; conditional latency isolates items making model calls. Metrics include Wilson intervals and operational/cost/latency breakdowns by claim type, scope, source and translation display. [Readable breakdowns](threads/BREAKDOWNS.md).", "",
-                "| Provider/path | False supported vs scope (Wilson 95%) | Contradicted vs scope (Wilson 95%) | Review items unscored |",
-                "|---|---|---|---:|"]
+    section += ["", "Coverage counts extracted rows and items, not unique facts or full-content recall. Direct-agent zero-call scope abstentions are included in all-item latency; conditional latency isolates items making model calls. Startup, retrieval and retries remain included. Provider workers ran concurrently, and guarded product validation overlapped part of execution; this is not an isolated API/server speed benchmark. Metrics include Wilson intervals and operational/cost/latency breakdowns by claim type, scope, source and translation display. [Readable breakdowns](threads/BREAKDOWNS.md).", "",
+                "| Provider/path | False supported vs scope (Wilson 95%) | Contradicted vs scope (Wilson 95%) | Supported-output exposure on negative truth items, phase-1 rule | Review items unscored |",
+                "|---|---|---|---|---:|"]
     for key, b in systems.items():
-        section.append(f"| {key} | {fmt_rate(b['false_supported_vs_scope_policy'])} | {fmt_rate(b['contradicted_vs_scope_policy'])} | {b['review_unscored']} |")
+        section.append(f"| {key} | {fmt_rate(b['false_supported_vs_scope_policy'])} | {fmt_rate(b['contradicted_vs_scope_policy'])} | {fmt_rate(b['negative_item_supported_output_exposure_phase1_definition'])} | {b['review_unscored']} |")
     section += ["",
                 "| Billed provider | Phase 2 USD | Retained unreconciled USD | Requests | Cap | Phase 1 + 2 USD |",
                 "|---|---:|---:|---:|---:|---:|"]
@@ -194,7 +202,7 @@ def build(out):
                 "The two genuine cards were visually reviewed before paid OCR, then each passed through `claimcheck ingest` with Baseten, Fireworks and Meta verification. All six routes use fresh Meta vision; this is not a native image-model comparison. Images contain market prices, technical commentary, financing and a cloud-order backlog without enough reporting context for financial truth gold. Media accuracy and OCR recall are therefore not estimable; operational extraction/checking, errors, latency and cost are reported. They overlap own posts O04/O20 and are not additional independent facts.", "",
                 "Public media artifacts are allowlisted numeric outcomes, coverage, commands and request/reservation metadata with SHA-256 links to full local artifacts. Original cards, verbatim OCR, full responses and traces are retained under ignored `runs/threads-phase2/media/`; they are not copied into the evidence corpus. [Media input hashes](threads/media-inputs.json) · [human pre-OCR gold/review notes](threads/media-gold.jsonl).", "",
                 "[Owner-provided Reels and YouTube audio/video plan](NEXT_SOURCES.md). No new real audio/video input was available for phase 2; no third-party video was downloaded.", "",
-                "Offline rebuild: `python3 scripts/real_world/report_threads.py --out docs/evidence/real-world-2026-11-02/threads`. [Artifact audit](threads/audit.json) · [validation](threads/validation.json) · [Git handoff](HANDOFF.md).", ""]
+                "Offline rebuild: `python3 scripts/real_world/report_threads.py --out docs/evidence/real-world-2026-11-02/threads`. [Offline reuse and retained artifacts](threads/REUSE.md) · [artifact audit](threads/audit.json) · [validation](threads/validation.json) · [Git handoff](HANDOFF.md).", ""]
     existing = (parent / "REPORT.md").read_text().split(MARKER)[0].rstrip()
     (parent / "REPORT.md").write_text(existing + "\n\n" + "\n".join(section))
     (out / "REPORT.md").write_text("# Threads phase 2\n\nThe complete report, source comparison, limits and spend are in the [Threads section](../REPORT.md#threads).\n\n[Metrics](metrics.json) · [findings](FINDINGS.md) · [audit](audit.json) · [validation](validation.json)\n")
