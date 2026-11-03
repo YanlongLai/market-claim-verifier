@@ -271,3 +271,15 @@ Changed global cache keys: assembly_cache_key.
 Output: `/Users/yan/git/market-claim-verifier-video/demo/out/demo-v011.mp4`; SHA-256 `0d4c5d3365c311c9ae4897aa49a0cd6b04beaa55ce81a41535c8325d53fdf0a2`.
 
 Review: v010 (177.267 s, SHA-256 prefix `f018f2514d48684e`, entry lost when the working tree was reset to an imported commit) received AI2 verdict NOT a ship-candidate (0 blockers, 2 majors, 3 minors; review kept locally in `demo/out/review-v010/`). All five were fixed in `1c1210a7`. v011 AI2 re-review: **ship-candidate, 0 blockers, 0 majors, 2 minors** (N4 aggregate label size 48 → 56 px; N5 opinion narration starts ~1.05 s before its card). Loudness −14.1 LUFS, true peak −1.1 dBTP. **Current candidate (not final); not uploaded; awaiting Owner review.**
+
+## v012 — 2026-11-03T16:07:20.794643+00:00
+
+Length: 177.267 s. Scenes >25% over budget: none.
+
+Changed scene cache keys: v301-disclosure: render; v302-apple: render; v303-extract: render; v304-hover: render; v305-proof: render; v306-program: render; v307-l4: render; v308-screenshot: render; v309-audio: render; v310-results: render; v311-limits: render; v311b-realworld: render; v312-cta: render.
+
+Changed global cache keys: assembly_cache_key, audio_master_cache_key.
+
+Output: `/Users/yan/git/market-claim-verifier-video/demo/out/demo-v012.mp4`; SHA-256 `b4b0296a362f26cd19c388e3bf7a247b5f9128aa78f875e83081450f0e6affd5`.
+
+Review: v012 AI2 re-review (`1677f61a` fixes): **ship-candidate, 0 blockers, 0 majors, 0 minors**; N4 labels now 56 px, N5 opinion clause starts on the opinion reveal (22.766 s). Loudness −14.1 LUFS, true peak −1.1 dBTP. **Current candidate (not final, 480 B-roll); not uploaded; awaiting Owner review.**
