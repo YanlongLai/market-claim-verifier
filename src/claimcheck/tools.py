@@ -10,6 +10,9 @@ from typing import Any
 from .edgar import METRICS, EdgarClient
 from .release import ReleaseService
 from .release_tools import RELEASE_TOOLS, dispatch_release
+from .financial import EXTRA_METRICS, MARGINS, SEGMENTS, margin, segment_fact
+
+METRICS = (*METRICS, *EXTRA_METRICS)
 
 
 PERIOD_PATTERN = r"^(latest|FY\d{4}(?:Q[1-4])?|\d{4}Q[1-4])$"
@@ -557,10 +560,14 @@ def _prior_year_period(period: str) -> str | None:
 class ToolRunner:
     """Dispatch tools and assign stable evidence IDs for one verification run."""
 
-    def __init__(self, edgar: EdgarClient, release_client: Any = None) -> None:
+    def __init__(self, edgar: EdgarClient, release_client: Any = None, *, claim_text: str | None = None,
+                 issuer_country: str | None = None, issuer_exchange: str | None = None) -> None:
         from .policy import policy_for
         self.policy = policy_for(edgar)
         self.edgar = edgar
+        self.claim_text = claim_text
+        self.issuer_country = issuer_country
+        self.issuer_exchange = issuer_exchange
         self._release_client = release_client
         self.release_service: ReleaseService | None = None
         self._next_evidence = 1
@@ -678,12 +685,51 @@ class ToolRunner:
         pct_change = abs_change / abs(base_value) * 100
         result["abs_change"] = abs_change
         result["pct_change"] = pct_change
+        result["formula"] = "(current - base) / abs(base) * 100"
+        result["inputs"] = {"current": current_value, "base": base_value}
+        if current.get("unit") != base.get("unit") or current.get("period_type") != base.get("period_type"):
+            result.update(error="growth component unit or duration mismatch", pct_change=None, abs_change=None)
         return result
+
+    def _lookup_financial(self, valid: dict) -> dict:
+        metric = valid["metric"]
+        if metric in MARGINS:
+            return margin(self.edgar, **valid)
+        if metric not in SEGMENTS:
+            return self.edgar.lookup_fact(**valid)
+        result = segment_fact(self.edgar, **valid)
+        if not result.get("error") or result.get("error") == "ambiguous XBRL segment values":
+            return result
+        if self.release_service is None:
+            self.release_service = ReleaseService(self.edgar, self._release_client)
+        found = self.release_service.find(**valid, claim_kind="reported_in_release")
+        candidates = found.get("candidates", [])
+        if found.get("search_truncated") or found.get("failures") or not candidates:
+            return {**result, "reason": "segment revenue unavailable: no complete matching XBRL segment or L4 earnings-release table", "release_search": found}
+        if len({(c["low"], c["high"]) for c in candidates}) != 1:
+            return {**result, "error": "ambiguous segment release values"}
+        c = candidates[0]
+        quote = self.release_service.quote(c["candidate_id"], c["start"], c["end"])
+        return {**quote, "period": valid["period"], "period_basis": _period_basis_for_label(valid["period"]),
+                "release_evidence": quote, "derived": False, "filing_url": quote["exhibit_url"]}
 
     def _dispatch_result(
         self, name: str, args: Any, *, program: bool = False
     ) -> dict[str, Any]:
         try:
+            if self.claim_text is not None and isinstance(args, dict) and args.get("ticker"):
+                from .issuer import bind_issuer
+                binding = bind_issuer(self.edgar, self.claim_text, args["ticker"],
+                                      country=self.issuer_country, exchange=self.issuer_exchange)
+                if binding.get("error"):
+                    return binding
+                metric = args.get("metric")
+                has_sales_label = re.search(r"\brevenues?\b|\b(?:net\s+)?sales\b|營收|收入", self.claim_text, re.I)
+                segment = re.search(r"\bAWS\b|Amazon Web Services|Google Cloud|Data Center", self.claim_text, re.I)
+                if metric in SEGMENTS and not has_sales_label:
+                    return {"error": "segment metric unspecified", "reason": "revenue cannot be assumed from an unqualified segment growth assertion"}
+                if segment and has_sales_label and (metric == "revenue" or metric in MARGINS):
+                    return {"error": "segment scope requires segment facts", "reason": "consolidated revenue or margins cannot substitute for segment revenue"}
             if name in {"find_earnings_release", "quote_release"}:
                 if self.release_service is None:
                     self.release_service = ReleaseService(self.edgar, self._release_client)
@@ -691,7 +737,7 @@ class ToolRunner:
             elif name == "lookup_fact":
                 valid = _validate_lookup(args)
                 result = _add_lookup_period(
-                    self.edgar.lookup_fact(**valid), valid["period"]
+                    self._lookup_financial(valid), valid["period"]
                 )
             elif name == "list_periods":
                 valid = _validate_list(args)

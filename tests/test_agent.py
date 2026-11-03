@@ -241,6 +241,9 @@ def test_program_period_lookup_is_recorded_in_trace_with_program_role(
     )
 
     class ReplayEdgar:
+        def resolve_ticker(self, ticker):
+            return {"ticker": "NVDA", "cik": "0001045810", "entity": "NVIDIA CORP"}
+
         def lookup_fact(self, ticker: str, metric: str, period: str) -> dict[str, Any]:
             values = {
                 "FY2024Q2": 13.507e9,
@@ -466,6 +469,10 @@ def test_trace_does_not_contain_model_key(tmp_path: Path) -> None:
 
 
 class ReplayEdgar:
+    def resolve_ticker(self, ticker):
+        return {"ticker": ticker, "cik": {"TSLA": "0001318605", "GOOGL": "0001652044"}[ticker],
+                "entity": {"TSLA": "Tesla Inc", "GOOGL": "Alphabet Inc"}[ticker]}
+
     def __init__(self, facts: dict[tuple[str, str, str], dict[str, Any]]) -> None:
         self.facts = facts
 

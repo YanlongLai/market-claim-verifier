@@ -61,19 +61,22 @@ def freeze_proof(out: Path, git_dir: Path | None) -> dict:
             "freeze_sha256": hashlib.sha256(frozen).hexdigest(), "files_checked": len(freeze["sha256"])}
 
 
-def run_provider(provider: str, claims: list[dict], out: Path, cache: Path) -> dict:
+def run_provider(provider: str, claims: list[dict], out: Path, cache: Path, *,
+                 budget: float = 10, published_context: bool = False,
+                 ledger_path: Path | None = None, worker_id: int | None = None) -> dict:
     from openai import OpenAI
 
     settings = load_settings(provider=provider)
     if not settings.model_api_key:
         raise RuntimeError(f"{provider} key unavailable")
     secrets = [settings.model_api_key]
-    ledger = Ledger(out / "ledger.jsonl", budget_usd=10, provider=provider,
-                    provider_budgets={p: 10 for p in ("meta", "baseten", "fireworks")})
+    shared_ledger = ledger_path or out / "ledger.jsonl"
+    ledger = Ledger(shared_ledger, budget_usd=budget, provider=provider,
+                    provider_budgets={p: budget for p in ("meta", "baseten", "fireworks")})
     adapter = get_provider(provider)
     client = OpenAI(api_key=settings.model_api_key, base_url=adapter.base_url, max_retries=0, timeout=90)
     model = settings.model
-    edgar = EdgarClient(cache, user_agent="DappGo market-claim-verifier admin@dappgo.com", as_of="2026-11-02")
+    edgar = EdgarClient(cache, user_agent="DappGo market-claim-verifier admin@dappgo.com", as_of=None if published_context else "2026-11-02")
     releases = ReleaseClient(cache, user_agent="DappGo market-claim-verifier admin@dappgo.com")
     stopped = None
     started = now()
@@ -95,9 +98,14 @@ def run_provider(provider: str, claims: list[dict], out: Path, cache: Path) -> d
                 trace = TraceRecorder(case["claim"], model, provider=provider, secrets=secrets)
                 try:
                     result = verify_claim(case["claim"], client, edgar, ledger, model, provider=provider,
-                                          max_turns=6, max_output_tokens=3000, trace=trace, release_client=releases)
+                                          max_turns=6, max_output_tokens=3000, trace=trace, release_client=releases,
+                                          **({"published_at": case["published_at"],
+                                              "issuer_country": "TW" if case.get("market") == "tw" else case.get("issuer_country"),
+                                              "issuer_exchange": case.get("issuer_exchange")} if published_context else {}))
                     row = {**base, "status": "completed", "verdict": result.get("verdict"),
                            "result": result, "incomplete_turns": len(trace.incomplete_turns)}
+                    if published_context and (result.get("incomplete_response") or result.get("invalid_model_json")):
+                        row.update(status="failed", error="incomplete_or_invalid_model_response")
                 except Exception as exc:
                     error = "budget_exceeded" if isinstance(exc, BudgetExceeded) else type(exc).__name__
                     row = {**base, "status": "budget_stopped" if isinstance(exc, BudgetExceeded) else "failed", "error": error}
@@ -108,13 +116,20 @@ def run_provider(provider: str, claims: list[dict], out: Path, cache: Path) -> d
                 row["trace_cost_usd"] = trace.total_cost
             else:
                 command = [sys.executable, "-m", "claimcheck", "post", str(out / "inputs" / f"{case['id']}.txt"),
-                           "--provider", provider, "--model", model, "--budget", "10", "--max-claims", "8",
-                           "--max-output-tokens", "3000", "--as-of", "2026-11-02", "--out", str(target)]
+                           "--provider", provider, "--model", model, "--budget", str(budget), "--max-claims", "8",
+                           "--max-output-tokens", "3000", "--as-of", case["published_at"][:10] if published_context else "2026-11-02", "--out", str(target)]
+                if published_context:
+                    command += ["--published-at", case["published_at"]]
+                    country = "TW" if case.get("market") == "tw" else case.get("issuer_country")
+                    if country:
+                        command += ["--issuer-country", country]
+                    if case.get("issuer_exchange"):
+                        command += ["--issuer-exchange", case["issuer_exchange"]]
                 env = dict(os.environ)
                 # Do not inherit overrides capable of changing frozen model/policy settings.
                 for key in ("CLAIMCHECK_REASONING_EFFORT", "CLAIMCHECK_MAX_OUTPUT_TOKENS"):
                     env.pop(key, None)
-                env.update(CLAIMCHECK_CACHE_DIR=str(cache), CLAIMCHECK_RUNS_DIR=str(out),
+                env.update(CLAIMCHECK_CACHE_DIR=str(cache), CLAIMCHECK_RUNS_DIR=str(shared_ledger.parent),
                            SEC_USER_AGENT="DappGo market-claim-verifier admin@dappgo.com",
                            PYTHONPATH=os.pathsep.join([str(ROOT / "scripts/real_world/transport"), str(ROOT / "src")]),
                            PYTHONDONTWRITEBYTECODE="1")
@@ -143,6 +158,16 @@ def run_provider(provider: str, claims: list[dict], out: Path, cache: Path) -> d
                 row["trace_cost_usd"] = sum(t.get("cost_usd", 0) for t in traces)
             row.update(finished_at=now(), wall_seconds=round(time.monotonic() - clock, 6),
                        cost_usd=ledger.spent_for_provider(provider) - before)
+            if worker_id is not None:
+                # Concurrent same-provider cases must attribute ledger events
+                # by request ID, never by a wall-window spend difference.
+                traces = [trace.as_dict()] if path_name == "agent" else [json.loads(p.read_text()) for p in target.glob("traces/*.json")]
+                ids = {r["reservation"]["reservation_id"] for t in traces for r in t.get("requests", [])}
+                with ledger._file_lock():
+                    events = [e for e in ledger._events() if e.get("reservation_id") in ids]
+                costs = {e["reservation_id"]: e["amount"] for e in events if e["event"] == "reserve"}
+                costs.update({e["reservation_id"]: e["amount"] for e in events if e["event"] == "reconcile"})
+                row["cost_usd"] = sum(costs.values())
             row = redact(row, secrets)
             write(target / "result.json", row)
             append(out / provider / path_name / "results.jsonl", row)
@@ -150,7 +175,7 @@ def run_provider(provider: str, claims: list[dict], out: Path, cache: Path) -> d
     summary = {"provider": provider, "model": model, "started_at": started, "finished_at": now(),
                "cost_usd": ledger.spent_for_provider(provider), "budget_stop": stopped,
                "companyfacts_hashes": edgar.companyfacts_snapshot_hashes()}
-    write(out / provider / "execution-summary.json", summary)
+    write(out / provider / ("execution-summary.json" if worker_id is None else f"execution-summary-worker{worker_id}.json"), summary)
     return summary
 
 

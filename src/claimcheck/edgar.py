@@ -784,6 +784,8 @@ class EdgarClient:
                 cik = f"{int(record.get('cik_str')):010d}"
             except (TypeError, ValueError):
                 return {"error": "invalid_cik", "available_periods": []}
+            if not str(record.get("title") or "").strip():
+                return {"error": "invalid_sec_issuer_name", "available_periods": []}
             return {
                 "ticker": target,
                 "cik": cik,
@@ -807,8 +809,8 @@ class EdgarClient:
         filename = f"companyfacts-CIK{cik}.json"
         url = f"{SEC_DATA_BASE}/api/xbrl/companyfacts/CIK{cik}.json"
         document, digest = self._load_document(filename, url)
+        document = copy.deepcopy(document)
         if self.policy.as_of is not None:
-            document = copy.deepcopy(document)
             for namespace in document.get("facts", {}).values():
                 for concept in namespace.values():
                     for unit, rows in concept.get("units", {}).items():
@@ -1203,6 +1205,7 @@ class EdgarClient:
                     fact
                     for fact in values
                     if isinstance(fact, Mapping) and _date(fact.get("end")) is not None
+                    and not fact.get("dimensions") and not fact.get("segment")
                 )
                 if metric in ADDITIVE_METRICS:
                     valid_values = self._drop_mistagged_quarters(metric, concept, valid_values)

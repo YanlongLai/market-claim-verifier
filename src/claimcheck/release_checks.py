@@ -11,11 +11,8 @@ from .release import RELEASE_KINDS, _OUTLOOK, claim_number, claim_periods, infer
 
 
 def _issuer_matches(text: str, evidence: Mapping[str, Any]) -> bool:
-    if re.search(r"\b" + re.escape(evidence["ticker"]) + r"\b", text, re.I):
-        return True
-    entity = re.sub(r"\b(?:INCORPORATED|INC|CORPORATION|CORP|LTD|LIMITED|CLASS|COM|PLC)\b|[.,]", " ", evidence["entity"], flags=re.I)
-    entity = re.sub(r"\s+", " ", entity).strip()
-    return len(entity) >= 3 and bool(re.search(r"\b" + re.escape(entity) + r"\b", text, re.I))
+    from .issuer import name_agrees
+    return name_agrees(text, dict(evidence))
 
 
 def _equal(left: float, right: float, tolerance: float = 0.0) -> bool:
@@ -67,8 +64,7 @@ def evaluate_release_claim(sub: Mapping[str, Any], runner: Any) -> dict[str, Any
     claimed = claim_number(atomic, metric)
     if claimed is None:
         return finish("release_claim_number_unparsed_or_verbal")
-    if infer_comparator(stated, atomic) not in {"eq", "approx"}:
-        return finish("release_inequality_not_supported")
+    comparator = infer_comparator(stated, atomic)
     kind = "guidance" if _OUTLOOK.search(atomic) else "non_gaap" if metric.startswith("adjusted_") or metric == "free_cash_flow" else "reported_in_release"
     service = getattr(runner, "release_service", None)
     quotes = []
@@ -88,14 +84,25 @@ def evaluate_release_claim(sub: Mapping[str, Any], runner: Any) -> dict[str, Any
             continue
         if verified["unit"] != claimed["unit"]:
             continue
+        if (comparator not in {"eq", "approx"} or verified.get("bound", "eq") not in {"eq", "approx"}) and not (
+                kind == "guidance" and comparator == verified.get("bound") and comparator in {"gte", "lte"}):
+            continue
+        if not re.search(r"\bfiscal\b|\bFY\s*20\d{2}", atomic, re.I) and "Q" not in period and not verified["calendar_equals_fiscal"]:
+            continue
         quotes.append(verified)
     if not quotes:
         return finish("release_quote_issuer_metric_kind_unit_or_period_mismatch")
     values = {(q["low"], q["high"]) for q in quotes}
     # A model cannot hide a conflicting number returned by the same search.
-    all_values = {(q["low"], q["high"]) for q in service.candidates.values()
+    same_scope = [q for q in service.candidates.values()
                   if q["ticker"] == quotes[0]["ticker"] and q["metric"] == metric
-                  and q["claim_kind"] == kind and q["period"] == quotes[0]["period"]}
+                  and q["claim_kind"] == kind and q["period"] == quotes[0]["period"]]
+    if kind == "guidance":
+        latest = max(q["filed"] for q in same_scope)
+        if any(q["filed"] != latest for q in quotes):
+            return finish("superseded_guidance_quote; latest eligible filing required")
+        same_scope = [q for q in same_scope if q["filed"] == latest]
+    all_values = {(q["low"], q["high"]) for q in same_scope}
     if len(values) != 1 or len(all_values) != 1:
         return finish("ambiguous_or_revised_release_values")
     quote = quotes[0]
@@ -105,7 +112,7 @@ def evaluate_release_claim(sub: Mapping[str, Any], runner: Any) -> dict[str, Any
                   release_evidence=quote, stated_range=[claimed["low"], claimed["high"]],
                   stated_value=claimed["low"] if claimed["low"] == claimed["high"] else None,
                   stated_value_used=claimed["low"] if claimed["low"] == claimed["high"] else None,
-                  comparator="eq", actual_range=[actual_low, actual_high])
+                  comparator=comparator, actual_range=[actual_low, actual_high])
 
     if kind == "reported_in_release":
         filing = runner.dispatch_program("lookup_fact", {"ticker": quote["ticker"], "metric": metric, "period": period})
@@ -140,7 +147,8 @@ def evaluate_release_claim(sub: Mapping[str, Any], runner: Any) -> dict[str, Any
                 return finish("point_claim_requires_release_point_or_explicit_center")
             actual_low = quote["center"]
         precision = parse_stated_number(claimed["literal"])
-        tolerance = precision.precision / 2 if precision else 0.0
+        # parse_stated_number already returns half the last displayed unit.
+        tolerance = precision.precision if precision else 0.0
         result["tolerance"] = tolerance
         result["actual_value"] = actual_low
         matches = _equal(c_lo, actual_low, tolerance)

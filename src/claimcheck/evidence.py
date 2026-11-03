@@ -49,7 +49,7 @@ class SecReleaseConnector:
         if (parsed.scheme != 'https' or parsed.netloc != 'www.sec.gov'
                 or not parsed.path.startswith(prefix) or parsed.query or parsed.fragment):
             raise ValueError('evidence requires the admitted SEC accession URL')
-        if (quote.get('form') not in {'8-K Ex 99.1', '8-K Ex 99.2'}
+        if (quote.get('form') not in {'8-K Ex 99.1', '8-K Ex 99.2', '6-K Ex 99.1', '6-K Ex 99.2'}
                 or quote.get('span_verified') is not True):
             raise ValueError('evidence requires a verified release span')
         if digest(raw) != quote['sha256'] or metadata.get('sha256') != quote['sha256'] or metadata.get('url') != url:
@@ -86,7 +86,8 @@ class SecReleaseConnector:
                      ('ticker', 'metric', 'period', 'period_type', 'unit', 'low', 'high', 'value', 'claim_kind')},
             'authority': {'scope': 'issuer_statement', 'tier': 'L4', 'audited': False,
                           'maximum_strength': 'medium', 'permitted_claim_kind': quote['claim_kind'],
-                          'basis': 'SEC Item 2.02 exhibit admission and deterministic quote re-extraction'},
+                          'basis': ('SEC 6-K exhibit admission and deterministic quote re-extraction' if quote['form'].startswith('6-K')
+                                    else 'SEC Item 2.02 exhibit admission and deterministic quote re-extraction')},
             'limitations': ['An issuer forecast is not proof of future performance.',
                             'Normalized text offsets are not raw HTML byte offsets.',
                             'This export does not override filing conflicts or existing verdict rules.'],

@@ -1610,6 +1610,16 @@ def evaluate_sub_claim(
     """Evaluate one normalized model sub-claim against cited evidence."""
 
     original = str(sub_claim.get("original_claim") or sub_claim.get("text") or "")
+    scope = str(sub_claim.get("text") or original)
+    margin_match = re.search(r"\b(net(?:\s+profit)?|operating|gross)\s+margin\b", scope, re.I)
+    if margin_match and sub_claim.get("claim_type") in {"value", "reported_in_release"}:
+        expected = margin_match[1].lower().split()[0] + "_margin"
+        ids = _normalise_evidence_ids(sub_claim.get("evidence_ids"))
+        numeric = [runner.evidence[eid] for eid in ids if eid in runner.evidence and _has_numeric_value(runner.evidence[eid])]
+        if not numeric or any(e.get("metric") != expected or not e.get("components") or not e.get("formula") for e in numeric):
+            return {"text": scope, "claim_type": "value", "evidence_ids": ids, "evidence_valid": False,
+                    "program_verdict": "insufficient_evidence", "reason": "margin requires program-computed filed components and formula",
+                    "evidence_strength": "low", "flags": []}
     if sub_claim.get("claim_type") == "reported_in_release" and not requires_release(original):
         # A failed release search is not a quote and must not hide a cited
         # authoritative GAAP fact. Re-enter the normal value checker, retaining
@@ -1955,6 +1965,20 @@ def evaluate_verdict(
         evaluate_sub_claim(sub_claim, runner, sub_claims)
         for sub_claim in sub_claims
     ]
+    for sub, check in zip(sub_claims, checks):
+        # Unit diagnostics never change the numeric verdict or repair the input.
+        if check.get("program_verdict") != "contradicted":
+            continue
+        stated = check.get("stated_value_used")
+        actual = check.get("actual_value")
+        if not all(_is_number(v) for v in (stated, actual)) or not actual or not stated:
+            continue
+        factor = abs(float(stated) / float(actual))
+        if any(math.isclose(factor, target, rel_tol=0.05) for target in (10, 100, 1000, 0.1, 0.01, 0.001)):
+            note = f"likely unit/translation error: stated/filed magnitude ratio {factor:g}; check 億 (100 million), 萬 (10 thousand), billion/million"
+            check["unit_translation_note"] = note
+            check["reason"] += "; " + note
+            check["flags"] = list(dict.fromkeys([*check.get("flags", []), "likely_unit_translation_error"]))
     return checks, overall_program_verdict(checks)
 
 

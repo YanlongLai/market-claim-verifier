@@ -73,8 +73,8 @@ def _rows(document: dict[str, Any]) -> list[dict[str, str]]:
     forms = table.get("form", [])
     return [{key: str(values[i]) for key, values in table.items()
              if isinstance(values, list) and i < len(values)}
-            for i in range(len(forms)) if forms[i] == "8-K"
-            and "2.02" in re.findall(r"\d+\.\d+", str(table.get("items", [""] * len(forms))[i]))]
+            for i in range(len(forms)) if forms[i] == "6-K" or (forms[i] == "8-K"
+            and "2.02" in re.findall(r"\d+\.\d+", str(table.get("items", [""] * len(forms))[i])))]
 
 
 def period_window(period: str) -> tuple[date, date]:
@@ -151,7 +151,7 @@ class ReleaseClient:
                 continue
             exhibits.append({"cik": f"{int(cik):010d}", "accession": accession,
                              "filed": filing["filingDate"], "exhibit": exhibit,
-                             "form": f"8-K Ex {exhibit}", "exhibit_url": url,
+                             "form": f"{filing.get('form', '8-K')} Ex {exhibit}", "exhibit_url": url,
                              "sha256": meta["sha256"], "index_url": index_url,
                              "index_sha256": index_meta["sha256"], "raw": content})
         return exhibits

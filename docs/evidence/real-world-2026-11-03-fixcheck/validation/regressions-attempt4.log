@@ -1,0 +1,212 @@
+........................................................................ [ 44%]
+..........F....F........................................................ [ 89%]
+...............F.                                                        [100%]
+=================================== FAILURES ===================================
+_ test_probe_outputs_replay_through_final_runtime_without_network_or_codecs[multimodal-2026-10-30-video] _
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10a2be8d0>
+tmp_path = PosixPath('/private/var/folders/r0/301bdklx6b7bb7jktlxtsyc80000gn/T/pytest-of-yan/pytest-1217/test_probe_outputs_replay_thro4')
+dataset = 'multimodal-2026-10-30', name = 'video'
+
+    @pytest.mark.parametrize('dataset,name', [
+        *[('multimodal-2026-10-30', name) for name in ['text', 'screenshot', 'audio', 'audio-two-voices', 'video', 'video-captioned', 'long-call']],
+        *[('multimodal-2026-10-30b', name) for name in ['text', 'long-call', 'long-call-frozen']],
+    ])
+    def test_probe_outputs_replay_through_final_runtime_without_network_or_codecs(monkeypatch, tmp_path, dataset, name):
+        from claimcheck.ingest import ingest_file
+        monkeypatch.setattr('claimcheck.retries.time.sleep', lambda _: None)
+        folder = ROOT / 'docs/evidence' / dataset / name
+        saved = json.loads((folder / 'ingest.json').read_text())
+        protocol = json.loads((folder / 'protocol.json').read_text())
+        if dataset == 'multimodal-2026-10-30' and name == 'long-call':
+            # Replay the archived two extraction responses at their original
+            # boundaries. The new per-turn extraction schedule has separate tests.
+            monkeypatch.setattr('claimcheck.post.extraction_windows', lambda post, **_: extraction_windows(post))
+        requests, speech = [], []
+        for channel in saved['channels']:
+            if channel.get('media_call'):
+                call = json.loads((folder / channel['media_call']).read_text())
+                if channel['kind'] == 'transcript':
+                    if 'chunks' in call:
+                        speech.extend(json.loads((folder / 'calls' / c['record']).read_text())['response'] for c in call['chunks'])
+                    else:
+                        speech.append(call['response'])
+                else:
+                    requests.append(call)
+            if channel.get('extraction_trace'):
+                requests.extend(json.loads((folder / channel['extraction_trace']).read_text())['requests'])
+            else:
+                for path in (folder / 'checks' / channel['id'] / 'traces').glob('*.json'):
+                    trace = json.loads(path.read_text())
+                    if trace.get('claim', '').startswith('[extraction]'):
+                        requests.extend(trace['requests'])
+            for claim in channel.get('claims', []):
+                if claim.get('trace_path') and not claim.get('verification_reused_from'):
+                    requests.extend(json.loads((folder / 'checks' / channel['id'] / claim['trace_path']).read_text())['requests'])
+    
+        def recorded_decode(path, media_dir):
+            media_dir.mkdir(parents=True)
+            channels = []
+            for old in saved['channels']:
+                channel = {k: copy.deepcopy(v) for k, v in old.items() if k in {
+                    'id', 'kind', 'decoded', 'duration_s', 'sample_ms', 'image_info', 'audio_sha256', 'stitch_policy'}}
+                if old['kind'] == 'text':
+                    channel['segments'] = [{k: s[k] for k in ('id', 'text')} for s in old['segments']]
+                elif old['kind'] == 'transcript':
+                    # Bytes are not uploaded: fake ASR reads recorded responses.
+                    # Real decode/upload PCM limits are checked separately above.
+                    audio = media_dir / 'audio.wav'
+                    audio.write_bytes(b'RIFF offline replay placeholder')
+                    channel['audio'] = str(audio)
+                    if old.get('audio_chunks'):
+                        channel['audio_chunks'] = [{**{k: c[k] for k in ('start_ms', 'end_ms', 'duration_s')}, 'audio': str(audio)} for c in old['audio_chunks']]
+                else:
+                    image = media_dir / (old['id'] + '.png')
+                    source = MEDIA / 'example-post.png' if old['kind'] == 'ocr' else folder / old['image']
+                    shutil.copyfile(source, image)
+                    channel['image'] = str(image)
+                channels.append(channel)
+            return saved['input']['kind'], channels
+    
+        class HTTP:
+            def post(self, *args, **kwargs):
+                assert kwargs['files']['audio'][1].read(4) == b'RIFF'
+                response = speech.pop(0)
+                return SimpleNamespace(status_code=200, json=lambda: response)
+        monkeypatch.setattr('claimcheck.ingest.decode', recorded_decode)
+        replay = ReplayMeta(requests, allow_extraction_context_update=dataset == 'multimodal-2026-10-30' and name == 'long-call')
+        edgar, releases = offline_clients(tmp_path)
+        def outside_corpus(url):
+            raise RuntimeError('SEC document is outside the committed probe corpus')
+        edgar.fetcher = releases.fetcher = outside_corpus
+        result = ingest_file(MEDIA / saved['input']['file'], client=replay, vision_client=replay,
+            asr_http=HTTP(), meta_api_key='fake-key', edgar=edgar, release_client=releases,
+            ledger=Ledger(tmp_path / 'ledger', budget_usd=5), model=saved['model'], provider=saved['provider'],
+            out_dir=tmp_path / 'out', max_output_tokens=protocol['max_output_tokens'])
+>       assert result['status'] == saved['status'] and not replay.requests and not speech
+E       AssertionError: assert ('partial' == 'completed'
+E         
+E         - completed
+E         + partial)
+
+tests/test_ingest_hardening.py:290: AssertionError
+_ test_probe_outputs_replay_through_final_runtime_without_network_or_codecs[multimodal-2026-10-30b-long-call-frozen] _
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10a9b9450>
+tmp_path = PosixPath('/private/var/folders/r0/301bdklx6b7bb7jktlxtsyc80000gn/T/pytest-of-yan/pytest-1217/test_probe_outputs_replay_thro9')
+dataset = 'multimodal-2026-10-30b', name = 'long-call-frozen'
+
+    @pytest.mark.parametrize('dataset,name', [
+        *[('multimodal-2026-10-30', name) for name in ['text', 'screenshot', 'audio', 'audio-two-voices', 'video', 'video-captioned', 'long-call']],
+        *[('multimodal-2026-10-30b', name) for name in ['text', 'long-call', 'long-call-frozen']],
+    ])
+    def test_probe_outputs_replay_through_final_runtime_without_network_or_codecs(monkeypatch, tmp_path, dataset, name):
+        from claimcheck.ingest import ingest_file
+        monkeypatch.setattr('claimcheck.retries.time.sleep', lambda _: None)
+        folder = ROOT / 'docs/evidence' / dataset / name
+        saved = json.loads((folder / 'ingest.json').read_text())
+        protocol = json.loads((folder / 'protocol.json').read_text())
+        if dataset == 'multimodal-2026-10-30' and name == 'long-call':
+            # Replay the archived two extraction responses at their original
+            # boundaries. The new per-turn extraction schedule has separate tests.
+            monkeypatch.setattr('claimcheck.post.extraction_windows', lambda post, **_: extraction_windows(post))
+        requests, speech = [], []
+        for channel in saved['channels']:
+            if channel.get('media_call'):
+                call = json.loads((folder / channel['media_call']).read_text())
+                if channel['kind'] == 'transcript':
+                    if 'chunks' in call:
+                        speech.extend(json.loads((folder / 'calls' / c['record']).read_text())['response'] for c in call['chunks'])
+                    else:
+                        speech.append(call['response'])
+                else:
+                    requests.append(call)
+            if channel.get('extraction_trace'):
+                requests.extend(json.loads((folder / channel['extraction_trace']).read_text())['requests'])
+            else:
+                for path in (folder / 'checks' / channel['id'] / 'traces').glob('*.json'):
+                    trace = json.loads(path.read_text())
+                    if trace.get('claim', '').startswith('[extraction]'):
+                        requests.extend(trace['requests'])
+            for claim in channel.get('claims', []):
+                if claim.get('trace_path') and not claim.get('verification_reused_from'):
+                    requests.extend(json.loads((folder / 'checks' / channel['id'] / claim['trace_path']).read_text())['requests'])
+    
+        def recorded_decode(path, media_dir):
+            media_dir.mkdir(parents=True)
+            channels = []
+            for old in saved['channels']:
+                channel = {k: copy.deepcopy(v) for k, v in old.items() if k in {
+                    'id', 'kind', 'decoded', 'duration_s', 'sample_ms', 'image_info', 'audio_sha256', 'stitch_policy'}}
+                if old['kind'] == 'text':
+                    channel['segments'] = [{k: s[k] for k in ('id', 'text')} for s in old['segments']]
+                elif old['kind'] == 'transcript':
+                    # Bytes are not uploaded: fake ASR reads recorded responses.
+                    # Real decode/upload PCM limits are checked separately above.
+                    audio = media_dir / 'audio.wav'
+                    audio.write_bytes(b'RIFF offline replay placeholder')
+                    channel['audio'] = str(audio)
+                    if old.get('audio_chunks'):
+                        channel['audio_chunks'] = [{**{k: c[k] for k in ('start_ms', 'end_ms', 'duration_s')}, 'audio': str(audio)} for c in old['audio_chunks']]
+                else:
+                    image = media_dir / (old['id'] + '.png')
+                    source = MEDIA / 'example-post.png' if old['kind'] == 'ocr' else folder / old['image']
+                    shutil.copyfile(source, image)
+                    channel['image'] = str(image)
+                channels.append(channel)
+            return saved['input']['kind'], channels
+    
+        class HTTP:
+            def post(self, *args, **kwargs):
+                assert kwargs['files']['audio'][1].read(4) == b'RIFF'
+                response = speech.pop(0)
+                return SimpleNamespace(status_code=200, json=lambda: response)
+        monkeypatch.setattr('claimcheck.ingest.decode', recorded_decode)
+        replay = ReplayMeta(requests, allow_extraction_context_update=dataset == 'multimodal-2026-10-30' and name == 'long-call')
+        edgar, releases = offline_clients(tmp_path)
+        def outside_corpus(url):
+            raise RuntimeError('SEC document is outside the committed probe corpus')
+        edgar.fetcher = releases.fetcher = outside_corpus
+        result = ingest_file(MEDIA / saved['input']['file'], client=replay, vision_client=replay,
+            asr_http=HTTP(), meta_api_key='fake-key', edgar=edgar, release_client=releases,
+            ledger=Ledger(tmp_path / 'ledger', budget_usd=5), model=saved['model'], provider=saved['provider'],
+            out_dir=tmp_path / 'out', max_output_tokens=protocol['max_output_tokens'])
+>       assert result['status'] == saved['status'] and not replay.requests and not speech
+E       AssertionError: assert ('partial' == 'completed'
+E         
+E         - completed
+E         + partial)
+
+tests/test_ingest_hardening.py:290: AssertionError
+________ test_three_actual_program_verdicts_and_reproducible_artifacts _________
+
+tmp_path = PosixPath('/private/var/folders/r0/301bdklx6b7bb7jktlxtsyc80000gn/T/pytest-of-yan/pytest-1217/test_three_actual_program_verd0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10a45b550>
+
+    def test_three_actual_program_verdicts_and_reproducible_artifacts(tmp_path, monkeypatch):
+        result = builder(monkeypatch)(tmp_path)
+        checks = [row['program_check'] for row in result['results']]
+        assert [c['program_verdict'] for c in checks] == ['supported', 'contradicted', 'insufficient_evidence']
+        assert checks[0]['actual_range'] == [47.5e9, 50.5e9]
+        assert checks[1]['stated_range'] == [48.5e9, 51.5e9]
+        assert not checks[2]['evidence_valid']
+        assert result['cost']['incremental_api_total'] == 0
+        assert result['cost']['api_requests'] == 0
+        assert 'Not measured' in result['cost']['live_cost']
+        expected = {p.relative_to(COMMITTED) for p in COMMITTED.rglob('*') if p.is_file()}
+        actual = {p.relative_to(tmp_path) for p in tmp_path.rglob('*') if p.is_file()}
+        assert actual == expected
+        for path in expected:
+>           assert (tmp_path / path).read_bytes() == (COMMITTED / path).read_bytes(), path
+E           AssertionError: PosixPath('results.json')
+E           assert b'{\n  "cost"...7d0e4a9"\n}\n' == b'{\n  "cost"...7d0e4a9"\n}\n'
+E             
+E             At index 1625 diff: b'b' != b'c'
+E             Use -v to get more diff
+
+tests/test_judge_walkthrough.py:32: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_ingest_hardening.py::test_probe_outputs_replay_through_final_runtime_without_network_or_codecs[multimodal-2026-10-30-video]
+FAILED tests/test_ingest_hardening.py::test_probe_outputs_replay_through_final_runtime_without_network_or_codecs[multimodal-2026-10-30b-long-call-frozen]
+FAILED tests/test_judge_walkthrough.py::test_three_actual_program_verdicts_and_reproducible_artifacts
+3 failed, 158 passed in 5.15s
