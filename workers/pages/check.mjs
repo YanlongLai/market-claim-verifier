@@ -118,7 +118,7 @@ export const onRequest = async ({ request, env }) => {
       return error("unavailable", 503);
     }
     const fields = ["mode", "model", "provider", "events", "evidence", "cost_usd", "cost_is_bound", "latency_ms",
-      "verdict", "model_verdict", "summary", "claims", "scope", "error", "demo", "budget"];
+      "verdict", "model_verdict", "summary", "claims", "corrections", "scope", "error", "demo", "budget"];
     const publicResult = Object.fromEntries(fields.filter(key => key in result).map(key => [key, result[key]]));
     return Response.json(publicResult, { status: response.status, headers });
   } catch {

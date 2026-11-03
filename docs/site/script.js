@@ -381,6 +381,9 @@
     honesty: "Meta Muse Spark selects tools and proposes claims. Python checks numbers, periods and evidence IDs. A supported verdict applies only to the assertions extracted; extraction can miss an assertion. Filed evidence can be incomplete or restated. SEC data may be cached for six hours.",
     bound: "Conservative cost bound", cost: "Model cost", seconds: "s", low: "low", medium: "medium", high: "high",
     savedExamples: "See the saved examples ↓",
+    correctedDraft: "Corrected draft — only listed assertions checked",
+    correctionScope: "Only the assertions listed below were checked; nothing else in the text was verified.",
+    correctionChanges: "Cited changes", notCorrected: "Not corrected",
     budget: {
       loading: "Loading today's live-check budget…", unavailable: "Today's live-check budget is unavailable. See the saved examples.",
       mock: "Offline replay budget · no spending",
@@ -428,6 +431,9 @@
     honesty: "Meta Muse Spark 選擇工具並提出待查敘述；Python 檢查數字、期間與證據 ID。支持裁定僅適用於抽取到的敘述，抽取仍可能遺漏。申報證據可能不完整或經重編。SEC 資料可能快取六小時。",
     bound: "保守費用上限", cost: "模型費用", seconds: "秒", low: "低", medium: "中", high: "高",
     savedExamples: "查看已儲存的範例 ↓",
+    correctedDraft: "修正版草稿——僅核對列出的主張",
+    correctionScope: "僅核對下方列出的主張；文中其餘內容均未經查證。",
+    correctionChanges: "修改與引用來源", notCorrected: "未修正",
     budget: {
       loading: "正在讀取今日即時查核預算…", unavailable: "暫時無法讀取今日即時查核預算。請查看已儲存的範例。",
       mock: "離線重播預算 · 不產生費用",
@@ -618,6 +624,64 @@
     return liveCopy(value) || liveCopy("insufficient_evidence");
   }
 
+  function renderLiveCorrections(corrections, target) {
+    if (!corrections || typeof corrections.original_text !== "string" ||
+        corrections.span_unit !== "unicode_codepoints") return;
+    const section = liveNode("section", null, "live-corrections");
+    section.append(liveNode("h5", liveCopy("correctedDraft")));
+    // Python offsets count code points. Array.from keeps emoji before an edit
+    // from shifting its span in JavaScript's UTF-16 strings.
+    const original = Array.from(corrections.original_text);
+    const draft = liveNode("p", null, "corrected-draft-text");
+    const changes = liveNode("ol", null, "correction-changes");
+    let cursor = 0;
+    for (const edit of Array.isArray(corrections.edits) ? corrections.edits : []) {
+      if (!Number.isInteger(edit.start) || !Number.isInteger(edit.end) || edit.start < cursor ||
+          edit.end <= edit.start || edit.end > original.length || typeof edit.replacement !== "string" ||
+          original.slice(edit.start, edit.end).join("") !== edit.original) continue;
+      draft.append(liveNode("span", original.slice(cursor, edit.start).join("")),
+        liveNode("del", edit.original), document.createTextNode(" → "), liveNode("strong", edit.replacement));
+      cursor = edit.end;
+      const item = liveNode("li");
+      item.append(liveNode("del", edit.original), document.createTextNode(" → "), liveNode("strong", edit.replacement));
+      item.append(liveNode("p", [edit.unit, edit.period, edit.base_period,
+        Array.isArray(edit.evidence_ids) ? edit.evidence_ids.join(", ") : ""].filter(Boolean).join(" · "), "live-small"));
+      const citations = liveNode("ul", null, "correction-citations");
+      for (const citation of Array.isArray(edit.citations) ? edit.citations : []) {
+        const row = liveNode("li");
+        const label = [citation.evidence_id, citation.form, citation.accn, citation.period || citation.period_type,
+          citation.start, citation.end].filter(Boolean).join(" · ");
+        row.append(liveNode("span", `${label} · ${liveNumber(citation.value)} ${citation.unit || ""} `));
+        try {
+          const url = new URL(citation.url);
+          if (url.protocol === "https:" && url.host === "www.sec.gov" && !url.username && !url.password &&
+              url.pathname.startsWith("/Archives/edgar/data/")) {
+            const link = liveNode("a", liveCopy("filing"));
+            link.href = url.href;
+            link.rel = "noreferrer";
+            row.append(link);
+          }
+        } catch (_error) { /* Invalid citations remain plain text. */ }
+        citations.append(row);
+      }
+      item.append(citations);
+      changes.append(item);
+    }
+    draft.append(liveNode("span", original.slice(cursor).join("")));
+    section.append(draft, liveNode("p", liveCopy("correctionScope"), "correction-scope"));
+    if (changes.children.length) section.append(liveNode("h6", liveCopy("correctionChanges")), changes);
+    if (Array.isArray(corrections.not_corrected) && corrections.not_corrected.length) {
+      const unchanged = liveNode("ol", null, "correction-unchanged");
+      for (const item of corrections.not_corrected) {
+        const row = liveNode("li");
+        row.append(liveNode("q", item.text), liveNode("p", item.reason?.[pageLanguage] || "", "live-small"));
+        unchanged.append(row);
+      }
+      section.append(liveNode("h6", liveCopy("notCorrected")), unchanged);
+    }
+    target.append(section);
+  }
+
   function renderLiveTrace(result, target) {
     if (!target) return;
     target.replaceChildren();
@@ -631,6 +695,7 @@
     if (result.started_at) head.append(liveNode("p", `${result.started_at} → ${result.finished_at}`, "live-small"));
     if (result.input) head.append(liveNode("blockquote", result.input, "trace-input"));
     target.append(head);
+    renderLiveCorrections(result.corrections, target);
     if (result.claims && result.claims.length) {
       target.append(liveNode("h5", liveCopy("claims")));
       const claims = liveNode("ol", null, "live-claims");

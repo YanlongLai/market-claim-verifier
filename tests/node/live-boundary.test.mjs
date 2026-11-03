@@ -50,6 +50,21 @@ test("production cannot enable the local mock or supply its own forwarded IP; or
   assert.equal(calls, 1);
 });
 
+test("Pages forwards deterministic corrections in its public result allowlist", async t => {
+  const corrections = { label: { en: "Corrected draft — only listed assertions checked", zh: "修正版草稿——僅核對列出的主張" },
+    original_text: "Apple: $416.2B", span_unit: "unicode_codepoints",
+    edits: [{ start: 7, end: 14, original: "$416.2B", replacement: "$102.5B", evidence_ids: ["E1"],
+      citations: [{ url: "https://www.sec.gov/Archives/edgar/data/320193/000032019325000079/" }] }],
+    not_corrected: [] };
+  const env = envWithFetch(t, async () => Response.json({ verdict: "contradicted", mode: "live", corrections,
+    private_internal: "drop", password: "drop", secret: "drop" }));
+  const response = await onRequest({ request: request({ text: "Apple: $416.2B" }, {
+    "CF-Connecting-IP": "192.0.2.1"
+  }, "hackathon.dappgo.com"), env });
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { verdict: "contradicted", mode: "live", corrections });
+});
+
 test("password goes only in the private request body, with no browser headers or URL forwarding", async t => {
   const env = envWithFetch(t, async req => {
     assert.equal(req.url, "https://live-origin.example.com/api/check");
