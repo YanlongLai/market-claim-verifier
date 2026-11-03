@@ -6,6 +6,8 @@ const headers = {
   "X-Content-Type-Options": "nosniff",
   "Content-Security-Policy": "default-src 'none'; frame-ancestors 'none'",
 };
+const diagnostic = originStatus => new Response(JSON.stringify({ error: "unavailable", demo: "data/live-demo.json",
+  origin_status: originStatus }), { status: 503, headers });
 const error = (code, status) => new Response(JSON.stringify({ error: code, demo: "data/live-demo.json" }), { status, headers });
 
 async function originFetch(env, path, options = {}) {
@@ -29,7 +31,9 @@ async function originFetch(env, path, options = {}) {
         "X-Live-Origin-Token": env.LIVE_ORIGIN_TOKEN },
     }));
     // Include body consumption in the timeout. Access HTML/redirects fail closed.
-    const data = await response.json();
+    let data;
+    try { data = await response.json(); }
+    catch { throw Object.assign(Error("non_json"), { originStatus: response.status }); }
     return { response, data };
   } finally { clearTimeout(timer); }
 }
@@ -46,7 +50,8 @@ export const onBudget = async ({ request, env }) => {
   try {
     // Only origin credentials enter this request; no visitor headers or IP.
     const { response, data } = await originFetch(env, "/api/budget");
-    if (!response.ok) return error("unavailable", 503);
+    // Status only (no body): tells Access (HTML 403), origin auth (JSON 401/403) and tunnel errors apart.
+    if (!response.ok) return diagnostic(response.status);
     // Allowlist the public daily counters; never forward internal ledger data.
     const { day, daily_limit_usd, daily_spent_usd, daily_remaining_usd, resets_at, status } = data;
     if (!/^\d{4}-\d{2}-\d{2}$/.test(day) || !Number.isFinite(Date.parse(resets_at)) ||
@@ -57,7 +62,10 @@ export const onBudget = async ({ request, env }) => {
       headers: { ...headers, "Cache-Control": request.headers.get("Cache-Control") === "no-cache" ? "no-store" :
         "public, max-age=0, s-maxage=5, must-revalidate" }
     });
-  } catch { return error("unavailable", 503); }
+  } catch (failure) {
+    // "config" = missing/invalid Pages settings; "network" = fetch threw before any response.
+    return diagnostic(failure?.originStatus ?? (failure?.message === "unavailable" ? "config" : "network"));
+  }
 };
 
 export const onRequest = async ({ request, env }) => {

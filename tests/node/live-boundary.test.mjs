@@ -146,7 +146,11 @@ test("origin/network/Access failures return the uncached 503 demo fallback witho
         onRequest({ request: request(undefined, { "CF-Connecting-IP": "192.0.2.1" }), env }));
       assert.equal(response.status, 503);
       assert.equal(response.headers.get("Cache-Control"), "no-store");
-      assert.deepEqual(await response.json(), { error: "unavailable", demo: "data/live-demo.json" });
+      const { origin_status, ...body } = await response.json();
+      assert.deepEqual(body, { error: "unavailable", demo: "data/live-demo.json" });
+      // Budget failures carry only a diagnostic status code/kind, never origin bodies or secrets.
+      if (budgetRequest) assert.ok(origin_status === undefined || Number.isInteger(origin_status) || ["config", "network"].includes(origin_status));
+      else assert.equal(origin_status, undefined);
     }
   }
   assert.equal((await onBudget({ request: new Request("https://site.example/api/budget", { method: "POST" }), env })).status, 405);
