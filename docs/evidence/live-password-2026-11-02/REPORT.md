@@ -22,8 +22,12 @@ The bilingual form explains the review password requirement, uses a masked input
 
 ## Visual review limits
 
+The additional malformed-Unicode, invalid-configuration and native-form checks, source hashes and retained numbered logs are documented in [the edge review](EDGE_REVIEW.md).
+
 The password field matches the existing paper/ink/green form. [Source lint](design-lint.json) has no failures and four warnings: two input outlines, existing time zero-padding and existing dashes. No redesign was requested. [The browser inspector](design-inspect.log) could not launch Chrome; the [fallback browser inventory](browser-limit.txt) reported an unavailable browser access host. No rendered screenshot or browser visual pass is claimed. Offline DOM behavior is covered in both languages.
 
 ## Commit handoff
+
+`live-check-password-review.bundle` additionally retains the supplemental edge-review receipt and final working-tree link check in a documentation commit after the password implementation. It contains four commits relative to the original checkout head. The initial three-commit password bundle remains intact.
 
 The source checkout's Git metadata is read-only in this sandbox. Both earlier commits were imported from `live-check-budget.bundle` into a temporary local repository. Before changes, every parent-commit file matched the worktree byte for byte. The password commit is a direct child of `2064bbce5ed12b0c6bbf288359f802a74829e752`, with the requested `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>` footer. `live-check-password.bundle` carries the three live-check commits relative to the original checkout head `f71d03aff75b29bf207ddd2ba16854621ab3e959` for Claude/owner import. The original bundles remain intact. No root-checkout branch update, push or deployment is claimed.
