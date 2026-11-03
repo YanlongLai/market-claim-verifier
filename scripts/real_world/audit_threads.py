@@ -12,6 +12,7 @@ import tarfile
 import tempfile
 
 from build_threads_gold import build as build_gold
+from correct_threads_tiers import build as correct_tiers
 from report_threads import ledger_summary, load_rows
 from run import ROOT
 
@@ -33,6 +34,10 @@ def audit(out, local=None, original=None, secrets=False):
         for name in ("gold.jsonl", "media-gold.jsonl", "GOLD_REVIEW.md"):
             if (target / name).read_bytes() != (out / name).read_bytes():
                 raise ValueError("gold rebuild mismatch")
+        correct_tiers(target)
+        for name in ("gold-source-tiers-corrected.jsonl", "GOLD_METADATA_ERRATA.md"):
+            if (target / name).read_bytes() != (out / name).read_bytes():
+                raise ValueError("source metadata correction mismatch")
     cases = load_rows(out / "claims.jsonl")
     gold = load_rows(out / "gold.jsonl")
     if len(cases) != 78 or set(cases) != set(gold):
@@ -63,7 +68,10 @@ def audit(out, local=None, original=None, secrets=False):
                     if r["reservation"]["provider"] != provider:
                         raise ValueError("text request provider mismatch")
                     requests.append(r)
-        for id, row in load_rows(out / "media" / provider / "results.jsonl").items():
+        media_rows = load_rows(out / "media" / provider / "results.jsonl")
+        if set(media_rows) != {"M01", "M02"}:
+            raise ValueError("missing/extra expected media route")
+        for id, row in media_rows.items():
             target = out / "media" / provider / id
             if row != json.loads((target / "result.json").read_text()):
                 raise ValueError("media result inventory mismatch")
@@ -118,7 +126,7 @@ def audit(out, local=None, original=None, secrets=False):
     budgets = ledger_summary(out)
     if not all(r["cap_respected"] for r in budgets.values()):
         raise ValueError("provider cap exceeded")
-    receipt = {"frozen_files_checked": len(freeze["sha256"]), "gold_rebuild": "three byte-identical outputs",
+    receipt = {"frozen_files_checked": len(freeze["sha256"]), "gold_rebuild": "three original and two metadata-correction byte-identical outputs",
                "expected_text_pairs": 468, "expected_media_routes": 6, "request_reservation_links": len(ids),
                "every_paid_reservation_has_one_retained_request": True, "primary_source_files_checked": source_count,
                "runtime_source_files_checked": archived, "local_raw_media_checked": bool(local),

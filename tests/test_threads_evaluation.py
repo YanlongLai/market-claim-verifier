@@ -124,3 +124,23 @@ def test_complete_budget_stop_report_keeps_every_pair_and_no_media_accuracy(tmp_
     before = (parent / "REPORT.md").read_bytes()
     report(out)
     assert (parent / "REPORT.md").read_bytes() == before
+
+
+def test_source_tier_correction_changes_only_metadata(tmp_path):
+    from correct_threads_tiers import build as correct
+    import shutil
+    source = ROOT / "docs/evidence/real-world-2026-11-02/threads"
+    shutil.copyfile(source / "gold.jsonl", tmp_path / "gold.jsonl")
+    before = (tmp_path / "gold.jsonl").read_bytes()
+    fixed = {r["id"]: r for r in correct(tmp_path)}
+    assert fixed["T02"]["tier"] == ["L2", "L3"]
+    assert fixed["T03"]["tier"] == ["L1", "L2"]
+    assert fixed["T19"]["tier"] == ["L2", "L4"]
+    assert (tmp_path / "gold.jsonl").read_bytes() == before
+    def remove_metadata(x):
+        if isinstance(x, list):
+            return [remove_metadata(v) for v in x]
+        if isinstance(x, dict):
+            return {k: remove_metadata(v) for k, v in x.items() if k not in {"tier", "tier_policy"}}
+        return x
+    assert remove_metadata(list(fixed.values())) == remove_metadata(list(map(json.loads, before.decode().splitlines())))
