@@ -6,6 +6,8 @@ Check financial claims against SEC filings with Meta’s open-weight Muse Spark 
 
 <a id="60-second-path"></a>
 
+Day 5: [delivery plan](docs/DAY5_PLAN.md) · [provider capabilities and prices](docs/PROVIDERS.md). US equities only; planned features are not current capabilities.
+
 [Open-weight LoRA attempt (Nov 3 UTC)](docs/evidence/lora-2026-11-03/REPORT.md): Fireworks NVFP4 LoRA initialization confirmed; tokenizer access blocked training. $0 estimated spend, no trained adapter or extraction improvement claim. [Feasibility and rates](docs/evidence/lora-2026-11-03/FEASIBILITY.md).
 
 ## 3-minute path
