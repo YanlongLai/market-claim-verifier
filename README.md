@@ -135,9 +135,13 @@ A post-freeze input review found one translated company-name error and one ambig
 
 The 480 item/path evaluations used **$5.3361 in ledger estimates/reservations**: Baseten $1.5528, Fireworks $1.5872 and Meta $2.1961, each below its $10 task cap. Failed attempts and unknown-usage reservations remain included; these are not provider invoices.
 
-The separately recorded [POST-HOC FIX RECHECK](docs/evidence/real-world-2026-11-03-fixcheck/REPORT.md) uses these same seen inputs after repairs. **The inputs and failures were seen before the fixes; this is not held-out evidence.** Original text and gold are unchanged; publication dates are now supplied as separate context. Before/after counts, failures and costs are retained for all three providers on both paths. News and later Threads sets share a $5-per-provider ledger, including failed calls and unknown usage.
+The separately recorded [POST-HOC FIX RECHECK](docs/evidence/real-world-2026-11-03-fixcheck/REPORT.md) uses these same seen inputs after repairs. **The inputs and failures were seen before the fixes; this is not held-out evidence.** Original text and gold are unchanged; publication dates are now supplied as separate context. Both the initial recheck and separately registered adaptive routing repair retain before/after counts, failures and costs for all three providers on both paths. News and later Threads sets share a $5-per-provider ledger, including failed calls and unknown usage.
+
+The adaptive repeat supports **4/4 original SEC-confirmed positives on five paths** and **3/4 on Fireworks post**, where UnitedHealth timed out and counts wrong. Every original path scored 0/4. Across both retained attempts, ledger estimates/reservations are **$2.1730 Baseten, $2.6954 Fireworks and $2.7280 Meta**, each below $5. This four-positive development panel does not establish broad accuracy or a factual false-supported rate.
 
 The repairs add exact SEC issuer binding, filing-date-backed relative periods, component-derived net/operating/gross margins and YoY growth, narrowly scoped segment revenue, 6-K releases, investment income, US comparable sales, annual minimum guidance and explicit unit-error notes on contradictions. A missing date, ambiguous period or unsupported issuer/metric still yields insufficient evidence. The [frozen recheck protocol](docs/evidence/real-world-2026-11-03-fixcheck/sets/news/protocol.json) discloses changed date context and concurrency. Threads inputs await the phase-2 merge; the runner accepts a separately frozen Threads set under the same remaining caps. No OCR/ASR was retested.
+
+For dated text, `verify` and `post` accept `--published-at 2026-10-29T22:13:49Z`; this supplies the source date separately and limits eligible filing dates. Add `--issuer-country` and `--issuer-exchange` when known. These are constraints to check against SEC identity evidence, not substitutes for a matching company name.
 
 ## Limitations
 

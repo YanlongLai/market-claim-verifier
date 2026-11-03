@@ -51,3 +51,11 @@ The workflow is [configured for push/PR](../.github/workflows/verify.yml); it ha
 ## Paired media and stock-context receipts
 
 [Primary benchmark audit](evidence/fair-multimodal-v1/audit.json) validates the frozen experiment independently of subsequent product changes. [Post-hoc audit](evidence/stock-context-posthoc-2026-10-30/audit.json) verifies both retained repair attempts and their shared budget. [Final product verification log](evidence/stock-context-posthoc-2026-10-30/final-offline-verification.log) records 901 product, 149 demo Python and 55 Node tests plus presentation/output/link checks. Replay instructions are in [REUSE](evidence/fair-multimodal-v1/REUSE.md).
+
+## Real-world fixes, 2026-11-03
+
+The [seen-input fix recheck](evidence/real-world-2026-11-03-fixcheck/REPORT.md) retains the first execution, a separately frozen adaptive routing repair, failures and shared provider caps. The [validation records](evidence/real-world-2026-11-03-fixcheck/validation/) include **976 product tests, 149 demo tests and 55 standalone Node tests**, all passing. New regressions use retained SEC bytes and synthetic edge cases; no OCR/ASR was retested. The original evaluation's 1,950 files remain unchanged. Figure regeneration produced byte-identical PNGs; historical SVG bytes and generation dates were preserved while refreshing input hashes.
+
+The required disconnected verification command is `UV_OFFLINE=1 sh scripts/verify.sh`, using the populated temporary uv dependency cache. It runs the Python/Node suites, rebuilds figures and all three site data outputs, checks links, and blocks network access in the disposable verification copy.
+
+**PASS:** [final receipt](evidence/real-world-2026-11-03-fixcheck/validation/receipt.json) and [disconnected transcript](evidence/real-world-2026-11-03-fixcheck/validation/offline-verification.log). The audit matches 1,041 reservations to retained traces/costs, preserves eight unreconciled reservations, and verifies each attempt's committed runtime. [Peak exposure](evidence/real-world-2026-11-03-fixcheck/validation/budget-peaks.json) stayed below $5 per provider.

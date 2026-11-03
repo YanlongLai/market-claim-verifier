@@ -2,6 +2,8 @@
 
 The [report](REPORT.md) compares the unchanged, previously seen News 80 against the original run. [Diagnosis](FINDINGS.md) explains the repairs; [ADAPTATION.json](ADAPTATION.json) records why the additional routing repair was separately registered. Both attempts, failures and raw redacted traces remain under `sets/`. Do not report a best-of result or call this held out. No OCR/ASR was retested.
 
+[Final verification receipt](validation/receipt.json), [offline transcript](validation/offline-verification.log), [input/trace audit](validation/audit.json) and [peak budget audit](validation/budget-peaks.json) record the completed checks. Final inference sources match the paid-run freeze. The later reporting-only change makes absent counters zero and displays skipped counts; [report provenance](REPORT_BUILD.json) identifies that change.
+
 The first attempt's `FREEZE.json` matches its own recorded Git revision. Later repairs intentionally differ from that revision: use `RUN_START.json` to locate the matching code, rather than applying an old freeze to the latest code. The second attempt has its own manifest and revision. Source SHA-256 values, SEC bytes, source supplement and runtime caches permit offline inspection without paying to recollect sources.
 
 ## Threads after phase 2

@@ -181,7 +181,7 @@ def build_report(out):
     data, lines = {}, ["# POST-HOC FIX RECHECK", "", "**Inputs were seen before these fixes. This is not a held-out result.** Original text and gold are unchanged; publication-date context is now supplied. No OCR/ASR was retested.", "",
                        "One append-only ledger covers News and later Threads sets, including retries, failures and unreconciled reservations. Cap: $5 per provider.", "",
                        "The first attempt (`news`) and adaptive routing repair (`news-r2`) are separate, fully retained executions. First-attempt outputs were inspected before the second repair; see [decision record](ADAPTATION.json) and [diagnosis](FINDINGS.md). Each row compares with the original 2026-11-02 run, never with a selected best result.", "",
-                       "| Attempt / provider / path | Primary SEC positives before → after | Supported before → after | Contradicted before → after | Insufficient before → after | Failed before → after / stopped after |", "|---|---:|---:|---:|---:|---:|"]
+                       "| Attempt / provider / path | Primary SEC positives before → after | Supported before → after | Contradicted before → after | Insufficient before → after | Skipped before → after | Failed before → after / stopped after |", "|---|---:|---:|---:|---:|---:|---:|"]
     for target in sorted((out / "sets").iterdir()):
         if not (target / "RUN_START.json").exists():
             continue
@@ -197,7 +197,7 @@ def build_report(out):
                 b, a = before.get(key, {}).get("primary_factual_accuracy", {}), blocks[key]["primary_factual_accuracy"]
                 counts = blocks[key]["outcomes"]
                 prior = before.get(key, {})
-                comparisons = [f"{prior.get('outcomes', {}).get(v, '—')} → {counts.get(v, 0)}" for v in ('supported', 'contradicted', 'insufficient_evidence')]
+                comparisons = [f"{prior.get('outcomes', {}).get(v, 0) if prior else '—'} → {counts.get(v, 0)}" for v in ('supported', 'contradicted', 'insufficient_evidence', 'skipped')]
                 lines.append(f"| {target.name}/{key} | {b.get('numerator', '—')}/{b.get('denominator', '—')} → {a['numerator']}/{a['denominator']} | " + " | ".join(comparisons) + f" | {prior.get('failure_items', '—')} → {blocks[key]['failure_items']} / {blocks[key]['budget_stopped_items']} |")
         data[target.name] = {"systems": blocks, "items": len(cases)}
     lines += ["", "Costs include unknown-usage reservations (estimates, not invoices): " + ", ".join(f"{p} ${v:.6f}" for p, v in costs.items()) + ".", "",
