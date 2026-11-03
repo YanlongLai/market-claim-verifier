@@ -219,14 +219,12 @@
     }
     if(scene==='results') {
       let html=chrome('Saved v2 results')+heading('Measured accuracy.')+
-        box(704,320,1152,68,'Original v2 · '+P.claim_count+' claims','body muted',56)+
-        box(704,392,1152,68,'includes dev / corrected gold','body muted',56)+
-        surface(704,464,1152,400)+
-        box(728,472,336,68,'Muse Spark','body muted',56)+
-        box(1088,472,336,68,'Model alone','body muted',56)+
-        box(1448,472,384,68,'With checks','body mint',56);
+        box(704,320,1152,68,P.claim_count+' claims · includes dev / corrected gold','body muted',56)+
+        box(1088,392,336,68,'Model alone','body muted',56)+
+        box(1448,392,384,68,'With checks','body mint',56)+
+        surface(704,464,1152,400);
       for(const [i,row] of D.product.scores.entries()) {
-        const y=548+i*100,visible=show(t,e,i===0?'meta':'open');
+        const y=476+i*124,visible=show(t,e,i===0?'meta':'open');
         html+=box(728,y+16,336,80,esc(row.label),'body',56)+
           box(1088,y,336,116,n(row.alone.percent.toFixed(1)+'%',96),'muted',96)+
           box(1448,y,384,116,visible?n(row.checked.percent.toFixed(1)+'%',96):'Checks…','mint',56);
