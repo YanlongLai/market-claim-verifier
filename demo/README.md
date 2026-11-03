@@ -1,10 +1,13 @@
 # Reproducible demo video
 
-**v007 gate 1 proposal:** [SHOTLIST-v3.md](SHOTLIST-v3.md),
-[storyboard-v3.yaml](storyboard-v3.yaml), [narration](NARRATION-v007.txt) and
-[revision / host commands](REVISION-v007.md). Its separate [seekable entry](motion/v3/index.html)
-is a 178.1899 s target preview, with no v007 narration or frames rendered. Owner approval is pending.
-The Owner-approved v006 (160.433 s) remains the baseline; the default v2 files below are historical production sources.
+**v010 source handoff:** the approved [shot list v4](SHOTLIST-v4.md) and
+[storyboard](storyboard-v3.yaml) target **177.2611 s**, including the 11.3081-second real-world reserve.
+The [seekable entry](motion/v3/index.html) includes the recorded Apple trace ribbon and a data-driven
+News/Threads scene. Real-world evidence is currently absent: its preview is explicitly pending and host
+voice/film preparation refuses it. See the [evidence contract](data/REALWORLD.md) and
+[host commands](REVISION-v010.md#host-commands). The twelve original [narration paragraphs](NARRATION-v007.txt)
+and locked voice/music remain unchanged. No v010 film has been rendered in this source task.
+The default v2 files below remain historical production sources.
 
 The default `storyboard.yaml` is now v2. Start with [v2 motion workflow](#v2-motion-workflow) below.
 The following original pipeline notes and commands describe **v1**, preserved in `storyboard-v1.yaml`.

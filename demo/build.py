@@ -38,6 +38,8 @@ class Builder:
             self.story = yaml.safe_load(self.storyboard.read_text())
         except (OSError, yaml.YAMLError) as error:
             raise BuildError(f"Cannot read storyboard {self.storyboard}: {error}") from error
+        from realworld import resolve_story
+        self.story = resolve_story(self.repo, self.story)
         self.validate_story()
         self.scenes = self.story["scenes"]
         available = {s["id"] for s in self.scenes}
@@ -167,6 +169,9 @@ class Builder:
                          "Finish its host installation, or pass --voice-fallback say for a Samantha draft.")
 
     def voice_spec(self, scene: dict) -> tuple[str, str, Path]:
+        if scene.get('data_source') == 'demo/data/realworld.json':
+            from realworld import load_snapshot
+            load_snapshot(self.repo, require_ready=True)
         engine = self.engine()
         config = self.story["voice"]
         clone = config.get("mode") == "clone"
