@@ -408,7 +408,7 @@ const boot = '  setupLive();\n  setupFilingDialog();\n  setupControls();\n  appl
 assert.ok(source.includes(boot));
 vm.runInContext(source.replace(boot, `
   globalThis.stamps = { createStampConveyor, setLanguage: language => { pageLanguage = language; applyCopy(); } };
-  globalThis.liveTest = { setupLive, renderLiveTrace, localizeLive, state: () => ({ liveResult, liveStatus, savedLiveDemo }) };
+  globalThis.liveTest = { setupLive, renderLiveTrace, localizeLive, refreshLiveBudget, state: () => ({ liveResult, liveStatus, savedLiveDemo, liveBudget }) };
 `), context);
 const conveyor = context.stamps.createStampConveyor(cards);
 context.stamps.setLanguage(config.language || 'en'); conveyor.localize();

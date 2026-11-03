@@ -8,6 +8,34 @@ const headers = {
 };
 const error = (code, status) => new Response(JSON.stringify({ error: code, demo: "data/live-demo.json" }), { status, headers });
 
+export const onBudget = async ({ request, env }) => {
+  if (request.method !== "GET") return error("method_not_allowed", 405);
+  const url = new URL(request.url);
+  if (env.LIVE_CHECK_MOCK === "1" && ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname)) {
+    const now = new Date(), reset = new Date(now);
+    reset.setUTCHours(24, 0, 0, 0);
+    return Response.json({ day: now.toISOString().slice(0, 10), daily_limit_usd: 3, daily_spent_usd: 0,
+      daily_remaining_usd: 3, resets_at: reset.toISOString(), status: "ready", mode: "mock" }, { headers });
+  }
+  if (!env.LIVE_CHECK) return error("unavailable", 503);
+  try {
+    // No visitor headers, IP, cookies or credentials enter the budget request.
+    const response = await env.LIVE_CHECK.fetch(new Request("https://live.internal/api/budget"));
+    if (!response.ok) return error("unavailable", 503);
+    const data = await response.json();
+    // Allowlist the public daily counters; never forward internal ledger data.
+    const { day, daily_limit_usd, daily_spent_usd, daily_remaining_usd, resets_at, status } = data;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(day) || !Number.isFinite(Date.parse(resets_at)) ||
+        ![daily_limit_usd, daily_spent_usd, daily_remaining_usd].every(v => typeof v === "number" && Number.isFinite(v) && v >= 0) ||
+        !["ready", "budget_exhausted", "total_budget_exhausted", "credit_exhausted"].includes(status)) return error("unavailable", 503);
+    // Post-check fetches bypass caches; ordinary page loads may reuse 5 s.
+    return Response.json({ day, daily_limit_usd, daily_spent_usd, daily_remaining_usd, resets_at, status }, {
+      headers: { ...headers, "Cache-Control": request.headers.get("Cache-Control") === "no-cache" ? "no-store" :
+        "public, max-age=0, s-maxage=5, must-revalidate" }
+    });
+  } catch { return error("unavailable", 503); }
+};
+
 export const onRequest = async ({ request, env }) => {
   const url = new URL(request.url);
   if (request.method !== "POST") return error("method_not_allowed", 405);

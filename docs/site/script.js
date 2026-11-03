@@ -377,9 +377,20 @@
     timing: "Run start/end and model-call durations are recorded. Individual tool/check timestamps were not recorded.",
     honesty: "Meta Muse Spark selects tools and proposes claims. Python checks numbers, periods and evidence IDs. A supported verdict applies only to the assertions extracted; extraction can miss an assertion. Filed evidence can be incomplete or restated. SEC data may be cached for six hours.",
     bound: "Conservative cost bound", cost: "Model cost", seconds: "s", low: "low", medium: "medium", high: "high",
+    savedExamples: "See the saved examples ↓",
+    budget: {
+      loading: "Loading today's live-check budget…", unavailable: "Today's live-check budget is unavailable. See the saved examples.",
+      mock: "Offline replay budget · no spending",
+      remaining: "Today's live-check budget: {remaining} of {limit} left · resets 00:00 UTC",
+      almost: "Almost used up", budget_exhausted: "Today's budget is used up — see the saved examples. Resets {reset} (00:00 UTC).",
+      total_budget_exhausted: "Live checks paused (total budget). An admin must reset the budget. See the saved examples.",
+      credit_exhausted: "Live checks paused (provider credit). See the saved examples."
+    },
     errors: {
       invalid_input: "Enter 1–600 characters.", out_of_scope: "This check covers US equities and SEC financial facts only.",
-      budget_exhausted: "Today's live budget is used up. Follow the saved demo below and try again tomorrow (UTC).",
+      budget_exhausted: "Today's budget is used up — see the saved examples. Resets 00:00 UTC.",
+      total_budget_exhausted: "Live checks paused (total budget). See the saved examples.",
+      credit_exhausted: "Live checks paused (provider credit). See the saved examples.",
       rate_limited: "Five checks per 10 minutes. Please wait 10 minutes; the saved demo is available below.",
       unavailable: "Live checking is unavailable. Follow the saved demo below.", timeout: "The check reached its time limit. No verdict was issued. Follow the saved demo below.",
       provider_error: "The model service did not complete this check. No verdict was issued. The saved demo is below.",
@@ -409,9 +420,20 @@
     timing: "已記錄整次開始／結束時間及各次模型耗時；未記錄個別工具／程式檢查的時間戳。",
     honesty: "Meta Muse Spark 選擇工具並提出待查敘述；Python 檢查數字、期間與證據 ID。支持裁定僅適用於抽取到的敘述，抽取仍可能遺漏。申報證據可能不完整或經重編。SEC 資料可能快取六小時。",
     bound: "保守費用上限", cost: "模型費用", seconds: "秒", low: "低", medium: "中", high: "高",
+    savedExamples: "查看已儲存的範例 ↓",
+    budget: {
+      loading: "正在讀取今日即時查核預算…", unavailable: "暫時無法讀取今日即時查核預算。請查看已儲存的範例。",
+      mock: "離線重播預算 · 不產生費用",
+      remaining: "今日即時查核預算：{limit} 中剩餘 {remaining} · UTC 00:00 重設",
+      almost: "預算即將用完", budget_exhausted: "今日預算已用完，請查看已儲存的範例。於 {reset}（UTC 00:00）重設。",
+      total_budget_exhausted: "即時查核暫停（總預算已用完）。需由管理員重設預算。請查看已儲存的範例。",
+      credit_exhausted: "即時查核暫停（供應商額度已用完）。請查看已儲存的範例。"
+    },
     errors: {
       invalid_input: "請輸入 1–600 個字元。", out_of_scope: "此功能僅查核美股的 SEC 財務事實。",
-      budget_exhausted: "今日即時預算已用完。請先查看下方已儲存的示範，明天（UTC）再試。",
+      budget_exhausted: "今日預算已用完，請查看已儲存的範例。於 UTC 00:00 重設。",
+      total_budget_exhausted: "即時查核暫停（總預算已用完）。請查看已儲存的範例。",
+      credit_exhausted: "即時查核暫停（供應商額度已用完）。請查看已儲存的範例。",
       rate_limited: "每 10 分鐘限 5 次，請等候 10 分鐘；下方示範仍可查看。",
       unavailable: "即時查核暫時無法使用。請查看下方已儲存的示範。", timeout: "查核已達時間上限，未作出裁定。請查看下方示範。",
       provider_error: "模型服務未完成查核，未作出裁定。請查看下方示範。", sec_unavailable: "SEC 資料暫時無法取得，未作出裁定。請查看下方示範。",
@@ -430,6 +452,12 @@
   let savedLiveDemo = null;
   let liveResult = null;
   let liveStatus = "";
+  let liveBudget = null;
+  let liveBusy = false;
+  let budgetLoaded = false;
+  let budgetRequest = 0;
+  let budgetTimer = null;
+  let budgetDay = "";
 
   function liveCopy(key) { return COPY[pageLanguage].live[key]; }
 
@@ -542,12 +570,71 @@
     }
   }
 
+  function liveStop() {
+    const stops = ["credit_exhausted", "total_budget_exhausted", "budget_exhausted"];
+    return stops.find(code => liveBudget?.status === code || liveStatus === code) || "";
+  }
+
+  function budgetStopText(stop) {
+    return (liveCopy("budget")[stop] || "").replace("{reset}", liveBudget?.resets_at?.slice(0, 10) || "00:00 UTC");
+  }
+
+  function renderLiveBudget() {
+    const text = $("#live-budget-text"), meter = $("#live-budget-meter"), note = $("#live-budget-note");
+    if (!text) return;
+    const copy = liveCopy("budget"), stop = liveStop();
+    text.textContent = liveBudget?.mode === "mock" ? copy.mock : liveBudget ? copy.remaining.replace("{remaining}", `$${liveBudget.daily_remaining_usd.toFixed(2)}`)
+      .replace("{limit}", `$${liveBudget.daily_limit_usd.toFixed(2)}`) : copy[budgetLoaded ? "unavailable" : "loading"];
+    meter.hidden = !liveBudget;
+    if (liveBudget) {
+      meter.max = Math.max(liveBudget.daily_limit_usd, 0.01);
+      meter.value = liveBudget.daily_remaining_usd;
+      meter.setAttribute("aria-valuetext", text.textContent);
+    }
+    note.textContent = stop ? budgetStopText(stop) : liveBudget?.daily_remaining_usd < 0.10 ? copy.almost : "";
+    note.hidden = !note.textContent;
+    const disabled = liveBusy || !liveBudget || Boolean(stop);
+    $("#live-input").disabled = disabled;
+    $("#live-submit").disabled = disabled;
+    $("#live-example").disabled = disabled;
+  }
+
+  async function refreshLiveBudget() {
+    const id = ++budgetRequest;
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 4000);
+    try {
+      const response = await fetch("/api/budget", {
+        cache: "no-store", headers: { "Cache-Control": "no-cache" }, signal: controller.signal
+      });
+      const data = await response.json();
+      if (!response.ok || !["ready", "budget_exhausted", "total_budget_exhausted", "credit_exhausted"].includes(data.status) ||
+          ![data.daily_limit_usd, data.daily_remaining_usd].every(v => typeof v === "number" && Number.isFinite(v) && v >= 0) ||
+          !Number.isFinite(Date.parse(data.resets_at))) throw new Error("budget unavailable");
+      if (id !== budgetRequest) return;
+      if (budgetDay && data.day !== budgetDay && liveStatus === "budget_exhausted") liveStatus = "";
+      if (data.status === "ready" && ["credit_exhausted", "total_budget_exhausted"].includes(liveStatus)) liveStatus = "";
+      budgetDay = data.day;
+      liveBudget = data;
+      clearTimeout(budgetTimer);
+      // Re-read the server at midnight; the browser never resets a counter.
+      budgetTimer = setTimeout(refreshLiveBudget, Math.max(1000, Date.parse(data.resets_at) - Date.now() + 50));
+      budgetTimer?.unref?.();
+    } catch {
+      if (id === budgetRequest) liveBudget = null;
+    } finally {
+      clearTimeout(timeout);
+      if (id === budgetRequest) { budgetLoaded = true; localizeLive(); }
+    }
+  }
+
   function localizeLive() {
     if (savedLiveDemo) renderLiveTrace(savedLiveDemo, $("#recorded-trace"));
     if (liveResult) renderLiveTrace(liveResult, $("#live-result"));
     const status = $("#live-status");
-    if (status) status.textContent = liveStatus === "pending" || liveStatus === "complete"
+    if (status) status.textContent = liveStop() ? budgetStopText(liveStop()) : liveStatus === "pending" || liveStatus === "complete"
       ? liveCopy(liveStatus) : (liveCopy("errors")[liveStatus] || "");
+    renderLiveBudget();
   }
 
   function setupLive() {
@@ -558,7 +645,7 @@
     const count = () => { $("#live-count").textContent = `${Array.from(input.value).length} / 600`; };
     input.addEventListener("input", count);
     $("#live-example").addEventListener("click", () => {
-      if (savedLiveDemo) { input.value = savedLiveDemo.input; count(); input.focus(); }
+      if (savedLiveDemo && !input.disabled) { input.value = savedLiveDemo.input; count(); input.focus(); }
     });
     form.addEventListener("submit", async (event) => {
       event.preventDefault();
@@ -566,7 +653,7 @@
       if (!input.value.trim() || Array.from(input.value.trim()).length > 600) {
         liveStatus = "invalid_input"; localizeLive(); return;
       }
-      submit.disabled = true;
+      liveBusy = true;
       form.setAttribute("aria-busy", "true");
       liveResult = null;
       $("#live-result").hidden = true;
@@ -580,6 +667,7 @@
           body: JSON.stringify({ text: input.value.trim() }), signal: controller.signal, cache: "no-store"
         });
         const result = await response.json();
+        if (result.budget) liveBudget = result.budget;
         if (!response.ok || result.error) {
           liveStatus = result.error || "unavailable";
           if (Array.isArray(result.events) && result.events.length) liveResult = result;
@@ -590,11 +678,14 @@
       } catch (error) { liveStatus = error.name === "AbortError" ? "timeout" : "unavailable"; }
       finally {
         clearTimeout(timer);
-        submit.disabled = false;
+        await refreshLiveBudget();
+        liveBusy = false;
         form.setAttribute("aria-busy", "false");
         localizeLive();
       }
     });
+    refreshLiveBudget();
+    document.addEventListener("visibilitychange", () => { if (!document.hidden) refreshLiveBudget(); });
     fetch("data/live-demo.json", { cache: "no-store" }).then((response) => {
       if (!response.ok) throw new Error("missing trace");
       return response.json();

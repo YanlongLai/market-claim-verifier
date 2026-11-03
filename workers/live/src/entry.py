@@ -9,16 +9,17 @@ from pyodide.ffi import to_js
 from workers import DurableObject, Response, WorkerEntrypoint
 
 from gate import prune, transition
-from live import LiveError, LiveRun, SEC_AGENT, validate_text
+from live import LiveError, LiveRun, SEC_AGENT, provider_credit_exhausted, validate_text
 
 
 def js_options(value):
     return to_js(value, dict_converter=Object.fromEntries)
 
 
-def reply(value, status=200):
+def reply(value, status=200, *, public=False):
     return Response(json.dumps(value, ensure_ascii=False), status=status, headers={
-        "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store",
+        "Content-Type": "application/json; charset=utf-8",
+        "Cache-Control": "public, max-age=0, s-maxage=5, must-revalidate" if public else "no-store",
         "X-Content-Type-Options": "nosniff"})
 
 
@@ -49,7 +50,9 @@ class SpendGate(DurableObject):
         # concurrent reservations cannot interleave this critical section.
         state = self.load()
         result, status = transition(state, data["action"], data["data"], now=time.time(),
-                                    budget=str(getattr(self.env, "DAILY_BUDGET_USD", "3")))
+                                    budget=str(getattr(self.env, "DAILY_BUDGET_USD", "3")),
+                                    total_budget=str(getattr(self.env, "TOTAL_BUDGET_USD", "20")),
+                                    reset_id=str(getattr(self.env, "BUDGET_RESET_ID", "")))
         self.save(state)
         await self.schedule(state)
         return reply(result, status)
@@ -58,10 +61,9 @@ class SpendGate(DurableObject):
         state = self.load()
         prune(state, time.time())
         self.save(state)
-        if state.get("rates") or state.get("holds") or state.get("days"):
-            await self.schedule(state)
-        else:
-            self.ctx.storage.sql.exec("DELETE FROM ledger")
+        # Never erase the lifetime counter or permanent stop flags during idle
+        # cleanup. Only short-lived rate buckets, days and holds are pruned.
+        await self.schedule(state)
 
 
 class Default(WorkerEntrypoint):
@@ -73,7 +75,7 @@ class Default(WorkerEntrypoint):
             "headers": {"Content-Type": "application/json"}})))
         body = json.loads(await response.text())
         if response.status != 200:
-            raise LiveError(body.get("error", "unavailable"), response.status)
+            raise LiveError(body.get("error", "unavailable"), response.status, body.get("budget"))
         return body
 
     async def sec(self, url):
@@ -100,10 +102,20 @@ class Default(WorkerEntrypoint):
                                            "Content-Type": "application/json"},
                                   body=json.dumps(payload), redirect="error")
         if not response.ok:
+            # A 402 remains a stop even if its body cannot be read. Never send
+            # provider error text (which can include account details) to Pages.
+            if provider_credit_exhausted(response.status, "" if response.status == 402 else await response.text()):
+                await self.gate("credit_exhausted", {})
+                raise LiveError("credit_exhausted")
             raise LiveError("provider_error")
         return json.loads(await response.text())
 
     async def fetch(self, request):
+        if request.method == "GET" and urlparse(request.url).path == "/api/budget":
+            try:
+                return reply(await self.gate("budget", {}), public=True)
+            except Exception:
+                return reply({"error": "unavailable"}, 503)
         if request.method != "POST" or urlparse(request.url).path != "/api/check":
             return reply({"error": "not_found"}, 404)
         run = None
@@ -118,12 +130,16 @@ class Default(WorkerEntrypoint):
             except (ValueError, TypeError):
                 raise LiveError("invalid_input", 400) from None
             claim = validate_text(data.get("text") if isinstance(data, dict) else None)
+            budget = await self.gate("budget", {})
+            if budget["status"] != "ready":
+                raise LiveError(budget["status"], 429 if budget["status"] == "budget_exhausted" else 503, budget)
             await self.gate("rate", {"ip": request.headers.get("X-Live-Client-IP")})
             run = LiveRun(self.model, self.sec, self.gate)
             return reply(await run.bounded(claim))
         except LiveError as error:
             fields = run.envelope() if run else {}
-            return reply({**fields, "error": error.code, "demo": "data/live-demo.json"}, error.status)
+            return reply({**fields, "error": error.code, "demo": "data/live-demo.json",
+                          **({"budget": error.budget} if error.budget else {})}, error.status)
         except Exception:
             # Never log request text, provider bodies, credentials or exceptions.
             return reply({**(run.envelope() if run else {}), "error": "unavailable",

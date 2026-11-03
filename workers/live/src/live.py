@@ -41,9 +41,25 @@ INSTRUCTIONS = SYSTEM_INSTRUCTIONS + "\n" + SCOPE + "\n" + (
 
 
 class LiveError(Exception):
-    def __init__(self, code: str, status: int = 503):
-        self.code, self.status = code, status
+    def __init__(self, code: str, status: int = 503, budget: dict | None = None):
+        self.code, self.status, self.budget = code, status, budget
         super().__init__(code)
+
+
+def provider_credit_exhausted(status: int, body: str = "") -> bool:
+    """402 is billing; ordinary 403 auth / 429 rate limits are not credit stops.
+
+    Baseten documents variable string/object error bodies. Match exhaustion
+    wording as well as machine codes without retaining the provider response.
+    """
+    if status == 402:
+        return True
+    if status not in (403, 429):
+        return False
+    text = re.sub(r"[_-]+", " ", body[:16384].lower())
+    subject = r"(?:credits?|balance|quota|budget|funds?|spend(?:ing)? limit)"
+    exhausted = r"(?:insufficient|exhausted|exceeded|depleted|used up|out of|reached|no remaining|not enough|zero)"
+    return bool(re.search(fr"{subject}.{{0,100}}{exhausted}|{exhausted}.{{0,100}}{subject}|payment required", text, re.S))
 
 
 def validate_text(value: Any) -> str:
