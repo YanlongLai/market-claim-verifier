@@ -1,5 +1,9 @@
-V4 preparation validation. Full offline verification is pending; exact logs will be retained here.
+V4 preparation checks passed on 2026-11-03. Voice, Wan generation and Chromium capture remain blocked as recorded separately; no new provider or SEC call was made.
 
-First targeted invocation: `demo/.venv/bin/python -m pytest -q demo/tests/test_v4.py` — **6 passed in 1.17 s**; `node --test demo/tests/motion-v4.test.mjs` — **3 passed**. These are the tool-reported results; no historical shell log is reconstructed.
+- [Full offline log](verify-offline.log): `bash scripts/verify.sh` exited **0**. **1,010 product tests + 212 demo tests passed; all 100 standalone Node tests passed.** Figure input/rebuild checks passed; explorer/site/build-summary outputs were byte-identical, as was wild data; Markdown links and anchors passed. The runner removed provider credentials and installed Python/Node network guards before testing/building in its disposable copy.
+- [Exact explicit check commands and exit codes](checks.json): realworld, scale-v4 and motion-v4 `--check` all passed. The targeted v4 suite passed **6 Python + 3 Node** tests. [Check logs](check-0.log), [scale](check-1.log), [motion](check-2.log), [Python](check-3.log), [Node](check-4.log).
+- [Actual MP4 probes](media-probes.json): beat 4 is 1920×1080 / 30 fps / 16.000 s; beat 7 is 1920×1080 / 30 fps / 24.000 s. Both source casts were rendered at Menlo 32 px and padded, without scaling down. Representative frames were visually inspected.
+- [Protected v3 final hashes](protected-v3-final.json) match the [initial hashes](baseline.json). `docs/evidence` and product code have no changes in the preparation commit chain. No site recording or full film render was performed.
+- The final bundle is verified with `git bundle verify`, then fetched into a separate temporary repository for tree/content checks. The bundle and its JSON/hash/verification log live in `demo/out/`, outside the committed chain to avoid a self-referential artifact.
 
-First explicit checks: `realworld.py --check`, `motion_v4.py --check`, `scale_v4.py --check` all passed. A final retained invocation covers the completed source.
+The first targeted invocation also passed (6 Python in 1.17 s; 3 Node). No historical console log was fabricated; the final invocation above retains the actual stdout/stderr. Raw engine failure logs retain their original whitespace. Generated SRT retains the builder’s canonical final blank line.
