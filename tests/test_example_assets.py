@@ -28,6 +28,8 @@ def isolated(tmp_path, monkeypatch):
         row["saved_result"] = None
         (tmp_path / f"docs/site/data/examples/{row['id']}.json").unlink(missing_ok=True)
     catalogue.write_bytes(assets.encoded(rows))
+    index = tmp_path / "docs/site/data/examples/index.json"
+    index.write_bytes(assets.encoded([{**row, "saved_result": None} for row in json.loads(index.read_text())]))
     shutil.copyfile(ROOT / "docs/site/data/live-demo-post.json", tmp_path / "docs/site/data/live-demo-post.json")
     monkeypatch.setattr(assets, "ROOT", tmp_path)
     monkeypatch.setattr(assets, "EXAMPLES", tmp_path / "docs/examples")
