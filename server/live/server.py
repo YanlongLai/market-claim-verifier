@@ -194,7 +194,7 @@ async def handle(request):
         return reply({"error": "not_found"}, 404)
     run = None
     try:
-        async with asyncio.timeout(28):
+        async with asyncio.timeout(55):
             raw = bytearray()
             async for chunk in request.content.iter_chunked(4096):
                 raw.extend(chunk)

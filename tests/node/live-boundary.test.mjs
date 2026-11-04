@@ -182,7 +182,7 @@ test("origin/network/Access failures return the uncached 503 demo fallback witho
 test("25 second abort covers fetch and body consumption for check and budget", async t => {
   let timers = 0, cleared = 0, bodyWait = false;
   t.mock.method(globalThis, "setTimeout", (callback, ms) => {
-    assert.equal(ms, 25000); timers++; queueMicrotask(callback); return timers;
+    assert.equal(ms, 55000); timers++; queueMicrotask(callback); return timers;
   });
   t.mock.method(globalThis, "clearTimeout", () => cleared++);
   const env = envWithFetch(t, req => {

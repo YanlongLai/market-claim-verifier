@@ -21,7 +21,7 @@ async function originFetch(env, path, options = {}) {
       ![env.LIVE_ACCESS_CLIENT_ID, env.LIVE_ACCESS_CLIENT_SECRET, env.LIVE_ORIGIN_TOKEN]
         .every(value => typeof value === "string" && value.length > 0)) throw Error("unavailable");
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 25000);
+  const timer = setTimeout(() => controller.abort(), 55000);
   try {
     const response = await fetch(new Request(`https://${host}${path}`, {
       // Workers fetch supports only "follow"|"manual"; "error" throws. A 3xx is not ok, so it fails closed.

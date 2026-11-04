@@ -24,9 +24,9 @@ from claimcheck.providers import BASETEN_DEFAULT_MODEL, BASETEN_PRICING
 from claimcheck.tools import TOOL_DEFINITIONS, ToolRunner
 
 MODEL = BASETEN_DEFAULT_MODEL
-MAX_CALLS = 4
+MAX_CALLS = 8  # a four-assertion post needs more model turns than a single claim
 MAX_OUTPUT = 2000
-MAX_TOOLS = 6
+MAX_TOOLS = 14
 SCOPE = "US equities with SEC companyfacts only; no prices, forecasts, crypto, non-GAAP or investment advice."
 SEC_AGENT = "DappGo market-claim-verifier admin@dappgo.com"
 TOOL_NAMES = {"lookup_fact", "list_periods", "compute_change", "history_rank"}
@@ -262,6 +262,6 @@ class LiveRun:
 
     async def bounded(self, claim: str) -> dict:
         try:
-            return await asyncio.wait_for(self.run(claim), timeout=28)
+            return await asyncio.wait_for(self.run(claim), timeout=50)
         except TimeoutError:
             raise LiveError("timeout", 504) from None
