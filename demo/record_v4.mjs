@@ -9,7 +9,7 @@ export const presentation={viewport:[1920,1080],deviceScaleFactor:1,css_zoom:1.6
 // 36 CSS px × 1.6 capture zoom × the 1.4 presentation crop / 4 = 20.16 px at 480w.
 export const captureCSS=`
   *,*::before,*::after{cursor:none!important}html{scroll-behavior:auto!important}
-  .live-layout{display:block!important}.live-workspace{width:800px;max-width:100%;margin-inline:auto}
+  .live-layout,.try-layout{display:block!important}.live-workspace{width:800px;max-width:100%;margin-inline:auto}.history-panel,aside[class*="history"],[id*="history"]{display:none!important}
   #live-form,#live-result{font-size:36px!important;line-height:1.2!important}
   #live-form :is(label,button,input,textarea,p,span),
   #live-result :is(p,li,small,code,pre,summary,h5,h6,blockquote){font-size:36px!important;line-height:1.2!important}
@@ -30,7 +30,7 @@ export async function showTraceAndFiling({page,result,report,mark,frame,click,ho
   const trace=page.locator('#live-result .live-trace');
   report.trace_details_open=await trace.evaluate(el=>el.open);
   if(!report.trace_details_open)throw new Error('trace_details_not_open');
-  await frame('#live-result .trace-head .live-small');
+  await frame('#live-result .live-receipt');
   mark('trace_model_id_reveal');await hold(700);
   const steps=page.locator('#live-result .trace-step');
   const shown=[];
@@ -40,7 +40,7 @@ export async function showTraceAndFiling({page,result,report,mark,frame,click,ho
     const step=steps.nth(i);
     await frame(step);
     if(!await step.isVisible()||!await trace.evaluate(el=>el.open)||!await step.evaluate(el=>{
-      const r=el.getBoundingClientRect();return r.top>=200&&r.bottom<=770;
+      const r=el.getBoundingClientRect();return r.top>=120&&r.top<=700&&r.bottom<=1040;
     }))throw new Error('trace_step_hidden_or_cropped');
     mark(event.kind==='tool_call'?`tool_call_${i+1}_reveal`:'program_verdict_reveal');
     shown.push({index:i,kind:event.kind,name:event.name||null,visible:true,hold_ms:700});
@@ -138,7 +138,7 @@ export async function record(config) {
     await context.route('**/*',async route=>{
       const request=route.request(), url=new URL(request.url());
       if (url.origin!==origin) return route.abort('blockedbyclient');
-      if (url.pathname==='/api/check') {
+      if (url.pathname==='/api/check' || url.pathname==='/api/check-example') {
         if (request.method()!=='POST' || ++checks>1) return route.abort('blockedbyclient');
       }
       return route.continue();
@@ -215,7 +215,7 @@ export async function record(config) {
     await frame('#live-submit');
     mark('check_against_sec');const clickedAt=performance.now();
     const [response]=await Promise.all([
-      page.waitForResponse(r=>r.url()===`${origin}/api/check` && r.request().method()==='POST',{timeout:45000}),
+      page.waitForResponse(r=>/\/api\/check(-example)?$/.test(r.url()) && r.url().startsWith(origin) && r.request().method()==='POST',{timeout:90000}),
       click('#live-submit'),
     ]);
     const result=await response.json();
@@ -224,8 +224,8 @@ export async function record(config) {
     if(!response.ok())throw new Error('http_result_not_successful');
     validateLiveResult(result);
     await page.locator('#live-result .trace-verdict').first().waitFor({state:'visible'});
-    await frame('#live-result .trace-verdict');mark('verdict_reveal');await hold(2000);
-    const model=await page.locator('#live-result .trace-head').first().innerText();
+    await frame('#live-result .trace-verdict');mark('verdict_reveal');await hold(2500);
+    const model=(await page.locator('#live-result .live-receipt, #live-result .trace-head').allInnerTexts()).join(' ');
     if(!model.includes(result.model))throw new Error('native_model_line_missing');
     report.native_ui={model_line:result.model,provider:result.provider,
       provider_display:'Native form says Baseten; native result heading shows the model ID separately. No model/provider overlay added.'};
@@ -240,8 +240,8 @@ export async function record(config) {
     await page.locator('#live-result .live-evidence a').first().hover();await hold(400);
     await showTraceAndFiling({page,result,report,mark,frame,click,hold});
     mark('hover_receipt');
-    await frame('#live-result .trace-metrics');
-    await page.locator('#live-result .trace-metrics').first().hover();await hold(1200);
+    await frame('#live-result .live-receipt');
+    await page.locator('#live-result .live-receipt').first().hover();await hold(1200);
     report.beat6_actions_end_s=(performance.now()-began)/1000;
     report.after_click_s=(performance.now()-clickedAt)/1000;
     mark('beat6_choreography_gate');

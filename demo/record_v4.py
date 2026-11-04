@@ -175,7 +175,7 @@ def site_snapshot(ref):
             tar.extractall(directory, filter="data")
         docs = directory / "docs"
         html = (docs / "site/index.html").read_text()
-        if 'id="live-password"' not in html or 'id="corrected-draft-result"' not in html:
+        if 'id="live-password"' not in html or 'id="live-result"' not in html:
             raise RecordingError("The selected site commit lacks the merged live-check / corrected-draft UI")
         sources = {f"docs/site/{name}": digest(docs / "site" / name)
                    for name in ("index.html", "script.js", "styles.css", "data/live-demo-post.json")}

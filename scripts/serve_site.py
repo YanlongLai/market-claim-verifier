@@ -67,7 +67,7 @@ class Handler(SimpleHTTPRequestHandler):
 
     def proxy_request(self):
         path = urlsplit(self.path)
-        if path.path not in ("/api/budget", "/api/check"):
+        if path.path not in ("/api/budget", "/api/check", "/api/check-example", "/api/compare"):
             return False
         origin = self.server.proxy_api
         if not origin:
