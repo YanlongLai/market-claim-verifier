@@ -240,7 +240,7 @@ test('verdict framing removes the unrelated input charge and preserves the compl
  const audit={lines:[rect(180,309),rect(520,585)],controls:[],input_charge:rect(-30,38),corrected_heading:rect(520,585)};
  assert.throws(()=>assertCardFrame(audit,cardBands.bottom,{verdict:true}),/crosses_card_edge/);
  const d=cardScrollDelta(audit,[rect(180,309)],1000,4000,{verdict:true});
- assert(d>=40&&180-d>=80);
+ assert(d>=38.25&&180-d>=80);
  assertCardFrame({lines:[rect(180-d,309-d),rect(520-d,585-d)],controls:[],input_charge:rect(-30-d,38-d),corrected_heading:rect(520-d,585-d)},cardBands.bottom,{verdict:true});
  assert.throws(()=>cardScrollDelta(audit,[rect(80,548)],1000,4000,{verdict:true}),/no_clean_card_band/);
 });

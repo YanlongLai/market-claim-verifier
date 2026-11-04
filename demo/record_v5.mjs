@@ -113,10 +113,18 @@ export async function captureNamedElements(page,phase,result,at_s){
     const el=document.querySelectorAll(selector)[index];
     if(!el)throw new Error('named_element_missing');
     const r=el.getBoundingClientRect();
-    if(r.width<=0||r.height<=0||r.left<60||r.right>1860||r.top<0||r.bottom>766)
+    // The proof is the element's text; its padded box may extend under the card band.
+    let proofBottom=r.bottom,proofTop=r.top;
+    if(el.tagName!=='TEXTAREA'){
+      const walker=document.createTreeWalker(el,NodeFilter.SHOW_TEXT);let found=false;
+      for(let node;node=walker.nextNode();){if(!node.textContent.trim())continue;const range=document.createRange();range.selectNodeContents(node);
+        for(const q of range.getClientRects())if(q.width>0&&q.height>0){proofBottom=found?Math.max(proofBottom,q.bottom):q.bottom;proofTop=found?Math.min(proofTop,q.top):q.top;found=true;}}
+      if(!found){proofBottom=r.bottom;proofTop=r.top;}
+    }
+    if(r.width<=0||r.height<=0||r.left<60||r.right>1860||proofTop<0||proofBottom>766)
       throw new Error('named_element_outside_picture');
     if(!el.textContent.trim()&&el.tagName!=='TEXTAREA')throw new Error('named_element_empty');
-    return {name,selector,index,left:r.left,right:r.right,top:r.top,bottom:r.bottom,text:el.textContent};
+    return {name,selector,index,left:r.left,right:r.right,top:proofTop,bottom:proofBottom,box_top:r.top,box_bottom:r.bottom,text:el.textContent};
   }),specs);
   if(phase==='check_against_sec'&&!elements.some(e=>e.text.includes('Muse Spark is choosing tools and checking SEC facts')))
     throw new Error('native_in_progress_status_missing');
@@ -223,7 +231,7 @@ export async function record(config) {
   const namedPending=[];
   const mark=label=>{
     stage=label;const at_s=(performance.now()-began)/1000;report.timings.push({phase:label,at_s});
-    if(page)namedPending.push(captureNamedElements(page,label,report.result,at_s).then(check=>{if(check)report.named_element_checks.push(check);}).catch(()=>{report.named_element_failure=label;}));
+    if(page)namedPending.push(captureNamedElements(page,label,report.result,at_s).then(check=>{if(check)report.named_element_checks.push(check);}).catch(error=>{report.named_element_failure=label;report.named_element_failure_code=/^[a-z0-9_]{1,60}$/.test(String(error?.message))?String(error.message):'unclassified';}));
   };
   try {
     secret=(await readFile(process.env.LIVE_CHECK_PASSWORD_FILE,'utf8')).replace(/[\r\n]+$/g,'');
