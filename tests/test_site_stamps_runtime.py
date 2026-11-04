@@ -310,7 +310,7 @@ class Element {
       this[key] = value;
       if(owner.attributes.id==='stamp-scene'&&key.startsWith('--')){variables[key]=value;refreshBoxes();}
     } };
-    this.className = ''; this.hidden = false; this._text = '';
+    this.className = ''; this.hidden = false; this._text = ''; this.value = ''; this.checked = false;
     const change = (name, enabled) => {
       const classes = new Set(this.className.split(' ').filter(Boolean));
       if (enabled) classes.add(name); else classes.delete(name); this.className = [...classes].join(' ');
@@ -326,9 +326,12 @@ class Element {
     this.attributes[key] = String(value);
     if (key === 'class') this.className = value;
     if (key === 'hidden') this.hidden = true;
+    if (key === 'value') this.value = String(value);
+    if (key === 'checked') this.checked = true;
     if (key.startsWith('data-')) this.dataset[key.slice(5).replace(/-([a-z])/g, (_all,c) => c.toUpperCase())] = value;
   }
   getAttribute(key) { return this.attributes[key] ?? null; }
+  focus() { this.focused = true; }
   removeAttribute(key) { delete this.attributes[key]; }
   addEventListener(key,fn) {
     const previous=this.events[key];
@@ -425,7 +428,8 @@ const boot = '  setupLive();\n  setupFilingDialog();\n  setupControls();\n  appl
 assert.ok(source.includes(boot));
 vm.runInContext(source.replace(boot, `
   globalThis.stamps = { createStampConveyor, setLanguage: language => { pageLanguage = language; applyCopy(); } };
-  globalThis.liveTest = { setupLive, renderLiveTrace, localizeLive, refreshLiveBudget, loadData, setupControls, state: () => ({ liveResult, liveStatus, savedLiveDemo, liveBudget }) };
+  globalThis.liveTest = { setupLive, renderLiveTrace, localizeLive, refreshLiveBudget, loadData, setupControls,
+    selectMatrix, loadExamples, refreshHistory, state: () => ({ liveResult, liveStatus, savedLiveDemo, liveBudget, selectedStory, selectedKind, selectedProvider }) };
 `), context);
 const conveyor = tree.querySelector('.stamp-stage') ? context.stamps.createStampConveyor(cards) : null;
 context.stamps.setLanguage(config.language || 'en'); conveyor?.localize();
