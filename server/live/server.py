@@ -378,7 +378,7 @@ async def execute(services, request, provider, *, claim=None, example=None):
         run.input_info["text_read"] = claim
     status = 200
     try:
-        async with asyncio.timeout(EXAMPLE_TIMEOUT if example else 28):
+        async with asyncio.timeout(EXAMPLE_TIMEOUT if example else 55):
             # Every compare member checks the same durable shared budget. The
             # runner also reserves atomically before *each* external paid call.
             budget = await services.gate("budget", {})

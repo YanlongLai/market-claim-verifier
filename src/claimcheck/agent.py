@@ -969,6 +969,10 @@ def verify_claim(
         for sub_claim in verdict["sub_claims"]
     ]
     checks, program_verdict = evaluate_verdict(check_sub_claims, runner)
+    for index, check in enumerate(checks):
+        if binding := check.get("evidence_binding"):
+            recorder.record_program_event({"kind": "program_binding", "claim_index": index,
+                                           "role": "program", **binding})
     for call in runner.calls:
         if call.get("role") != "program":
             continue

@@ -226,6 +226,9 @@ class LiveRun:
         conversation = [{"role": "user", "content": claim}]
         calls_used = 0
         for turn in range(MAX_CALLS):
+            # Continuation/repair adapters build new payloads. Apply sampling
+            # to every live and compare turn before reserving its exact cost.
+            payload.update(temperature=0, top_p=1)
             if "tools" in payload and turn < MAX_CALLS - 1 and calls_used < MAX_TOOLS:
                 payload.update(tools=TOOLS if self.adapter.chat_completions else
                                [t for t in TOOL_DEFINITIONS if t.get("name") in TOOL_NAMES],
@@ -309,7 +312,9 @@ class LiveRun:
                 if call.get("role") == "program":
                     self.event("tool_call", name=call["name"], arguments=call["arguments"], role="program")
                     self.event("tool_result", name=call["name"], result=call["result"], role="program")
-            for check in result["claims"]:
+            for index, check in enumerate(result["claims"]):
+                if binding := check.get("evidence_binding"):
+                    self.event("program_binding", claim_index=index, role="program", **binding)
                 self.event("program_check", check=check)
             self.event("verdict", verdict=result["verdict"])
             return self.envelope(**result)

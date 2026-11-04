@@ -374,7 +374,7 @@
     pending: "Muse Spark is choosing tools and checking SEC facts…", complete: "Check complete. The program verdict and trace are below.",
     recorded: "Recorded run", live: "Live check", mock: "Offline replay · saved result for the Apple example only",
     claims: "Program checks", evidence: "SEC evidence", trace: "Agent trace", model: "Model step", tool_call: "Tool call",
-    tool_result: "Tool result", program_check: "Program check", verdict: "Program verdict", raw: "Inspect data",
+    tool_result: "Tool result", program_check: "Program check", program_binding: "Program evidence binding", verdict: "Program verdict", raw: "Inspect data",
     supported: "Supported", contradicted: "Contradicted", insufficient_evidence: "Insufficient evidence", unchecked: "Unchecked",
     actual: "Filed / computed", stated: "Stated", tolerance: "Tolerance", period: "Period", strength: "Evidence strength",
     notRecorded: "Timestamp not recorded", noEvidence: "No matching SEC fact returned.", filing: "Open SEC filing", source: "Original recorded trace",
@@ -434,7 +434,7 @@
     pending: "Muse Spark 正在選擇工具並比對 SEC 事實…", complete: "查核完成。以下是程式裁定與執行過程。",
     recorded: "已儲存的執行紀錄", live: "即時查核", mock: "離線重播 · 僅回放已儲存的 Apple 範例",
     claims: "程式檢查", evidence: "SEC 證據", trace: "代理執行過程", model: "模型步驟", tool_call: "工具呼叫",
-    tool_result: "工具回傳", program_check: "程式檢查", verdict: "程式裁定", raw: "檢視資料",
+    tool_result: "工具回傳", program_check: "程式檢查", program_binding: "程式證據綁定", verdict: "程式裁定", raw: "檢視資料",
     supported: "證據支持", contradicted: "證據矛盾", insufficient_evidence: "證據不足", unchecked: "未能檢查",
     actual: "申報／計算值", stated: "貼文數字", tolerance: "容許誤差", period: "期間", strength: "證據強度",
     notRecorded: "未記錄時間戳", noEvidence: "未取得符合的 SEC 事實。", filing: "開啟 SEC 申報", source: "原始執行紀錄",
@@ -836,12 +836,12 @@
     }
     const head = liveNode("div", null, "trace-head");
     head.append(liveNode("p", liveCopy(result.mode === "recorded" ? "recorded" : result.mode === "mock" ? "mock" : "live"), "trace-mode"));
-    if (result.verdict) head.append(liveNode("h4", liveVerdict(result.verdict), `trace-verdict is-${result.verdict}`));
     const money = Number.isFinite(result.cost_usd) ? cost(result.cost_usd) : "—";
     const duration = Number.isFinite(result.latency_ms) ? (result.latency_ms / 1000).toFixed(1) : "—";
     head.append(liveNode("p", `${liveCopy(result.cost_is_bound ? "bound" : "cost")}: ${money} · ${duration} ${liveCopy("seconds")}`, "trace-metrics"));
     head.append(liveNode("p", result.model || "", "live-small"));
     if (result.started_at) head.append(liveNode("p", `${result.started_at} → ${result.finished_at}`, "live-small"));
+    if (result.verdict) head.append(liveNode("h4", liveVerdict(result.verdict), `trace-verdict is-${result.verdict}`));
     target.append(head);
     const evidence = (result.evidence || []).filter((fact) => !fact.error);
     const hasCorrection = renderLiveCorrections(result.corrections, target, evidence);
@@ -913,6 +913,9 @@
         const check = event.check || {};
         step.append(liveNode("p", `${liveVerdict(check.program_verdict)} · ${check.reason || ""}`));
         liveRaw(step, check);
+      } else if (event.kind === "program_binding") {
+        step.append(liveNode("p", `${event.source} · ${(event.evidence_ids || []).join(", ")} · ${event.reason}`));
+        liveRaw(step, event);
       } else if (event.kind === "verdict") {
         step.append(liveNode("strong", liveVerdict(event.verdict), `is-${event.verdict}`));
       }

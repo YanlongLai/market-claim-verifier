@@ -6,6 +6,7 @@ Retain every paid attempt, including failed extraction, provider errors, abstent
 
 | Record | Purpose and boundary |
 |---|---|
+| [Live evidence binding integration repair](evidence/live-determinism-2026-11-03/REPORT.md) | Frozen production envelope recheck, original ambiguous failure and offline verification logs; no new paid calls or OCR/ASR test |
 | [Packaged live examples](evidence/media-examples-2026-11-03/REPORT.md) | Offline route, budget, ingest-bridge, hostile-text UI and rebuild checks; text reuses a historical run, media saved results await host recording |
 | [Media examples publication repair](evidence/media-r2-2026-11-03/REPORT.md) | Canonical Pages assets, 200/hash HTTP receipts, preview-overlay and manifest-route regressions; no new OCR/ASR or paid calls |
 | [Muse Spark Open extraction LoRA feasibility](evidence/lora-2026-11-03/REPORT.md) | Account initialization, failed tokenizer access, cleanup and $0 ledger; no training or extraction evaluation |

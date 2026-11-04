@@ -6,8 +6,9 @@ from test_site_live_runtime import run_check
 
 @pytest.mark.parametrize("language", ["en", "zh"])
 @pytest.mark.parametrize("viewport", [390, 768, 1280])
-def test_model_read_block_is_first_safe_localized_and_trace_is_collapsed(language, viewport):
-    run_check(READ_BLOCK, language=language, viewport=viewport,
+@pytest.mark.parametrize("has_correction", [True, False])
+def test_model_read_block_is_first_safe_localized_and_trace_is_collapsed(language, viewport, has_correction):
+    run_check(READ_BLOCK, language=language, viewport=viewport, has_correction=has_correction,
               page="docs/zh/index.html" if language == "zh" else "docs/site/index.html")
 
 
@@ -22,10 +23,13 @@ const saved=JSON.parse(readFileSync(root+'/docs/site/data/examples/text.json','u
 const hostile='<img src=x onerror="globalThis.pwned=1"><script>evil()</script> Apple Q4 $416.2B';
 const result={...saved,input:{example_id:'image',kind:'image',text_read:hostile,
   preprocessing:{model:'<svg onload=evil()>',provider:'meta',cost_usd:.00123,latency_ms:1500}}};
+if(!config.has_correction)result.corrections={...saved.corrections,edits:[]};
 const target=tree.querySelector('#example-result');
 context.liveTest.renderLiveTrace(result,target);
 const verify=language=>{
   assert.deepEqual(target.children.map(node=>node.className),['live-input-read','trace-head','live-corrections','live-proof','live-trace']);
+  const head=target.querySelector('.trace-head');
+  assert.ok(head.children.indexOf(head.querySelector('.trace-metrics'))<head.children.indexOf(head.querySelector('.trace-verdict')));
   const input=target.querySelector('.live-input-read');
   assert.equal(input.querySelector('h5').textContent,language==='zh'?'模型讀到了什麼':'What the model read');
   assert.equal(input.querySelector('blockquote').textContent,hostile);
@@ -34,8 +38,9 @@ const verify=language=>{
   assert.ok(!input.querySelector('img'));assert.ok(!input.querySelector('script'));assert.ok(!input.querySelector('svg'));
   assert.ok(!input.textContent.includes('[object Object]'));
   const trace=target.querySelector('.live-trace');
-  assert.equal(trace.tagName,'details');assert.ok(!trace.open);
-  assert.equal(trace.querySelector('summary').textContent,language==='zh'?'代理執行過程':'Agent trace');
+  assert.equal(trace.tagName,'details');assert.equal(trace.open,!config.has_correction);
+  assert.equal(trace.querySelector('summary').textContent,language==='zh'?
+    `代理執行過程（${result.events.length} 個步驟）`:`Agent trace (${result.events.length} steps)`);
 };
 verify(config.language);
 const other=config.language==='zh'?'en':'zh';context.stamps.setLanguage(other);

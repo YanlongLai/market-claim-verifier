@@ -43,6 +43,8 @@ def replay_transport(calls, *, pause=False):
             "baseten": "offline-api-key-marker", "fireworks": "fireworks-marker", "meta": "meta-marker"}[provider]
         payload = json.loads(req.content)
         assert payload["model"] == adapter.default_model
+        assert payload["temperature"] == 0 and payload["top_p"] == 1
+        assert payload["max_tokens" if adapter.chat_completions else "max_output_tokens"] == MAX_OUTPUT
         assert PASSWORD not in req.content.decode() and TOKEN not in req.content.decode()
         tools = payload.get("tools", [])
         assert {tool.get("name", tool.get("function", {}).get("name")) for tool in tools} <= {
@@ -209,7 +211,7 @@ def test_compare_stops_after_budget_reservation_failure_retaining_both_attempts(
             adapter = get_provider(name)
             payload = adapter.initial_request(APPLE["claim"], adapter.default_model, max_output_tokens=MAX_OUTPUT, reasoning_effort=None)
             payload["messages"][0]["content"] = INSTRUCTIONS
-            payload.update(tools=TOOLS, parallel_tool_calls=False)
+            payload.update(tools=TOOLS, parallel_tool_calls=False, temperature=0, top_p=1)
             holds.append(reservation_for(payload, name)["amount"])
         def transport(req):
             calls.append(req.url.host)

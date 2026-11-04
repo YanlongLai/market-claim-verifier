@@ -134,6 +134,7 @@ class TraceRecorder:
         self.tool_calls: list[dict[str, Any]] = []
         self.final_verdict: dict[str, Any] | None = None
         self.program_checks: list[dict[str, Any]] = []
+        self.program_events: list[dict[str, Any]] = []
         self.incomplete_turns: list[dict[str, Any]] = []
         self.previous_response_fallback = False
 
@@ -220,6 +221,9 @@ class TraceRecorder:
             entry["role"] = role
         self.tool_calls.append(entry)
 
+    def record_program_event(self, event: Mapping[str, Any]) -> None:
+        self.program_events.append(redact(model_dump(event), self.secrets))
+
     def finish(self, verdict: dict[str, Any]) -> None:
         if self.verification_policy is not None:
             verdict["verification_policy"] = self.verification_policy
@@ -280,6 +284,7 @@ class TraceRecorder:
             "previous_response_fallback": self.previous_response_fallback,
             "final_verdict": self.final_verdict,
             "program_checks": self.program_checks,
+            **({"program_events": self.program_events} if self.program_events else {}),
         }
 
 

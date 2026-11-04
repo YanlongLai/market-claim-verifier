@@ -2018,13 +2018,118 @@ def overall_program_verdict(checks: Sequence[Mapping[str, Any]]) -> str:
     return "insufficient_evidence"
 
 
+def _bind_unchecked_value(
+    sub: Mapping[str, Any], check: dict[str, Any], runner: Any,
+    related: Sequence[Mapping[str, Any]],
+) -> dict[str, Any]:
+    """Recover a missing/ambiguous value citation, never a model's numeric guess.
+
+    Complete report fields match facts directly. Older reports have no identity
+    fields: use the atomic claim's literal identity/period to filter the lookup
+    arguments joined to each evidence ID. Never choose by value or call order.
+    """
+    ids = _normalise_evidence_ids(sub.get("evidence_ids"))
+    reason = str(check.get("reason") or "").split("; ")[-1]
+    if (check.get("claim_type") != "value"
+            or check.get("program_verdict") != "unchecked"
+            or not _is_number(check.get("stated_value_used"))
+            or reason not in {"no_evidence", "ambiguous_evidence"}
+            or sub.get("interpretations")):
+        return check
+    # An invented/failed citation remains an error; this recovery is for absent
+    # bindings or multiple real facts, not for replacing invalid evidence IDs.
+    if ids and (reason != "ambiguous_evidence" or any(
+        (fact := _evidence(runner, eid)) is None or "error" in fact for eid in ids
+    )):
+        return check
+
+    from .issuer import name_agrees
+    from .period_context import period_mentions
+
+    fields = ("ticker", "metric", "period")
+
+    def normalized(field: str, value: Any) -> str:
+        if not isinstance(value, str):
+            return ""
+        return value.strip().lower() if field == "metric" else value.strip().upper()
+
+    target = {field: normalized(field, sub.get(field)) for field in fields}
+    complete = all(target.values())
+    arguments = {
+        call["result"].get("evidence_id"): call["arguments"]
+        for call in getattr(runner, "calls", [])
+        if call.get("name") == "lookup_fact"
+        and isinstance(call.get("arguments"), Mapping)
+        and isinstance(call.get("result"), Mapping)
+    }
+    facts = []
+    for eid, fact in getattr(runner, "evidence", {}).items():
+        if (not isinstance(fact, Mapping) or "error" in fact
+                or not _is_number(fact.get("value"))
+                or _runner_evidence_kind(runner, eid, fact) != "lookup_fact"):
+            continue
+        args = arguments.get(eid, {})
+        context = {field: normalized(field, fact.get(field)) for field in fields}
+        # A tool/result identity disagreement cannot authorize a binding.
+        if any(context[field] and args.get(field)
+               and context[field] != normalized(field, args[field]) for field in fields):
+            continue
+        context = {field: context[field] or normalized(field, args.get(field)) for field in fields}
+        if all(context.values()) and (complete or all(args.get(field) for field in fields)):
+            facts.append((eid, fact, context))
+
+    atomic = str(sub.get("text") or "")
+    unambiguous = not any(sub.get(field) and not target[field] for field in fields)
+    if not target["ticker"]:
+        tickers = {context["ticker"] for _, fact, context in facts
+                   if name_agrees(atomic, dict(fact)) or re.search(
+                       rf"(?<![\w.-])\$?{re.escape(context['ticker'])}(?![\w.-])", atomic)}
+        if len(tickers) == 1:
+            target["ticker"] = next(iter(tickers))
+        else:
+            unambiguous = False
+    if not target["metric"]:
+        target["metric"] = infer_metric(atomic) or ""
+    if not target["period"]:
+        mentions = period_mentions(atomic)
+        periods = {("FY" if mention["basis"] == "fiscal" else "") + mention["period"]
+                   for mention in mentions if mention["basis"] is not None}
+        if len(periods) == 1 and len(periods) == len({m["period"] for m in mentions}):
+            target["period"] = next(iter(periods))
+        elif mentions:
+            # An unqualified or mixed quarter never silently becomes fiscal.
+            unambiguous = False
+        elif re.search(r"\b20\d{2}\b", atomic):
+            # A bare year cannot inherit a quarter just because only one
+            # lookup happened to return a fact for this issuer.
+            unambiguous = False
+
+    candidates = [(eid, context) for eid, _, context in facts if unambiguous and all(
+        not target[field] or target[field] == context[field] for field in fields)]
+    binding = {"source": "claim_fields" if complete else "tool_call_arguments",
+               "match": {field: value for field, value in target.items() if value},
+               "previous_evidence_ids": ids,
+               "candidate_ids": [eid for eid, _ in candidates],
+               "evidence_ids": [], "reason": "ambiguous_evidence"}
+    if len(candidates) == 1:
+        eid, context = candidates[0]
+        binding.update(match=context, evidence_ids=[eid], reason="unique_match")
+        if any(not normalized(field, runner.evidence[eid].get(field)) for field in fields):
+            binding["source"] = "tool_call_arguments"
+        check = evaluate_sub_claim({**sub, "evidence_ids": [eid]}, runner, related)
+    else:
+        check = {**check, "reason": "ambiguous_evidence"}
+    return {**check, "evidence_binding": binding}
+
+
 def evaluate_verdict(
     sub_claims: Sequence[Mapping[str, Any]], runner: Any
 ) -> tuple[list[dict[str, Any]], str]:
     """Evaluate all sub-claims and return checks plus the program verdict."""
 
     checks = [
-        evaluate_sub_claim(sub_claim, runner, sub_claims)
+        _bind_unchecked_value(sub_claim, evaluate_sub_claim(sub_claim, runner, sub_claims),
+                              runner, sub_claims)
         for sub_claim in sub_claims
     ]
     for sub, check in zip(sub_claims, checks):
