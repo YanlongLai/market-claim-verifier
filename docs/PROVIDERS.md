@@ -2,6 +2,119 @@
 
 Checked 2026-10-30. Scope: the three providers currently integrated in this repository: Meta, Baseten and Fireworks. Account credit balances, expiration and quota were not queried; public availability does not establish account entitlement.
 
+## Models & keys
+
+Runtime settings checked against [config.py](../src/claimcheck/config.py),
+[CLI flags](../src/claimcheck/cli.py), [provider adapters](../src/claimcheck/providers.py),
+[cost ledger](../src/claimcheck/budget.py) and [ingest model allowlist](../src/claimcheck/ingest.py)
+on 2026-11-04. The capability and published-price notes below retain their 2026-10-30 scope.
+
+### Local provider credentials
+
+| `--provider` | Key environment variable | Key-file environment variable | Default key file | File contents |
+| --- | --- | --- | --- | --- |
+| `baseten` | `BASETEN_API_KEY` | `BASETEN_API_KEY_FILE` | `~/secret/baseten_api_key.txt` | Raw key only; surrounding whitespace removed |
+| `fireworks` | `FIREWORKS_API_KEY` | `FIREWORKS_API_KEY_FILE` | `~/secret/fireworks-api-key.txt` | Raw key only; surrounding whitespace removed |
+| `meta` | `MODEL_API_KEY` | `MODEL_API_KEY_FILE` | `~/.config/dappgo/meta-model-api.env` | A `MODEL_API_KEY=your-key` line; blank/comment/unrelated lines ignored; matching quotes allowed |
+
+A nonempty key environment variable wins. Otherwise the selected provider's key file is read;
+`~` expands to your home directory. A missing file means no key; an unreadable configured file
+is an error. Baseten and Fireworks files do not parse dotenv assignments. The Meta file is
+parsed by Python, not sourced as shell code. The CLI does not use `META_MODEL_API_KEY`.
+
+Keep these files outside the repository with private permissions. Create the parent directory,
+write the value in your editor, then restrict it; do not paste secrets into shell arguments or film them:
+
+```sh
+mkdir -p ~/secret ~/.config/dappgo
+# After creating the appropriate key file in your editor:
+chmod 600 ~/secret/baseten_api_key.txt
+# Point to a different existing file when needed:
+export BASETEN_API_KEY_FILE="$HOME/secret/baseten_api_key.txt"
+```
+
+### Provider and model selection
+
+Selection order is `--provider` > `CLAIMCHECK_PROVIDER` > `meta`.
+Model order is `--model` > `CLAIMCHECK_MODEL` > the selected adapter's default.
+`CLAIMCHECK_MODEL` is shared across providers: unset it or change it when switching hosts.
+The integrated cost ledger recognizes exactly these Meta model pairs:
+
+| Provider | Default model ID | Additional configured model ID |
+| --- | --- | --- |
+| Baseten | `meta-models/muse-spark-open-1026` | None |
+| Fireworks | `accounts/fireworks/models/muse-spark-open` | None |
+| Meta Model API | `muse-spark-1.3` | `muse-wonder-1.0` |
+
+These are exact IDs, not aliases. An unknown pair is refused before a paid model call because
+the ledger cannot reserve its cost. Ingest explicitly allows only these pairs. Ledger support
+for Wonder does not establish current account entitlement or a measured quality comparison.
+Keep Meta models for the hackathon runtime.
+
+```sh
+uv run python -m claimcheck verify 'META Q2 2025 revenue was $47.5B' \
+  --provider baseten --model meta-models/muse-spark-open-1026 --budget 1
+CLAIMCHECK_PROVIDER=meta CLAIMCHECK_MODEL=muse-wonder-1.0 \
+  uv run python -m claimcheck post examples/posts/bigtech-thread.txt --budget 1 --dry-run
+```
+
+`--max-output-tokens` overrides `CLAIMCHECK_MAX_OUTPUT_TOKENS`; `--reasoning-effort` overrides
+`CLAIMCHECK_REASONING_EFFORT`. For post checks these control verification turns; initial extraction
+uses its own 4,000-token limit. They do not change OCR/ASR models. The adapters translate
+Meta Responses and Baseten/Fireworks Chat Completions request shapes.
+
+### OCR and ASR
+
+All image OCR uses Meta `muse-spark-1.3`; all audio transcription uses Meta
+`muse-voice-transcribe-1.0`. Video combines local decoding, three sampled frames and audio.
+Provide `MODEL_API_KEY` or `MODEL_API_KEY_FILE` for these stages even when the text verifier
+is Baseten or Fireworks. Their verifier keys cannot substitute for a Meta media key.
+Native-text PDFs and text decode locally. Audio/video decoding requires FFmpeg/ffprobe.
+Media model IDs are fixed in [ingest_media.py](../src/claimcheck/ingest_media.py).
+
+### Budgets and previews
+
+`--budget` overrides `CLAIMCHECK_BUDGET_USD` (default $0.50) in USD. The ledger reserves before
+each call, reconciles recorded usage and retains holds on failures or missing usage. Extraction,
+all verifier turns and retries count. This is a ceiling, not a fixed charge or a provider invoice.
+`verify` and `post` share `runs/ledger.jsonl`; existing spend for the selected provider counts
+toward its ceiling. `ingest` uses `runs/ingest-ledger.jsonl`, splitting a mixed-provider cap
+equally between Meta preprocessing and the selected verifier. A Meta-only ingest uses the full
+cap for both stages. `CLAIMCHECK_RUNS_DIR` changes the `runs` root; `CLAIMCHECK_CACHE_DIR`
+changes the local SEC cache (default `.cache`). Preserve previous runs and ledgers.
+
+```sh
+uv run python -m claimcheck verify 'META Q2 2025 revenue was $47.5B' --provider baseten --dry-run
+uv run python -m claimcheck post examples/posts/bigtech-thread.txt --provider fireworks --budget 1 --dry-run
+```
+
+Both previews skip key-file reads, model calls and SEC fetches. `verify` previews its initial
+request/reservation against the existing ledger. `post` previews only initial extraction against
+the requested cap and existing provider spend without writing a ledger or report; it cannot predict subsequent tool turns
+or the final cost. Its request includes the supplied text. `ingest` has no `--dry-run` flag.
+
+### Online (site) vs Local (CLI)
+
+| Provider | Online (site) | Local (CLI) |
+| --- | --- | --- |
+| Baseten | Server `BASETEN_API_KEY`; adapter default fixed | Your `BASETEN_API_KEY` or raw-key file; `--provider baseten` |
+| Fireworks | Server `FIREWORKS_API_KEY`; adapter default fixed | Your `FIREWORKS_API_KEY` or raw-key file; `--provider fireworks` |
+| Meta Model API | Server `META_MODEL_API_KEY`; fixed verifier and media models | Your `MODEL_API_KEY` or Meta env file; `--provider meta`, optional `--model` |
+
+The site's server reads Kubernetes Secret `live-check-secrets` in namespace `dappgo-hackathon`.
+Its keys are `BASETEN_API_KEY`, `FIREWORKS_API_KEY`, `META_MODEL_API_KEY`,
+`LIVE_CHECK_PASSWORD` and `LIVE_ORIGIN_TOKEN`. `META_MODEL_API_KEY` covers both online Meta
+verification and media preprocessing. The HTTP adapter also accepts each name with `_FILE`;
+these server files contain raw values, including the Meta key. Explicit server environment
+values win even when empty, unlike the CLI's nonempty-key fallback. There are no default
+server secret-file paths. [Deployment configuration](../deploy/README.md#configuration-and-persistence).
+
+Site visitors supply the review password, never provider keys. The Pages proxy keeps the
+matching `LIVE_ORIGIN_TOKEN` and its Access credentials `LIVE_ACCESS_CLIENT_ID` /
+`LIVE_ACCESS_CLIENT_SECRET`; Pages receives no provider keys. The server fixes model IDs,
+and ignores local CLI model environment settings. Its manifest sets shared limits of $10/day
+and $60 lifetime; local `--budget` does not change them. [Real request logs and CLI capture](REAL_TRACES.md).
+
 ## Platform capability versus integration
 
 | Provider / model | Vendor-declared inputs | Repository use today | Audio / video boundary |
