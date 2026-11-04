@@ -5,7 +5,7 @@ export const targets={
  v502:{formats:['.asset-preview'],screenshot:['.input-tile:nth-child(1).lit'],pdf:['.input-tile:nth-child(2).lit'],podcast:['.input-tile:nth-child(3).lit'],video:['.input-tile:nth-child(4).lit'],question:['.inputs-question']},
  v503:{single:['.terminal-row.principal'],agent:['.terminal-row'],nine:['.terminal-row.principal'],heldout:['.terminal-row.principal']},
  v504:{model:['#node-1','#node-2'],program:['#node-3','#node-4'],principle:['.architecture [data-on-screen]']},
- v505:{live:['.live-overlay'],paste:['.live-overlay'],tools:['.live-overlay'],verdict:['.live-overlay'],draft:['.live-overlay'],evidence:['.live-overlay'],trace:['.live-overlay'],each:['.live-overlay'],program:['.live-overlay'],receipt:['.live-overlay']},
+ v505:{live:['.live-overlay'],paste:['.live-overlay'],tools:['.live-overlay'],verdict:['.live-overlay h2','.filing-citation[data-form="10-K"]','.filing-citation[data-form="10-Q"]'],draft:['.live-overlay'],evidence:['.live-overlay'],trace:['.live-overlay'],each:['.live-overlay'],program:['.live-overlay'],receipt:['.live-overlay']},
  v506:{run:['.terminal-row'],ocr:['.terminal-row'],asr:['.terminal-row'],median:['.terminal-row.principal'],projection:['.terminal-row.principal']},
  v507:{accuracy:['[data-metric="accuracy"]'],false_support:['[data-metric="false_support"]'],cost_time:['[data-metric="cost_time"]'],coverage:['.results-note']},
  v508:{filing:['.ending'],url:['.site-url']},v509:{credit:['.credit'],wordmark:['.outro .wordmark','.stamp-robot']},

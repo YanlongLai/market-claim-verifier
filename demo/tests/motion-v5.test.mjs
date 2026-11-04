@@ -91,9 +91,9 @@ function traceFixture(){
  const page={locator:s=>s.endsWith('.live-trace')?{evaluate:async()=>open.trace}:s.endsWith('.trace-step')?steps:{nth:()=>({locator:()=>details})}};
  return {page,result,report,mark:s=>actions.push(s),frame:async()=>{},click:async s=>{if(s.includes('live-trace'))open.trace=true;else open.inspect=true;},hold:async()=>{},actions};
 }
-test('recorder retains trace expansion, four visible tool calls, program verdict and Apple inspector',async()=>{
+test('recorder retains trace expansion, four visible tools and the result-JSON Apple derivation',async()=>{
  const f=traceFixture();await showTraceAndFiling(f);
- assert.equal(f.report.tool_calls_shown,4);assert.equal(f.report.program_verdict_shown,true);assert.equal(f.report.apple_inspect_open,true);assert.equal(f.report.trace_details_open,true);
+ assert.equal(f.report.tool_calls_shown,4);assert.equal(f.report.program_verdict_shown,true);assert.equal(f.report.apple_inspect_open,false);assert.equal(f.report.trace_details_open,true);
  assert.equal(f.report.apple_derivation.quarter,102466000000);
  assert(f.actions.includes('agent_trace_expand'));
 });
@@ -193,7 +193,7 @@ test('actual-frame audit rejects a translucent band, cramped labels and scene te
   segments:current.chapters.map(s=>({width:1920*s.duration_s/178,fill:s.fill})),onScreen:[],
   textBoxes:[{text:'Saved replay',bottom:748}],terminalCaption:{font:56,bottom:748},namedChecks:[],overlay:null,video:null};
  await checkV5Layout({evaluate:async()=>actual},current);
- await assert.rejects(()=>checkV5Layout({evaluate:async()=>({...actual,captureVersion:6})},state(58)),/v8 take/);
+ await assert.rejects(()=>checkV5Layout({evaluate:async()=>({...actual,captureVersion:8})},state(58)),/v9 take/);
  for(const mutate of [a=>a.band.colour='rgba(17, 26, 32, 0.96)',a=>a.labels[9].left=a.labels[8].right+12,a=>a.terminalCaption.bottom=800,a=>a.textBoxes[0].bottom=844]){
   const changed=structuredClone(actual);mutate(changed);await assert.rejects(()=>checkV5Layout({evaluate:async()=>changed},current));
  }
@@ -221,4 +221,57 @@ test('every voice row has named frame targets and later referents wait for their
  assert(!terminal('agent').includes('90.5%'));assert(terminal('nine').includes('90.5%'));
  const median=terminalAt(scenes[6].cue_events.find(e=>e.event==='median').picture_at_scene_s+.001,data.terminal_replays.beat6);
  assert(!median.rows.some(r=>r.text.includes('1,000')));
+});
+
+import {cardBands,assertCardFrame,cardScrollDelta} from '../motion/v5/card-band.mjs';
+import {paintVideoFrame} from '../motion/v5/video-frame.mjs';
+import {assertVerdictReferents} from '../motion/v5/layout-checks.mjs';
+
+const rect=(top,bottom)=>({left:180,right:1740,top,bottom});
+test('card framing keeps entire Reset/count controls clear of the edge, preserving the post',()=>{
+ const audit={lines:[rect(180,240),rect(540,580)],controls:[rect(537,594)]};
+ assert.throws(()=>assertCardFrame(audit),/crosses_card_edge/);
+ const d=cardScrollDelta(audit,[rect(180,511)],400,4000);
+ assert((537-d>=558||594-d<=558)&&180-d>=80&&511-d<=548);
+ assertCardFrame({lines:audit.lines.map(r=>rect(r.top-d,r.bottom-d)),controls:audit.controls.map(r=>rect(r.top-d,r.bottom-d))});
+ assert.equal(cardBands.bottom.bottom,790);
+});
+test('verdict framing removes the unrelated input charge and preserves the complete draft heading',()=>{
+ const audit={lines:[rect(180,309),rect(520,585)],controls:[],input_charge:rect(-30,38),corrected_heading:rect(520,585)};
+ assert.throws(()=>assertCardFrame(audit,cardBands.bottom,{verdict:true}),/crosses_card_edge/);
+ const d=cardScrollDelta(audit,[rect(180,309)],1000,4000,{verdict:true});
+ assert(d>=40&&180-d>=80);
+ assertCardFrame({lines:[rect(180-d,309-d),rect(520-d,585-d)],controls:[],input_charge:rect(-30-d,38-d),corrected_heading:rect(520-d,585-d)},cardBands.bottom,{verdict:true});
+ assert.throws(()=>cardScrollDelta(audit,[rect(80,548)],1000,4000,{verdict:true}),/no_clean_card_band/);
+});
+test('a passing verdict rectangle cannot stand in for either E3 filing referent',()=>{
+ const expected=[{form:'10-K',period_label:'fiscal 2025 annual',url:'https://www.sec.gov/Archives/annual/'},{form:'10-Q',period_label:'nine months to 28 Jun 2025',url:'https://www.sec.gov/Archives/nine-months/'}];
+ const check={native:{elements:[{name:'verdict'}]},filings:expected.map(c=>({form:c.form,evidence_id:'E3',href:c.url,text:`${c.form} · ${c.period_label}`,font:56}))};
+ assertVerdictReferents(check,expected);
+ for(const mutate of [c=>c.filings.pop(),c=>c.filings[1].text='10-Q',c=>c.filings[0].href='https://example.com/',c=>c.filings[0].font=32,c=>c.native.elements=[]]){
+  const bad=structuredClone(check);mutate(bad);assert.throws(()=>assertVerdictReferents(bad,expected));
+ }
+});
+const tick=()=>new Promise(resolve=>setImmediate(resolve));
+class Video extends EventTarget{
+ readyState=1;duration=16;_time=0;seeking=false;videoWidth=1920;videoHeight=1080;dataset={source:'ending.mp4'};
+ get currentTime(){return this._time;}
+ set currentTime(t){this._time=t;this.seeking=true;}
+}
+test('ending frame zero waits for a decoded image and paints it before the screenshot may proceed',async()=>{
+ const video=new Video(),draws=[],canvas={dataset:{},getContext:()=>({drawImage:(...args)=>draws.push(args)})};
+ const first=paintVideoFrame(video,0,canvas);await tick();
+ assert.equal(draws.length,0);assert.equal(canvas.dataset.nativePageReady,undefined);
+ video.readyState=2;video.dispatchEvent(new Event('loadeddata'));await first;
+ assert.equal(draws.length,1);assert.equal(canvas.dataset.sourceTime,'0');assert.equal(canvas.dataset.nativePageReady,'true');
+ // The valid image remains in place until the next decoded seek can replace it.
+ const next=paintVideoFrame(video,1/30,canvas);await tick();assert.equal(draws.length,1);
+ video.seeking=false;video.dispatchEvent(new Event('seeked'));await next;
+ assert.equal(draws.length,2);assert.equal(Number(canvas.dataset.sourceTime),1/30);
+});
+test('decode failure rejects the frame instead of accepting a dark placeholder',async()=>{
+ const video=new Video(),canvas={dataset:{},getContext:()=>{throw new Error('must not paint');}};
+ const painting=paintVideoFrame(video,0,canvas);await tick();
+ video.dispatchEvent(new Event('error'));await assert.rejects(painting,/Recorded image unavailable/);
+ assert.equal(canvas.dataset.nativePageReady,undefined);
 });

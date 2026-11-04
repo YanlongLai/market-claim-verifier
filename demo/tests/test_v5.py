@@ -74,6 +74,8 @@ def test_sentence_ledger_covers_every_phrase_with_start_and_end_evidence(measure
     for frame in index:
         events=[e for e in data['cues']['_events'][frame['shot']] if e['cue_start']-1e-7<=frame['t']<=e['cue_end']+1e-7]
         frame['frame_audit']=[dict(scene=frame['shot'],event=e['event'],at_s=frame['t'],status='pass',measured=True,elements=[{'name':'synthetic native proof'}]) for e in events]
+        for check in frame['frame_audit']:
+            if check['scene']=='v505' and check['event']=='verdict':check.update(referents=['verdict','filing'],filings=[{'form':'10-K'},{'form':'10-Q'}])
     rows=ledger_rows(data['timing'],data['cues'],index)
     expected=sum(len(data['cues'][s['id']]) for s in data['scenes'])
     assert len(rows)==expected
@@ -83,6 +85,12 @@ def test_sentence_ledger_covers_every_phrase_with_start_and_end_evidence(measure
     bad=copy.deepcopy(index);[f.pop('frame_audit') for f in bad]
     with pytest.raises(BuildError,match='actual-frame'):ledger_rows(data['timing'],data['cues'],bad)
     with pytest.raises(BuildError):ledger_rows(data['timing'],data['cues'],[])
+    bad=copy.deepcopy(index)
+    for f in bad:
+        for check in f['frame_audit']:
+            if check['scene']=='v505' and check['event']=='verdict':check.pop('referents')
+    with pytest.raises(BuildError,match='both verdict and filing'):ledger_rows(data['timing'],data['cues'],bad)
+    assert '10-K fiscal 2025 annual' in next(r for r in rows if r['id']=='v505-04')['required_visual']
 
 def test_english_only_templates_data_and_captions(data):
     for p in (ROOT/'demo/motion/v5').iterdir():
@@ -119,7 +127,8 @@ def test_terminal_blocks_match_narrated_clauses(story,data):
 def test_legacy_take_preserved_but_cannot_enter_final_film(story,data):
     retained=read_json(ROOT/'demo/prep/v5/r3/inputs-before.json')
     assert retained['recordings']['v505']['receipt']['capture_version']==7
-    assert recorder.CAPTURE_VERSION==8
+    assert data['portable_inputs']['recordings']['v505']['receipt']['capture_version']==8
+    assert recorder.CAPTURE_VERSION==9
     pending=copy.deepcopy(story)
     for scene in pending['scenes']:
         if scene['id'] in recorder.BEATS:scene.pop('recording',None);scene['placeholder']=True
@@ -135,7 +144,7 @@ def proof():
     rect=dict(name='native referent',left=180,right=800,top=180,bottom=400)
     return dict(capture_version=recorder.CAPTURE_VERSION,zoom=1.95,live_checks=1,result={'events':events},timings=timings,
         startup_cover=dict(injected_before_content=True,colour='#f7f5ef',cover_present=True,cover_opaque=True,layout_installed=True,zoom=1.95,release_geometry_index=0,released_at_s=-.1,workspace_framed_before_release=True,decoded_workspace_start=True,workspace_rect=dict(left=180,right=1740,top=180,bottom=480),source_start_s=1.1,first_native_frame_s=1.,source_cover_release_s=.95,video_clock_offset_s=.05),
-        named_element_checks=[dict(t,elements=[dict(rect)],visible_until_s=t['at_s']+1,overlay_band='bottom') for t in timings],
+        named_element_checks=[dict(t,elements=[dict(rect)],visible_until_s=t['at_s']+1,overlay_band='bottom',card_edge_audit=dict(status='pass',band=dict(left=80,right=1840,top=558,bottom=790),lines=[dict(rect)],controls=[],input_charge=dict(rect,top=-80,bottom=-1),corrected_heading=dict(rect,top=600,bottom=660))) for t in timings],
         ending_frame={'both_links':2,'visible_together':True,'named_elements':[dict(rect),dict(rect),dict(rect)]},
         geometry_checks=[{'at_s':-.2,'zoom':1.95,'source_width':1560,'left_margin':180,'right_margin':180,'horizontal_overflow':0}],
         language_checks=[{'text_nodes':0,'attributes':0,'language_switches':0}],choreography={'trace_details_open':True,'apple_inspect_open':True,'program_verdict_shown':True,'after_click_s':50,'beat6_actions_end_s':55,'trace_steps_shown':[{'index':i,'kind':e['kind'],'visible':True,'hold_ms':700} for i,e in enumerate(events) if e['kind'] in ('tool_call','verdict')],'apple_derivation':{'annual':416161000000,'nine_months':313695000000,'quarter':102466000000,'hold_ms':2000}})
@@ -148,7 +157,7 @@ def test_recorder_validates_actual_raw_apple_values():recorder.check_choreograph
  lambda p:p['language_checks'][0].update(text_nodes=1),
  lambda p:p['language_checks'][0].update(language_switches=1),
  lambda p:p['choreography'].update(trace_details_open=False),
- lambda p:p['choreography'].update(apple_inspect_open=False),
+ lambda p:p['choreography']['apple_derivation'].update(quarter=102500000000),
  lambda p:p['choreography']['trace_steps_shown'].pop(1),
  lambda p:p.update(live_checks=2),
  lambda p:p['ending_frame'].update(both_links=1),
@@ -161,6 +170,11 @@ def test_recorder_validates_actual_raw_apple_values():recorder.check_choreograph
  lambda p:p['named_element_checks'].pop(),
  lambda p:p['named_element_checks'][0].update(at_s=0),
  lambda p:p['named_element_checks'][0]['elements'][0].update(bottom=559),
+ lambda p:p['named_element_checks'][0].pop('card_edge_audit'),
+ lambda p:p['named_element_checks'][0]['card_edge_audit']['lines'][0].update(top=530,bottom=590),
+ lambda p:p['named_element_checks'][0]['card_edge_audit']['controls'].append(dict(left=180,right=500,top=540,bottom=600)),
+ lambda p:p['named_element_checks'][3]['card_edge_audit']['input_charge'].update(bottom=1),
+ lambda p:p['named_element_checks'][3]['card_edge_audit']['corrected_heading'].update(top=540,bottom=610),
 ])
 def test_capture_failures_are_rejected(mutation):
     receipt=proof();mutation(receipt)
@@ -315,6 +329,7 @@ def test_pcm_bounds_measure_leading_trailing_silence_and_keep_internal_pause(tmp
 
 def test_sync_refuses_any_unmeasured_row_even_with_real_frame_names(data):
     from sync_v5 import ledger_rows
+    data=compile_data(preview=True)
     index=[dict(shot=f['shot'],t=f['t'],captioned_file=f'{i}.png') for i,f in enumerate(data['keyframes'])]
     with pytest.raises(BuildError,match='measured sentence onset'):ledger_rows(data['timing'],data['cues'],index)
 
@@ -323,13 +338,15 @@ def test_compiler_does_not_abandon_native_evidence_mid_sentence(story):
     import record_v5
     from unittest.mock import patch
     changed=copy.deepcopy(story)
-    changed['scenes'][5].pop('placeholder');changed['scenes'][5]['recording']={'asset':'absent.mp4','receipt':'absent.json','receipt_sha256':'a'*64,'offset_s':0}
+    changed['scenes'][5].pop('placeholder',None);changed['scenes'][5]['recording']={'asset':'absent.mp4','receipt':'absent.json','receipt_sha256':'a'*64,'offset_s':0}
     receipt={'timings':[dict(phase=e['receipt_phase'],at_s=e['at_scene_s']) for e in changed['scenes'][5]['cue_events']],
              'named_element_checks':[dict(phase=e['receipt_phase'],at_s=e['at_scene_s'],visible_until_s=e['at_scene_s']+.3,elements=[{}]) for e in changed['scenes'][5]['cue_events']]}
     # Inject a retained capture summary, never an accepted take. The compiler must
     # reject its inadequate hold even though the audio and reveal clocks are valid.
     import motion_v5
-    saved={'recordings':{'v505':{'recording':changed['scenes'][5]['recording'],'receipt':receipt}}}
+    saved=copy.deepcopy(read_json(ROOT/'demo/motion/v5/inputs.json'))
+    receipt['result']=saved['recordings']['v505']['receipt']['result']
+    saved['recordings']['v505']={'recording':changed['scenes'][5]['recording'],'receipt':receipt}
     read=motion_v5.read_json
     with patch.object(motion_v5,'read_json',side_effect=lambda p:saved if p==ROOT/'demo/motion/v5/inputs.json' else read(p)):
         with pytest.raises(BuildError,match='not held through'):compile_data(story=changed,voices=synthetic_voices(changed))

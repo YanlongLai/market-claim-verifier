@@ -21,7 +21,7 @@ VISUALS={
          'principle':'Model proposes; program decides.'},
  'v505':{'live':'Centred native Try workspace', 'paste':'The real English post in the centred live workspace',
          'tools':'A real in-progress check against SEC; live status visible',
-         'verdict':'The native CONTRADICTED verdict',
+         'verdict':'The native CONTRADICTED verdict + Apple SEC E3 component filings: 10-K fiscal 2025 annual; 10-Q nine months to 28 Jun 2025 (form and period, receipt-bound citations)',
          'draft':'The native corrected draft; $416.2B to $102.5B overlay',
          'evidence':'The native SEC filing evidence; annual minus nine-month equation',
          'trace':'First native SEC tool-call row', 'each':'Native tool-call walk', 'program':'Native program-verdict row',
@@ -47,6 +47,9 @@ def ledger_rows(timing,cues,index):
         checks=[c for c in f.get('frame_audit',[]) if c.get('scene')==shot and c.get('event')==event and abs(c.get('at_s',-1)-t)<1e-6]
         if len(checks)!=1 or checks[0].get('status')!='pass' or not checks[0].get('measured') or not checks[0].get('elements'):
             raise BuildError(f'Missing actual-frame named-element audit: {shot}/{event} at {t:.9f}')
+        if shot=='v505' and event=='verdict' and (checks[0].get('referents')!=['verdict','filing']
+            or {c.get('form') for c in checks[0].get('filings',[])}!={'10-K','10-Q'}):
+            raise BuildError('Verdict sentence frame audit must name both verdict and filing referents')
         return f['captioned_file'],checks[0]
     for shot in timing['shots']:
         sid=shot['id'];events=cues['_events'][sid]

@@ -3,10 +3,11 @@ import {createRequire} from 'node:module';
 import {readFile, writeFile, rename, mkdir} from 'node:fs/promises';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
+import {cardBands,cardScrollDelta,assertCardFrame,readCardFrame} from './motion/v5/card-band.mjs';
 
 export const presentation={viewport:[1920,1080],deviceScaleFactor:1,css_zoom:1.95,
   body_font_px:30,column_css_px:800,cursor:'hidden except click indicator',playback_scale:1};
-export const captureVersion=8;
+export const captureVersion=9;
 // Delivered in the document's first head bytes, before site CSS or scripts can paint.
 // Hiding the body preserves layout, so geometry can be audited under the cover.
 export const captureCoverCSS='html{background:#f7f5ef!important}body{visibility:hidden!important}html::after{content:"";position:fixed;inset:0;background:#f7f5ef!important;z-index:2147483647;visibility:visible!important}html[data-capture-ready="true"] body{visibility:visible!important}html[data-capture-ready="true"]::after{display:none!important}';
@@ -121,7 +122,9 @@ export async function captureNamedElements(page,phase,result,at_s){
     throw new Error('native_in_progress_status_missing');
   const overlay_band=elements.every(r=>r.bottom<=548)?'bottom':elements.every(r=>r.top>=270)?'top':null;
   if(!overlay_band)throw new Error('no_clear_overlay_band');
-  return {phase,at_s,elements,overlay_band};
+  const card_edge_audit=await page.evaluate(readCardFrame);
+  assertCardFrame(card_edge_audit,cardBands[overlay_band],{verdict:phase==='verdict_reveal'});
+  return {phase,at_s,elements,overlay_band,card_edge_audit:{...card_edge_audit,status:'pass',band:cardBands[overlay_band]}};
 }
 export function validateGeometry(g){
   if(!['source_width','left_margin','right_margin','horizontal_overflow'].every(k=>Number.isFinite(g[k]))||g.source_width<1500||g.left_margin<60||g.right_margin<60||Math.abs(g.left_margin-g.right_margin)>4||g.horizontal_overflow>1)throw new Error('workspace_must_be_full_width_and_centred');
@@ -262,6 +265,7 @@ export async function record(config) {
     };
     const hold=async ms=>{await page.waitForTimeout(ms);await audit();};
     const wheelTo=async target=>{
+      await Promise.all(namedPending);
       const until=(performance.now()-began)/1000;
       for(const check of report.named_element_checks)if(check.visible_until_s===undefined)check.visible_until_s=until;
       const from=await page.evaluate(()=>scrollY);
@@ -274,7 +278,7 @@ export async function record(config) {
       }
       await hold(90);
     };
-    const frame=async (selector,explicitTarget)=>{
+    const frame=async (selector,explicitTarget,phase)=>{
       const locator=typeof selector==='string'?page.locator(selector).first():selector;
       const target=explicitTarget??await locator.evaluate(el=>{
         const r=el.getBoundingClientRect();
@@ -282,6 +286,21 @@ export async function record(config) {
           scrollY+r.top-Math.max(80,Math.min(180,540-r.height))));
       });
       await wheelTo(target);
+      // Reserve the opaque card band before exposing any named state. Range
+      // rectangles include surrounding labels, not only the selected proof.
+      for(let attempt=0;attempt<3;attempt++){
+        const surroundings=await page.evaluate(readCardFrame);
+        const specs=phase?namedSelectors(phase,report.result):null;
+        const elements=specs?await page.evaluate(specs=>specs.map(([,selector,index=0])=>{
+          const r=document.querySelectorAll(selector)[index].getBoundingClientRect();return {left:r.left,right:r.right,top:r.top,bottom:r.bottom};
+        }),specs):[await locator.evaluate(el=>{const r=el.getBoundingClientRect();return {left:r.left,right:r.right,top:r.top,bottom:r.bottom};})];
+        const [scroll,maxScroll]=await page.evaluate(()=>[scrollY,Math.max(0,document.documentElement.scrollHeight-innerHeight)]);
+        const verdict=typeof selector==='string'&&selector.includes('.trace-verdict');
+        const delta=cardScrollDelta(surroundings,elements,scroll,maxScroll,{verdict});
+        if(Math.abs(delta)<.1)return;
+        await wheelTo(scroll+delta);
+      }
+      throw new Error('card_band_did_not_settle');
     };
     const click=async selector=>{
       await frame(selector);
@@ -337,7 +356,7 @@ export async function record(config) {
       provider_display:'Native form says Baseten; native result heading shows the model ID separately. Model/provider also named by the receipt-bound motion card.'};
     // Native correction + Cited changes live in the lower band; card goes on top.
     const editTop=await page.locator('#live-result .live-corrections h6').first().evaluate(el=>scrollY+el.getBoundingClientRect().top-300);
-    await frame('#live-result .live-corrections h6',editTop);mark('draft_reveal');await hold(2100);
+    await frame('#live-result .live-corrections h6',editTop,'draft_reveal');mark('draft_reveal');await hold(2100);
     const deleted=await page.locator('#live-result .corrected-draft-text del').allTextContents();
     const corrected=await page.locator('#live-result .corrected-draft-text strong').allTextContents();
     if(!deleted.includes('$416.2 billion') || !corrected.includes('$102.5 billion'))throw new Error('native_correction_missing');

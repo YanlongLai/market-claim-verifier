@@ -1,20 +1,23 @@
 import {stateAt,terminalAt,outroStampAt} from './plan.js';
 import {chapterMarkup,updateChapters} from './chapters.js';
+import {paintVideoFrame} from './video-frame.mjs';
 const data=window.MOTION_DATA,stage=document.querySelector('#stage'),root='../../../';
 const esc=s=>String(s).replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;');
 let previous='',pending=[];
-const video=(path,classes='terminal')=>`<video muted preload="auto" class="${classes}" data-source="${esc(path)}" src="${root}${esc(path)}"></video>`;
+const video=(path,classes='terminal')=>`<video muted preload="auto" class="${classes}" data-source="${esc(path)}" src="${root}${esc(path)}"></video><canvas class="native-video-frame" width="1920" height="1080" aria-label="Decoded native page"></canvas>`;
 const post=()=>`<article class="post-card"><p class="post-byline">Illustrative post</p>${data.post_text.split('\n\n').map((p,i)=>i===0?`<h2>${esc(p)}</h2>`:`<p class="post-paragraph${p.includes('Apple')?' apple-line':''}">${esc(p)}</p>`).join('')}<p class="post-focus"><strong>$416.2 billion</strong><br>… fiscal Q4 2025</p></article>`;
 function liveOverlay(event){
  if(!event)return '';
  const titles={draft:'4 · Corrected draft',evidence:'5 · SEC evidence',trace:'6 · Agent trace',each:'6 · Each tool call',program:'6 · Program verdict',receipt:'7 · Live take'};
+ if(event.event==='verdict')titles.verdict='3 · Contradicted · Apple SEC · E3';
  const items=event.event==='draft'?'<p class="principal"><strong>$416.2B → $102.5B</strong></p>':event.event==='evidence'?'<div class="equation"><p><span>10-K annual</span><strong>$416.2B</strong></p><b>−</b><p><span>10-Q nine months</span><strong>$313.7B</strong></p><b>=</b><p><span>Fiscal Q4</span><strong>$102.5B</strong></p></div>':event.event==='trace'?`<p class="principal"><strong>${data.live_receipt?data.live_receipt.tool_calls:4}</strong> tool calls · on the record</p>`:event.event==='receipt'?`<p class="principal">${data.live_receipt?`<strong>$${data.live_receipt.cost_usd.toFixed(4)}</strong> · <strong>${(data.live_receipt.latency_ms/1000).toFixed(1)} s</strong>`:'Measured cost · elapsed time · capture pending'}</p>`:'';
  const binding=data.cues._events.v505.find(e=>e.event===event.event);
  const native=binding?.native_check;
  // The recorder reserves one of two full bands. Audit both speech boundaries
  // against its rectangles; never infer clearance from overlay opacity.
  const top=native?.overlay_band==='top';
- return `<aside class="live-overlay${top?' top-band':''}" data-phase="${event.receipt_phase}" aria-label="${esc(event.overlay)}">${event.event==='evidence'?'':`<h2>${esc(titles[event.event]||event.overlay)}</h2>`}${items}</aside>`;
+ const filings=event.event==='verdict'?(data.live_filing_citations||[]).map(c=>`<a class="filing-citation" data-evidence-id="${esc(c.evidence_id)}" data-form="${esc(c.form)}" href="${esc(c.url)}">${esc(c.form)} · ${esc(c.period_label)}</a>`).join(''):'';
+ return `<aside class="live-overlay${top?' top-band':''}" data-phase="${event.receipt_phase}" aria-label="${esc(event.overlay)}">${event.event==='evidence'?'':`<h2>${esc(titles[event.event]||event.overlay)}</h2>`}${items}${filings}</aside>`;
 }
 function body(state){
  const scene=data.scenes[state.index];
@@ -35,16 +38,7 @@ function body(state){
  }
 }
 function seekVideo(el,time){
- const wait=()=>new Promise((resolve,reject)=>{
-  const target=Math.max(0,Math.min(time,el.duration-1/30));
-  if(Math.abs(el.currentTime-target)<.0001&&el.readyState>=2)return resolve();
-  el.addEventListener('seeked',resolve,{once:true});
-  el.addEventListener('error',()=>reject(new Error(`Missing recorded asset: ${el.dataset.source}`)),{once:true});el.currentTime=target;
- });
- pending.push(el.readyState>=1?wait():new Promise((resolve,reject)=>{
-  el.addEventListener('loadedmetadata',()=>wait().then(resolve,reject),{once:true});
-  el.addEventListener('error',()=>reject(new Error(`Missing recorded asset: ${el.dataset.source}`)),{once:true});
- }));
+ pending.push(paintVideoFrame(el,time,el.nextElementSibling));
 }
 window.seek=t=>{
  pending=[];const state=stateAt(t,data.scenes,data.chapter_bar.segments);

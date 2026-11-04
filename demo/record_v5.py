@@ -30,13 +30,35 @@ FFMPEG = Path("/opt/homebrew/bin/ffmpeg")
 FFPROBE = Path("/opt/homebrew/bin/ffprobe")
 ORIGIN = "https://hackathon.dappgo.com"
 BEATS = {"v505": ("beat6", 58.0), "v508": ("beat9", 16.0)}
-CAPTURE_VERSION = 8
+CAPTURE_VERSION = 9
 LIVE_PHASES = ('live_workspace_reveal','use_apple_example','check_against_sec','verdict_reveal','draft_reveal',
                'evidence_reveal','tool_call_2_reveal','tool_call_4_reveal','program_verdict_reveal','hover_receipt')
 
 
 class RecordingError(RuntimeError):
     pass
+
+
+def apple_filing_citations(result):
+    """Project the actual E3 components and correction links, never invented sources."""
+    fact=next((e for e in result.get('evidence',[]) if e.get('evidence_id')=='E3'
+               and e.get('ticker')=='AAPL' and e.get('derived')),None)
+    edit=next((e for e in result.get('corrections',{}).get('edits',[])
+               if e.get('original')=='$416.2 billion' and e.get('replacement')=='$102.5 billion'
+               and 'E3' in e.get('evidence_ids',[])),None)
+    if not fact or not edit:
+        raise RecordingError('Apple E3 derived fact and cited correction required')
+    citations=[]
+    for form,kind in (('10-K','annual'),('10-Q','ytd')):
+        component=next((c for c in fact.get('components',[]) if c.get('form')==form and c.get('period_type')==kind),None)
+        citation=next((c for c in edit.get('citations',[]) if c.get('evidence_id')=='E3' and c.get('form')==form),None)
+        if (not component or not citation or not citation.get('url','').startswith('https://www.sec.gov/Archives/')
+            or any(component.get(k)!=citation.get(k) for k in ('accn','value','start','end','period_type'))):
+            raise RecordingError('Apple SEC citation must match its E3 component form and period')
+        end=datetime.strptime(component['end'],'%Y-%m-%d')
+        label=f"fiscal {fact['fiscal_year']} annual" if kind=='annual' else f"nine months to {end.day} {('Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec')[end.month-1]} {end.year}"
+        citations.append(dict(evidence_id='E3',form=form,period_label=label,**{k:citation[k] for k in ('url','accn','start','end')}))
+    return citations
 
 
 def digest(path):
@@ -118,7 +140,7 @@ def check_startup_cover(receipt):
         or not cover.get('workspace_framed_before_release') or not cover.get('decoded_workspace_start')
         or not 60<=rect.get('left',-1)<rect.get('right',0)<=1860 or not 80<=rect.get('top',-1)<rect.get('bottom',0)<=548
         or not all(type(cover.get(k)) in (int,float) and math.isfinite(cover[k]) for k in calibration)):
-        raise RecordingError('v8 audited startup cover and decoded workspace start required; re-record on the host')
+        raise RecordingError('v9 audited startup cover, card band and decoded workspace start required; re-record on the host')
     if (abs(cover['source_start_s']-cover['first_native_frame_s']-.1)>1e-7
         or abs(cover['video_clock_offset_s']-cover['first_native_frame_s']+cover['source_cover_release_s'])>1e-7
         or abs(released+.1)>1e-7):
@@ -141,6 +163,22 @@ def check_named_elements(receipt):
             band=check.get('overlay_band')
             if band not in ('top','bottom') or (band=='top' and r['top']<270) or (band=='bottom' and r['bottom']>548):
                 raise RecordingError('Opaque overlay band intersects the named native element')
+        audit=check.get('card_edge_audit',{})
+        band={'left':80,'right':1840,'top':558,'bottom':790} if check['overlay_band']=='bottom' else {'left':80,'right':1840,'top':24,'bottom':250}
+        if audit.get('status')!='pass' or audit.get('band')!=band or not audit.get('lines') or not isinstance(audit.get('controls'),list):
+            raise RecordingError('Native text line and control audit required at every card cue onset')
+        for r in [*audit['lines'],*audit['controls']]:
+            if (not all(type(r.get(k)) in (int,float) and math.isfinite(r[k]) for k in ('left','right','top','bottom'))
+                or r['left']>=r['right'] or r['top']>=r['bottom']):
+                raise RecordingError('Invalid native text line rectangle')
+            edges=(band['top'],) if check['overlay_band']=='bottom' else (band['top'],band['bottom'])
+            if r['left']<band['right'] and r['right']>band['left'] and any(r['top']<y<r['bottom'] for y in edges):
+                raise RecordingError('Native text line or control crosses the card edge at cue onset')
+        if check['phase']=='verdict_reveal':
+            charge=audit.get('input_charge',{});heading=audit.get('corrected_heading',{})
+            if (not charge or charge.get('bottom',math.inf)>0 or not heading
+                or not (heading.get('top',-1)>=558 or 0<=heading.get('top',-1)<heading.get('bottom',math.inf)<=558)):
+                raise RecordingError('Verdict must exclude input reading charge and show or mask the whole corrected heading')
     ending=receipt.get('ending_frame',{}).get('named_elements',[])
     if len(ending)!=3 or any(not 60<=r.get('left',0)<r.get('right',0)<=1860 or not 80<=r.get('top',0)<r.get('bottom',0)<=586 for r in ending):
         raise RecordingError('Ending draft and citation rectangles required for overlay review')

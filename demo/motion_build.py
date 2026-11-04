@@ -242,6 +242,7 @@ def render(builder, *, test: bool = False) -> dict:
         from motion_v5 import compile_data
         implementation['motion_v5.py']=file_hash(builder.demo/'motion_v5.py')
         implementation['voice_v5.py']=file_hash(builder.demo/'voice_v5.py')
+        implementation['check_ending_v5.py']=file_hash(builder.demo/'check_ending_v5.py')
         evidence=compile_data(builder.repo,builder.story)['provenance']
     elif builder.story.get('motion_variant') == 'v4':
         from motion_v4 import compile_data
@@ -267,6 +268,11 @@ def render(builder, *, test: bool = False) -> dict:
     validation=media.validate_export(folder/'master.mp4',length)
     if builder.story.get('motion_variant')=='v5' and not test and validation['duration_s']>178.001:
         raise BuildError('V5 export exceeds the binding 178-second duration')
+    if builder.story.get('motion_variant')=='v5' and not test:
+        from check_ending_v5 import check_ending_cut
+        take=next(s for s in builder.scenes if s['id']=='v508')['recording']['asset']
+        validation['ending_cut']=check_ending_cut(folder/'master.mp4',builder.repo/take,folder/'ending-cut',
+            outgoing=frames/'frame-004619.png')
     if test:
         builder.alias(folder/'master.mp4',output)
         output.with_suffix('.srt').write_text(to_srt(local))
