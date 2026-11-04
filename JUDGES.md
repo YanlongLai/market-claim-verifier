@@ -21,7 +21,7 @@ Paste → Muse finds SEC evidence → Python decides + corrected draft. DappGo p
 | Which US stocks | US-GAAP SEC filers: ≈8,000 companies; 23 tested.<br>US-GAAP 美股申報公司：約 8,000 家，已測試 23 家。 |
 | Inputs | Website: text ≤600 characters. CLI: text, images, PDFs, audio and video.<br>網站：≤600 字元。CLI：文字、圖片、PDF、音訊與影片。 |
 | Price | $0.01 per live check; $0.02 per claim in the benchmark.<br>即時查核每次 $0.01；基準測試每題 $0.02。 |
-| Speed | 6 s live; 10 s median in the benchmark.<br>即時 6 秒；基準測試中位數 10 秒。 |
+| Speed | 6–20 s live (one claim → four-assertion post); 10 s median in the benchmark.<br>即時 6–20 秒（單一主張 → 含四項主張的貼文）；基準測試中位數 10 秒。 |
 | Accuracy | 90.2% (240/266) held out; false support 1/139.<br>保留測試 90.2% (240/266)；誤判為支持 1/139。 |
 | Fix the article? | Corrects disproved numbers and cites the filing.<br>修正被證明錯誤的數字，並附申報出處。 |
 

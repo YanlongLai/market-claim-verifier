@@ -20,23 +20,13 @@ def sha(raw):
 
 
 def from_record(folder, example_id, asset):
-    receipt_path = folder / example_id / "receipt.json"
-    response_path = folder / example_id / "response.json"
-    receipt = json.loads(receipt_path.read_text())
-    raw = response_path.read_bytes()
-    result = json.loads(raw)
-    if (receipt["http_status"] != 200 or receipt.get("attempts") != 1 or receipt.get("example_id") != example_id or
-        result.get("mode") != "live" or receipt["response_sha256"] != sha(raw) or
-        receipt["asset_sha256"] != asset["sha256"] or result.get("error") or
-        result.get("verdict") not in {"supported", "contradicted", "insufficient_evidence"} or
-        result.get("input", {}).get("example_id") != example_id or result["input"].get("kind") != asset["kind"] or
-        not isinstance(result["input"].get("text_read"), str) or not result["input"]["text_read"].strip()):
-        raise ValueError(f"Incomplete/mismatched retained run: {example_id}; keep it, do not publish as a result")
-    result.update(mode="recorded", source=str(response_path.relative_to(ROOT)), source_sha256=sha(raw),
-                  recording={"receipt": str(receipt_path.relative_to(ROOT)), "receipt_sha256": sha(receipt_path.read_bytes()),
-                             "asset_sha256": asset["sha256"], "attempts": 1},
-                  timing_note="One real example request; includes OCR/ASR/PDF preprocessing, not a frozen-transcript recheck.")
-    return result
+    if __package__:
+        from scripts.run_example_records import recorded_envelope
+    else:
+        from run_example_records import recorded_envelope
+    if asset["id"] != example_id:
+        raise ValueError(f"Mismatched example id: {example_id}")
+    return recorded_envelope(folder / example_id, asset, root=ROOT)
 
 
 def build(*, check=False, records=None):
@@ -46,7 +36,7 @@ def build(*, check=False, records=None):
     original["input"] = {"example_id": "text", "kind": "text", "text_read": text,
                          "preprocessing": {"model": "native-text", "provider": "local", "cost_usd": 0, "latency_ms": None}}
     original["recording"] = {"type": "reused_saved_text", "note": "Original saved post run; no new request or preprocessing timing.",
-                             "asset_sha256": assets[0]["sha256"]}
+                             "asset_sha256": sha(text.encode())}
     results = {"text": original}
     for asset in assets:
         example_id = asset["id"]

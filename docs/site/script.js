@@ -405,11 +405,11 @@
     errors: {
       invalid_input: "Enter 1–600 characters.", out_of_scope: "This check covers US equities and SEC financial facts only.",
       unauthorized: "Enter the live-check password to continue.",
-      auth_rate_limited: "Too many incorrect passwords. Please wait 15 minutes; the saved demo is available below.",
+      auth_rate_limited: "Too many incorrect passwords. {reset} The saved demo is available below.",
       budget_exhausted: "Today's budget is used up — see the saved examples. Resets 00:00 UTC.",
       total_budget_exhausted: "Live checks paused (total budget). See the saved examples.",
       credit_exhausted: "Live checks paused (provider credit). See the saved examples.",
-      rate_limited: "Five checks per 10 minutes. Please wait 10 minutes; the saved demo is available below.",
+      rate_limited: "5 checks / 10 min per IP, including a shared office IP. {reset} The saved demo is available below.",
       unavailable: "Live checking is unavailable. Follow the saved demo below.", timeout: "The check reached its time limit. No verdict was issued. Follow the saved demo below.",
       provider_error: "The model service did not complete this check. No verdict was issued. The saved demo is below.",
       sec_unavailable: "SEC data is unavailable right now. No verdict was issued. The saved demo is below.",
@@ -465,11 +465,11 @@
     errors: {
       invalid_input: "請輸入 1–600 個字元。", out_of_scope: "此功能僅查核美股的 SEC 財務事實。",
       unauthorized: "請輸入即時查核密碼以繼續。",
-      auth_rate_limited: "密碼錯誤次數過多，請等候 15 分鐘；下方示範仍可查看。",
+      auth_rate_limited: "密碼錯誤次數過多。{reset} 下方示範仍可查看。",
       budget_exhausted: "今日預算已用完，請查看已儲存的範例。於 UTC 00:00 重設。",
       total_budget_exhausted: "即時查核暫停（總預算已用完）。請查看已儲存的範例。",
       credit_exhausted: "即時查核暫停（供應商額度已用完）。請查看已儲存的範例。",
-      rate_limited: "每 10 分鐘限 5 次，請等候 10 分鐘；下方示範仍可查看。",
+      rate_limited: "每個 IP 每 10 分鐘限 5 次，共用辦公室 IP 也共用此額度。{reset} 下方示範仍可查看。",
       unavailable: "即時查核暫時無法使用。請查看下方已儲存的示範。", timeout: "查核已達時間上限，未作出裁定。請查看下方示範。",
       provider_error: "模型服務未完成查核，未作出裁定。請查看下方示範。", sec_unavailable: "SEC 資料暫時無法取得，未作出裁定。請查看下方示範。",
       mock_input_only: "離線模式僅重播已儲存的熱傳貼文或單一主張範例，請選擇「使用 Apple 範例」。",
@@ -495,7 +495,7 @@
   "question5": "Price",
   "answer5": "$0.01 per live check; $0.02 per claim in the benchmark.",
   "question6": "Speed",
-  "answer6": "6 s live; 10 s median in the benchmark.",
+  "answer6": "6–20 s live (one claim → four-assertion post); 10 s median in the benchmark.",
   "question7": "Accuracy",
   "answer7": "90.2% (240/266) held out; false support 1/139.",
   "question8": "Fix the article?",
@@ -553,7 +553,7 @@
   "question5": "費用",
   "answer5": "即時查核每次 $0.01；基準測試每題 $0.02。",
   "question6": "速度",
-  "answer6": "即時 6 秒；基準測試中位數 10 秒。",
+  "answer6": "即時 6–20 秒（單一主張 → 含四項主張的貼文）；基準測試中位數 10 秒。",
   "question7": "準確率",
   "answer7": "保留測試 90.2% (240/266)；誤判為支持 1/139。",
   "question8": "能修正文章嗎？",
@@ -633,6 +633,51 @@
     preprocessing_failed: "Reading the input did not finish. No complete check was issued.", saved_result_pending: "Saved result pending" });
   Object.assign(COPY.zh.live.errors, { unknown_example: "無此範例。", example_unavailable: "此範例檔案仍在製作中，請查看已儲存結果狀態。",
     preprocessing_failed: "輸入讀取未完成，未產出完整查核。", saved_result_pending: "已儲存結果待補" });
+  Object.assign(COPY.en.live, { rateReset: "Resets {time}.", rateResetUnknown: "Reset time unavailable." });
+  Object.assign(COPY.zh.live, { rateReset: "重設時間：{time}。", rateResetUnknown: "目前無法取得重設時間。" });
+
+  COPY.en.matrix = {
+    intro: "Three stories. Five inputs. Follow each number to the filing.",
+    story: "1 · Choose a story", kind: "2 · Choose an input", provider: "3 · Choose a provider", inputType: "Input type",
+    storyA: "A · Wrong period", storyB: "B · All correct", storyC: "C · Mixed",
+    expected: "Expected outcome", expectedA: "Contradicted · $416.2B → $102.5B", expectedB: "Supported · nothing to correct",
+    expectedC: "Unit error · not judged · insufficient", reset: "Reset example", openInput: "Open input file",
+    compareAll: "Compare on all", compareNote: "≈3× cost · three sequential runs · shared budget", run: "Run check", runCompare: "Compare providers",
+    privacy: "Authenticated runs and their input text are public in history for 14 days. OCR/ASR uses the Meta Model API; SEC checks use your chosen provider. 5 checks / 10 min per IP; a shared office IP shares this limit. A rate-limited request shows the reset time.",
+    history: "Recent checks", historyNote: "Last 50 runs · public · retained for 14 days", refresh: "Refresh", historyLoading: "Loading history…",
+    historyEmpty: "No checks yet.", historyUnavailable: "History is unavailable. Try Refresh.", historyOpening: "Opening the saved check…",
+    historyFailed: "This check could not be opened. Try again.", whenDevice: "Time / device", storyKind: "Story / input",
+    providerVerdict: "Provider / verdict", timeCost: "Duration / cost", custom: "Custom text", edit: "Edit & re-run",
+    assetPending: "Example asset pending", assetsLoading: "Loading examples…", assetsFailed: "Examples could not be loaded. Reload to try again.", textLoading: "Loading example text…", textFailed: "Example text could not be loaded. Try Reset example.",
+    comparing: "Running the providers in sequence. Each run uses the shared budget…", comparison: "Provider comparison", openResult: "Open full result",
+    corrections: "Corrections", duration: "Duration", cost: "Verifier cost", prepCost: "Input reading cost", receipt: "Run receipt", verifier: "Verifier",
+    noPreprocessing: "No preprocessing", nothingToCorrect: "Nothing to correct in the checked claims.", notJudged: "Not judged", notRun: "Not run",
+    noScript: "Enable JavaScript to choose an input or read live history. The recorded text result is also available below."
+  };
+  COPY.zh.matrix = {
+    intro: "三個故事，五種輸入；每個數字都能追溯到申報文件。",
+    story: "1 · 選擇故事", kind: "2 · 選擇輸入", provider: "3 · 選擇供應商", inputType: "輸入格式",
+    storyA: "A · 期間錯誤", storyB: "B · 全部正確", storyC: "C · 混合主張",
+    expected: "預期結果", expectedA: "證據矛盾 · $416.2B → $102.5B", expectedB: "證據支持 · 無需修正",
+    expectedC: "單位錯誤 · 不予判定 · 證據不足", reset: "重設範例", openInput: "開啟輸入檔案",
+    compareAll: "比較全部供應商", compareNote: "≈3× 費用 · 依序執行三次 · 共用預算", run: "執行查核", runCompare: "比較供應商",
+    privacy: "通過密碼驗證的查核與輸入文字會公開於歷史紀錄，保留 14 天。OCR／ASR 使用 Meta Model API；SEC 查核使用所選供應商。每個 IP 每 10 分鐘限 5 次；共用辦公室 IP 也共用此額度。達到限制時會顯示重設時間。",
+    history: "最近查核", historyNote: "最近 50 次 · 公開 · 保留 14 天", refresh: "重新整理", historyLoading: "正在讀取歷史紀錄…",
+    historyEmpty: "尚無查核紀錄。", historyUnavailable: "無法讀取歷史紀錄，請重新整理。", historyOpening: "正在開啟已儲存查核…",
+    historyFailed: "無法開啟此筆查核，請再試一次。", whenDevice: "時間／裝置", storyKind: "故事／輸入",
+    providerVerdict: "供應商／判定", timeCost: "耗時／費用", custom: "自訂文字", edit: "編輯並重新查核",
+    assetPending: "範例檔案待補", assetsLoading: "正在讀取範例…", assetsFailed: "無法讀取範例，請重新載入。", textLoading: "正在讀取範例文字…", textFailed: "無法讀取範例文字，請重設範例。",
+    comparing: "正依序執行各供應商；每次查核皆使用共用預算…", comparison: "供應商比較", openResult: "開啟完整結果",
+    corrections: "修正數", duration: "耗時", cost: "查核費用", prepCost: "輸入讀取費用", receipt: "執行收據", verifier: "查核",
+    noPreprocessing: "無前處理", nothingToCorrect: "已核對的主張無需修正。", notJudged: "不予判定", notRun: "未執行",
+    noScript: "請啟用 JavaScript 以選擇輸入或讀取即時歷史紀錄。下方也提供已儲存的文字查核。"
+  };
+  COPY.en.live.privacy = COPY.en.matrix.privacy;
+  COPY.zh.live.privacy = COPY.zh.matrix.privacy;
+  COPY.en.examples.privacy = COPY.en.matrix.privacy;
+  COPY.zh.examples.privacy = COPY.zh.matrix.privacy;
+  Object.assign(COPY.en.live.errors, { invalid_provider: "Choose an available provider.", invalid_providers: "Choose available providers." });
+  Object.assign(COPY.zh.live.errors, { invalid_provider: "請選擇可用的供應商。", invalid_providers: "請選擇可用的供應商。" });
 
   // The static page builder imports this same dictionary through Node.
   // No DOM, provider calls or page initialization run during generation.
@@ -661,11 +706,43 @@
   let budgetDay = "";
   const exampleIds = ["text", "image", "pdf", "audio", "video"];
   let examplesIndex = [];
-  let selectedExample = null;
-  let exampleResult = null;
   let exampleSavedStatus = "";
+  const providers = {
+    baseten: { label: "Baseten", model: "meta-models/muse-spark-open-1026" },
+    fireworks: { label: "Fireworks", model: "accounts/fireworks/models/muse-spark-open" },
+    meta: { label: "Meta Model API", model: "muse-spark-1.3" }
+  };
+  let stories = [
+    { id: "A", titleKey: "storyA", expectedKey: "expectedA" },
+    { id: "B", titleKey: "storyB", expectedKey: "expectedB" },
+    { id: "C", titleKey: "storyC", expectedKey: "expectedC" }
+  ];
+  let selectedStory = "A", selectedKind = "text", selectedProvider = "baseten";
+  let customText = false, inputLoadState = "assetsLoading", compareRuns = [], resultContext = null;
+  let rateLimitReset = null;
+  let historyRows = [], historyState = "historyLoading", historyRequest = 0, resultRequest = 0, inputRequest = 0;
+  const exampleTexts = new Map();
+
+  function matrixCopy(key) { return COPY[pageLanguage].matrix[key] || ""; }
+  function validId(value) { return typeof value === "string" && /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,79}$/.test(value); }
+  function selectedAsset() { return examplesIndex.find(row => row.story === selectedStory && row.kind === selectedKind); }
+  function providerLabel(value) { return providers[value]?.label || String(value || liveCopy("notRecorded")); }
+  function money(value, decimals = 5) { return Number.isFinite(value) ? `$${value.toFixed(decimals)}` : "—"; }
+  function duration(value) { return Number.isFinite(value) ? `${(value / 1000).toFixed(1)} ${liveCopy("seconds")}` : "—"; }
+  function runReceipt(result) {
+    return result.receipt || { provider: result.provider, model: result.model, latency_ms: result.latency_ms,
+      cost_usd: result.cost_usd, preprocessing: result.input?.preprocessing };
+  }
 
   function liveCopy(key) { return COPY[pageLanguage].live[key]; }
+
+  function liveErrorText(error) {
+    const reset = rateLimitReset === null ? liveCopy("rateResetUnknown") : liveCopy("rateReset").replace("{time}",
+      new Date(rateLimitReset).toLocaleString(pageLanguage === "zh" ? "zh-TW" : "en-US", {
+        month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit", timeZoneName: "short"
+      }));
+    return (liveCopy("errors")[error] || liveCopy("errors").unavailable).replace("{reset}", reset);
+  }
 
   function liveNode(tag, text, className) {
     const node = document.createElement(tag);
@@ -755,7 +832,8 @@
   }
 
   function liveVerdict(value) {
-    return liveCopy(value) || liveCopy("insufficient_evidence");
+    if (["not_judged", "opinion", "forecast"].includes(value)) return matrixCopy("notJudged");
+    return ["supported", "contradicted", "insufficient_evidence", "unchecked"].includes(value) ? liveCopy(value) : "—";
   }
 
   function renderLiveCorrections(corrections, target, evidence = []) {
@@ -827,24 +905,39 @@
     if (input && typeof input.text_read === "string") {
       const read = liveNode("section", null, "live-input-read");
       read.append(liveNode("h5", liveCopy("read")), liveNode("blockquote", input.text_read, "trace-input"));
-      const prep = input.preprocessing;
+      const prep = result.receipt?.preprocessing || input.preprocessing;
       if (prep && typeof prep === "object") {
         read.append(liveNode("p", [input.kind, prep.provider, prep.model].filter(value => typeof value === "string").join(" · "), "live-small"));
-        read.append(liveNode("p", `${liveCopy("preprocessing")}: ${Number.isFinite(prep.cost_usd) ? "$" + prep.cost_usd.toFixed(5) : "—"} · ${Number.isFinite(prep.latency_ms) ? liveNumber(prep.latency_ms / 1000) + " " + liveCopy("seconds") : liveCopy("inputTiming")}`, "live-small"));
       }
       target.append(read);
     }
+    const receipt = runReceipt(result);
+    const receiptBlock = liveNode("section", null, "live-receipt");
+    receiptBlock.append(liveNode("h5", matrixCopy("receipt")),
+      liveNode("p", [providerLabel(receipt.provider), receipt.model || liveCopy("notRecorded"),
+        duration(receipt.latency_ms), `${result.cost_is_bound ? liveCopy("bound") : matrixCopy("cost")}: ${money(receipt.cost_usd, 2)}`].join(" · ")));
+    const prep = receipt.preprocessing;
+    receiptBlock.append(liveNode("p", prep
+      ? [liveCopy("preprocessing"), prep.model || liveCopy("notRecorded"), duration(prep.latency_ms), money(prep.cost_usd, 2)].join(" · ")
+      : `${matrixCopy("noPreprocessing")} · ${receipt.preprocessing === null ? "$0.00" : liveCopy("notRecorded")}`, "live-small"));
+    target.append(receiptBlock);
     const head = liveNode("div", null, "trace-head");
     head.append(liveNode("p", liveCopy(result.mode === "recorded" ? "recorded" : result.mode === "mock" ? "mock" : "live"), "trace-mode"));
-    const money = Number.isFinite(result.cost_usd) ? cost(result.cost_usd) : "—";
-    const duration = Number.isFinite(result.latency_ms) ? (result.latency_ms / 1000).toFixed(1) : "—";
-    head.append(liveNode("p", `${liveCopy(result.cost_is_bound ? "bound" : "cost")}: ${money} · ${duration} ${liveCopy("seconds")}`, "trace-metrics"));
-    head.append(liveNode("p", result.model || "", "live-small"));
+    if (result.error) head.append(liveNode("p", liveErrorText(result.error), "live-error"));
     if (result.started_at) head.append(liveNode("p", `${result.started_at} → ${result.finished_at}`, "live-small"));
     if (result.verdict) head.append(liveNode("h4", liveVerdict(result.verdict), `trace-verdict is-${result.verdict}`));
     target.append(head);
     const evidence = (result.evidence || []).filter((fact) => !fact.error);
     const hasCorrection = renderLiveCorrections(result.corrections, target, evidence);
+    if (!hasCorrection && result.verdict === "supported") {
+      let draft = target.querySelector(".live-corrections");
+      if (!draft) {
+        draft = liveNode("section", null, "live-corrections");
+        draft.append(liveNode("h5", liveCopy("correctedDraft")));
+        target.append(draft);
+      }
+      draft.append(liveNode("p", matrixCopy("nothingToCorrect")));
+    }
     const proof = liveNode("section", null, "live-proof");
     proof.append(liveNode("h5", liveCopy("evidence")));
     const rows = liveNode("div", null, "live-evidence");
@@ -958,13 +1051,12 @@
     note.hidden = !note.textContent;
     const disabled = liveBusy || !liveBudget || Boolean(stop);
     $("#live-input").disabled = disabled;
-    $("#live-submit").disabled = disabled;
+    const asset = selectedAsset();
+    $("#live-submit").disabled = disabled || (!customText && (!asset?.ready || inputLoadState === "textLoading"));
     $("#live-example").disabled = disabled;
     $("#live-password").disabled = liveBusy;
-    $$('[data-example-run]').forEach(button => {
-      const card = $(`[data-example-card="${button.dataset.exampleRun}"]`);
-      button.disabled = disabled || card?.dataset.exampleReady !== "true";
-    });
+    $("#example-saved").disabled = liveBusy;
+    $("#result-edit").disabled = liveBusy;
   }
 
   async function refreshLiveBudget() {
@@ -999,70 +1091,321 @@
   function localizeLive() {
     if (savedLiveDemo) renderLiveTrace(savedLiveDemo, $("#recorded-trace"));
     if (liveResult) renderLiveTrace(liveResult, $("#live-result"));
-    if (exampleResult) renderLiveTrace(exampleResult, $("#example-result"));
     const status = $("#live-status");
-    if (status) status.textContent = liveStop() ? budgetStopText(liveStop()) : ["pending", "complete", "mediaPending"].includes(liveStatus)
-      ? liveCopy(liveStatus) : (liveCopy("errors")[liveStatus] || "");
+    if (status) status.textContent = liveStop() ? budgetStopText(liveStop()) : liveStatus === "comparing"
+      ? matrixCopy("comparing") : ["pending", "complete", "mediaPending"].includes(liveStatus)
+        ? liveCopy(liveStatus) : liveStatus ? liveErrorText(liveStatus) : "";
     const savedStatus = $("#example-saved-status");
     if (savedStatus) savedStatus.textContent = COPY[pageLanguage].examples[exampleSavedStatus] || "";
-    for (const row of examplesIndex) {
-      const note = $(`[data-example-saved-state="${row.id}"]`);
-      if (note) note.textContent = COPY[pageLanguage].examples[row.saved_result ? row.id === "text" ? "reused" : "savedReady" : "savedPending"];
-      const link = $(`[data-example-download="${row.id}"]`);
-      if (link) link.textContent = COPY[pageLanguage].examples[row.status === "ready" ? "openMedia" : "pendingDetails"];
-    }
+    if ($("#result-edit")) $("#result-edit").hidden = !liveResult;
+    renderMatrix();
+    renderComparison();
+    renderHistory();
     renderLiveBudget();
   }
 
-  async function loadExamples() {
-    if (!$("#examples-title")) return;
-    try {
-      const response = await fetch("/data/examples/index.json", { cache: "no-store" });
-      if (!response.ok) return;
-      const rows = await response.json();
-      if (!Array.isArray(rows) || rows.length !== 5 || rows.some(row => !exampleIds.includes(row.id) || row.kind !== row.id ||
-        !["ready", "pending"].includes(row.status) || !/^post\.(txt|png|pdf|mp3|mp4)(\.pending\.txt)?$/.test(row.file) ||
-        row.url !== `/examples/${row.file}`)) return;
-      examplesIndex = rows;
-      for (const row of rows) {
-        const card = $(`[data-example-card="${row.id}"]`);
-        if (card) card.dataset.exampleReady = String(row.status === "ready");
-        const link = $(`[data-example-download="${row.id}"]`);
-        if (link) link.href = row.url;
-        if (["audio", "video"].includes(row.id) && row.status === "ready") {
-          const player = liveNode(row.id);
-          player.controls = true;
-          player.preload = "none";
-          player.src = row.url;
-          if (row.id === "video") player.poster = "/examples/post.png";
-          $(`[data-example-player="${row.id}"]`)?.replaceChildren(player);
-        }
-      }
-      localizeLive();
-    } catch { /* Static previews and saved-result buttons remain usable. */ }
+  // Asset paths are confined to our committed examples, including previews.
+  function exampleUrl(path) {
+    if (typeof path !== "string" || !path || !/^[a-zA-Z0-9_./-]+$/.test(path) || path.split("/").includes("..")) return null;
+    if (path.startsWith("/")) return path.startsWith("/examples/") ? path : null;
+    return `/examples/${path.replace(/^\.\//, "")}`;
   }
 
-  async function selectExampleSaved(id) {
-    if (!exampleIds.includes(id)) return;
-    selectedExample = id;
-    exampleResult = null;
-    $("#example-result").hidden = true;
-    exampleSavedStatus = "loading";
-    localizeLive();
+  function acceptManifest(data) {
+    const array = Array.isArray(data);
+    const source = array ? data : data?.examples;
+    if (!Array.isArray(source) || !source.length) throw Error("invalid example manifest");
+    const legacy = array && source.every(row => !row.story);
+    const nextStories = !array ? data.stories : legacy ? stories :
+      [...new Set(source.map(row => row.story))].map((id, index) => {
+        const row = source.find(row => row.story === id);
+        return { id, title_en: `${String(id).toUpperCase()} · ${row.story_title?.en || id}`,
+          title_zh: `${String(id).toUpperCase()} · ${row.story_title?.zh || id}`,
+          expectedKey: ["expectedA", "expectedB", "expectedC"][index] };
+      });
+    if (!Array.isArray(nextStories) || nextStories.length !== 3 || nextStories.some(row => !validId(row.id) ||
+      (!legacy && (typeof row.title_en !== "string" || typeof row.title_zh !== "string"))) ||
+      new Set(nextStories.map(row => row.id)).size !== 3) throw Error("invalid stories");
+    const rows = source.map(row => ({ ...row, story: legacy ? nextStories[0].id : row.story,
+      url: exampleUrl(row.file), previewUrl: exampleUrl(row.preview),
+      ready: row.status !== "pending" && !String(row.file).includes(".pending.") }));
+    if (rows.some(row => !validId(row.id) || !exampleIds.includes(row.kind) || !row.url ||
+      !nextStories.some(story => story.id === row.story) || !/^[a-f0-9]{64}$/i.test(row.sha256)) ||
+      new Set(rows.map(row => row.id)).size !== rows.length ||
+      new Set(rows.map(row => `${row.story}/${row.kind}`)).size !== rows.length) throw Error("invalid examples");
+    rows.forEach(row => {
+      if (!row.previewUrl && ["pdf", "video"].includes(row.kind))
+        row.previewUrl = rows.find(image => image.story === row.story && image.kind === "image" && image.ready)?.url;
+    });
+    stories = nextStories;
+    examplesIndex = rows;
+    if (!stories.some(row => row.id === selectedStory)) selectedStory = stories[0].id;
+  }
+
+  async function loadExamples() {
+    if (!$("#input-panel")) return;
     try {
-      const response = await fetch(`/data/examples/${id}.json`, { cache: "no-store" });
-      if (selectedExample !== id) return;
-      if (!response.ok) { exampleSavedStatus = response.status === 404 ? "savedPending" : "loadingFailed"; }
-      else {
-        const result = await response.json();
-        if (selectedExample !== id) return;
-        if (result.mode !== "recorded" || result.input?.example_id !== id || typeof result.input.text_read !== "string") throw Error("invalid saved example");
-        exampleResult = result;
-        exampleSavedStatus = "";
-      }
-    } catch { if (selectedExample === id) exampleSavedStatus = "savedPending"; }
+      let response = await fetch("/examples/manifest.json", { cache: "no-store" });
+      if (!response.ok) response = await fetch("/data/examples/index.json", { cache: "no-store" });
+      if (!response.ok) throw Error("missing manifest");
+      acceptManifest(await response.json());
+      await loadExampleText();
+    } catch { inputLoadState = "assetsFailed"; }
     localizeLive();
-    $("#example-result").scrollIntoView?.({ behavior: "smooth", block: "nearest" });
+  }
+
+  function renderMatrix() {
+    if (!$("#input-panel")) return;
+    $$("[data-story-slot]").forEach((button, index) => {
+      const story = stories[index];
+      if (!story) return;
+      button.setAttribute("aria-pressed", String(story.id === selectedStory));
+      button.querySelector("strong").textContent = story.titleKey ? matrixCopy(story.titleKey) : story[`title_${pageLanguage}`];
+      let expected = story.expectedKey ? matrixCopy(story.expectedKey) : story.expected?.[pageLanguage] || story.expected;
+      if (expected === "supported") expected = matrixCopy("expectedB");
+      else if (expected === "mixed") expected = matrixCopy("expectedC");
+      else if (expected === "contradicted" && index === 0) expected = matrixCopy("expectedA");
+      else if (["contradicted", "insufficient_evidence"].includes(expected)) expected = liveVerdict(expected);
+      button.querySelector("span").textContent = `${matrixCopy("expected")}: ${typeof expected === "string" ? expected : "—"}`;
+      button.disabled = liveBusy;
+    });
+    $$("[data-input-kind]").forEach(button => {
+      const active = button.dataset.inputKind === selectedKind;
+      button.setAttribute("aria-selected", String(active));
+      button.setAttribute("tabindex", active ? "0" : "-1");
+      button.disabled = liveBusy;
+    });
+    $("#input-panel").setAttribute("aria-labelledby", `input-tab-${selectedKind}`);
+    $("#text-input-panel").hidden = selectedKind !== "text";
+    $("#live-input").required = selectedKind === "text";
+    $("#input-preview").hidden = selectedKind === "text";
+    const asset = selectedAsset();
+    const description = customText ? matrixCopy("custom") : asset?.[`what_${pageLanguage}`] || asset?.contains?.[pageLanguage] || "";
+    $("#input-description").textContent = inputLoadState ? matrixCopy(inputLoadState) :
+      asset?.ready || customText ? description : matrixCopy(asset ? "assetPending" : "assetsLoading");
+    const link = $("#input-file");
+    link.hidden = !asset?.ready || customText;
+    if (asset?.ready) link.href = asset.url;
+    link.textContent = matrixCopy("openInput");
+    // Do not reconstruct players on budget/history updates: playback keeps its position.
+    const preview = $("#input-preview");
+    const key = `${selectedStory}/${selectedKind}/${asset?.ready}/${asset?.url}/${asset?.previewUrl}/${asset?.sha256}`;
+    if (preview.dataset.key !== key) {
+      preview.dataset.key = key;
+      preview.replaceChildren();
+      if (asset && !asset.ready) preview.append(liveNode("p", matrixCopy("assetPending"), "asset-pending"));
+      else if (selectedKind === "image" || selectedKind === "pdf") {
+        const url = selectedKind === "image" ? asset.url : asset.previewUrl;
+        if (url) { const image = liveNode("img"); image.src = url; image.alt = description; preview.append(image); }
+        else preview.append(liveNode("p", COPY[pageLanguage].examples.nativeText));
+      } else if (["audio", "video"].includes(selectedKind)) {
+        const player = liveNode(selectedKind);
+        player.controls = true;
+        player.preload = "none";
+        player.src = asset.url;
+        if (selectedKind === "video" && asset.previewUrl) player.poster = asset.previewUrl;
+        preview.append(player);
+      }
+    }
+    const image = preview.querySelector("img");
+    if (image) image.alt = description;
+    const pending = preview.querySelector(".asset-pending");
+    if (pending) pending.textContent = matrixCopy("assetPending");
+    $$('#live-form input[name="provider"]').forEach(radio => { radio.checked = radio.value === selectedProvider; radio.disabled = liveBusy; });
+    $("#compare-all").disabled = liveBusy;
+    $("#live-submit").textContent = matrixCopy($("#compare-all").checked ? "runCompare" : "run");
+    $("#live-count").textContent = `${Array.from($("#live-input").value || "").length} / 600`;
+    const saved = asset && asset.saved_result === `/data/examples/${asset.id}.json`;
+    $("#example-saved").textContent = COPY[pageLanguage].examples[saved ? "saved" : "savedPending"];
+  }
+
+  async function loadExampleText() {
+    const request = ++inputRequest;
+    const asset = selectedAsset();
+    inputLoadState = "";
+    if (selectedKind !== "text" || customText || !asset?.ready) return;
+    if (exampleTexts.has(asset.id)) { $("#live-input").value = exampleTexts.get(asset.id); return; }
+    $("#live-input").value = "";
+    inputLoadState = "textLoading";
+    renderMatrix();
+    try {
+      const response = await fetch(asset.url, { cache: "no-store" });
+      if (!response.ok) throw Error("missing text");
+      const text = await response.text();
+      if (!text.trim() || Array.from(text.trim()).length > 600) throw Error("invalid example text");
+      exampleTexts.set(asset.id, text);
+      if (request === inputRequest && !customText) { $("#live-input").value = text; inputLoadState = ""; }
+    } catch { if (request === inputRequest && !customText) inputLoadState = "textFailed"; }
+  }
+
+  async function selectMatrix(story, kind) {
+    if (liveBusy || !stories.some(row => row.id === story) || !exampleIds.includes(kind)) return;
+    ++resultRequest;
+    if (historyState === "historyOpening") historyState = "";
+    // Stop a previous story's narration when changing input.
+    for (const player of $$("#input-preview audio, #input-preview video")) player.pause?.();
+    selectedStory = story;
+    selectedKind = kind;
+    customText = false;
+    exampleSavedStatus = "";
+    if (kind === "text") $("#live-input").value = "";
+    await loadExampleText();
+    localizeLive();
+  }
+
+  function showResult(result, source = {}) {
+    liveResult = result;
+    const input = typeof result.input === "string" ? { text_read: result.input } : result.input;
+    resultContext = { ...source, text: input?.text_read ?? source.input_text ?? "",
+      provider: runReceipt(result).provider || source.provider || selectedProvider };
+    renderLiveTrace(result, $("#live-result"));
+    if ($("#result-edit")) $("#result-edit").hidden = false;
+  }
+
+  async function selectExampleSaved(id = selectedAsset()?.id) {
+    const request = ++resultRequest;
+    liveResult = null;
+    compareRuns = [];
+    $("#live-result").hidden = true;
+    liveStatus = "";
+    exampleSavedStatus = validId(id) ? "loading" : "savedPending";
+    localizeLive();
+    const asset = examplesIndex.find(row => row.id === id);
+    if (!validId(id) || asset?.saved_result !== `/data/examples/${id}.json`) {
+      exampleSavedStatus = "savedPending";
+      localizeLive();
+      return;
+    }
+    try {
+      const response = await fetch(`/data/examples/${encodeURIComponent(id)}.json`, { cache: "no-store" });
+      if (!response.ok) throw Error("saved example pending");
+      const result = await response.json();
+      if (request !== resultRequest) return;
+      if (result.mode !== "recorded" || result.input?.example_id !== id || typeof result.input.text_read !== "string") throw Error("invalid saved example");
+      exampleSavedStatus = "";
+      showResult(result);
+    } catch { if (request === resultRequest) exampleSavedStatus = "savedPending"; }
+    if (request === resultRequest) localizeLive();
+  }
+
+  function renderComparison() {
+    const target = $("#compare-result");
+    if (!target) return;
+    target.hidden = !compareRuns.length;
+    target.replaceChildren();
+    if (!compareRuns.length) return;
+    const table = liveNode("table", null, "compare-table");
+    table.append(liveNode("caption", matrixCopy("comparison")));
+    const head = liveNode("thead"), names = liveNode("tr"), body = liveNode("tbody");
+    compareRuns.forEach(result => { const th = liveNode("th", providerLabel(runReceipt(result).provider)); th.scope = "col"; names.append(th); });
+    head.append(names);
+    const fields = [
+      [liveCopy("verdict"), result => result._notRun ? matrixCopy("notRun") : result.error ? liveErrorText(result.error) : result.verdict ? liveVerdict(result.verdict) : "—"],
+      [matrixCopy("corrections"), result => result.error || result._notRun ? "—" : result.corrections?.edits?.length ?? result.corrections_count ?? "—"],
+      [matrixCopy("duration"), result => duration(runReceipt(result).latency_ms)],
+      [matrixCopy("cost"), result => money(runReceipt(result).cost_usd)],
+      [matrixCopy("prepCost"), result => runReceipt(result).preprocessing === null ? "$0.00000" : money(runReceipt(result).preprocessing?.cost_usd)]
+    ];
+    fields.forEach(([label, value]) => {
+      const row = liveNode("tr");
+      compareRuns.forEach(result => { const cell = liveNode("td"); cell.append(liveNode("span", label, "comparison-label"), liveNode("strong", value(result))); row.append(cell); });
+      body.append(row);
+    });
+    const actions = liveNode("tr");
+    compareRuns.forEach(result => {
+      const cell = liveNode("td"), button = liveNode("button", matrixCopy("openResult"), "live-example");
+      button.type = "button"; button.disabled = liveBusy || Boolean(result._notRun);
+      button.addEventListener("click", () => { ++resultRequest; showResult(result); });
+      cell.append(button); actions.append(cell);
+    });
+    body.append(actions); table.append(head, body); target.append(table);
+  }
+
+  async function refreshHistory() {
+    if (!$("#history-rows")) return;
+    const request = ++historyRequest;
+    historyState = "historyLoading";
+    renderHistory();
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 8000);
+    try {
+      const response = await fetch("/api/history?limit=50", { cache: "no-store", signal: controller.signal });
+      if (!response.ok) throw Error("history unavailable");
+      const data = await response.json(), rows = Array.isArray(data) ? data : data.rows || data.history || data.items;
+      if (!Array.isArray(rows)) throw Error("invalid history");
+      if (request !== historyRequest) return;
+      historyRows = rows.filter(row => row && validId(String(row.id))).slice(0, 50);
+      historyState = historyRows.length ? "" : "historyEmpty";
+    } catch { if (request === historyRequest) historyState = "historyUnavailable"; }
+    finally { clearTimeout(timer); }
+    if (request === historyRequest) renderHistory();
+  }
+
+  function renderHistory() {
+    const target = $("#history-rows");
+    if (!target) return;
+    $("#history-status").textContent = matrixCopy(historyState);
+    $("#history-refresh").disabled = historyState === "historyLoading";
+    $(".history-table").hidden = !historyRows.length;
+    target.replaceChildren();
+    historyRows.forEach(record => {
+      const row = liveNode("tr"), time = liveNode("td"), date = new Date(record.at);
+      const label = Number.isFinite(date.getTime()) ? date.toLocaleString(pageLanguage === "zh" ? "zh-TW" : "en-US",
+        { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : record.at || "—";
+      const open = liveNode("button", label, "history-open");
+      open.type = "button"; open.setAttribute("data-history-id", record.id); open.disabled = liveBusy;
+      open.setAttribute("aria-label", `${matrixCopy("openResult")}: ${label} · ${record.story || matrixCopy("custom")} · ${record.kind || "text"} · ${providerLabel(record.provider)}`);
+      open.addEventListener("click", event => { event?.stopPropagation?.(); return openHistoryRow(record); });
+      row.addEventListener("click", () => { if (!liveBusy) return openHistoryRow(record); });
+      time.append(open, liveNode("small", [record.device, record.browser].filter(Boolean).join(" / ") || "—"));
+      const input = liveNode("td");
+      input.append(liveNode("span", record.story || matrixCopy("custom")), liveNode("small", COPY[pageLanguage].examples[`${record.kind}Title`] || record.kind || "—"));
+      const provider = liveNode("td");
+      provider.append(liveNode("span", providerLabel(record.provider)), liveNode("small", record.verdict ? liveVerdict(record.verdict) : "—"));
+      const metrics = liveNode("td");
+      metrics.append(liveNode("span", duration(record.latency_ms)), liveNode("small", money(record.cost_usd)));
+      if (Number.isFinite(record.preprocessing_cost_usd) && record.preprocessing_cost_usd > 0)
+        metrics.append(liveNode("small", `+ ${money(record.preprocessing_cost_usd)} ${liveCopy("preprocessing")}`));
+      row.append(time, input, provider, metrics); target.append(row);
+    });
+  }
+
+  async function openHistoryRow(record) {
+    if (liveBusy || !validId(String(record.id))) return;
+    const request = ++resultRequest;
+    historyState = "historyOpening";
+    renderHistory();
+    try {
+      const response = await fetch(`/api/history/${encodeURIComponent(record.id)}`, { cache: "no-store" });
+      if (!response.ok) throw Error("missing history result");
+      const data = await response.json(), result = data.envelope || data;
+      if (!result || typeof result !== "object" || (!result.verdict && !result.error)) throw Error("invalid history envelope");
+      if (request !== resultRequest) return;
+      // Older rows can keep input/receipt fields alongside their envelope.
+      if (!result.input && typeof record.input_text === "string") result.input = { kind: record.kind, text_read: record.input_text, example_id: record.example_id, story: record.story };
+      if (!result.receipt) result.receipt = { provider: record.provider, model: record.model, latency_ms: record.latency_ms,
+        cost_usd: record.cost_usd, preprocessing: result.input?.preprocessing || (record.preprocessing_cost_usd ? { cost_usd: record.preprocessing_cost_usd } : null) };
+      compareRuns = []; exampleSavedStatus = ""; liveStatus = "";
+      historyState = "";
+      showResult(result, record);
+      localizeLive();
+      $("#live-result").focus?.({ preventScroll: true });
+      $("#live-result").scrollIntoView?.({ behavior: "smooth", block: "nearest" });
+    } catch { if (request === resultRequest) { historyState = "historyFailed"; renderHistory(); } }
+  }
+
+  function editResult() {
+    if (liveBusy || !resultContext) return;
+    ++resultRequest; ++inputRequest;
+    const sourceStory = liveResult.input?.story || resultContext.story;
+    if (stories.some(story => story.id === sourceStory)) selectedStory = sourceStory;
+    selectedKind = "text"; customText = true; inputLoadState = "";
+    $("#live-input").value = resultContext.text;
+    if (providers[resultContext.provider]) selectedProvider = resultContext.provider;
+    $("#compare-all").checked = false;
+    localizeLive();
+    $("#live-form").scrollIntoView?.({ behavior: "smooth", block: "start" });
+    $("#live-input").focus?.();
   }
 
   async function selectSavedDemo(kind) {
@@ -1096,74 +1439,104 @@
   function setupLive() {
     const form = $("#live-form");
     if (!form) return;
-    const input = $("#live-input");
-    const submit = $("#live-submit");
-    const password = $("#live-password");
+    const input = $("#live-input"), submit = $("#live-submit"), password = $("#live-password");
     password.value = "";
     try { password.value = sessionStorage.getItem(LIVE_PASSWORD_KEY) || ""; } catch { /* Storage may be blocked. */ }
-    const count = () => { $("#live-count").textContent = `${Array.from(input.value).length} / 600`; };
-    input.addEventListener("input", count);
-    $("#live-example").addEventListener("click", () => {
-      if (!input.disabled) { input.value = input.getAttribute("placeholder"); count(); input.focus(); }
+    input.addEventListener("input", () => { ++inputRequest; customText = true; inputLoadState = ""; renderMatrix(); renderLiveBudget(); });
+    $("#live-example").addEventListener("click", () => selectMatrix(selectedStory, "text"));
+    $$('[data-story-slot]').forEach((button, index) => button.addEventListener("click", () => selectMatrix(stories[index].id, selectedKind)));
+    $$('[data-input-kind]').forEach((button, index) => {
+      button.addEventListener("click", () => selectMatrix(selectedStory, button.dataset.inputKind));
+      button.addEventListener("keydown", event => {
+        const keys = { ArrowRight: (index + 1) % exampleIds.length, ArrowLeft: (index + exampleIds.length - 1) % exampleIds.length,
+          Home: 0, End: exampleIds.length - 1 };
+        if (keys[event.key] === undefined || liveBusy) return;
+        event.preventDefault();
+        const next = exampleIds[keys[event.key]];
+        selectMatrix(selectedStory, next);
+        $(`#input-tab-${next}`).focus();
+      });
     });
-    $$('[data-saved-demo]').forEach((button) => {
-      button.addEventListener("click", () => selectSavedDemo(button.dataset.savedDemo));
-    });
-    const runLive = async (exampleId = null) => {
-      if (submit.disabled) return;
+    $$('#live-form input[name="provider"]').forEach(radio => radio.addEventListener("change", () => {
+      if (!liveBusy && providers[radio.value]) selectedProvider = radio.value;
+    }));
+    $("#compare-all").addEventListener("change", renderMatrix);
+    $("#example-saved").addEventListener("click", () => selectExampleSaved());
+    $("#result-edit").addEventListener("click", editResult);
+    $("#history-refresh").addEventListener("click", refreshHistory);
+    $$('[data-saved-demo]').forEach(button => button.addEventListener("click", () => selectSavedDemo(button.dataset.savedDemo)));
+
+    const runLive = async () => {
+      if (submit.disabled || liveBusy) return;
       const attemptedPassword = password.value;
-      if (!attemptedPassword) {
-        liveStatus = "unauthorized"; localizeLive(); password.focus(); return;
-      }
-      if (!exampleId && (!input.value.trim() || Array.from(input.value.trim()).length > 600)) {
-        liveStatus = "invalid_input"; localizeLive(); return;
-      }
+      if (!attemptedPassword) { liveStatus = "unauthorized"; localizeLive(); password.focus(); return; }
+      const asset = selectedAsset(), exampleId = customText ? null : asset?.id;
+      const sentText = input.value.trim();
+      if (!exampleId && (!sentText || Array.from(sentText).length > 600)) { liveStatus = "invalid_input"; localizeLive(); return; }
+      const compare = $("#compare-all").checked;
+      const provider = selectedProvider;
+      const request = ++resultRequest;
+      rateLimitReset = null;
       liveBusy = true;
       form.setAttribute("aria-busy", "true");
-      liveResult = null;
+      liveResult = null; compareRuns = []; exampleSavedStatus = "";
       $("#live-result").hidden = true;
-      liveStatus = exampleId ? "mediaPending" : "pending";
+      liveStatus = compare ? "comparing" : exampleId && selectedKind !== "text" ? "mediaPending" : "pending";
       localizeLive();
       const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), exampleId ? 70000 : 32000);
+      // Comparison runs sequentially on the origin; allow all three bounded runs.
+      const timer = setTimeout(() => controller.abort(), compare ? 210000 : exampleId ? 70000 : 32000);
       try {
-        const sentText = exampleId ? null : input.value.trim();
-        const response = await fetch(exampleId ? "/api/check-example" : "/api/check", {
+        const response = await fetch(compare ? "/api/compare" : exampleId ? "/api/check-example" : "/api/check", {
           method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ ...(exampleId ? { example_id: exampleId } : { text: sentText }), password: attemptedPassword }), signal: controller.signal, cache: "no-store"
+          body: JSON.stringify({ ...(exampleId ? { example_id: exampleId } : { text: sentText }), password: attemptedPassword,
+            ...(compare ? { providers: Object.keys(providers) } : { provider }) }), signal: controller.signal, cache: "no-store"
         });
         const result = await response.json();
-        if (!exampleId) result.input = { kind: "text", text_read: sentText,
-          preprocessing: { model: "native-text", provider: "local", cost_usd: 0, latency_ms: 0 } };
+        if (request !== resultRequest) return;
+        if (["rate_limited", "auth_rate_limited"].includes(result.error) && Number.isFinite(result.retry_after) && result.retry_after >= 0)
+          rateLimitReset = Date.now() + result.retry_after * 1000;
         if (result.budget) liveBudget = result.budget;
+        if (compare && Array.isArray(result.runs) && result.runs.length) {
+          const runs = result.runs.slice(0, 3);
+          compareRuns = Object.keys(providers).map((id, index) => {
+            const run = runs.find(item => runReceipt(item).provider === id) ||
+              (runs[index] && !runReceipt(runs[index]).provider ? runs[index] : null);
+            return run ? { ...run, receipt: { ...runReceipt(run), provider: id } } : { _notRun: true, receipt: { provider: id } };
+          });
+          const first = compareRuns.find(run => !run.error && !run._notRun) || compareRuns.find(run => !run._notRun);
+          if (first) {
+            if (!first.input && !exampleId) first.input = { kind: "text", text_read: sentText };
+            showResult(first, { provider, input_text: sentText });
+          }
+        } else if (!compare && result && typeof result === "object") {
+          if (!result.input && !exampleId) result.input = { kind: "text", text_read: sentText };
+          if (response.ok || result.events?.length || result.receipt) showResult(result, { provider, input_text: sentText });
+        }
         if (!response.ok || result.error) {
           liveStatus = result.error || "unavailable";
           if (response.status === 401) {
             password.value = "";
             try { sessionStorage.removeItem(LIVE_PASSWORD_KEY); } catch { /* Storage may be blocked. */ }
           }
-          if (Array.isArray(result.events) && result.events.length) liveResult = result;
         } else {
+          if (compare && !compareRuns.length) throw Error("missing comparison runs");
           liveStatus = "complete";
-          liveResult = result;
           try { sessionStorage.setItem(LIVE_PASSWORD_KEY, attemptedPassword); } catch { /* Check succeeded without storage. */ }
         }
-      } catch (error) { liveStatus = error.name === "AbortError" ? "timeout" : "unavailable"; }
+      } catch (error) { if (request === resultRequest) liveStatus = error.name === "AbortError" ? "timeout" : "unavailable"; }
       finally {
         clearTimeout(timer);
-        await refreshLiveBudget();
+        await Promise.allSettled([refreshLiveBudget(), refreshHistory()]);
         liveBusy = false;
         form.setAttribute("aria-busy", "false");
         localizeLive();
       }
     };
-    form.addEventListener("submit", (event) => { event.preventDefault(); return runLive(); });
-    $$('[data-example-run]').forEach(button => button.addEventListener("click", () => {
-      if (!button.disabled) return runLive(button.dataset.exampleRun);
-    }));
-    $$('[data-example-saved]').forEach(button => button.addEventListener("click", () => selectExampleSaved(button.dataset.exampleSaved)));
+    form.addEventListener("submit", event => { event.preventDefault(); return runLive(); });
     loadExamples();
     refreshLiveBudget();
+    refreshHistory();
     document.addEventListener("visibilitychange", () => { if (!document.hidden) refreshLiveBudget(); });
     selectSavedDemo("post");
   }

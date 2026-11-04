@@ -16,7 +16,7 @@ SURFACES = (
     "docs/site/script.js",
 )
 CANONICAL = (
-    "$0.01 per live check", "$0.02 per claim", "6 s live", "10 s median",
+    "$0.01 per live check", "$0.02 per claim", "6–20 s live", "10 s median",
     "90.2% (240/266)", "1/139", "≈8,000 companies", "23 tested",
     "≤600 characters",
 )
@@ -29,7 +29,7 @@ def test_public_summaries_reject_old_number_variants(relative):
     source = (ROOT / relative).read_text()
     forbidden = re.findall(r"\$0\.020\b|0\.0099\d*|90\.5%", source)
     assert not forbidden, (relative, forbidden)
-    assert not re.search(r"6\.(?:3|34)\s*(?:s\b|秒)|240/266\s*[（(]90\.2%", source)
+    assert not re.search(r"(?<![\d.])6 s live|即時(?:查核需時)? 6 秒|240/266\s*[（(]90\.2%", source)
 
 
 @pytest.mark.parametrize("relative", (
@@ -90,6 +90,6 @@ def test_legacy_bookmarks_have_one_visible_reference_and_no_link_list():
         assert '<details class="earlier-sections">' not in source
         assert 'id="how" hidden></a>' in source
         assert f'Earlier anchors → <a href="{GUIDE_URL}">REVIEW_GUIDE.md</a>' in source
-        block = re.search(r'<div class="corrected-draft".*?</div>', source, re.S)[0]
-        assert len(re.findall(r"<p\b", block)) == 1
+        assert 'id="corrected-draft"' not in source
+        assert 'data-i18n="draft.rule"' not in source
         assert 'data-i18n="live.lede"' not in source

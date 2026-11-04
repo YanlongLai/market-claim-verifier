@@ -5,7 +5,7 @@
 
 網站：文字 ≤600 字元。
 即時查核每次 $0.01。
-即時查核需時 6 秒。
+即時查核需時 6–20 秒（單一主張 → 含四項主張的貼文）。
 保留測試準確率 90.2% (240/266)。
 
 [即時查核](https://hackathon.dappgo.com/#live-check)（需要密碼；已儲存範例免密碼）· [已儲存查核](https://hackathon.dappgo.com/zh/#recorded-run)
@@ -20,7 +20,7 @@
 | Which US stocks | US-GAAP SEC filers: ≈8,000 companies; 23 tested.<br>US-GAAP 美股申報公司：約 8,000 家，已測試 23 家。 |
 | Inputs | Website: text ≤600 characters. CLI: text, images, PDFs, audio and video.<br>網站：≤600 字元。CLI：文字、圖片、PDF、音訊與影片。 |
 | Price | $0.01 per live check; $0.02 per claim in the benchmark.<br>即時查核每次 $0.01；基準測試每題 $0.02。 |
-| Speed | 6 s live; 10 s median in the benchmark.<br>即時 6 秒；基準測試中位數 10 秒。 |
+| Speed | 6–20 s live (one claim → four-assertion post); 10 s median in the benchmark.<br>即時 6–20 秒（單一主張 → 含四項主張的貼文）；基準測試中位數 10 秒。 |
 | Accuracy | 90.2% (240/266) held out; false support 1/139.<br>保留測試 90.2% (240/266)；誤判為支持 1/139。 |
 | Fix the article? | Corrects disproved numbers and cites the filing.<br>修正被證明錯誤的數字，並附申報出處。 |
 
@@ -32,7 +32,7 @@ DappGo 發布美股評論；內部事實查核發現，數字正確也可能配�
 
 [原始保留文字測試](docs/evidence/eval-v2-2026-10-27/REPORT.md#metrics)：90.2% (240/266)，誤判為支持 1/139。兩個參考答案已修正；[註冊時答案評分](docs/evidence/eval-v2-2026-10-27/REPORT-registered-gold.md)仍保留。擷取可能遺漏主張；涵蓋率 ≠ 準確率；事後重查不等於保留測試，也沒有重測 OCR／ASR。
 
-[正式環境實測，2026-11-03](docs/evidence/live-prod-2026-11-03/REPORT.md)：Baseten `meta-models/muse-spark-open-1026`，每次 $0.01、6 秒，每日預算 $3。[真實貼文](https://hackathon.dappgo.com/wild/) · [完整限制與紀錄](docs/evidence/REVIEW_GUIDE.md#limits) · [原技術文件](docs/evidence/TECHNICAL_GUIDE.zh-TW.md)。
+[正式環境實測，2026-11-03](docs/evidence/live-prod-2026-11-03/REPORT.md)：Baseten `meta-models/muse-spark-open-1026`，每次 $0.01、單一主張 6.3 秒，每日預算 $3。[真實貼文](https://hackathon.dappgo.com/wild/) · [完整限制與紀錄](docs/evidence/REVIEW_GUIDE.md#limits) · [原技術文件](docs/evidence/TECHNICAL_GUIDE.zh-TW.md)。
 
 ## 離線驗證
 

@@ -5,7 +5,7 @@ Paste → Muse finds SEC evidence → Python decides + corrected draft.
 
 Website: text ≤600 characters.
 $0.01 per live check.
-6 s live.
+6–20 s live (one claim → four-assertion post).
 90.2% (240/266) held-out accuracy.
 
 [Live check](https://hackathon.dappgo.com/#live-check) (password-protected; saved examples need none) · [Saved check](https://hackathon.dappgo.com/#recorded-run)
@@ -20,7 +20,7 @@ $0.01 per live check.
 | Which US stocks | US-GAAP SEC filers: ≈8,000 companies; 23 tested.<br>US-GAAP 美股申報公司：約 8,000 家，已測試 23 家。 |
 | Inputs | Website: text ≤600 characters. CLI: text, images, PDFs, audio and video.<br>網站：≤600 字元。CLI：文字、圖片、PDF、音訊與影片。 |
 | Price | $0.01 per live check; $0.02 per claim in the benchmark.<br>即時查核每次 $0.01；基準測試每題 $0.02。 |
-| Speed | 6 s live; 10 s median in the benchmark.<br>即時 6 秒；基準測試中位數 10 秒。 |
+| Speed | 6–20 s live (one claim → four-assertion post); 10 s median in the benchmark.<br>即時 6–20 秒（單一主張 → 含四項主張的貼文）；基準測試中位數 10 秒。 |
 | Accuracy | 90.2% (240/266) held out; false support 1/139.<br>保留測試 90.2% (240/266)；誤判為支持 1/139。 |
 | Fix the article? | Corrects disproved numbers and cites the filing.<br>修正被證明錯誤的數字，並附申報出處。 |
 
@@ -34,7 +34,7 @@ DappGo publishes US-market commentary. An internal fact check found posts with t
 
 [Original held-out text results](docs/evidence/eval-v2-2026-10-27/REPORT.md#metrics): **90.2% (240/266)**, false support **1/139** reference contradicted/insufficient claims. Corrected gold includes two changes; [registered-gold scores](docs/evidence/eval-v2-2026-10-27/REPORT-registered-gold.md) remain available. These are benchmark results, not a guarantee on every post. Extraction can miss assertions; coverage ≠ accuracy; post-hoc rechecks are not held out.
 
-[Production check, 2026-11-03](docs/evidence/live-prod-2026-11-03/REPORT.md): Baseten `meta-models/muse-spark-open-1026`, $0.01 per live check, 6 s live; $3/day live budget. [In the wild](https://hackathon.dappgo.com/wild/) · [Evidence index](docs/evidence/INDEX.md) · [Detailed review and honesty labels](docs/evidence/REVIEW_GUIDE.md#limits).
+[Production check, 2026-11-03](docs/evidence/live-prod-2026-11-03/REPORT.md): Baseten `meta-models/muse-spark-open-1026`, $0.01 per live check, 6.3 s for one claim; $3/day live budget. [In the wild](https://hackathon.dappgo.com/wild/) · [Evidence index](docs/evidence/INDEX.md) · [Detailed review and honesty labels](docs/evidence/REVIEW_GUIDE.md#limits).
 
 ## Verify offline
 

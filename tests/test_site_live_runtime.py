@@ -10,7 +10,17 @@ from test_site_stamps_runtime import ROOT, run_check as run_scene_check
 
 def run_check(script, **config):
     config.setdefault("page", "docs/site/index.html")
-    run_scene_check(script, **config)
+    run_scene_check(PUBLIC_FIXTURES + script, **config)
+
+
+PUBLIC_FIXTURES = r"""
+const publicFixture = url => {
+  if(url==='/examples/manifest.json' || url==='/data/examples/index.json')return {ok:true,json:async()=>JSON.parse(readFileSync(root+'/docs/examples/manifest.json','utf8'))};
+  if(/^\/examples\/[a-z-]+\.txt$/.test(url))return {ok:true,text:async()=>readFileSync(root+'/docs'+url,'utf8')};
+  if(url==='/api/history?limit=50')return {ok:true,json:async()=>({rows:[]})};
+  return null;
+};
+"""
 
 
 @pytest.mark.parametrize("language", ["en", "zh"])
@@ -106,6 +116,7 @@ const ids=['post-text','claim-list','chart','posthoc-rerun','research-list'];
 const labels=ids.map(id=>tree.querySelector('#'+id).textContent);
 const requests=[];
 context.fetch=async url=>{
+  if(publicFixture(url))return publicFixture(url);
   requests.push(url);
   return {ok:true,json:async()=>JSON.parse(readFileSync(root+'/docs/site/data/site.json','utf8'))};
 };
@@ -207,6 +218,7 @@ context.fetch=async url=>({ok:true,json:async()=>url==='/api/check'?result:url==
   JSON.parse(readFileSync(root+'/docs/site/data/live-demo.json','utf8'))});
 context.liveTest.setupLive();await new Promise(resolve=>setImmediate(resolve));
 tree.querySelector('#live-input').value=config.corrections.original_text;
+tree.querySelector('#live-input').events.input();
 tree.querySelector('#live-password').value='offline-only';
 await tree.querySelector('#live-form').events.submit({preventDefault(){}});
 assert.equal(target.querySelector('.corrected-draft-text').querySelector('strong').textContent,'$102.5B');
@@ -276,8 +288,8 @@ for(const bound of [false,true]){
   result.cost_is_bound=bound;
   context.liveTest.renderLiveTrace(result,target);
   const seconds=config.language==='zh'?'秒':'s';
-  const metrics=target.querySelector('.trace-metrics').textContent;
-  assert.ok(metrics.endsWith(`: $0.06 · 38.4 ${seconds}`),metrics);
+  const metrics=target.querySelector('.live-receipt').textContent;
+  assert.ok(metrics.includes(`38.4 ${seconds}`) && metrics.includes(': $0.06'),metrics);
   const model=target.querySelector('.trace-model');
   assert.equal(model.querySelector('p').textContent,`38.4 ${seconds} · $0.06 · stop`);
   assert.equal(model.querySelector('.trace-time').textContent,`+12.3 ${seconds} · `);
@@ -298,7 +310,7 @@ context.liveTest.renderLiveTrace(demo,target);
 const verify=language=>{
   const head=target.querySelector('.trace-head'),corrections=target.querySelector('.live-corrections');
   const evidence=target.querySelector('.live-proof'),trace=target.querySelector('.live-trace');
-  assert.deepEqual(target.children.map(node=>node.className),['live-input-read','trace-head','live-corrections','live-proof','live-trace']);
+  assert.deepEqual(target.children.map(node=>node.className),['live-input-read','live-receipt','trace-head','live-corrections','live-proof','live-trace']);
   assert.equal(head.querySelector('.trace-verdict').textContent,language==='zh'?'證據矛盾':'Contradicted');
   assert.equal(evidence.querySelector('.live-claims').querySelectorAll('li').length,5);
   const draft=corrections.querySelector('.corrected-draft-text');
@@ -390,6 +402,7 @@ const claim=JSON.parse(readFileSync(root+'/docs/site/data/live-demo.json','utf8'
 const original=JSON.parse(readFileSync(root+'/docs/evidence/posts-2026-10-28/demo-thread-baseten/report.json','utf8')).post;
 const requests=[];
 context.fetch=async url=>{
+  if(publicFixture(url))return publicFixture(url);
   requests.push(url);assert.notEqual(url,'/api/check');
   if(url==='/api/budget')return {ok:true,json:async()=>({day:'2026-11-03',daily_limit_usd:3,daily_remaining_usd:3,
     resets_at:'2099-11-04T00:00:00Z',status:'ready'})};
@@ -401,9 +414,10 @@ await new Promise(resolve=>setImmediate(resolve));
 const input=tree.querySelector('#live-input'),target=tree.querySelector('#recorded-trace');
 const postButton=tree.querySelector('[data-saved-demo="post"]'),claimButton=tree.querySelector('[data-saved-demo="claim"]');
 input.focus=()=>{};
-assert.equal(input.getAttribute('placeholder'),original);assert.ok(Array.from(original).length<=600);
-tree.querySelector('#live-example').events.click();assert.equal(input.value,original);
-assert.equal(tree.querySelector('#live-count').textContent,Array.from(original).length+' / 600');
+const example=readFileSync(root+'/docs/examples/a.txt','utf8');
+assert.ok(Array.from(example).length<=600);
+await tree.querySelector('#live-example').events.click();assert.equal(input.value,example);
+assert.equal(tree.querySelector('#live-count').textContent,Array.from(example).length+' / 600');
 assert.equal(context.liveTest.state().savedLiveDemo.input,original);
 assert.equal(postButton.getAttribute('aria-pressed'),'true');
 assert.equal(claimButton.getAttribute('aria-pressed'),'false');
@@ -414,7 +428,7 @@ assert.equal(context.liveTest.state().savedLiveDemo.input,claim.input);
 assert.equal(claimButton.getAttribute('aria-pressed'),'true');
 assert.equal(target.querySelector('.corrected-draft-text').querySelectorAll('del').length,0);
 assert.equal(target.querySelector('.live-trace').open,true);
-tree.querySelector('#live-example').events.click();assert.equal(input.value,original);
+await tree.querySelector('#live-example').events.click();assert.equal(input.value,example);
 tree.querySelector('a[href="#recorded-run"]').events.click();
 assert.equal(tree.querySelector('#saved-check-details').open,true);
 assert.equal(context.liveTest.state().savedLiveDemo.input,original);
@@ -447,7 +461,7 @@ assert.equal(target.querySelector('.evidence-primary').textContent,config.langua
 assert.equal(target.querySelector('.live-trace').open,true);
 assert.ok(target.textContent.includes('FY2026Q3'));
 assert.ok(target.textContent.includes('0000320193-26-000020'));
-assert.ok(target.querySelector('.trace-metrics').textContent.includes('$0.01'));
+assert.ok(target.querySelector('.live-receipt').textContent.includes('$0.01'));
 assert.equal(target.querySelectorAll('a').length,2);
 assert.ok(target.textContent.includes('2026-10-28T06:12:13'));
 const unsafe=JSON.parse(JSON.stringify(demo));
@@ -470,6 +484,7 @@ const budget=()=>({day:'2026-11-02',daily_limit_usd:3,daily_remaining_usd:remain
 // Keep rollover timers inert in this DOM test; the real browser owns them.
 context.setTimeout=(fn,ms)=>ms>32000?0:setTimeout(fn,ms);context.clearTimeout=clearTimeout;
 context.fetch=async (url,opts)=>{
+  if(publicFixture(url))return publicFixture(url);
   if(url==='/data/examples/index.json')return {ok:true,json:async()=>JSON.parse(readFileSync(root+'/docs/site/data/examples/index.json','utf8'))};
   if(url==='/data/live-demo-post.json')return {ok:true,json:async()=>JSON.parse(readFileSync(root+'/docs/site/data/live-demo-post.json','utf8'))};
   if(url==='/api/budget'){budgetReads++;assert.equal(opts.cache,'no-store');return {ok:true,json:async()=>budget()};}
@@ -479,12 +494,12 @@ context.fetch=async (url,opts)=>{
 context.liveTest.setupLive();
 await new Promise(resolve=>setImmediate(resolve));
 const input=tree.querySelector('#live-input'),form=tree.querySelector('#live-form'),submit=tree.querySelector('#live-submit');
-input.value=demo.input;
+input.value=demo.input;input.events.input();
 tree.querySelector('#live-password').value='offline-password';
 const pending=form.events.submit({preventDefault(){}});
 assert.equal(submit.disabled,true);assert.equal(form.getAttribute('aria-busy'),'true');
 assert.equal(requests.length,1);assert.equal(requests[0].url,'/api/check');
-assert.deepEqual(JSON.parse(requests[0].opts.body),{text:demo.input,password:'offline-password'});
+assert.deepEqual(JSON.parse(requests[0].opts.body),{text:demo.input,password:'offline-password',provider:'baseten'});
 remaining=2.41;
 finish({ok:true,json:async()=>({...demo,mode:'live'})});await pending;
 assert.equal(budgetReads,2);
@@ -519,6 +534,7 @@ context.sessionStorage={
 context.localStorage.setItem=()=>assert.fail('password must never enter localStorage');
 let requests=[],finish;
 context.fetch=async (url,opts)=>{
+  if(publicFixture(url))return publicFixture(url);
   if(url==='/data/examples/index.json')return {ok:true,json:async()=>JSON.parse(readFileSync(root+'/docs/site/data/examples/index.json','utf8'))};
   if(url==='/data/live-demo-post.json')return {ok:true,json:async()=>JSON.parse(readFileSync(root+'/docs/site/data/live-demo-post.json','utf8'))};
   if(url==='/api/budget'){
@@ -532,7 +548,7 @@ context.fetch=async (url,opts)=>{
 const password=tree.querySelector('#live-password'),form=tree.querySelector('#live-form');
 password.value='';password.focus=()=>{};
 context.liveTest.setupLive();await new Promise(resolve=>setImmediate(resolve));
-const input=tree.querySelector('#live-input');input.value=demo.input;
+const input=tree.querySelector('#live-input');input.value=demo.input;input.events.input();
 assert.equal(password.value,'');assert.equal(password.getAttribute('type'),'password');
 assert.equal(password.getAttribute('autocomplete'),'off');assert.equal(form.getAttribute('method'),'post');
 assert.ok(tree.querySelector('#recorded-trace').textContent.includes('FY2025Q4'));
@@ -546,8 +562,8 @@ finish({ok:false,status:401,json:async()=>({error:'unauthorized'})});await denie
 assert.equal(writes.length,0);assert.equal(saved.size,0);assert.equal(password.value,'');
 password.value=credential;
 const locked=form.events.submit({preventDefault(){}});
-finish({ok:false,status:429,json:async()=>({error:'auth_rate_limited'})});await locked;
-assert.equal(writes.length,0);assert.ok(tree.querySelector('#live-status').textContent.includes('15'));
+finish({ok:false,status:429,json:async()=>({error:'auth_rate_limited',retry_after:900})});await locked;
+assert.equal(writes.length,0);assert.ok(tree.querySelector('#live-status').textContent.includes(config.language==='zh'?'重設時間':'Resets'));
 const success=form.events.submit({preventDefault(){}});
 assert.equal(writes.length,0);
 finish({ok:true,status:200,json:async()=>({...demo,mode:'live'})});await success;
@@ -555,7 +571,7 @@ assert.equal(password.disabled,false);
 assert.deepEqual(writes,config.blocked?[]:[{key,value:credential}]);
 for(const {url,opts} of requests){
   assert.equal(url,'/api/check');assert.ok(!JSON.stringify(opts.headers).includes(credential));
-  assert.deepEqual(JSON.parse(opts.body),{text:demo.input,password:credential});
+  assert.deepEqual(JSON.parse(opts.body),{text:demo.input,password:credential,provider:'baseten'});
 }
 assert.ok(!JSON.stringify(context.liveTest.state()).includes(credential));
 assert.ok(!tree.textContent.includes(credential));
@@ -575,6 +591,7 @@ context.sessionStorage={
   setItem(){assert.fail('reading a saved password must not save anything');}
 };
 context.fetch=async url=>{
+  if(publicFixture(url))return publicFixture(url);
   assert.notEqual(url,'/api/check');
   if(url==='/api/budget')return {ok:true,json:async()=>({day:'2026-11-02',daily_limit_usd:3,daily_remaining_usd:3,
     resets_at:'2099-11-03T00:00:00Z',status:'ready'})};
@@ -592,6 +609,7 @@ let data={day:'2026-11-02',daily_limit_usd:3,daily_spent_usd:.59,daily_remaining
   resets_at:'2026-11-03T00:00:00Z',status:'ready'};
 let fail=false, checks=0;
 context.fetch=async url=>{
+  if(publicFixture(url))return publicFixture(url);
   if(url==='/api/budget')return {ok:!fail,json:async()=>data};
   if(url==='/api/check'){checks++;assert.fail('stopped input must never submit');}
   return {ok:false};
