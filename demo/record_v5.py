@@ -172,7 +172,8 @@ def check_named_elements(receipt):
                 or r['left']>=r['right'] or r['top']>=r['bottom']):
                 raise RecordingError('Invalid native text line rectangle')
             edges=(band['top'],) if check['overlay_band']=='bottom' else (band['top'],band['bottom'])
-            if r['left']<band['right'] and r['right']>band['left'] and any(r['top']<y<r['bottom'] for y in edges):
+            # Sub-pixel tolerance matches the recorder's crossesCardEdge rule.
+            if r['left']<band['right'] and r['right']>band['left'] and any(r['top']<y-.75 and r['bottom']>y+.75 for y in edges):
                 raise RecordingError('Native text line or control crosses the card edge at cue onset')
         if check['phase']=='verdict_reveal':
             charge=audit.get('input_charge',{});heading=audit.get('corrected_heading',{})
