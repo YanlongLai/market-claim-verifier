@@ -37,6 +37,11 @@ def test_public_history_opens_full_envelope_then_edits_text_and_provider(languag
 
 
 @pytest.mark.parametrize("language", ["en", "zh"])
+def test_failed_history_keeps_cost_and_reads_error_from_saved_envelope(language):
+    run_check(SETUP + FAILED_HISTORY, language=language)
+
+
+@pytest.mark.parametrize("language", ["en", "zh"])
 def test_budget_partial_comparison_and_unavailable_history_keep_public_reads(language):
     run_check(SETUP + PARTIAL, language=language)
 
@@ -197,6 +202,29 @@ assert.ok(tree.querySelector('#live-result .live-receipt').textContent.includes(
 context.stamps.setLanguage(config.language==='zh'?'en':'zh');
 assert.equal(tree.querySelectorAll('.compare-table th').length,3);
 assert.equal(tree.querySelector('.compare-table caption').textContent,config.language==='zh'?'Provider comparison':'供應商比較');
+"""
+
+FAILED_HISTORY = r"""
+historyData=['provider_error','timeout','budget_exhausted','new_error'].map((error,i)=>({
+ id:`failed-${i}`,at:'2026-11-03T17:05:00Z',provider:'fireworks',kind:'text',
+ verdict:null,cost_usd:.04,latency_ms:60000,...(i===1?{}:{error})}));
+historyDetails['failed-1']={envelope:{error:'timeout'}};
+await click('#history-refresh');
+const chips=tree.querySelectorAll('#history-rows .history-verdict');
+assert.deepEqual(chips.map(chip=>chip.textContent),config.language==='zh'
+ ?['供應商錯誤','逾時','預算上限','失敗']:['Provider error','Timeout','Budget','Failed']);
+assert.ok(chips.every(chip=>chip.className.includes('is-unchecked')));
+assert.equal(tree.querySelector('#history-rows').textContent.split('$0.04').length-1,4);
+assert.equal(reads.filter(url=>url.startsWith('/api/history/')).length,1);
+assert.equal(paid.length,0);
+assert.equal(tree.querySelector('#fireworks-note').hidden,true);
+const radio=tree.querySelector('input[name="provider"][value="fireworks"]');
+radio.checked=true;await radio.events.change();
+assert.equal(tree.querySelector('#fireworks-note').hidden,false);
+assert.ok(tree.querySelector('#fireworks-note').textContent.includes(config.language==='zh'?'供應商端':'provider-side'));
+const baseten=tree.querySelector('input[name="provider"][value="baseten"]');
+baseten.checked=true;await baseten.events.change();
+assert.equal(tree.querySelector('#fireworks-note').hidden,true);
 """
 
 HISTORY = r"""
