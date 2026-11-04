@@ -13,6 +13,13 @@
 | Replay | [Saved check](https://hackathon.dappgo.com/#recorded-run) | No password; open the corrected draft, SEC citations and agent trace. |
 | Audit | [Original benchmark](docs/evidence/eval-v2-2026-10-27/REPORT.md#metrics) | Read held-out results, failures and the corrected-gold disclosure. |
 
+### What to try in 3 minutes
+
+1. **Saved check:** Open the [saved check](https://hackathon.dappgo.com/#recorded-run) with no password; inspect the corrected draft, SEC evidence and trace.
+2. **Live check:** Open the [live check](https://hackathon.dappgo.com/#live-check), use the team name as the password, and choose Baseten, Fireworks or Meta Model API.
+3. **Public history:** In the [live-check history](https://hackathon.dappgo.com/#live-check), reopen a result and inspect its provider, verdict, duration, cost and trace.
+4. **CLI quickstart:** Follow the [CLI quickstart](README.md#cli-quickstart) and run the offline dry-run command without a key or SEC fetch.
+
 ## The idea
 
 DappGo's internal fact checking found right numbers paired with wrong periods, units or comparisons.
