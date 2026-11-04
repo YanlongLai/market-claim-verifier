@@ -37,6 +37,15 @@ export function cardScrollDelta(audit,elements,scroll,maxScroll,{verdict=false}=
    return d;
   }catch{}
  }
+ // Edge-aligned candidates can all miss by sub-pixel margins; scan the feasible range finely.
+ const scan=[];for(let d=Math.ceil(low*2)/2;d<=high;d+=.5)scan.push(d);
+ for(const d of scan.sort((a,b)=>Math.abs(a)-Math.abs(b))){
+  try{
+   assertCardFrame({...audit,lines:audit.lines.map(r=>shifted(r,d)),controls:audit.controls.map(r=>shifted(r,d)),
+    input_charge:audit.input_charge&&shifted(audit.input_charge,d),corrected_heading:audit.corrected_heading&&shifted(audit.corrected_heading,d)},cardBands.bottom,{verdict});
+   return d;
+  }catch{}
+ }
  throw new Error('no_clean_card_band_for_native_state');
 }
 /** Serialized into the recorder page. Keep every browser dependency local. */

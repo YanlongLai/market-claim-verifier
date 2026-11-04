@@ -303,7 +303,7 @@ export async function record(config) {
         catch(error){
           // Geometry only (delivery pixels); retained so a host can see why no band fit.
           report.card_band_failure={stage,selector:typeof selector==='string'?selector:'locator',elements,scroll,maxScroll,
-            lines:surroundings.lines.filter(r=>r.bottom>0&&r.top<1080).map(r=>[Math.round(r.left),Math.round(r.top),Math.round(r.right),Math.round(r.bottom),r.text||'']),
+            input_charge:surroundings.input_charge,corrected_heading:surroundings.corrected_heading,lines:surroundings.lines.filter(r=>r.bottom>0&&r.top<1080).map(r=>[r.left,r.top,r.right,r.bottom,r.text||'']),
             controls:surroundings.controls.map(r=>[Math.round(r.left),Math.round(r.top),Math.round(r.right),Math.round(r.bottom)])};
           throw error;
         }
