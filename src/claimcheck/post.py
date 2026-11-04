@@ -301,6 +301,7 @@ def extract_claims(
         attempt += 1
         reservation = ledger.reserve(request, model=model, max_output_tokens=max_output_tokens, provider=provider)
         started = time.perf_counter()
+        recorder.event("model", phase="extraction")
         try:
             response = adapter.call(client, request)
             break
@@ -459,6 +460,7 @@ def check_post(
     published_at: str | None = None,
     issuer_country: str | None = None,
     issuer_exchange: str | None = None,
+    on_event: Callable[[str, dict], None] | None = None,
 ) -> dict[str, Any]:
     if event_context is not None:
         from .event_context import validate_event_context
@@ -469,7 +471,8 @@ def check_post(
     traces = out_dir / "traces"
     started = time.perf_counter()
     ledger.stage = "claim_extraction"
-    extraction_trace = TraceRecorder("[extraction] " + post[:200], model, provider=provider, secrets=secrets)
+    extraction_trace = TraceRecorder("[extraction] " + post[:200], model, provider=provider,
+                                     secrets=secrets, on_event=on_event)
     from .policy import policy_for
     extraction_trace.verification_policy = policy_for(edgar).to_dict()
     extraction_effort = extraction_reasoning_effort
@@ -524,7 +527,8 @@ def check_post(
             continue
         window_counts[available] = window_counts.get(available, 0) + 1
         verified += 1
-        recorder = TraceRecorder(item["claim"], model, provider=provider, secrets=secrets)
+        recorder = TraceRecorder(item["claim"], model, provider=provider, secrets=secrets, on_event=on_event)
+        recorder.event("claim", phase="verification", claim_index=item["index"])
         from .issuer import quote_issuer_context
         issuer_text, issuer_context = quote_issuer_context(edgar, item["quote"], post)
         if issuer_context:

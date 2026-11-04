@@ -32,13 +32,14 @@ from .evaluate import (
     run_evaluation,
 )
 from .prompts import export_prompt_files
+from .progress import CLIProgress
 from .providers import (
     PROVIDERS,
     canonical_system,
     create_client,
     system_parts,
 )
-from .trace import TraceRecorder, write_trace
+from .trace import TraceRecorder, redact, write_trace
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -78,6 +79,7 @@ def _parser() -> argparse.ArgumentParser:
     post.add_argument("--max-output-tokens", type=_positive_int)
     post.add_argument("--reasoning-effort")
     post.add_argument("--out", type=Path, help="output directory (default runs/posts/<UTC time>)")
+    post.add_argument("--dry-run", action="store_true", help="preview extraction without keys, paid calls or SEC fetches")
 
     ingest = subparsers.add_parser("ingest", help="decode text, PDF, screenshot, audio or video and check its claims")
     ingest.add_argument("file", type=Path)
@@ -483,6 +485,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             model,
             provider=provider,
             secrets=[settings.model_api_key],
+            on_event=CLIProgress(secrets=[settings.model_api_key]),
         )
         result = verify_claim(
             args.claim,
@@ -500,23 +503,47 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
         trace_path = write_trace(settings.runs_dir, recorder)
         result = {**result, "trace_path": str(trace_path), **recorder.summary()}
-        _print_json(result)
+        _print_json(redact(result, [settings.model_api_key]))
         return 0
     except (BudgetExceeded, UnknownModel) as exc:
         print(f"Verification refused: {exc}", file=sys.stderr)
         return 2
     except Exception as exc:
-        print(f"Verification failed: {exc}", file=sys.stderr)
+        print(f"Verification failed: {type(exc).__name__}", file=sys.stderr)
         return 1
 
 
 def _run_post(args: argparse.Namespace, settings: object) -> int:
-    from .post import PostError, check_post
+    from .post import (MAX_EXTRACTION_TOKENS, MAX_POST_CHARS, PostError, _extraction_payload,
+                       check_post, extraction_windows)
+    from .providers import get_provider
 
     text = sys.stdin.read() if args.file == "-" else Path(args.file).read_text(encoding="utf-8")
     provider = settings.provider
     model = args.model or settings.model
     budget = settings.budget_usd if args.budget is None else args.budget
+    progress = CLIProgress(secrets=[settings.model_api_key])
+    print("Local · CLI" + (" · dry run (no paid call)" if args.dry_run else ""), file=sys.stderr, flush=True)
+    progress("start", {"provider": provider, "model": model, "kind": "text", "chars": len(text)})
+    if args.dry_run:
+        try:
+            if not text.strip() or len(text) > MAX_POST_CHARS:
+                raise PostError(f"post must contain 1 to {MAX_POST_CHARS} characters")
+            start, end = extraction_windows(text)[0]
+            request = _extraction_payload(get_provider(provider), text[start:end], model)
+            reservation = Ledger(settings.runs_dir / "ledger.jsonl", persist=False,
+                                 budget_usd=budget, provider=provider).preview(
+                request, model=model, max_output_tokens=MAX_EXTRACTION_TOKENS, provider=provider)
+        except (BudgetExceeded, UnknownModel, PostError) as exc:
+            print(f"Dry-run refused: {exc}", file=sys.stderr)
+            return 2
+        _print_json(redact({"dry_run": True, "provider": provider, "model": model,
+                           "budget_usd": budget, "cost_usd": 0.0,
+                           "request": request, "reservation": reservation.as_dict(),
+                           "note": "Extraction preview only; later verification calls depend on model output."},
+                          [settings.model_api_key]))
+        progress("receipt", {"phase": "dry_run", "cost_usd": 0.0})
+        return 0
     if not settings.model_api_key:
         print(f"Missing {provider} model API key.", file=sys.stderr)
         return 2
@@ -538,14 +565,22 @@ def _run_post(args: argparse.Namespace, settings: object) -> int:
             published_at=args.published_at,
             issuer_country=args.issuer_country,
             issuer_exchange=args.issuer_exchange,
+            on_event=progress,
         )
     except (BudgetExceeded, UnknownModel) as exc:
         print(f"Post check refused: {exc}", file=sys.stderr)
         return 2
     except PostError as exc:
-        print(f"Post check failed: {exc}", file=sys.stderr)
+        print(redact(f"Post check failed: {exc}", [settings.model_api_key]), file=sys.stderr)
         return 1
-    _print_json({
+    except Exception as exc:
+        progress("error", {"code": "failed"})
+        print(f"Post check failed: {type(exc).__name__}; inspect retained traces.", file=sys.stderr)
+        return 1
+    progress("receipt", {"claims": len(report["claims"]), "cost_usd": report["cost_usd"], **report["verdicts"]})
+    _print_json(redact({
+        "provider": provider,
+        "model": model,
         "out": str(out),
         "report": str(Path(out) / "report.html"),
         "counts": report["counts"],
@@ -555,7 +590,7 @@ def _run_post(args: argparse.Namespace, settings: object) -> int:
             {k: item.get(k) for k in ("index", "quote", "claim", "kind", "status", "verdict", "screen_reason")}
             for item in report["claims"]
         ],
-    })
+    }, [settings.model_api_key]))
     return 0
 
 

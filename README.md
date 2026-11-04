@@ -119,8 +119,7 @@ The screenshots show local rendering of retained data, not a new production run.
 
 ### CLI quickstart
 
-Requires Python 3.12–3.14 and `uv`; Node 22+ is also needed for full verification.
-[Prerequisites and offline verification](AGENTS.md#offline-verification).
+Requires Python 3.12–3.14 and `uv`; Node 22+ is also needed for full verification. [Prerequisites and offline verification](AGENTS.md#offline-verification).
 
 ```sh
 git clone https://github.com/YanlongLai/market-claim-verifier.git
@@ -158,11 +157,6 @@ uv run python -m claimcheck ingest docs/examples/post.mp3 --provider baseten --b
 uv run python -m claimcheck ingest docs/examples/post.mp4 --provider baseten --budget 1
 ```
 
-Image/audio/video preprocessing additionally requires `MODEL_API_KEY`. Audio/video decoding
-requires FFmpeg/ffprobe. Fireworks verification uses `FIREWORKS_API_KEY`; Meta uses `MODEL_API_KEY`.
-These commands make paid requests except `--dry-run`. A ceiling is authorization to spend up to
-that amount, not a fixed price. [CLI reference](docs/evidence/TECHNICAL_GUIDE.md#run-it)
-
 A readable excerpt of the [saved Apple correction](docs/evidence/posts-2026-10-28/demo-thread-baseten/report.json)
 (the display rounds the retained source values; this is not newly generated CLI output):
 
@@ -175,6 +169,30 @@ Citations: both component SEC filings retained in the report
 ```
 
 [Correction calculation and replay limits](docs/evidence/corrected-draft-2026-11-03/REPORT.md#retained-apple-example)
+
+### Models & keys
+
+Choose `--provider baseten`, `--provider fireworks` or `--provider meta`; otherwise `CLAIMCHECK_PROVIDER` applies (CLI default: `meta`). All verifier models are Meta Muse models.
+
+| Provider | Key environment variable | Key-file override and default | Default model ID |
+| --- | --- | --- | --- |
+| Baseten | `BASETEN_API_KEY` | `BASETEN_API_KEY_FILE`; `~/secret/baseten_api_key.txt` (raw key) | `meta-models/muse-spark-open-1026` |
+| Fireworks | `FIREWORKS_API_KEY` | `FIREWORKS_API_KEY_FILE`; `~/secret/fireworks-api-key.txt` (raw key) | `accounts/fireworks/models/muse-spark-open` |
+| Meta Model API | `MODEL_API_KEY` | `MODEL_API_KEY_FILE`; `~/.config/dappgo/meta-model-api.env` (a `MODEL_API_KEY=your-key` line) | `muse-spark-1.3` |
+
+A nonempty environment key wins over its file. Keep key files outside the repository with `chmod 600`; never put keys in command arguments, recordings or commits.
+
+Override the verifier with `--model ID` or `CLAIMCHECK_MODEL=ID` (flag wins). Use the exact IDs above; Meta also has ledger support for `muse-wonder-1.0`. Unknown pairs are refused before a paid model call. OCR always uses Meta `muse-spark-1.3`; ASR uses `muse-voice-transcribe-1.0`. Both require local `MODEL_API_KEY` or its Meta key file even for Baseten/Fireworks verification. Native-text PDF decoding needs no OCR key; audio/video requires FFmpeg/ffprobe.
+
+`--budget` sets a USD ceiling for extraction and all verification calls (default: `CLAIMCHECK_BUDGET_USD` or $0.50); the selected provider's existing ledger spend counts. Ingest uses a separate ledger and splits mixed-provider budgets equally. `verify --dry-run` and `post --dry-run` skip key-file reads, model calls and SEC fetches; post previews only initial extraction. `ingest` has no dry-run flag. [Exact setup, precedence and budgets](docs/PROVIDERS.md#models--keys) · [CLI reference](docs/evidence/TECHNICAL_GUIDE.md#run-it).
+
+**Online (site) vs Local (CLI).** The site uses Kubernetes Secret `live-check-secrets` in `dappgo-hackathon`, containing the three server keys below, `LIVE_CHECK_PASSWORD` and `LIVE_ORIGIN_TOKEN`. Visitors enter the review password; provider keys stay on the server. Site spending limits are separate from local ledgers. [Deployment](deploy/README.md#configuration-and-persistence) · [Real online log and local CLI recording](docs/REAL_TRACES.md).
+
+| Provider | Online (site) | Local (CLI) |
+| --- | --- | --- |
+| Baseten | Server `BASETEN_API_KEY`; fixed default model | Your `BASETEN_API_KEY` or raw-key file; `--provider baseten` |
+| Fireworks | Server `FIREWORKS_API_KEY`; fixed default model | Your `FIREWORKS_API_KEY` or raw-key file; `--provider fireworks` |
+| Meta Model API | Server `META_MODEL_API_KEY` for verification and OCR/ASR | Your `MODEL_API_KEY` or Meta env file; `--provider meta` |
 
 ## Cost & speed
 

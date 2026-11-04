@@ -9,12 +9,14 @@ import asyncio
 from dataclasses import replace
 import hashlib
 import json
+import logging
 import re
 import time
 import threading
 from datetime import datetime, timezone
 from types import SimpleNamespace
 from typing import Any
+from uuid import uuid4
 
 from claimcheck.agent import SYSTEM_INSTRUCTIONS, VERDICT_SCHEMA, _parse_strict_verdict
 from claimcheck.budget import Ledger
@@ -22,6 +24,7 @@ from claimcheck.checks import evaluate_verdict
 from claimcheck.correction import build_corrections
 from claimcheck.edgar import EdgarClient
 from claimcheck.program_summary import program_summary
+from claimcheck.progress import format_event
 from claimcheck.period_context import missing_period_reason
 from claimcheck.providers import BASETEN_DEFAULT_MODEL, get_provider
 from claimcheck.tools import TOOL_DEFINITIONS, ToolRunner
@@ -33,6 +36,7 @@ MAX_TOOLS = 14
 MAX_ISSUERS = 4
 SCOPE = "US equities with SEC companyfacts only; no prices, forecasts, crypto, non-GAAP or investment advice."
 SEC_AGENT = "DappGo market-claim-verifier admin@dappgo.com"
+LOG = logging.getLogger("claimcheck.live")
 TOOL_NAMES = {"lookup_fact", "list_periods", "compute_change", "history_rank"}
 TOOLS = [{"type": "function", "function": {k: v for k, v in t.items() if k != "type"}}
          for t in TOOL_DEFINITIONS if t.get("name") in TOOL_NAMES]
@@ -174,7 +178,7 @@ def finish(claim: str, final: dict, runner: ToolRunner) -> dict:
 
 
 class LiveRun:
-    def __init__(self, model, sec, gate, *, provider="baseten", clock=time.monotonic):
+    def __init__(self, model, sec, gate, *, provider="baseten", clock=time.monotonic, log_secrets=()):
         self.model, self.gate, self.clock = model, gate, clock
         self.provider = validate_provider(provider)
         self.adapter = get_provider(self.provider)
@@ -186,16 +190,28 @@ class LiveRun:
         self.cost = 0.0
         self.cost_is_bound = False
         self.start = clock()
+        self.request_id = uuid4().hex
+        self.log_secrets = log_secrets
+
+    def log(self, event_kind, **fields):
+        LOG.info("%s", format_event(f"live id={self.request_id}", self.clock() - self.start,
+                                    event_kind, fields, secrets=self.log_secrets))
+
+    def log_start(self, chars=0):
+        self.log("start", provider=self.provider, model=self.adapter.default_model,
+                 kind=self.input_info["kind"], chars=chars)
 
     def event(self, kind: str, **fields):
         self.events.append({"kind": kind, "at_ms": round((self.clock() - self.start) * 1000, 3),
                             "timestamp": datetime.now(timezone.utc).isoformat(), **fields})
+        self.log(kind, **fields)
 
     def envelope(self, **fields):
         latency = round((self.clock() - self.start) * 1000, 3)
         prep_cost = self.preprocessing["cost_usd"] if self.preprocessing else 0.0
         prep_latency = self.preprocessing["latency_ms"] if self.preprocessing else 0.0
-        return {"mode": "live", "model": self.adapter.default_model, "provider": self.provider, "events": self.events,
+        return {"mode": "live", "request_id": self.request_id,
+                "model": self.adapter.default_model, "provider": self.provider, "events": self.events,
                 "evidence": list(self.runner.evidence.values()),
                 "cost_usd": self.cost, "cost_is_bound": self.cost_is_bound,
                 "latency_ms": latency, "input": self.input_info,
@@ -213,7 +229,8 @@ class LiveRun:
                      "program_verdict": "insufficient_evidence", "reason": reason,
                      "evidence_ids": [], "flags": ["missing_period"], "evidence_strength": "low"}
             self.event("program_check", check=check)
-            self.event("verdict", verdict="insufficient_evidence")
+            self.event("verdict", verdict="insufficient_evidence", claims=1,
+                       cost_usd=self.cost, cost_is_bound=self.cost_is_bound)
             return self.envelope(verdict="insufficient_evidence", model_verdict=None,
                                  claims=[check], evidence=[], scope=SCOPE, summary=reason,
                                  corrections=build_corrections(claim, [check], []))
@@ -242,6 +259,7 @@ class LiveRun:
             self.cost += reservation["amount"]
             self.cost_is_bound = True
             before = self.clock()
+            self.log("model", phase="running", step=turn + 1)
             response = await self.model(payload)  # no automatic retry
             if not isinstance(response, dict):
                 raise LiveError("provider_error")
@@ -258,7 +276,7 @@ class LiveRun:
                     chat=SimpleNamespace(completions=create)), payload)
             except (TypeError, ValueError, KeyError, AttributeError, IndexError):
                 raise LiveError("provider_error")
-            self.event("model", step=turn + 1, latency_ms=round((self.clock() - before) * 1000, 3),
+            self.event("model", phase="completed", step=turn + 1, latency_ms=round((self.clock() - before) * 1000, 3),
                        cost_usd=actual if actual is not None else reservation["amount"],
                        cost_is_bound=actual is None, finish_reason=parsed.finish_reason)
             if parsed.status != "completed" or (self.adapter.chat_completions and
@@ -316,7 +334,8 @@ class LiveRun:
                 if binding := check.get("evidence_binding"):
                     self.event("program_binding", claim_index=index, role="program", **binding)
                 self.event("program_check", check=check)
-            self.event("verdict", verdict=result["verdict"])
+            self.event("verdict", verdict=result["verdict"], claims=len(result["claims"]),
+                       cost_usd=self.cost, cost_is_bound=self.cost_is_bound)
             return self.envelope(**result)
         raise LiveError("invalid_model_output")
 
@@ -336,8 +355,9 @@ class ExampleRun(LiveRun):
     Only temporary ingest receipts are written here. The HTTP adapter retains
     the public envelope after the run.
     """
-    def __init__(self, model, sec, gate, media, example_id, kind, *, provider="baseten", story=None, clock=time.monotonic):
-        super().__init__(model, sec, gate, provider=provider, clock=clock)
+    def __init__(self, model, sec, gate, media, example_id, kind, *, provider="baseten", story=None,
+                 clock=time.monotonic, log_secrets=()):
+        super().__init__(model, sec, gate, provider=provider, clock=clock, log_secrets=log_secrets)
         from claimcheck.ingest_media import ASR_MODEL
         from claimcheck.providers import META_DEFAULT_MODEL
         models = {"text": "native-text", "pdf": "native-pdf", "image": META_DEFAULT_MODEL,
@@ -495,4 +515,6 @@ class ExampleRun(LiveRun):
         # hash-checked media can contain four readings (audio + three frames).
         if not text.strip() or len(text) > 12_000:
             raise LiveError("preprocessing_failed")
+        self.event("preprocessing", phase="completed", chars=len(text),
+                   cost_usd=self.preprocessing["cost_usd"])
         return await self.run(text)

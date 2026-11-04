@@ -8,7 +8,7 @@ import uuid
 from collections.abc import Mapping
 from datetime import date, datetime, timezone
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any, Callable, Iterable
 
 
 _SENSITIVE_KEY_PARTS = (
@@ -124,6 +124,7 @@ class TraceRecorder:
         *,
         provider: str = "meta",
         secrets: Iterable[str] = (),
+        on_event: Callable[[str, dict], None] | None = None,
     ) -> None:
         self.verification_policy: dict[str, Any] | None = None
         self.claim = claim
@@ -137,6 +138,11 @@ class TraceRecorder:
         self.program_events: list[dict[str, Any]] = []
         self.incomplete_turns: list[dict[str, Any]] = []
         self.previous_response_fallback = False
+        self.on_event = on_event
+
+    def event(self, kind: str, **fields: Any) -> None:
+        if self.on_event is not None:
+            self.on_event(kind, fields)
 
     def record_request(
         self,
@@ -177,6 +183,7 @@ class TraceRecorder:
         if retry is not None:
             entry["retry"] = redact(dict(retry), self.secrets)
         self.requests.append(entry)
+        self.event("model", phase="completed", cost_usd=cost, count=len(self.requests))
 
     def mark_previous_response_fallback(self) -> None:
         self.previous_response_fallback = True
@@ -220,6 +227,7 @@ class TraceRecorder:
         if role is not None:
             entry["role"] = role
         self.tool_calls.append(entry)
+        self.event("tool_result", name=name, result=entry["result"])
 
     def record_program_event(self, event: Mapping[str, Any]) -> None:
         self.program_events.append(redact(model_dump(event), self.secrets))
@@ -229,6 +237,7 @@ class TraceRecorder:
             verdict["verification_policy"] = self.verification_policy
         self.final_verdict = redact(model_dump(verdict), self.secrets)
         self.program_checks = list(verdict.get("program_checks", []))
+        self.event("verdict", verdict=verdict.get("verdict"), cost_usd=self.total_cost)
 
     @property
     def total_cost(self) -> float:

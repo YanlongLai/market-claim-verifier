@@ -8,6 +8,7 @@ import hashlib
 import hmac
 import ipaddress
 import json
+import logging
 import os
 from pathlib import Path
 import re
@@ -361,6 +362,8 @@ def reply(value, status=200, *, public=False):
 
 
 def failure_envelope(run, error):
+    run.log("error", code=error.code, status=error.status, cost_usd=run.cost,
+            cost_is_bound=run.cost_is_bound)
     return {**run.envelope(), "error": error.code, "demo": "data/live-demo.json",
             **({"budget": error.budget} if error.budget else {})}
 
@@ -369,13 +372,17 @@ async def execute(services, request, provider, *, claim=None, example=None):
     async def model(payload):
         return await services.model(payload, provider=provider)
 
+    log_secrets = (services.settings.api_key, services.settings.fireworks_api_key,
+                   services.settings.meta_api_key, services.settings.password, services.settings.origin_token)
     if example:
         example_id, path, kind = example
         run = ExampleRun(model, services.sec, services.gate, services.media, example_id, kind,
-                         provider=provider, story=example_id.split("-")[0] if "-" in example_id else "a")
+                         provider=provider, story=example_id.split("-")[0] if "-" in example_id else "a",
+                         log_secrets=log_secrets)
     else:
-        run = LiveRun(model, services.sec, services.gate, provider=provider)
+        run = LiveRun(model, services.sec, services.gate, provider=provider, log_secrets=log_secrets)
         run.input_info["text_read"] = claim
+    run.log_start(len(claim) if claim is not None else 0)
     status = 200
     try:
         async with asyncio.timeout(EXAMPLE_TIMEOUT if example else 55):
@@ -526,6 +533,10 @@ def create_app(settings, *, client=None, clock=time.time):
 
 if __name__ == "__main__":
     os.umask(0o077)
+    logger = logging.getLogger("claimcheck.live")
+    logger.setLevel(logging.INFO)
+    logger.addHandler(logging.StreamHandler())
+    logger.propagate = False
     try:
         settings = Settings.from_env()
     except (OSError, ValueError):

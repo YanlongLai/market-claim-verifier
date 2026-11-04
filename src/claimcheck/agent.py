@@ -620,6 +620,7 @@ def _request_with_retry(
                 provider=active_provider.name,
             )
             started = time.perf_counter()
+            recorder.event("model", phase="running")
             try:
                 response = active_provider.call(client, request_payload)
             except Exception as exc:
@@ -826,6 +827,7 @@ def verify_claim(
                 args = json.loads(call.arguments)
             except (TypeError, json.JSONDecodeError):
                 args = call.arguments
+            recorder.event("tool_call", name=name, arguments=args)
             result = runner.dispatch(name, args)
             call_id = call.call_id
             recorder.record_tool_call(name=name, arguments=args, call_id=call_id, result=result)

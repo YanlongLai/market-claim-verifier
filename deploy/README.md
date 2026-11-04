@@ -99,6 +99,28 @@ Apply the same configuration only to previews explicitly intended to share the *
 
 Verify `/api/budget` through Pages first: it uses no model or SEC requests. With Access missing/bad configuration, the proxy returns 503 plus `demo: "data/live-demo.json"`. With configuration correct, it returns only daily aggregate fields. Visiting the tunnel hostname without service credentials should be denied by Access; requests that bypass Access but lack the origin token must still fail. Any fresh paid model smoke check requires a separate operator decision; no paid check is part of this handoff.
 
+## Tail real request logs
+
+After the owner deploys this image, SSH to cp-1 and follow the real process output:
+
+```sh
+ssh dappgo-ha-cp-1
+sudo k3s kubectl -n dappgo-hackathon logs -f deployment/live-check
+```
+
+Each INFO line starts with `live id=<request_id> +<elapsed>s event=<name>`, followed by
+safe `key=value` summaries. The response envelope carries the same `request_id`; each compare
+member has its own ID. Start, model, tool-call/result, program-check and verdict/error events
+contain no secrets, IP addresses, raw input or private model reasoning. A final verdict includes
+claim count, cost and whether any cost remains a reservation. Logging does not change gate
+transitions, ledger settlement, history retention or the existing public input/history policy.
+
+For host-side JSONL capture alongside the video recorder, use
+[`scripts/tail_live_log.py`](../scripts/tail_live_log.py) with `DAPPGO_HA_SUDO_FILE` pointing
+to a private password file. It sends the password to `sudo -S` over SSH stdin, retains every
+live line in a separate spool, and supports a response ID learned after the verdict.
+[Exact capture commands and the two on-screen labels](../docs/REAL_TRACES.md).
+
 ## Rollback and optional Worker
 
 Rollback by importing/reapplying the previous immutable image tag against the **same PVC**, still one replica with Recreate. Preserve current lifetime/credit stops; never restore an earlier ledger. Rotating Kubernetes secrets requires `kubectl -n dappgo-hackathon rollout restart deployment/live-check`; rotate the matching Pages origin token and redeploy Pages together.

@@ -154,11 +154,6 @@ uv run python -m claimcheck ingest docs/examples/post.mp3 --provider baseten --b
 uv run python -m claimcheck ingest docs/examples/post.mp4 --provider baseten --budget 1
 ```
 
-圖片／音訊／影片前處理另需 `MODEL_API_KEY`。影音解碼
-需要 FFmpeg／ffprobe。Fireworks 查核使用 `FIREWORKS_API_KEY`；Meta 使用 `MODEL_API_KEY`。
-除了 `--dry-run` 外，上列指令會產生付費請求。上限表示允許花費的最大金額，
-並非固定售價。[CLI 參考](docs/evidence/TECHNICAL_GUIDE.md#run-it)
-
 以下是[已儲存 Apple 修正](docs/evidence/posts-2026-10-28/demo-thread-baseten/report.json)的可讀摘錄，
 顯示值依保留來源四捨五入；並非新產生的 CLI 輸出：
 
@@ -171,6 +166,30 @@ Citations: both component SEC filings retained in the report
 ```
 
 [修正計算與重播限制](docs/evidence/corrected-draft-2026-11-03/REPORT.md#retained-apple-example)
+
+### 模型與金鑰
+
+以 `--provider baseten`、`--provider fireworks` 或 `--provider meta` 選擇供應商；未指定時讀取 `CLAIMCHECK_PROVIDER`，CLI 預設為 `meta`。查核使用的都是 Meta Muse 模型。
+
+| 供應商 | 金鑰環境變數 | 金鑰檔設定與預設位置 | 預設模型識別碼 |
+| --- | --- | --- | --- |
+| Baseten | `BASETEN_API_KEY` | `BASETEN_API_KEY_FILE`；`~/secret/baseten_api_key.txt`，只放金鑰 | `meta-models/muse-spark-open-1026` |
+| Fireworks | `FIREWORKS_API_KEY` | `FIREWORKS_API_KEY_FILE`；`~/secret/fireworks-api-key.txt`，只放金鑰 | `accounts/fireworks/models/muse-spark-open` |
+| Meta Model API | `MODEL_API_KEY` | `MODEL_API_KEY_FILE`；`~/.config/dappgo/meta-model-api.env`，使用 `MODEL_API_KEY=your-key` 一行 | `muse-spark-1.3` |
+
+非空的環境金鑰優先於檔案。金鑰檔放在儲存庫外，權限設為 `chmod 600`；不要放進指令參數、錄影或提交紀錄中。
+
+查核模型可用 `--model ID` 或 `CLAIMCHECK_MODEL=ID` 覆寫，旗標優先。使用上表完整識別碼；Meta 的費用帳本另支援 `muse-wonder-1.0`，未知組合會在付費呼叫前被拒絕。OCR 固定使用 Meta `muse-spark-1.3`，ASR 使用 `muse-voice-transcribe-1.0`。即使交給 Baseten／Fireworks 查核文字，前處理仍需本機 `MODEL_API_KEY` 或 Meta 金鑰檔。原生文字 PDF 不需 OCR 金鑰；影音另需 FFmpeg／ffprobe。
+
+`--budget` 設定擷取及全部查核請求的美元上限，預設讀取 `CLAIMCHECK_BUDGET_USD`，未設定時為 0.50 美元；所選供應商帳本的既有花費也計入。媒體匯入使用獨立帳本，混合供應商時平均分配上限。`verify --dry-run` 與 `post --dry-run` 不讀金鑰檔、不呼叫模型或 SEC；貼文只預覽首次擷取。`ingest` 沒有此旗標。[完整設定、優先順序與預算](docs/PROVIDERS.md#models--keys) · [CLI 參考](docs/evidence/TECHNICAL_GUIDE.md#run-it)。
+
+**線上網站與本機 CLI 比較。** 網站使用 `dappgo-hackathon` 命名空間的 `Kubernetes` 機密 `live-check-secrets`，包含下表三個伺服器金鑰、`LIVE_CHECK_PASSWORD` 及 `LIVE_ORIGIN_TOKEN`。訪客輸入審閱密碼，供應商金鑰留在伺服器；網站上限與本機帳本分開。[部署設定](deploy/README.md#configuration-and-persistence) · [真實線上紀錄與本機 CLI 錄製](docs/REAL_TRACES.md)。
+
+| 供應商 | 線上網站 | 本機 CLI |
+| --- | --- | --- |
+| Baseten | 伺服器 `BASETEN_API_KEY`；固定預設模型 | 自己的 `BASETEN_API_KEY` 或純金鑰檔；`--provider baseten` |
+| Fireworks | 伺服器 `FIREWORKS_API_KEY`；固定預設模型 | 自己的 `FIREWORKS_API_KEY` 或純金鑰檔；`--provider fireworks` |
+| Meta Model API | 伺服器 `META_MODEL_API_KEY`，供查核與 OCR／ASR 使用 | 自己的 `MODEL_API_KEY` 或 Meta 環境檔；`--provider meta` |
 
 ## 費用與速度
 
