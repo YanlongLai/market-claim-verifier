@@ -101,7 +101,7 @@ Python 將主張綁定回傳證據，計算比較，
 ![選取故事 A 的試用區](docs/site/img/readme/try-story-a.png)
 
 選擇 Baseten、Fireworks 或 Meta Model API。「全部比較」會依序執行各平台，
-費用使用同一共用預算。輸入評審密碼可執行新查核；
+各自使用獨立的每日與累計預算；額度用完的供應商會標示並略過。輸入評審密碼可執行新查核；
 「查看已儲存結果」不需密碼，並保留歷史收據。
 
 <!-- readme-shot:corrected-draft -->
@@ -202,7 +202,9 @@ Citations: both component SEC filings retained in the report
 | 即時文字查核 | 依輸入大小約 $0.01–0.04 | 6–25 秒 | [規劃區間與正式環境收據](docs/evidence/readme-v3-2026-11-04/REPORT.md#cost-and-speed)；一筆正式環境主張支持四捨五入的 $0.01／6 秒主要數字。 |
 | 即時媒體範例 | 文字查核加 OCR／ASR 前處理 | 查核加前處理耗時 | [媒體報告](docs/evidence/media-examples-2026-11-03/REPORT.md)；沒有固定加價，Meta 前處理在收據逐項列出。 |
 | Baseten 基準主張 | 每題 $0.02 | 中位數 10 秒；p95 21 秒 | [保留文字測試報告](docs/evidence/eval-v2-2026-10-27/REPORT.md#metrics)；已完成案例費用與延遲的四捨五入。 |
-| 共用即時預算 | 每日 $10；累計 $60 | 每日 UTC 午夜重設 | [目前設定報告](docs/evidence/readme-v3-2026-11-04/REPORT.md#scope-and-limits)；平台或額度停止可能提早暫停查核。 |
+| 各供應商即時預算 | Meta、Baseten、Fireworks 各自設每日與累計上限；程式預設各每日 $30、累計 $20 | 每日 UTC 午夜重設 | [設定上限](deploy/README.md#setting-provider-caps)；部署者上線前依真實額度設定，另有全體總額上限。 |
+
+選擇區顯示各供應商的今日及累計剩餘額度；Meta 前處理計入 Meta。舊帳本無法歸屬的花費保守計入每家上限，部署者依記錄花費與剩餘額度設定真實上限。[遷移與設定](deploy/README.md#setting-provider-caps)。
 
 較長貼文可能超過規劃區間；保留的多主張範例另有自己的
 [費用與耗時](docs/evidence/readme-v3-2026-11-04/REPORT.md#cost-and-speed)。
@@ -269,7 +271,7 @@ UV_OFFLINE=1 bash scripts/verify.sh
 | 非乾淨執行目錄 | 原始清單記錄工作目錄有未提交變更；儲存結果描述該次執行。 |
 | 曾見輸入重查 | 事後與凍結逐字稿重查為回歸證據，並非新的保留評測；不重測 OCR／ASR。 |
 | 抽取與來源 | 漏抽、歧義期間、重列、非 GAAP 定義與抽樣畫面都可能讓查核無法完成。 |
-| 次數與費用 | [每 IP 每 10 分鐘 5 次、每日 $10、累計 $60](docs/evidence/readme-v3-2026-11-04/REPORT.md#scope-and-limits)；預算或平台停止可能中斷比較。 |
+| 次數與費用 | 每 IP 每 10 分鐘 5 次；[供應商各自上限及全體總額上限](docs/LIVE_CHECK.md#atomic-cost-cap)。比較會略過額度用完的供應商；次數限制會終止比較。 |
 | 修正 | 僅修改唯一綁定且被否定的數字；意見與未查核文字保留，絕不表示整篇文章已核准。 |
 
 [完整限制](docs/evidence/REVIEW_GUIDE.md#limits) · [來源層級](docs/DATA_SOURCES.md) ·

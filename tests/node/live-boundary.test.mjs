@@ -200,8 +200,16 @@ test("missing configuration or trusted IP fails closed before fetch", async t =>
   }
 });
 
-const budget = { day: "2026-11-02", daily_limit_usd: 3, daily_spent_usd: .59,
-  daily_remaining_usd: 2.41, resets_at: "2026-11-03T00:00:00Z", status: "ready" };
+const providerBudgetRow = { daily_limit: 30, daily_spent: 0, daily_remaining: 30,
+  lifetime_limit: 20, lifetime_spent: 0, lifetime_remaining: 20, status: "ready" };
+const budget = { day: "2026-11-02", providers: {
+  baseten: { ...providerBudgetRow, daily_spent: .59, daily_remaining: 29.41, lifetime_spent: .59, lifetime_remaining: 19.41 },
+  fireworks: { ...providerBudgetRow }, meta: { ...providerBudgetRow } },
+  daily_limit_usd: 90, daily_spent_usd: .59, daily_remaining_usd: 89.41,
+  lifetime_limit_usd: 60, lifetime_spent_usd: .59, lifetime_remaining_usd: 59.41,
+  global: { ...providerBudgetRow, daily_limit: 3, daily_spent: .59, daily_remaining: 2.41,
+    lifetime_spent: .59, lifetime_remaining: 19.41 },
+  resets_at: "2026-11-03T00:00:00Z", status: "ready" };
 
 test("public budget sends only origin credentials, excludes private data, and caches for at most five seconds", async t => {
   let calls = 0;
@@ -212,7 +220,9 @@ test("public budget sends only origin credentials, excludes private data, and ca
     assert.equal(req.redirect, "manual");
     assert.deepEqual(Object.fromEntries(req.headers), originHeaders);
     return Response.json({ ...budget, holds: "private", salt: "private", lifetime_nanos: 12345,
-      secret: origin.LIVE_ACCESS_CLIENT_SECRET });
+      secret: origin.LIVE_ACCESS_CLIENT_SECRET, providers: { ...budget.providers,
+        meta: { ...budget.providers.meta, holds: "private", salt: "private" } },
+      global: { ...budget.global, holds: "private" } });
   });
   for (const fresh of [false, true]) {
     const response = await onBudget({ request: new Request("https://site.example/api/budget", {
@@ -234,7 +244,7 @@ test("origin/network/Access failures return the uncached 503 demo fallback witho
     () => Response.json({ error: "unauthorized" }, { status: 403 }),
     () => Response.json({ error: origin.LIVE_ORIGIN_TOKEN }, { status: 503 }),
     () => Response.json({ error: "gateway error", secret: origin.LIVE_ACCESS_CLIENT_ID }, { status: 502 }),
-    () => Response.json({ ...budget, daily_remaining_usd: -1 })];
+    () => Response.json({ ...budget, providers: { ...budget.providers, meta: { ...budget.providers.meta, daily_remaining: -1 } } })];
   let handler;
   const env = envWithFetch(t, req => handler(req));
   for (handler of handlers) {
@@ -287,13 +297,12 @@ test("dashboard-pasted values with trailing newlines still reach the origin as c
     assert.equal(req.url, "https://live-origin.example.com/api/budget");
     assert.equal(req.headers.get("x-live-origin-token"), origin.LIVE_ORIGIN_TOKEN);
     assert.equal(req.headers.get("cf-access-client-secret"), origin.LIVE_ACCESS_CLIENT_SECRET);
-    return Response.json({ day: "2026-11-03", daily_limit_usd: 3, daily_spent_usd: 0, daily_remaining_usd: 3,
-      resets_at: "2026-11-04T00:00:00Z", status: "ready" });
+    return Response.json({ ...budget, day: "2026-11-03", resets_at: "2026-11-04T00:00:00Z" });
   });
   const env = Object.fromEntries(Object.entries(origin).map(([k, v]) => [k, `${v}\n`]));
   const response = await onBudget({ request: new Request("https://hackathon.dappgo.com/api/budget"), env });
   assert.equal(response.status, 200);
-  assert.equal((await response.json()).daily_remaining_usd, 3);
+  assert.equal((await response.json()).daily_remaining_usd, 89.41);
 });
 
 test("origin fetch uses a redirect mode the Workers runtime accepts", () => {

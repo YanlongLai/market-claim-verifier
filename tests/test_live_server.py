@@ -110,17 +110,17 @@ def test_budget_math_daily_stop_and_utc_rollover(tmp_path):
             await services.gate("reserve", {"id": "a", "amount": .59})
             response = await request(app, "/api/budget", method="GET")
             assert response.status == 200
-            assert data(response)["daily_remaining_usd"] == 2.41
+            assert data(response)["global"]["daily_remaining"] == 2.41
             assert response.headers["Cache-Control"].endswith("s-maxage=5, must-revalidate")
             await services.gate("settle", {"id": "a", "amount": .02})
             await services.gate("settle", {"id": "a", "amount": .02})
-            assert (await services.gate("budget", {}))["daily_remaining_usd"] == 2.98
+            assert (await services.gate("budget", {}))["global"]["daily_remaining"] == 2.98
             await services.gate("reserve", {"id": "b", "amount": 2.98})
             response = await request(app)
             assert response.status == 429 and data(response)["error"] == "budget_exhausted"
-            assert data(response)["budget"]["daily_remaining_usd"] == 0
+            assert data(response)["budget"]["global"]["daily_remaining"] == 0
             now[0] += 86400
-            assert (await services.gate("budget", {}))["daily_remaining_usd"] == 3
+            assert (await services.gate("budget", {}))["global"]["daily_remaining"] == 3
             assert state(services)["lifetime_nanos"] == 3_000_000_000
     asyncio.run(run())
 
@@ -202,7 +202,7 @@ def test_402_unreadable_body_stops_future_calls_and_persists(tmp_path, capsys, c
             assert state(services)["lifetime_nanos"] > 0
         async with running(config, transport) as (app, services):
             assert data(await request(app))["error"] == "credit_exhausted"
-            assert data(await request(app, "/api/budget", method="GET"))["status"] == "credit_exhausted"
+            assert data(await request(app, "/api/budget", method="GET"))["providers"]["baseten"]["status"] == "credit_exhausted"
         assert len(calls) == 1
     asyncio.run(run())
     assert not capsys.readouterr().out and not caplog.text
@@ -217,7 +217,7 @@ def test_baseten_error_shapes_are_redacted_without_false_credit_stops(tmp_path, 
             response = await request(app)
             assert response.status == 503 and data(response)["error"] == expected
             assert "private-account-detail" not in response.text
-            assert bool(state(services).get("credit_exhausted")) == (expected == "credit_exhausted")
+            assert bool(state(services)["providers"]["baseten"].get("credit_exhausted")) == (expected == "credit_exhausted")
     asyncio.run(run())
 
 

@@ -97,8 +97,8 @@ context.fetch=async (url,opts={})=>{
   if(url==='/examples/manifest.json')return {ok:true,json:async()=>manifest};
   if(url.startsWith('/examples/')&&url.endsWith('.txt'))return {ok:true,text:async()=>raw};
   if(url==='/data/live-demo-post.json')return {ok:true,json:async()=>saved};
-  if(url==='/api/budget')return {ok:true,json:async()=>({day:'2026-11-03',daily_limit_usd:3,
-    daily_remaining_usd:budgetStatus==='ready'?3:0,resets_at:'2099-11-04T00:00:00Z',status:budgetStatus})};
+  if(url==='/api/budget')return {ok:true,json:async()=>(budgetFixture({day:'2026-11-03',daily_limit_usd:3,
+    daily_remaining_usd:budgetStatus==='ready'?3:0,resets_at:'2099-11-04T00:00:00Z',status:budgetStatus}))};
   if(url==='/api/history?limit=50')return {ok:!historyFail,json:async()=>({rows:historyData})};
   if(url.startsWith('/api/history/'))return {ok:true,json:async()=>historyDetails[url.split('/').pop()]};
   if(url.startsWith('/data/examples/'))return url==='/data/examples/a-text.json'
@@ -222,7 +222,7 @@ responseFactory=async()=>({ok:false,status:429,json:async()=>({error:'budget_exh
  {error:'budget_exhausted',receipt:{provider:'fireworks',model:modelIds.fireworks,latency_ms:0,cost_usd:0,preprocessing:null}}]})});
 await submit();
 assert.ok(tree.querySelector('#compare-result').textContent.includes(config.language==='zh'?'未執行':'Not run'));
-assert.ok(tree.querySelector('#live-submit').disabled);
+assert.ok(!tree.querySelector('#live-submit').disabled);
 assert.equal(tree.querySelector('#live-result .trace-input').textContent,raw);
 historyFail=true;await click('#history-refresh');
 assert.ok(tree.querySelector('#history-status').textContent.includes(config.language==='zh'?'無法讀取':'unavailable'));
@@ -304,8 +304,8 @@ context.fetch=async(url,options={})=>{
   if(url==='/examples/manifest.json')return {ok:true,json:async()=>catalogue};
   if(/^\/examples\/[abc]\.txt$/.test(url))return {ok:true,text:async()=>readFileSync(root+'/docs'+url,'utf8')};
   if(url==='/data/live-demo-post.json')return {ok:true,json:async()=>JSON.parse(readFileSync(root+'/docs/site/data/live-demo-post.json','utf8'))};
-  if(url==='/api/budget')return {ok:true,json:async()=>({day:'2026-11-03',daily_limit_usd:3,daily_remaining_usd:3,
-    resets_at:'2099-11-04T00:00:00Z',status:'ready'})};
+  if(url==='/api/budget')return {ok:true,json:async()=>(budgetFixture({day:'2026-11-03',daily_limit_usd:3,daily_remaining_usd:3,
+    resets_at:'2099-11-04T00:00:00Z',status:'ready'}))};
   if(url==='/api/history?limit=50')return {ok:true,json:async()=>({rows:[]})};
   const saved=catalogue.find(row=>row.saved_result===url);
   if(!saved)return {ok:false,status:404};
@@ -314,7 +314,7 @@ context.fetch=async(url,options={})=>{
 context.liveTest.setupLive();await new Promise(resolve=>setImmediate(resolve));
 const click=async selector=>{await tree.querySelector(selector).events.click();await new Promise(resolve=>setImmediate(resolve));};
 assert.ok(!tree.querySelector('#corrected-draft'));
-assert.ok(tree.querySelector('.compare-choice').textContent.includes(config.language==='zh'?'≈3× 費用':'≈3× cost'));
+assert.ok(tree.querySelector('.compare-choice').textContent.includes(config.language==='zh'?'獨立預算':'separate provider budgets'));
 assert.ok(tree.querySelector('#live-privacy').textContent.includes(config.language==='zh'?'網路位址':'IP'));
 for(const [index,story] of ['a','b','c'].entries()){
   await click(`[data-story-slot="${index}"]`);

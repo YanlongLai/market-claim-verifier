@@ -203,7 +203,7 @@ def test_origin_compare_rejects_invalid_members_or_extra_fields_without_history_
     asyncio.run(run())
 
 
-def test_compare_stops_after_budget_reservation_failure_retaining_both_attempts(tmp_path):
+def test_compare_retains_every_member_after_global_reservation_failure(tmp_path):
     async def run():
         calls = []
         holds = []
@@ -223,17 +223,17 @@ def test_compare_stops_after_budget_reservation_failure_retaining_both_attempts(
                                                               "providers": ["baseten", "fireworks", "meta"]})
             result = data(response)
             assert response.status == 200, result
-            assert len(result["runs"]) == 2
+            assert len(result["runs"]) == 3
             assert result["runs"][1]["error"] == "budget_exhausted"
             assert result["runs"][1]["receipt"]["cost_usd"] == 0
             assert calls == ["inference.baseten.co"]
-            assert len(data(await request(app, "/api/history", method="GET"))["rows"]) == 2
+            assert len(data(await request(app, "/api/history", method="GET"))["rows"]) == 3
             assert all(row["settled"] for row in state(services)["holds"].values())
     asyncio.run(run())
 
 
 @pytest.mark.parametrize("stop", ["daily", "lifetime", "credit"])
-def test_compare_budget_snapshot_stop_does_not_start_later_providers(tmp_path, stop):
+def test_compare_global_stop_labels_every_member_without_paid_calls(tmp_path, stop):
     async def run():
         config = provider_settings(tmp_path, **({"daily_budget": "0"} if stop == "daily" else {"total_budget": "0"} if stop == "lifetime" else {}))
         async with running(config) as (app, services):
@@ -242,7 +242,7 @@ def test_compare_budget_snapshot_stop_does_not_start_later_providers(tmp_path, s
             response = await request(app, "/api/compare", body={"text": APPLE["claim"], "password": PASSWORD,
                                                               "providers": ["baseten", "meta"]})
             runs = data(response)["runs"]
-            assert len(runs) == 1 and runs[0]["error"] in {"budget_exhausted", "total_budget_exhausted", "credit_exhausted"}
+            assert len(runs) == 2 and all(run["error"] == runs[0]["error"] for run in runs) and runs[0]["error"] in {"budget_exhausted", "total_budget_exhausted", "credit_exhausted"}
             assert not state(services).get("holds")
     asyncio.run(run())
 

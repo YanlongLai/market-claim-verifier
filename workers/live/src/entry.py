@@ -52,6 +52,10 @@ class SpendGate(DurableObject):
         result, status = transition(state, data["action"], data["data"], now=time.time(),
                                     budget=str(getattr(self.env, "DAILY_BUDGET_USD", "3")),
                                     total_budget=str(getattr(self.env, "TOTAL_BUDGET_USD", "20")),
+                                    provider_budgets={name: (
+                                        str(getattr(self.env, name.upper() + "_DAILY_BUDGET_USD", "30")),
+                                        str(getattr(self.env, name.upper() + "_LIFETIME_BUDGET_USD", "20")))
+                                        for name in ("baseten", "fireworks", "meta")},
                                     reset_id=str(getattr(self.env, "BUDGET_RESET_ID", "")),
                                     password_secret=getattr(self.env, "LIVE_CHECK_PASSWORD", ""))
         self.save(state)
@@ -110,7 +114,7 @@ class Services:
             # A 402 remains a stop even if its body cannot be read. Never send
             # provider error text (which can include account details) to Pages.
             if provider_credit_exhausted(response.status, "" if response.status == 402 else await response.text()):
-                await self.gate("credit_exhausted", {})
+                await self.gate("credit_exhausted", {"provider": "baseten"})
                 raise LiveError("credit_exhausted")
             raise LiveError("provider_error")
         return json.loads(await response.text())
@@ -142,8 +146,9 @@ class Default(WorkerEntrypoint):
                 raise LiveError("unavailable")
             claim = validate_text(data.get("text"))
             budget = await services.gate("budget", {})
-            if budget["status"] != "ready":
-                raise LiveError(budget["status"], 429 if budget["status"] == "budget_exhausted" else 503, budget)
+            status = budget["providers"]["baseten"]["status"]
+            if status != "ready":
+                raise LiveError(status, 429 if status == "budget_exhausted" else 503, budget)
             await services.gate("rate", {"ip": request.headers.get("X-Live-Client-IP")})
             run = LiveRun(services.model, services.sec, services.gate)
             return reply(await run.bounded(claim))

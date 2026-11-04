@@ -30,7 +30,7 @@ Muse Spark 選擇 SEC 工具；Python 綁定證據、計算判定並產生附出
 | 費用與速度 | 即時主要數字為 $0.01／6 秒。依輸入大小的規劃區間為 $0.01–0.04／6–25 秒，另加媒體前處理。基準每題 $0.02，中位數 10 秒，p95 21 秒。[收據與範圍](docs/evidence/readme-v3-2026-11-04/REPORT.md#cost-and-speed)。 |
 | 準確率 | 保留測試 90.2%（240/266）；矛盾／證據不足參考主張的錯誤支持為 1/139。失敗算錯。[原始報告](docs/evidence/eval-v2-2026-10-27/REPORT.zh-TW.md#評測指標)。 |
 | 修正 | 刪除被否定數字、填入程式值、引用組成申報。僅修改唯一綁定的已查核主張；並非文章核准。[保留 Apple 範例](docs/evidence/corrected-draft-2026-11-03/REPORT.md#retained-apple-example)。 |
-| 即時限制 | 每日 $10；累計 $60；每 IP 每 10 分鐘 5 次。已認證輸入／結果公開 14 天。[目前設定報告](docs/evidence/readme-v3-2026-11-04/REPORT.md#scope-and-limits)。 |
+| 即時限制 | 各供應商有獨立每日與累計上限；每 IP 每 10 分鐘 5 次。已認證輸入／結果公開 14 天。[上限設定與遷移](deploy/README.md#setting-provider-caps)。 |
 
 ## 準確率與證據
 
@@ -45,7 +45,7 @@ Muse Spark 選擇 SEC 工具；Python 綁定證據、計算判定並產生附出
 - 原始[執行清單](docs/evidence/eval-v2-2026-10-27/manifest.json)記錄工作目錄有未提交變更。
 - [事後重查](docs/evidence/real-world-2026-11-03-fixcheck/REPORT.md)重用曾見輸入；凍結逐字稿不重測 OCR／ASR。
 - 抽取可能漏掉主張；歧義期間、抽樣畫面及缺漏證據限制涵蓋。
-- 比較依序使用共用額度；規劃區間不是實測極值或服務承諾；已儲存收據保留歷史值。
+- 比較依序使用各供應商獨立上限及全體總額限制；額度用完的供應商會標示並略過。規劃區間不是實測極值或服務承諾；已儲存收據保留歷史值。
 
 [完整限制](docs/evidence/REVIEW_GUIDE.md#limits) · [平台／輸入邊界](docs/PROVIDERS.md) · [測試紀錄政策](docs/TEST_RECORDS.md)。
 

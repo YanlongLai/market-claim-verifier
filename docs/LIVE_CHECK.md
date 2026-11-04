@@ -1,6 +1,6 @@
 # Live check and visible agent trace
 
-Implementation and operator handoff, updated 2026-11-03. The owner-selected runtime is Python 3.12 on DappGo's x86_64 k3s host, reached through Cloudflare Tunnel and Access from **free Pages Functions**. This document does not mean the endpoint is deployed. [Exact host, Tunnel, Access and Pages steps](../deploy/README.md). No paid model call is needed to build or test this change.
+Implementation and operator handoff, updated 2026-11-04. The owner-selected runtime is Python 3.12 on DappGo's x86_64 k3s host, reached through Cloudflare Tunnel and Access from **free Pages Functions**. This document does not mean the endpoint is deployed. [Exact host, Tunnel, Access and Pages steps](../deploy/README.md). No paid model call is needed to build or test this change.
 
 ## Architecture and verdict identity
 
@@ -14,7 +14,7 @@ The adapter imports the [gate](../workers/live/src/gate.py), [runner](../workers
 
 ## Provider receipts, compare and history
 
-Provider IDs are exactly `baseten`, `fireworks`, and `meta`. The runner reuses the [existing adapters and pricing](../src/claimcheck/providers.py) with fixed models `meta-models/muse-spark-open-1026`, `accounts/fireworks/models/muse-spark-open`, and `muse-spark-1.3`, respectively. Unknown providers return 400 / `unknown_provider` before reservation. Meta OCR/ASR preprocessing is independent of the verifier choice; each paid call reserves from the same durable ledger before network I/O. Missing/invalid usage retains the conservative hold, reflected by `cost_is_bound`.
+Provider IDs are exactly `baseten`, `fireworks`, and `meta`. The runner reuses the [existing adapters and pricing](../src/claimcheck/providers.py) with fixed models `meta-models/muse-spark-open-1026`, `accounts/fireworks/models/muse-spark-open`, and `muse-spark-1.3`, respectively. Unknown providers return 400 / `unknown_provider` before reservation. Meta OCR/ASR preprocessing is independent of the verifier choice; each paid call reserves from its own provider's durable budget and the global sum guard before network I/O. Missing/invalid usage retains the conservative hold, reflected by `cost_is_bound`.
 
 JSON POST bodies are at most 1 KiB, including chunked bodies. Extra request keys, query strings and cross-origin browser requests are rejected. Routes accept exactly:
 
@@ -27,7 +27,7 @@ GET  /api/history?limit=50
 GET  /api/history/{id}
 ```
 
-Compare requires 2–3 distinct providers and returns `{ "runs": [envelope, …] }` in request order. Each member checks budget before starting and reserves before each paid call. A budget, lifetime, credit or rate stop ends the sequence; the final attempted member is an error envelope. Completed and failed members are retained separately. Other provider failures allow the next provider to run. The shared per-IP rate counter counts each member. Compare authentication/validation errors use the ordinary error response; an accepted comparison returns HTTP 200 even when a member fails.
+Compare requires 2–3 distinct providers and returns `{ "runs": [envelope, …] }` in request order. Each member checks budget before starting and reserves before each paid call. A daily, lifetime or credit stop produces a labeled error envelope for that member and comparison continues with the next provider. A rate stop ends the sequence. Completed and failed members are retained separately. Other provider failures allow the next provider to run. The shared per-IP rate counter counts each member. Compare authentication/validation errors use the ordinary error response; an accepted comparison returns HTTP 200 even when a member fails.
 
 Every live run envelope, including a failed attempt, adds these fields (numeric values below are illustrative, not measurements):
 
@@ -102,9 +102,9 @@ Its [retained trace](evidence/posts-2026-10-28/demo-thread-baseten/traces/202610
 | Calls | At most four model calls, 2,000 output tokens each; at most six tool calls; no automatic provider retry |
 | Time | 28-second text / 60-second example run; 22-second verifier/SEC and 50-second Meta preprocessing I/O; Pages: 25-second text / 65-second example / 195-second compare; browser timing belongs to the site; no measured production SLA |
 | Rate | Five accepted checks per IP per ten minutes; raw IP never stored |
-| Daily spend | `DAILY_BUDGET_USD`, deployment $10 per UTC day; zero disables calls; invalid/negative/nonfinite values fail closed |
-| Lifetime spend | `TOTAL_BUDGET_USD`, deployment $60 across all days; lack of reservation room latches a stop |
-| Provider credit | 402, or 403/429 with credit/payment/quota exhaustion wording, durably pauses calls; ordinary auth/rate errors do not latch a credit stop |
+| Daily spend | `META_DAILY_BUDGET_USD`, `BASETEN_DAILY_BUDGET_USD`, `FIREWORKS_DAILY_BUDGET_USD`; default $30 each per UTC day. `DAILY_BUDGET_USD` is an additional aggregate ceiling (default $3). |
+| Lifetime spend | `META_LIFETIME_BUDGET_USD`, `BASETEN_LIFETIME_BUDGET_USD`, `FIREWORKS_LIFETIME_BUDGET_USD`; default $20 each. `TOTAL_BUDGET_USD` is an additional aggregate ceiling (default $20). Operator supplies real caps before rollout; zero disables calls, invalid/negative/nonfinite values fail closed. |
+| Provider credit | 402, or 403/429 with credit/payment/quota exhaustion wording, durably pauses only the affected provider; ordinary auth/rate errors do not latch a credit stop |
 | SEC cache | Six-hour memory/disk cache of successful JSON bodies only; HTTPS host allowlist `www.sec.gov` / `data.sec.gov`; redirects disabled |
 
 SEC requests use exactly `User-Agent: DappGo market-claim-verifier admin@dappgo.com`. Tool arguments cannot supply fetch URLs. [Pages routes](_routes.json) include `/api/check`, `/api/check-example`, `/api/compare`, `/api/history`, `/api/history/*` and `/api/budget`. The [CSP](_headers), language switch, color schemes, cache-busted assets and reduced-motion behavior remain in use.
@@ -113,23 +113,27 @@ Provider errors, incomplete/model-invalid responses, SEC failures and timeouts i
 
 ## Public remaining-budget display
 
-`GET /api/budget` uses [the budget Function](../functions/api/budget.ts) and the same persistent ledger as checks. Visitors need no review password to read the aggregate; Pages still authenticates to Access and the origin. The [boundary](../workers/pages/check.mjs) returns only:
+`GET /api/budget` uses [the budget Function](../functions/api/budget.ts) and the same persistent ledger as checks. Visitors need no review password; Pages still authenticates to Access and the origin. The [boundary](../workers/pages/check.mjs) allowlists `day`, `providers`, `status` and `resets_at`. Each of `providers.baseten`, `providers.fireworks` and `providers.meta` has exactly these counters (illustrative values):
 
 ```json
-{"day":"2026-11-02","daily_limit_usd":10.0,"daily_spent_usd":0.59,"daily_remaining_usd":9.41,"resets_at":"2026-11-03T00:00:00Z","status":"ready"}
+{"daily_limit":30,"daily_spent":0.59,"daily_remaining":29.41,"lifetime_limit":20,"lifetime_spent":2.59,"lifetime_remaining":17.41,"status":"ready"}
 ```
 
-Status is `ready`, `budget_exhausted`, `total_budget_exhausted` or `credit_exhausted`. This is an application allowance, not the provider balance. Successful responses allow five seconds of shared caching; errors are `no-store`. A visitor request with `Cache-Control: no-cache` receives `no-store` and a fresh ledger read, without forwarding that header.
+For one release the top-level `daily_limit_usd`, `daily_spent_usd`, `daily_remaining_usd` and corresponding `lifetime_*_usd` fields are **sums of provider counters**. The separate `global` object has the same counter shape and exposes the aggregate ceiling and its original aggregate spend. Do not use the compatibility sums to infer remaining room under the global guard. No holds, salt, migration metadata or credentials enter the response.
 
-The live box in each language refreshes on page load, attempted checks, visibility and the next UTC midnight. The accessible meter includes reservations. Below $0.10 it shows “Almost used up”. Daily stops disable submission and show the next UTC reset. Lifetime/provider stops show a pause without promising a midnight restart. Unavailable budgets disable submission until refreshed successfully.
+Statuses are `ready`, `budget_exhausted` (daily), `total_budget_exhausted` (lifetime), and `credit_exhausted`. A provider's status also reflects an exhausted global guard. The top status is `ready` while any provider can run, unless the global guard is stopped. These are application allowances including retained reservations, not balances queried from provider accounts. Successful responses allow five seconds of shared caching; errors are `no-store`. A visitor request with `Cache-Control: no-cache` receives `no-store` and a fresh ledger read.
+
+Each provider radio contains its daily meter, daily remaining amount and lifetime remaining amount. Both languages refresh on page load, attempted checks, visibility and the next UTC midnight. Pauses say daily, lifetime or credit; only a daily stop promises a midnight reset. Switching to an available provider enables Run. Compare remains available while any member can run, and retains exhausted members as labeled failures. Image/audio/video inputs also require Meta budget for preprocessing. Inputs stay editable during provider pauses. An unavailable budget disables Run until refreshed successfully.
 
 ## Atomic cost cap
 
 One Python process and one replica use a PVC-backed SQLite ledger with one JSON state row, WAL and `synchronous=FULL`. Every read/check/write, including prune, holds a process-wide `asyncio.Lock` and `BEGIN IMMEDIATE` transaction. A reservation commits before every model fetch, including repairs. The [Deployment](../deploy/k8s/live-check.yaml) uses **replicas=1, strategy=Recreate**; no multi-worker server or HPA is supported.
 
-Both caps use integer nano-USD: holds round up and caps round down. Reconciliation updates the reservation's UTC start day and lifetime counter atomically. Missing/invalid usage, failed fetches and cancellation retain the entire ceiling. Settlement is idempotent. Usage above the reservation closes the daily budget and latches the lifetime stop. A lifetime stop remains latched even if a later settlement refunds reserved cost. Increasing a limit or restarting cannot clear it.
+All caps use integer nano-USD: holds round up and caps round down. Reconciliation updates the reservation's provider and aggregate UTC start day and lifetime counters atomically. Meta OCR/ASR always charges Meta; verifier calls charge the selected provider. Missing/invalid usage, failed fetches and cancellation retain the entire ceiling. Settlement is idempotent. Usage above the reservation latches the affected provider's lifetime stop; aggregate actual spend is still reconciled against the sum guard. A provider daily reservation shortfall pauses that provider until UTC midnight without inflating its recorded spend. A global daily shortfall can still leave room for a cheaper member. A lifetime stop remains latched even if a later settlement refunds reserved cost. Increasing a limit or restarting cannot clear it.
 
 There is **no reset endpoint or reset setting** in the self-hosted adapter. `BUDGET_RESET_ID` is ignored. Never replace/delete the PVC or reset lifetime counters to bypass a stop. Periodic pruning runs every 60 seconds; transitions also prune expired buckets. Day/hold rows expire after 48 hours, accepted-rate buckets after ten minutes and failed-auth buckets after 15 minutes. Lifetime totals, pause flags and the HMAC salt remain.
+
+The schema-v2 migration runs in the existing SQLite transaction before pruning, including on idle cleanup. V1 stored only aggregate daily/lifetime totals and untagged holds: an exact historical provider split cannot be recovered. Its recorded spend and stop flags are conservatively inherited by **each provider**, while the original aggregate remains unchanged. Existing history rows, holds and aggregate lifetime totals are retained; `provider_migration` privately records the carried lifetime amount. Legacy hold reconciliation adjusts all inherited copies once. New holds bind exactly one provider, and provider lifetime totals survive day/hold/history pruning and restarts. This can pause a provider earlier than its actual credit balance; never treat expiring public history as an audited lifetime ledger. See [setting caps](../deploy/README.md#setting-provider-caps).
 
 Pricing and arithmetic come from the CLI ledger/provider registry. The additional conservative hold uses serialized UTF-8 bytes plus 4,096 template/control tokens and the maximum output tokens, without cached discounts. Successful verified usage reconciles using the same pricing calculation. Review model/pricing/token contract changes before enabling them. Caps cover model estimates; host/infrastructure costs are separate.
 

@@ -24,26 +24,32 @@ def test_public_remaining_counts_holds_and_reconciliation_not_private_data():
     assert op(state, "reserve", {"id": "a", "amount": .59})[1] == 200
     budget, status = op(state)
     assert status == 200
-    assert budget == {"day": "1970-01-01", "daily_limit_usd": 3.0, "daily_spent_usd": .59,
-                      "daily_remaining_usd": 2.41, "resets_at": "1970-01-02T00:00:00Z", "status": "ready"}
+    assert budget["day"] == "1970-01-01"
+    assert budget["resets_at"] == "1970-01-02T00:00:00Z"
+    assert budget["status"] == "ready"
+    assert budget["global"] == {"daily_limit": 3.0, "daily_spent": .59, "daily_remaining": 2.41,
+                                "lifetime_limit": 20.0, "lifetime_spent": .59, "lifetime_remaining": 19.41,
+                                "status": "ready"}
+    assert budget["daily_limit_usd"] == 90
+    assert budget["daily_remaining_usd"] == 89.41
     op(state, "settle", {"id": "a", "amount": .02})
     op(state, "settle", {"id": "a", "amount": .02})
-    assert op(state)[0]["daily_remaining_usd"] == 2.98
+    assert op(state)[0]["global"]["daily_remaining"] == 2.98
     assert state["lifetime_nanos"] == 20_000_000
     op(state, "reserve", {"id": "unknown-usage", "amount": .1})
     op(state, "settle", {"id": "unknown-usage", "amount": None})
-    assert op(state)[0]["daily_remaining_usd"] == 2.88
+    assert op(state)[0]["global"]["daily_remaining"] == 2.88
 
 
 def test_utc_midnight_and_late_reconciliation_touch_original_day_only():
     state = {}
     op(state, "reserve", {"id": "yesterday", "amount": 3})
     assert op(state)[0]["status"] == "budget_exhausted"
-    assert op(state, now=86400)[0]["daily_remaining_usd"] == 3
+    assert op(state, now=86400)[0]["global"]["daily_remaining"] == 3
     assert op(state, now=86400)[0]["resets_at"] == "1970-01-03T00:00:00Z"
     op(state, "reserve", {"id": "today", "amount": .5}, now=86400)
     op(state, "settle", {"id": "yesterday", "amount": .1}, now=86401)
-    assert op(state, now=86401)[0]["daily_remaining_usd"] == 2.5
+    assert op(state, now=86401)[0]["global"]["daily_remaining"] == 2.5
     assert state["lifetime_nanos"] == 600_000_000
     # Idle cleanup does not forgive unsettled spending in the lifetime counter.
     prune(state, 400000)
@@ -58,7 +64,7 @@ def test_lifetime_cap_survives_midnight_refund_idle_and_limit_increase():
     assert state["lifetime_nanos"] == 3_010_000_000
     prune(state, 400000)
     budget, _ = op(state, now=400000, total="100")
-    assert budget["daily_remaining_usd"] == 3
+    assert budget["global"]["daily_remaining"] == 3
     assert budget["status"] == "total_budget_exhausted"
     assert op(state, "reserve", {"id": "c", "amount": .01}, now=400000, total="100")[1] == 503
 
@@ -91,10 +97,10 @@ def test_admin_deployment_reset_is_once_only_and_keeps_pending_holds_and_daily_s
         return transition(state, action, data or {}, now=86399, budget="3", reset_id="admin-2026-11-02")
     assert reset()[0]["status"] == "ready"
     assert state["lifetime_nanos"] == 500_000_000
-    assert reset()[0]["daily_remaining_usd"] == 2.4
+    assert reset()[0]["global"]["daily_remaining"] == 2.4
     reset("reserve", {"id": "after-reset", "amount": .1})
     reset("settle", {"id": "inflight", "amount": .2})
-    assert reset()[0]["daily_remaining_usd"] == 2.6
+    assert reset()[0]["global"]["daily_remaining"] == 2.6
     assert state["lifetime_nanos"] == 300_000_000
     reset("credit_exhausted")
     assert reset()[0]["status"] == "credit_exhausted"  # same ID never resets twice
@@ -189,13 +195,28 @@ class Storage:
         await asyncio.sleep(0)  # concurrent fetches may run after the write
 
 
-def durable(adapter, daily="3", total="20", storage=None, password="offline-password"):
+def durable(adapter, daily="3", total="20", storage=None, password="offline-password", provider_env=None):
     storage = storage or Storage()
     gate = adapter.SpendGate(SimpleNamespace(storage=storage), SimpleNamespace(
-        DAILY_BUDGET_USD=daily, TOTAL_BUDGET_USD=total, LIVE_CHECK_PASSWORD=password))
+        DAILY_BUDGET_USD=daily, TOTAL_BUDGET_USD=total, LIVE_CHECK_PASSWORD=password, **(provider_env or {})))
     async def call(action, data=None):
         return await gate.fetch(Request("https://gate.internal/", {"method": "POST", "body": json.dumps({"action": action, "data": data or {}})}))
     return gate, call, storage
+
+
+def test_durable_adapter_reads_provider_env_caps_and_keeps_other_providers_available(adapter):
+    async def run():
+        gate, call, _ = durable(adapter, provider_env={"META_DAILY_BUDGET_USD": ".05", "BASETEN_LIFETIME_BUDGET_USD": ".05"})
+        for provider in ("meta", "baseten"):
+            assert (await call("reserve", {"provider": provider, "id": provider, "amount": .03})).status == 200
+            assert (await call("reserve", {"provider": provider, "id": provider + "-extra", "amount": .03})).status == (429 if provider == "meta" else 503)
+        budget = await (await call("budget")).json()
+        assert budget["providers"]["meta"]["daily_limit"] == .05
+        assert budget["providers"]["meta"]["status"] == "budget_exhausted"
+        assert budget["providers"]["baseten"]["lifetime_limit"] == .05
+        assert budget["providers"]["fireworks"]["status"] == budget["status"] == "ready"
+        assert gate.load()["lifetime_nanos"] == 60_000_000
+    asyncio.run(run())
 
 
 @pytest.mark.parametrize("daily,total", [(".1", "20"), ("3", ".1")])
@@ -207,7 +228,7 @@ def test_concurrent_actual_durable_sqlite_reservations_never_exceed_either_cap(a
         assert gate.load()["lifetime_nanos"] == 90_000_000
         assert next(iter(gate.load()["days"].values()))["amount_nanos"] == 90_000_000
         budget = await (await call("budget")).json()
-        assert budget["daily_remaining_usd"] == pytest.approx(float(daily) - .09)
+        assert budget["global"]["daily_remaining"] == pytest.approx(float(daily) - .09)
     asyncio.run(run())
 
 
@@ -258,14 +279,14 @@ def test_provider_response_sets_durable_pause_then_blocks_next_run_and_survives_
         with pytest.raises(LiveError, match="credit_exhausted" if paused else "provider_error"):
             await LiveRun(worker.model, lambda _: pytest.fail("SEC"), internal).bounded(claim)
         assert len(calls) == 1
-        assert gate.load().get("credit_exhausted", False) is paused
+        assert gate.load()["providers"]["baseten"].get("credit_exhausted", False) is paused
         assert gate.load()["lifetime_nanos"] > 0  # rejected call keeps its hold
         if paused:
             monkeypatch.setattr(adapter.time, "time", lambda: 400000)
             await gate.alarm()
             restarted, after_restart, _ = durable(adapter, storage=storage)
-            assert restarted.load()["credit_exhausted"] is True
-            assert (await (await after_restart("budget")).json())["status"] == "credit_exhausted"
+            assert restarted.load()["providers"]["baseten"]["credit_exhausted"] is True
+            assert (await (await after_restart("budget")).json())["providers"]["baseten"]["status"] == "credit_exhausted"
             with pytest.raises(LiveError, match="credit_exhausted"):
                 await LiveRun(worker.model, lambda _: pytest.fail("SEC"), internal).bounded(claim)
             assert len(calls) == 1

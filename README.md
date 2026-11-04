@@ -104,8 +104,7 @@ Read the selected input before running it; unavailable saved media results are l
 <!-- readme-shot:try-story-a -->
 ![Try section with story A selected](docs/site/img/readme/try-story-a.png)
 
-Choose Baseten, Fireworks or Meta Model API. **Compare on all** runs the providers sequentially
-and spends from the same shared budget. Enter the judge password to run a new check;
+Choose Baseten, Fireworks or Meta Model API. **Compare on all** runs the providers sequentially and charges each provider’s own daily and lifetime budget; exhausted members are labeled and skipped. Enter the judge password to run a new check;
 **See saved result** requires none and preserves the historical receipt.
 
 <!-- readme-shot:corrected-draft -->
@@ -205,8 +204,9 @@ These are rounded recorded observations. The planning band below is not a measur
 | Live text check | $0.01–0.04 by input size | 6–25 s | [Planning band and production receipt](docs/evidence/readme-v3-2026-11-04/REPORT.md#cost-and-speed); one production claim supports the rounded $0.01 / 6 s headline. |
 | Live media example | Text verification + OCR/ASR preprocessing | Verification + preprocessing time | [Media report](docs/evidence/media-examples-2026-11-03/REPORT.md); no fixed surcharge. Meta preprocessing is itemized on the receipt. |
 | Baseten benchmark claim | $0.02 per claim | 10 s median; p95 21 s | [Held-out text report](docs/evidence/eval-v2-2026-10-27/REPORT.md#metrics); rounded completed-case cost and latency. |
-| Shared live budget | $10/day; $60 lifetime | Daily reset at UTC midnight | [Current configuration report](docs/evidence/readme-v3-2026-11-04/REPORT.md#scope-and-limits); provider/credit stops can pause checks earlier. |
+| Provider live budgets | Separate daily/lifetime caps for Meta, Baseten and Fireworks; code defaults $30/day and $20 lifetime each | Daily reset at UTC midnight | [Cap configuration](deploy/README.md#setting-provider-caps); operator sets real caps before rollout. Global ceilings additionally bound the sum. |
 
+Provider meters show daily/lifetime room. Meta preprocessing charges Meta; legacy unattributed spend conservatively counts against every provider. [Migration and real cap settings](deploy/README.md#setting-provider-caps); [earlier shared-limit configuration](docs/evidence/readme-v3-2026-11-04/REPORT.md#scope-and-limits).
 Longer posts can exceed the planning band: the retained multi-assertion example has its own
 [cost and duration](docs/evidence/readme-v3-2026-11-04/REPORT.md#cost-and-speed).
 A media document may produce many chargeable claims. Cost includes extraction, tool-loop calls,
@@ -274,7 +274,7 @@ It does not run live evaluation, fetch SEC data or render a full demo video.
 | Dirty run tree | The original manifest records a dirty working tree; saved results describe that recorded run. |
 | Seen-input rechecks | Post-hoc and frozen-transcript rechecks are regression evidence, not fresh held-out evaluation; OCR/ASR is not retested. |
 | Extraction and sources | Missing assertions, ambiguous periods, restatements, non-GAAP definitions and sampled frames can prevent a check. |
-| Rate and spend | [5 checks / 10 min per IP, $10/day and $60 lifetime](docs/evidence/readme-v3-2026-11-04/REPORT.md#scope-and-limits); budget or provider stops can interrupt a comparison. |
+| Rate and spend | 5 checks / 10 min per IP; [independent provider caps and an aggregate ceiling](docs/LIVE_CHECK.md#atomic-cost-cap). Compare skips exhausted providers; a rate stop ends the sequence. |
 | Corrections | Only uniquely bound disproved numbers change. Opinions and unchecked text remain; “approved” never describes the article. |
 
 [Full limits](docs/evidence/REVIEW_GUIDE.md#limits) · [Source tiers](docs/DATA_SOURCES.md) ·

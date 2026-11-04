@@ -5,12 +5,14 @@ import hashlib
 import hmac
 import math
 import secrets
+from copy import deepcopy
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation, ROUND_CEILING, ROUND_FLOOR
 
 NANOS = 1_000_000_000
 AUTH_WINDOW = 15 * 60
 AUTH_FAILURES = 5
+PROVIDERS = ("baseten", "fireworks", "meta")
 
 
 def password_matches(value, secret):
@@ -55,37 +57,84 @@ def money(value, rounding=ROUND_CEILING):
 def snapshot(state, now, daily_limit, total_limit):
     today = datetime.fromtimestamp(now, timezone.utc)
     day = today.strftime("%Y-%m-%d")
-    spent = state["days"].get(day, {}).get("amount_nanos", 0)
+    row = state["days"].get(day, {})
+    spent = row.get("amount_nanos", 0)
     if state["lifetime_nanos"] >= total_limit:
         state["lifetime_exhausted"] = True
     status = ("credit_exhausted" if state.get("credit_exhausted") else
               "total_budget_exhausted" if state.get("lifetime_exhausted") else
-              "budget_exhausted" if spent >= daily_limit else "ready")
-    return {"day": day, "daily_limit_usd": daily_limit / NANOS,
-            "daily_spent_usd": spent / NANOS,
-            "daily_remaining_usd": max(0, daily_limit - spent) / NANOS,
-            "resets_at": (today.replace(hour=0, minute=0, second=0, microsecond=0)
-                          + timedelta(days=1)).strftime("%Y-%m-%dT%H:%M:%SZ"),
+              "budget_exhausted" if spent >= daily_limit or row.get("daily_exhausted") else "ready")
+    return {"daily_limit": daily_limit / NANOS, "daily_spent": spent / NANOS,
+            "daily_remaining": max(0, daily_limit - spent) / NANOS,
+            "lifetime_limit": total_limit / NANOS, "lifetime_spent": state["lifetime_nanos"] / NANOS,
+            "lifetime_remaining": max(0, total_limit - state["lifetime_nanos"]) / NANOS,
             "status": status}
 
 
+def migrate(state):
+    """Upgrade in place without forgiving spending or deleting recorded rows.
+
+    V1 recorded no provider on holds or lifetime totals. Its unattributable
+    spending and stops conservatively count against *each* provider. Never infer
+    a lifetime split from the public history, which expires after fourteen days
+    and cannot account for every in-flight/failed call. The original aggregate
+    stays intact as a separate sum guard and migration evidence.
+    """
+    for group in ("days", "holds", "rates"):
+        state.setdefault(group, {})
+    for row in state["days"].values():
+        if "amount_nanos" not in row:
+            row["amount_nanos"] = money(row["amount"])
+    state.setdefault("lifetime_nanos", sum(r["amount_nanos"] for r in state["days"].values()))
+    if "providers" not in state:
+        legacy = {key: deepcopy(state[key]) for key in
+                  ("days", "lifetime_nanos", "credit_exhausted", "lifetime_exhausted") if key in state}
+        state["providers"] = {name: deepcopy(legacy) for name in PROVIDERS}
+        for hold in state["holds"].values():
+            hold["providers"] = list(PROVIDERS)
+        state["provider_migration"] = {"version": 2, "legacy_lifetime_nanos": state["lifetime_nanos"],
+                                       "allocation": "conservative_all_providers"}
+
+
 def prune(state: dict, now: float):
+    # Migration must precede expiry, including alarm/idle cleanup of a v1 DB.
+    migrate(state)
     state["auth_failures"] = {k: v for k, v in state.get("auth_failures", {}).items() if v["expires"] > now}
     state["rates"] = {k: v for k, v in state.get("rates", {}).items() if v["expires"] > now}
     state["holds"] = {k: v for k, v in state.get("holds", {}).items() if v["expires"] > now}
     state["days"] = {k: v for k, v in state.get("days", {}).items() if v["expires"] > now}
+    for provider in state["providers"].values():
+        provider["days"] = {k: v for k, v in provider["days"].items() if v["expires"] > now}
+
+
+def public_budget(state, now, limits):
+    global_budget = snapshot(state, now, *limits["global"])
+    providers = {name: snapshot(state["providers"][name], now, *limits[name]) for name in PROVIDERS}
+    if global_budget["status"] != "ready":
+        for provider in providers.values():
+            if provider["status"] == "ready":
+                provider["status"] = global_budget["status"]
+    statuses = {row["status"] for row in providers.values()}
+    status = (global_budget["status"] if global_budget["status"] != "ready" else
+              "ready" if "ready" in statuses else
+              next(s for s in ("credit_exhausted", "total_budget_exhausted", "budget_exhausted") if s in statuses))
+    today = datetime.fromtimestamp(now, timezone.utc)
+    return {"day": today.strftime("%Y-%m-%d"), "providers": providers, "status": status,
+            # One-release compatibility: the old counters are provider sums.
+            **{key + "_usd": round(sum(row[key] for row in providers.values()), 9)
+               for key in ("daily_limit", "daily_spent", "daily_remaining",
+                           "lifetime_limit", "lifetime_spent", "lifetime_remaining")},
+            "global": global_budget,
+            "resets_at": (today.replace(hour=0, minute=0, second=0, microsecond=0)
+                          + timedelta(days=1)).strftime("%Y-%m-%dT%H:%M:%SZ")}
 
 
 def transition(state: dict, action: str, data: dict, *, now: float, budget: str,
-               total_budget: str = "20", reset_id: str = "", password_secret: str = "") -> tuple[dict, int]:
+               total_budget: str = "20", provider_budgets: dict | None = None,
+               reset_id: str = "", password_secret: str = "") -> tuple[dict, int]:
     # Authentication cannot reserve, reconcile, reset or inspect spending.
     if action == "authenticate":
         return authenticate(state, data, now, password_secret)
-    # Adopt all retained spending from the v1 ledger before pruning old days.
-    # Lifetime spend and stop flags never expire, even when alarms prune holds.
-    for row in state.get("days", {}).values():
-        row.setdefault("amount_nanos", money(row["amount"]))
-    state.setdefault("lifetime_nanos", sum(r["amount_nanos"] for r in state.get("days", {}).values()))
     prune(state, now)
     if reset_id and reset_id != state.get("admin_reset_id"):
         # Only a deployment setting supplies this identifier. Public request
@@ -94,18 +143,31 @@ def transition(state: dict, action: str, data: dict, *, now: float, budget: str,
                                       for h in state["holds"].values() if not h["settled"])
         state.pop("credit_exhausted", None)
         state.pop("lifetime_exhausted", None)
+        for name, provider in state["providers"].items():
+            provider["lifetime_nanos"] = sum(h.get("amount_nanos", money(h["amount"]))
+                for h in state["holds"].values() if not h["settled"] and name in h["providers"])
+            provider.pop("credit_exhausted", None)
+            provider.pop("lifetime_exhausted", None)
         state["admin_reset_id"] = reset_id
     if action == "credit_exhausted":
-        state["credit_exhausted"] = True
+        name = data.get("provider")
+        if name is not None and name not in PROVIDERS:
+            return {"error": "unavailable"}, 503
+        target = state if name is None else state["providers"][name]
+        target["credit_exhausted"] = True
         return {"ok": True}, 200
     try:
-        limits = [Decimal(str(v)) for v in (budget, total_budget)]
-        if any(not v.is_finite() or v < 0 for v in limits):
-            raise ValueError
-        daily_limit, total_limit = [money(v, ROUND_FLOOR) for v in limits]
-    except (ValueError, TypeError, InvalidOperation):
+        configured = {"global": (budget, total_budget),
+                      **{name: (provider_budgets or {}).get(name, ("30", "20")) for name in PROVIDERS}}
+        limits = {}
+        for name, pair in configured.items():
+            values = [Decimal(str(v)) for v in pair]
+            if len(values) != 2 or any(not v.is_finite() or v < 0 for v in values):
+                raise ValueError
+            limits[name] = tuple(money(v, ROUND_FLOOR) for v in values)
+    except (ValueError, TypeError, InvalidOperation, OverflowError):
         return {"error": "unavailable"}, 503
-    public = snapshot(state, now, daily_limit, total_limit)
+    public = public_budget(state, now, limits)
     if action == "budget":
         return public, 200
     day = datetime.fromtimestamp(now, timezone.utc).strftime("%Y-%m-%d")
@@ -121,36 +183,53 @@ def transition(state: dict, action: str, data: dict, *, now: float, budget: str,
         row["count"] += 1
         return {"ok": True}, 200
     if action == "reserve":
-        if public["status"] != "ready":
-            return {"error": public["status"], "budget": public}, 429 if public["status"] == "budget_exhausted" else 503
+        name = data.get("provider", "baseten")
+        if name not in PROVIDERS:
+            return {"error": "unavailable"}, 503
+        status = public["providers"][name]["status"]
+        if status != "ready":
+            return {"error": status, "budget": public}, 429 if status == "budget_exhausted" else 503
         amount = data.get("amount")
         if not isinstance(amount, (int, float)) or isinstance(amount, bool) or not math.isfinite(amount) or amount <= 0:
             return {"error": "unavailable"}, 503
         if not isinstance(data.get("id"), str) or data["id"] in state["holds"]:
             return {"error": "unavailable"}, 503
-        row = state["days"].setdefault(day, {"amount": 0.0, "expires": now + 172800})
         # Integer nano-USD, rounded up for holds / down for the configured cap.
         # Floating-point accumulation must never create extra spending room.
-        spent = row.setdefault("amount_nanos", money(row["amount"]))
         nanos = money(amount)
-        if state["lifetime_nanos"] + nanos > total_limit:
-            state["lifetime_exhausted"] = True
-            return {"error": "total_budget_exhausted",
-                    "budget": snapshot(state, now, daily_limit, total_limit)}, 503
-        if spent + nanos > daily_limit:
-            return {"error": "budget_exhausted", "budget": public}, 429
-        row["amount_nanos"] = spent + nanos
-        row["amount"] = row["amount_nanos"] / NANOS
-        state["lifetime_nanos"] += nanos
-        if state["lifetime_nanos"] >= total_limit:
-            state["lifetime_exhausted"] = True
+        scopes = ((state["providers"][name], limits[name]), (state, limits["global"]))
+        # Check both scopes before changing either: a rejected hold spends zero.
+        for scope, (daily_limit, total_limit) in scopes:
+            spent = scope["days"].get(day, {}).get("amount_nanos", 0)
+            if scope["lifetime_nanos"] + nanos > total_limit:
+                scope["lifetime_exhausted"] = True
+                return {"error": "total_budget_exhausted", "budget": public_budget(state, now, limits)}, 503
+            if spent + nanos > daily_limit:
+                if scope is not state:
+                    # No more calls on this provider today when its next hold
+                    # cannot fit. Keep the true spend; the pause resets at UTC
+                    # midnight. A global rejection can still leave room for a
+                    # cheaper comparison member on another provider.
+                    row = scope["days"].setdefault(day, {"amount": 0.0, "amount_nanos": 0, "expires": now + 172800})
+                    row["daily_exhausted"] = True
+                return {"error": "budget_exhausted", "budget": public_budget(state, now, limits)}, 429
+        for scope, (_, total_limit) in scopes:
+            row = scope["days"].setdefault(day, {"amount_nanos": 0, "expires": now + 172800})
+            row["amount_nanos"] += nanos
+            row["amount"] = row["amount_nanos"] / NANOS
+            row["expires"] = max(row["expires"], now + 172800)
+            scope["lifetime_nanos"] += nanos
+            if scope["lifetime_nanos"] >= total_limit:
+                scope["lifetime_exhausted"] = True
         state["holds"][data["id"]] = {"day": day, "amount": amount, "amount_nanos": nanos,
+                                     "providers": [name],
                                      "settled": False, "expires": now + 172800}
-        row["expires"] = max(row["expires"], now + 172800)
         return {"ok": True}, 200
     if action == "settle":
         hold = state["holds"].get(data.get("id"))
         if not hold:
+            return {"error": "unavailable"}, 503
+        if "provider" in data and data["provider"] not in hold["providers"]:
             return {"error": "unavailable"}, 503
         if hold["settled"]:
             return {"ok": True}, 200  # idempotent; never refund twice
@@ -159,19 +238,21 @@ def transition(state: dict, action: str, data: dict, *, now: float, budget: str,
             amount = hold["amount"]  # timeout / absent usage keeps the entire hold
         if not isinstance(amount, (int, float)) or isinstance(amount, bool) or not math.isfinite(amount) or amount < 0:
             amount = hold["amount"]
-        row = state["days"][hold["day"]]
-        spent = row.setdefault("amount_nanos", money(row["amount"]))
         reserved = hold.get("amount_nanos", money(hold["amount"]))
         delta = money(amount) - reserved
-        row["amount_nanos"] = spent + delta
-        state["lifetime_nanos"] += delta
-        if amount > hold["amount"]:
-            # Unexpected usage or a changed provider contract fails closed.
-            row["amount_nanos"] = max(row["amount_nanos"], daily_limit)
-            state["lifetime_exhausted"] = True
-        if state["lifetime_nanos"] >= total_limit:
-            state["lifetime_exhausted"] = True
-        row["amount"] = row["amount_nanos"] / NANOS
+        for name in [*hold["providers"], "global"]:
+            scope = state if name == "global" else state["providers"][name]
+            row = scope["days"][hold["day"]]
+            total_limit = limits[name][1]
+            row["amount_nanos"] += delta
+            scope["lifetime_nanos"] += delta
+            # The affected provider fails closed; other providers can still
+            # run unless the actual aggregate spend reaches the sum guard.
+            if amount > hold["amount"] and name != "global":
+                scope["lifetime_exhausted"] = True
+            if scope["lifetime_nanos"] >= total_limit:
+                scope["lifetime_exhausted"] = True
+            row["amount"] = row["amount_nanos"] / NANOS
         hold["settled"] = True
         return {"ok": True}, 200
     return {"error": "unavailable"}, 503

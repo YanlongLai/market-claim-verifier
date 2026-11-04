@@ -14,6 +14,15 @@ def run_check(script, **config):
 
 
 PUBLIC_FIXTURES = r"""
+// Shared endpoint fixture; every test exercises the shipped provider shape.
+const budgetFixture = (legacy = {}) => {
+  const status = legacy.status || 'ready', limit = legacy.daily_limit_usd ?? 3;
+  const remaining = legacy.daily_remaining_usd ?? limit;
+  const row = {daily_limit:limit,daily_spent:legacy.daily_spent_usd ?? limit-remaining,daily_remaining:remaining,
+    lifetime_limit:20,lifetime_spent:0,lifetime_remaining:20,status};
+  return {day:'2026-11-03',resets_at:'2099-11-04T00:00:00Z',...legacy,
+    providers:legacy.providers || Object.fromEntries(['baseten','fireworks','meta'].map(id=>[id,{...row}]))};
+};
 const publicFixture = url => {
   if(url==='/examples/manifest.json' || url==='/data/examples/index.json')return {ok:true,json:async()=>JSON.parse(readFileSync(root+'/docs/examples/manifest.json','utf8'))};
   if(/^\/examples\/[a-z-]+\.txt$/.test(url))return {ok:true,text:async()=>readFileSync(root+'/docs'+url,'utf8')};
@@ -102,7 +111,7 @@ def test_password_restores_only_from_current_tab_session(language, remembered):
 
 @pytest.mark.parametrize("language", ["en", "zh"])
 @pytest.mark.parametrize("viewport", [390, 768, 1440])
-def test_budget_remaining_progress_low_warning_midnight_and_stops(language, viewport):
+def test_provider_meters_switch_compare_midnight_and_independent_stops(language, viewport):
     run_check(BUDGET, language=language, viewport=viewport)
 
 
@@ -216,7 +225,7 @@ assert.equal(target.querySelector('.live-trace').open,true,'invalid edit spans d
 // Exercise the same envelope through the form and a subsequent language switch.
 context.AbortController=AbortController;context.setTimeout=()=>0;context.clearTimeout=()=>{};
 context.fetch=async url=>({ok:true,json:async()=>url==='/api/check'?result:url==='/api/budget'?
-  {day:'2026-11-03',daily_limit_usd:3,daily_remaining_usd:3,resets_at:'2099-11-04T00:00:00Z',status:'ready'}:
+  budgetFixture({day:'2026-11-03',daily_limit_usd:3,daily_remaining_usd:3,resets_at:'2099-11-04T00:00:00Z',status:'ready'}):
   JSON.parse(readFileSync(root+'/docs/site/data/live-demo.json','utf8'))});
 context.liveTest.setupLive();await new Promise(resolve=>setImmediate(resolve));
 tree.querySelector('#live-input').value=config.corrections.original_text;
@@ -406,8 +415,8 @@ const requests=[];
 context.fetch=async url=>{
   if(publicFixture(url))return publicFixture(url);
   requests.push(url);assert.notEqual(url,'/api/check');
-  if(url==='/api/budget')return {ok:true,json:async()=>({day:'2026-11-03',daily_limit_usd:3,daily_remaining_usd:3,
-    resets_at:'2099-11-04T00:00:00Z',status:'ready'})};
+  if(url==='/api/budget')return {ok:true,json:async()=>(budgetFixture({day:'2026-11-03',daily_limit_usd:3,daily_remaining_usd:3,
+    resets_at:'2099-11-04T00:00:00Z',status:'ready'}))};
   assert.ok(['/data/live-demo-post.json','/data/live-demo.json'].includes(url));
   return {ok:true,json:async()=>url==='/data/live-demo-post.json'?post:claim};
 };
@@ -481,8 +490,8 @@ context.setTimeout=setTimeout;context.clearTimeout=clearTimeout;
 const demo=JSON.parse(readFileSync(root+'/docs/site/data/live-demo.json','utf8'));
 let finish, requests=[];
 let remaining=3,budgetReads=0;
-const budget=()=>({day:'2026-11-02',daily_limit_usd:3,daily_remaining_usd:remaining,daily_spent_usd:3-remaining,
-  resets_at:'2099-11-03T00:00:00Z',status:remaining===0?'budget_exhausted':'ready'});
+const budget=()=>(budgetFixture({day:'2026-11-02',daily_limit_usd:3,daily_remaining_usd:remaining,daily_spent_usd:3-remaining,
+  resets_at:'2099-11-03T00:00:00Z',status:remaining===0?'budget_exhausted':'ready'}));
 // Keep rollover timers inert in this DOM test; the real browser owns them.
 context.setTimeout=(fn,ms)=>ms>32000?0:setTimeout(fn,ms);context.clearTimeout=clearTimeout;
 context.fetch=async (url,opts)=>{
@@ -505,14 +514,14 @@ assert.deepEqual(JSON.parse(requests[0].opts.body),{text:demo.input,password:'of
 remaining=2.41;
 finish({ok:true,json:async()=>({...demo,mode:'live'})});await pending;
 assert.equal(budgetReads,2);
-assert.ok(tree.querySelector('#live-budget-text').textContent.includes('$2.41'));
+assert.ok(tree.querySelector('#budget-baseten-text').textContent.includes('$2.41'));
 assert.equal(submit.disabled,false);assert.equal(form.getAttribute('aria-busy'),'false');
 assert.equal(tree.querySelector('#live-result').hidden,false);
 assert.equal(tree.querySelector('#live-result').querySelectorAll('.trace-step').length,7);
 const failed=form.events.submit({preventDefault(){}});
 remaining=0;
 finish({ok:false,json:async()=>({error:'budget_exhausted'})});await failed;
-assert.equal(budgetReads,3);assert.equal(input.disabled,true);assert.equal(submit.disabled,true);
+assert.equal(budgetReads,3);assert.equal(input.disabled,false);assert.equal(submit.disabled,true);
 assert.equal(tree.querySelector('#live-result').hidden,true);
 assert.ok(tree.querySelector('#recorded-trace').textContent.includes('FY2025Q4'));
 context.stamps.setLanguage('zh');
@@ -541,8 +550,8 @@ context.fetch=async (url,opts)=>{
   if(url==='/data/live-demo-post.json')return {ok:true,json:async()=>JSON.parse(readFileSync(root+'/docs/site/data/live-demo-post.json','utf8'))};
   if(url==='/api/budget'){
     assert.ok(!JSON.stringify(opts).includes(credential));
-    return {ok:true,json:async()=>({day:'2026-11-02',daily_limit_usd:3,daily_remaining_usd:3,
-      resets_at:'2099-11-03T00:00:00Z',status:'ready'})};
+    return {ok:true,json:async()=>(budgetFixture({day:'2026-11-02',daily_limit_usd:3,daily_remaining_usd:3,
+      resets_at:'2099-11-03T00:00:00Z',status:'ready'}))};
   }
   requests.push({url,opts});
   return new Promise(resolve=>{finish=resolve;});
@@ -554,7 +563,7 @@ const input=tree.querySelector('#live-input');input.value=demo.input;input.event
 assert.equal(password.value,'');assert.equal(password.getAttribute('type'),'password');
 assert.equal(password.getAttribute('autocomplete'),'off');assert.equal(form.getAttribute('method'),'post');
 assert.ok(tree.querySelector('#recorded-trace').textContent.includes('FY2025Q4'));
-assert.ok(tree.querySelector('#live-budget-text').textContent.includes('$3.00'));
+assert.ok(tree.querySelector('#budget-baseten-text').textContent.includes('$3'));
 assert.ok(/submission notes|需要密碼/.test(tree.querySelector('#live-password-note').textContent));
 await form.events.submit({preventDefault(){}});assert.equal(requests.length,0);
 password.value=credential;
@@ -595,8 +604,8 @@ context.sessionStorage={
 context.fetch=async url=>{
   if(publicFixture(url))return publicFixture(url);
   assert.notEqual(url,'/api/check');
-  if(url==='/api/budget')return {ok:true,json:async()=>({day:'2026-11-02',daily_limit_usd:3,daily_remaining_usd:3,
-    resets_at:'2099-11-03T00:00:00Z',status:'ready'})};
+  if(url==='/api/budget')return {ok:true,json:async()=>(budgetFixture({day:'2026-11-02',daily_limit_usd:3,daily_remaining_usd:3,
+    resets_at:'2099-11-03T00:00:00Z',status:'ready'}))};
   return {ok:false};
 };
 context.liveTest.setupLive();await new Promise(resolve=>setImmediate(resolve));
@@ -607,37 +616,51 @@ assert.ok(!tree.textContent.includes('session-only-marker'));
 BUDGET = r"""
 context.URL=URL;context.AbortController=AbortController;
 context.setTimeout=()=>0;context.clearTimeout=()=>{};
-let data={day:'2026-11-02',daily_limit_usd:3,daily_spent_usd:.59,daily_remaining_usd:2.41,
-  resets_at:'2026-11-03T00:00:00Z',status:'ready'};
-let fail=false, checks=0;
+let data=budgetFixture({day:'2026-11-02',daily_limit_usd:3,daily_spent_usd:.59,daily_remaining_usd:2.41,
+  resets_at:'2026-11-03T00:00:00Z',status:'ready'});
+data.providers.fireworks={daily_limit:30,daily_spent:2,daily_remaining:28,lifetime_limit:50,lifetime_spent:12,lifetime_remaining:38,status:'ready'};
+data.providers.meta={daily_limit:15,daily_spent:1,daily_remaining:14,lifetime_limit:100,lifetime_spent:70,lifetime_remaining:30,status:'ready'};
+let fail=false,checks=0;
 context.fetch=async url=>{
   if(publicFixture(url))return publicFixture(url);
   if(url==='/api/budget')return {ok:!fail,json:async()=>data};
-  if(url==='/api/check'){checks++;assert.fail('stopped input must never submit');}
+  if(url==='/api/check'){checks++;assert.fail('stopped provider must never submit');}
   return {ok:false};
 };
 context.liveTest.setupLive();await new Promise(resolve=>setImmediate(resolve));
-const text=tree.querySelector('#live-budget-text'),meter=tree.querySelector('#live-budget-meter');
-const note=tree.querySelector('#live-budget-note'),input=tree.querySelector('#live-input'),submit=tree.querySelector('#live-submit');
-assert.ok(text.textContent.includes('$2.41'));assert.ok(text.textContent.includes('$3.00'));
-assert.ok(text.textContent.includes('00:00'));assert.equal(meter.max,3);assert.equal(meter.value,2.41);
+const text=tree.querySelector('#budget-baseten-text'),meter=tree.querySelector('#budget-baseten-meter');
+const note=tree.querySelector('#budget-baseten-status'),input=tree.querySelector('#live-input'),submit=tree.querySelector('#live-submit');
+assert.equal(tree.querySelectorAll('.provider-budget-meter').length,3);
+assert.ok(!tree.querySelector('#live-budget-meter'));
+assert.ok(text.textContent.includes('$2.41'));assert.ok(text.textContent.includes('$20'));
+assert.equal(meter.max,3);assert.equal(meter.value,2.41);
+assert.ok(tree.querySelector('#budget-fireworks-text').textContent.includes('$38'));
+assert.ok(tree.querySelector('#budget-meta-text').textContent.includes('$100'));
 assert.equal(input.disabled,false);assert.equal(note.hidden,true);
-data={...data,daily_remaining_usd:.09};await context.liveTest.refreshLiveBudget();
-assert.equal(note.hidden,false);assert.ok(/Almost used up|即將用完/.test(note.textContent));
-data={...data,daily_remaining_usd:.10};await context.liveTest.refreshLiveBudget();assert.equal(note.hidden,true);
-data={...data,daily_remaining_usd:0,status:'budget_exhausted'};await context.liveTest.refreshLiveBudget();
-assert.equal(input.disabled,true);assert.equal(submit.disabled,true);assert.equal(meter.value,0);
-assert.ok(note.textContent.includes('2026-11-03'));assert.ok(note.textContent.includes('00:00'));
-await tree.querySelector('#live-form').events.submit({preventDefault(){}});assert.equal(checks,0);
-data={...data,day:'2026-11-03',resets_at:'2026-11-04T00:00:00Z',daily_remaining_usd:3,status:'ready'};
-await context.liveTest.refreshLiveBudget();assert.equal(input.disabled,false);assert.equal(meter.value,3);
-for(const status of ['credit_exhausted','total_budget_exhausted']){
-  data={...data,status};await context.liveTest.refreshLiveBudget();
-  assert.equal(input.disabled,true);assert.equal(submit.disabled,true);
-  assert.ok(/paused|暫停/.test(note.textContent));
+for(const status of ['budget_exhausted','credit_exhausted','total_budget_exhausted']){
+  data.providers.baseten={...data.providers.baseten,daily_remaining:0,status};
+  await context.liveTest.refreshLiveBudget();
+  assert.equal(submit.disabled,true);assert.equal(input.disabled,false);assert.equal(meter.value,0);
+  assert.equal(note.hidden,false);
+  assert.ok(/Paused|暫停/.test(note.textContent));
+  assert.ok(/daily|credit|lifetime|每日|額度|累計/.test(note.textContent));
+  await tree.querySelector('#live-form').events.submit({preventDefault(){}});assert.equal(checks,0);
+  const radio=tree.querySelector('input[name="provider"][value="fireworks"]');radio.checked=true;radio.events.change();
+  assert.equal(submit.disabled,false,'switching to an available provider enables Run');
+  const selected=tree.querySelector('input[name="provider"][value="baseten"]');selected.checked=true;selected.events.change();
+  assert.equal(submit.disabled,true);
+  const compare=tree.querySelector('#compare-all');compare.checked=true;compare.events.change();
+  assert.equal(submit.disabled,false,'compare skips the exhausted provider');
+  compare.checked=false;compare.events.change();assert.equal(submit.disabled,true);
   context.stamps.setLanguage('zh');assert.ok(note.textContent.includes('暫停'));
-  context.stamps.setLanguage('en');assert.ok(note.textContent.includes('paused'));
+  context.stamps.setLanguage('en');assert.ok(note.textContent.includes('Paused'));
 }
-fail=true;await context.liveTest.refreshLiveBudget();assert.equal(input.disabled,true);assert.equal(meter.hidden,true);
+data={...data,day:'2026-11-03',resets_at:'2026-11-04T00:00:00Z'};
+data.providers.baseten={...data.providers.baseten,daily_remaining:3,status:'ready'};
+await context.liveTest.refreshLiveBudget();assert.equal(submit.disabled,false);assert.equal(meter.value,3);
+for(const row of Object.values(data.providers))row.status='credit_exhausted';
+const compare=tree.querySelector('#compare-all');compare.checked=true;compare.events.change();
+await context.liveTest.refreshLiveBudget();assert.equal(submit.disabled,true);
+fail=true;await context.liveTest.refreshLiveBudget();assert.equal(submit.disabled,true);assert.equal(meter.hidden,true);
 assert.ok(text.textContent.includes('unavailable'));
 """

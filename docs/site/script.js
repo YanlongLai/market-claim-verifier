@@ -395,20 +395,21 @@
     metrics: { revenue: "revenue", net_income: "net income", operating_income: "operating income", eps: "EPS" },
     growth: "growth",
     budget: {
-      loading: "Loading today's live-check budget…", unavailable: "Today's live-check budget is unavailable. See the saved examples.",
+      providerRemaining: "Today {daily} of {dailyLimit} · lifetime {lifetime} of {lifetimeLimit} left",
+      dailyStop: "Paused · daily limit · resets 00:00 UTC", lifetimeStop: "Paused · lifetime cap", creditStop: "Paused · credit stop",
+      loading: "Loading budget…", unavailable: "Budget unavailable. See saved examples.",
       mock: "Offline replay budget · no spending",
-      remaining: "Today's live-check budget: {remaining} of {limit} left · resets 00:00 UTC",
-      almost: "Almost used up", budget_exhausted: "Today's budget is used up — see the saved examples. Resets {reset} (00:00 UTC).",
-      total_budget_exhausted: "Live checks paused (total budget). An admin must reset the budget. See the saved examples.",
-      credit_exhausted: "Live checks paused (provider credit). See the saved examples."
+      budget_exhausted: "Daily limit reached. Resets {reset} (00:00 UTC).",
+      total_budget_exhausted: "This provider is paused (lifetime cap). See the saved examples.",
+      credit_exhausted: "This provider is paused (credit stop). See the saved examples."
     },
     errors: {
       invalid_input: "Enter 1–600 characters.", out_of_scope: "This check covers US equities and SEC financial facts only.",
       unauthorized: "Enter the live-check password to continue.",
       auth_rate_limited: "Too many incorrect passwords. {reset} The saved demo is available below.",
       budget_exhausted: "Today's budget is used up — see the saved examples. Resets 00:00 UTC.",
-      total_budget_exhausted: "Live checks paused (total budget). See the saved examples.",
-      credit_exhausted: "Live checks paused (provider credit). See the saved examples.",
+      total_budget_exhausted: "This provider is paused (lifetime cap). See the saved examples.",
+      credit_exhausted: "This provider is paused (credit stop). See the saved examples.",
       rate_limited: "5 checks / 10 min per IP, including a shared office IP. {reset} The saved demo is available below.",
       unavailable: "Live checking is unavailable. Follow the saved demo below.", timeout: "The check reached its time limit. No verdict was issued. Follow the saved demo below.",
       provider_error: "The model service did not complete this check. No verdict was issued. The saved demo is below.",
@@ -455,20 +456,21 @@
     metrics: { revenue: "營收", net_income: "淨利", operating_income: "營業利益", eps: "每股盈餘" },
     growth: "成長",
     budget: {
-      loading: "正在讀取今日即時查核預算…", unavailable: "暫時無法讀取今日即時查核預算。請查看已儲存的範例。",
+      providerRemaining: "今日剩 {daily}／{dailyLimit} · 累計剩 {lifetime}／{lifetimeLimit}",
+      dailyStop: "暫停 · 每日上限 · UTC 00:00 重設", lifetimeStop: "暫停 · 累計上限", creditStop: "暫停 · 額度用完",
+      loading: "正在讀取預算…", unavailable: "預算暫時無法讀取。請查看已儲存範例。",
       mock: "離線重播預算 · 不產生費用",
-      remaining: "今日即時查核預算：{limit} 中剩餘 {remaining} · UTC 00:00 重設",
-      almost: "預算即將用完", budget_exhausted: "今日預算已用完，請查看已儲存的範例。於 {reset}（UTC 00:00）重設。",
-      total_budget_exhausted: "即時查核暫停（總預算已用完）。需由管理員重設預算。請查看已儲存的範例。",
-      credit_exhausted: "即時查核暫停（供應商額度已用完）。請查看已儲存的範例。"
+      budget_exhausted: "已達每日上限，於 {reset}（UTC 00:00）重設。",
+      total_budget_exhausted: "此供應商暫停（累計預算已用完）。請查看已儲存的範例。",
+      credit_exhausted: "此供應商暫停（額度已用完）。請查看已儲存的範例。"
     },
     errors: {
       invalid_input: "請輸入 1–600 個字元。", out_of_scope: "此功能僅查核美股的 SEC 財務事實。",
       unauthorized: "請輸入即時查核密碼以繼續。",
       auth_rate_limited: "密碼錯誤次數過多。{reset} 下方示範仍可查看。",
       budget_exhausted: "今日預算已用完，請查看已儲存的範例。於 UTC 00:00 重設。",
-      total_budget_exhausted: "即時查核暫停（總預算已用完）。請查看已儲存的範例。",
-      credit_exhausted: "即時查核暫停（供應商額度已用完）。請查看已儲存的範例。",
+      total_budget_exhausted: "此供應商暫停（累計預算已用完）。請查看已儲存的範例。",
+      credit_exhausted: "此供應商暫停（額度已用完）。請查看已儲存的範例。",
       rate_limited: "每個 IP 每 10 分鐘限 5 次，共用辦公室 IP 也共用此額度。{reset} 下方示範仍可查看。",
       unavailable: "即時查核暫時無法使用。請查看下方已儲存的示範。", timeout: "查核已達時間上限，未作出裁定。請查看下方示範。",
       provider_error: "模型服務未完成查核，未作出裁定。請查看下方示範。", sec_unavailable: "SEC 資料暫時無法取得，未作出裁定。請查看下方示範。",
@@ -608,7 +610,7 @@
     openText: "Read the full post", openImage: "Open the image", openPdf: "Open the PDF", nativeText: "1 page · native text",
     imageAlt: "Screenshot of our example Big Tech post", videoAlt: "Preview of the example video still",
     loading: "Loading the saved example…",
-    privacy: "Example images and audio go to the Meta Model API for reading; the extracted text goes to Baseten for SEC checks. 5 checks / 10 min; shared daily budget.",
+    privacy: "Example images and audio go to the Meta Model API for reading; the extracted text goes to Baseten for SEC checks. 5 checks / 10 min; separate provider budgets.",
   };
   COPY.zh.examples = {
     title: "同一篇貼文，五種輸入", note: "使用我們自製的範例貼文。輸入密碼即可即時查核；查看已儲存結果不需密碼。",
@@ -642,14 +644,14 @@
     storyA: "A · Wrong period", storyB: "B · All correct", storyC: "C · Mixed",
     expected: "Expected outcome", expectedA: "Contradicted · $416.2B → $102.5B", expectedB: "Supported · nothing to correct",
     expectedC: "Unit error · not judged · insufficient", reset: "Reset example", openInput: "Open input file",
-    compareAll: "Compare on all", compareNote: "≈3× cost · three sequential runs · shared budget", run: "Run check", runCompare: "Compare providers",
+    compareAll: "Compare on all", compareNote: "Sequential runs · separate provider budgets", run: "Run check", runCompare: "Compare providers",
     privacy: "Authenticated runs and their input text are public in history for 14 days. OCR/ASR uses the Meta Model API; SEC checks use your chosen provider. 5 checks / 10 min per IP; a shared office IP shares this limit. A rate-limited request shows the reset time.",
     history: "Recent checks", historyNote: "Last 50 runs · public · retained for 14 days", refresh: "Refresh", historyLoading: "Loading history…",
     historyEmpty: "No checks yet.", historyUnavailable: "History is unavailable. Try Refresh.", historyOpening: "Opening the saved check…",
     historyFailed: "This check could not be opened. Try again.", whenDevice: "Time / device", storyKind: "Story / input",
     providerVerdict: "Provider / verdict", timeCost: "Duration / cost", custom: "Custom text", edit: "Edit & re-run",
     assetPending: "Example asset pending", assetsLoading: "Loading examples…", assetsFailed: "Examples could not be loaded. Reload to try again.", textLoading: "Loading example text…", textFailed: "Example text could not be loaded. Try Reset example.",
-    comparing: "Running the providers in sequence. Each run uses the shared budget…", comparison: "Provider comparison", openResult: "Open full result",
+    comparing: "Running providers in sequence, each with its own budget…", comparison: "Provider comparison", openResult: "Open full result",
     corrections: "Corrections", duration: "Duration", cost: "Verifier cost", prepCost: "Input reading cost", receipt: "Run receipt", verifier: "Verifier",
     noPreprocessing: "No preprocessing", nothingToCorrect: "Nothing to correct in the checked claims.", notJudged: "Not judged", notRun: "Not run",
     noScript: "Enable JavaScript to choose an input or read live history. The recorded text result is also available below."
@@ -660,14 +662,14 @@
     storyA: "A · 期間錯誤", storyB: "B · 全部正確", storyC: "C · 混合主張",
     expected: "預期結果", expectedA: "證據矛盾 · $416.2B → $102.5B", expectedB: "證據支持 · 無需修正",
     expectedC: "單位錯誤 · 不予判定 · 證據不足", reset: "重設範例", openInput: "開啟輸入檔案",
-    compareAll: "比較全部供應商", compareNote: "≈3× 費用 · 依序執行三次 · 共用預算", run: "執行查核", runCompare: "比較供應商",
+    compareAll: "比較全部供應商", compareNote: "依序執行 · 各供應商獨立預算", run: "執行查核", runCompare: "比較供應商",
     privacy: "通過密碼驗證的查核與輸入文字會公開於歷史紀錄，保留 14 天。OCR／ASR 使用 Meta Model API；SEC 查核使用所選供應商。每個 IP 每 10 分鐘限 5 次；共用辦公室 IP 也共用此額度。達到限制時會顯示重設時間。",
     history: "最近查核", historyNote: "最近 50 次 · 公開 · 保留 14 天", refresh: "重新整理", historyLoading: "正在讀取歷史紀錄…",
     historyEmpty: "尚無查核紀錄。", historyUnavailable: "無法讀取歷史紀錄，請重新整理。", historyOpening: "正在開啟已儲存查核…",
     historyFailed: "無法開啟此筆查核，請再試一次。", whenDevice: "時間／裝置", storyKind: "故事／輸入",
     providerVerdict: "供應商／判定", timeCost: "耗時／費用", custom: "自訂文字", edit: "編輯並重新查核",
     assetPending: "範例檔案待補", assetsLoading: "正在讀取範例…", assetsFailed: "無法讀取範例，請重新載入。", textLoading: "正在讀取範例文字…", textFailed: "無法讀取範例文字，請重設範例。",
-    comparing: "正依序執行各供應商；每次查核皆使用共用預算…", comparison: "供應商比較", openResult: "開啟完整結果",
+    comparing: "正依序執行各供應商；各自使用獨立預算…", comparison: "供應商比較", openResult: "開啟完整結果",
     corrections: "修正數", duration: "耗時", cost: "查核費用", prepCost: "輸入讀取費用", receipt: "執行收據", verifier: "查核",
     noPreprocessing: "無前處理", nothingToCorrect: "已核對的主張無需修正。", notJudged: "不予判定", notRun: "未執行",
     noScript: "請啟用 JavaScript 以選擇輸入或讀取即時歷史紀錄。下方也提供已儲存的文字查核。"
@@ -705,7 +707,7 @@
   "question4": "Cost & speed",
   "detail4": "Benchmark: $0.02 per claim; 10 s median. Live headline: one production claim.",
   "summary4": "$0.01 per live check · 6 s live",
-  "answer4": "$0.01 per live check; 6 s live (one recorded production claim). $0.02 per claim; 10 s median in the benchmark. $10/day; $60 lifetime.",
+  "answer4": "$0.01 per live check; 6 s live (one recorded production claim). $0.02 per claim; 10 s median in the benchmark. Separate daily and lifetime caps per provider.",
   "question5": "Accuracy",
   "detail5": "Held-out text, corrected gold. False support: 1/139; coverage ≠ accuracy.",
   "summary5": "90.2% (240/266) held out",
@@ -744,7 +746,7 @@
   "limit2": "The run manifest records a dirty working tree.",
   "limit3": "Post-hoc rechecks reuse seen inputs and are not a fresh held-out evaluation.",
   "limit4": "Frozen-transcript rechecks do not retest image reading or speech transcription (OCR/ASR). Extraction can miss assertions.",
-  "limit5": "Live runs share $10/day and $60 lifetime; 5 checks / 10 min per IP. Authenticated runs are public for 14 days.",
+  "limit5": "Each provider has daily and lifetime caps; 5 checks / 10 min per IP. Authenticated runs are public for 14 days.",
   "details": "Details",
   "privacySummary": "Authenticated runs are public in history for 14 days · 5 checks / 10 min per IP",
   "privacyDetails": "Input text is retained with each authenticated run. Images and speech use the Meta Model API; SEC checks use your chosen provider. A shared office IP shares the rate limit. Limited requests show the reset time.",
@@ -780,7 +782,7 @@
   "question4": "費用與速度",
   "detail4": "基準每題 $0.02，中位數 10 秒；即時主要數字來自單一正式環境主張。",
   "summary4": "即時每次 $0.01 · 6 秒",
-  "answer4": "即時查核每次 $0.01；即時 6 秒（單一正式環境主張紀錄）。基準測試每題 $0.02；中位數 10 秒。每日 $10；累計 $60。",
+  "answer4": "即時查核每次 $0.01；即時 6 秒（單一正式環境主張紀錄）。基準測試每題 $0.02；中位數 10 秒。各供應商有獨立每日與累計上限。",
   "question5": "準確率",
   "detail5": "保留文字測試、修正後答案；誤判為支持 1/139，涵蓋率 ≠ 準確率。",
   "summary5": "保留測試 90.2% (240/266)",
@@ -819,7 +821,7 @@
   "limit2": "執行清單記錄當時工作目錄有未提交的變更。",
   "limit3": "事後重查使用已看過的輸入，不是全新的保留測試。",
   "limit4": "凍結對話重查未重測圖片辨識或語音轉錄；擷取可能遺漏主張。",
-  "limit5": "即時查核共用每日 $10、累計 $60 預算；每個網路位址每 10 分鐘限 5 次。驗證後的查核公開保留 14 天。",
+  "limit5": "各供應商使用獨立的每日與累計預算；每個網路位址每 10 分鐘限 5 次。驗證後的查核公開保留 14 天。",
   "details": "詳細規則",
   "privacySummary": "驗證後查核公開保留 14 天 · 每個網路位址每 10 分鐘限 5 次",
   "privacyDetails": "通過驗證的輸入文字會隨查核保留。圖片與語音由官方模型介面讀取，申報查核使用所選供應商。共用辦公室網路也共用額度；達到限制時顯示重設時間。",
@@ -1212,9 +1214,22 @@
     target.append(trace);
   }
 
-  function liveStop() {
+  function providerStop(provider) {
     const stops = ["credit_exhausted", "total_budget_exhausted", "budget_exhausted"];
-    return stops.find(code => liveBudget?.status === code || liveStatus === code) || "";
+    const status = liveBudget?.providers?.[provider]?.status;
+    return stops.includes(status) ? status : "";
+  }
+
+  function memberStop(provider) {
+    const media = !customText && ["image", "audio", "video"].includes(selectedKind);
+    return providerStop(provider) || (media ? providerStop("meta") : "");
+  }
+
+  function liveStop() {
+    if ($("#compare-all")?.checked) {
+      return Object.keys(providers).every(id => memberStop(id)) ? memberStop(selectedProvider) : "";
+    }
+    return memberStop(selectedProvider);
   }
 
   function budgetStopText(stop) {
@@ -1222,23 +1237,29 @@
   }
 
   function renderLiveBudget() {
-    const text = $("#live-budget-text"), meter = $("#live-budget-meter"), note = $("#live-budget-note");
-    if (!text) return;
-    const copy = liveCopy("budget"), stop = liveStop();
-    text.textContent = liveBudget?.mode === "mock" ? copy.mock : liveBudget ? copy.remaining.replace("{remaining}", `$${liveBudget.daily_remaining_usd.toFixed(2)}`)
-      .replace("{limit}", `$${liveBudget.daily_limit_usd.toFixed(2)}`) : copy[budgetLoaded ? "unavailable" : "loading"];
-    meter.hidden = !liveBudget;
-    if (liveBudget) {
-      meter.max = Math.max(liveBudget.daily_limit_usd, 0.01);
-      meter.value = liveBudget.daily_remaining_usd;
-      meter.setAttribute("aria-valuetext", text.textContent);
-    }
-    note.textContent = stop ? budgetStopText(stop) : liveBudget?.daily_remaining_usd < 0.10 ? copy.almost : "";
-    note.hidden = !note.textContent;
-    const disabled = liveBusy || !liveBudget || Boolean(stop);
+    if (!$("#budget-baseten-text")) return;  // Historical evidence pages have no live chooser.
+    const copy = liveCopy("budget");
+    const dollars = amount => `$${amount.toFixed(2).replace(/\.00$/, "")}`;
+    Object.keys(providers).forEach(id => {
+      const text = $(`#budget-${id}-text`), meter = $(`#budget-${id}-meter`), note = $(`#budget-${id}-status`);
+      const budget = liveBudget?.providers?.[id], stop = providerStop(id);
+      text.textContent = budget ? copy.providerRemaining.replace("{daily}", dollars(budget.daily_remaining))
+        .replace("{dailyLimit}", dollars(budget.daily_limit)).replace("{lifetime}", dollars(budget.lifetime_remaining))
+        .replace("{lifetimeLimit}", dollars(budget.lifetime_limit)) : copy[budgetLoaded ? "unavailable" : "loading"];
+      if (liveBudget?.mode === "mock") text.textContent = copy.mock;
+      meter.hidden = !budget;
+      if (budget) {
+        meter.max = Math.max(budget.daily_limit, 0.01);
+        meter.value = budget.daily_remaining;
+        meter.setAttribute("aria-valuetext", text.textContent);
+      }
+      note.textContent = stop ? copy[{ budget_exhausted: "dailyStop", total_budget_exhausted: "lifetimeStop", credit_exhausted: "creditStop" }[stop]] : "";
+      note.hidden = !note.textContent;
+    });
+    const disabled = liveBusy || !liveBudget;
     $("#live-input").disabled = disabled;
     const asset = selectedAsset();
-    $("#live-submit").disabled = disabled || (!customText && (!asset?.ready || inputLoadState === "textLoading"));
+    $("#live-submit").disabled = disabled || Boolean(liveStop()) || (!customText && (!asset?.ready || inputLoadState === "textLoading"));
     $("#live-example").disabled = disabled;
     $("#live-password").disabled = liveBusy;
     $("#example-saved").disabled = liveBusy;
@@ -1255,7 +1276,12 @@
       });
       const data = await response.json();
       if (!response.ok || !["ready", "budget_exhausted", "total_budget_exhausted", "credit_exhausted"].includes(data.status) ||
-          ![data.daily_limit_usd, data.daily_remaining_usd].every(v => typeof v === "number" && Number.isFinite(v) && v >= 0) ||
+          !Object.keys(providers).every(id => {
+            const row = data.providers?.[id];
+            return row && ["ready", "budget_exhausted", "total_budget_exhausted", "credit_exhausted"].includes(row.status) &&
+              ["daily_limit", "daily_spent", "daily_remaining", "lifetime_limit", "lifetime_spent", "lifetime_remaining"]
+                .every(key => typeof row[key] === "number" && Number.isFinite(row[key]) && row[key] >= 0);
+          }) ||
           !Number.isFinite(Date.parse(data.resets_at))) throw new Error("budget unavailable");
       if (id !== budgetRequest) return;
       if (budgetDay && data.day !== budgetDay && liveStatus === "budget_exhausted") liveStatus = "";
@@ -1658,9 +1684,13 @@
       });
     });
     $$('#live-form input[name="provider"]').forEach(radio => radio.addEventListener("change", () => {
-      if (!liveBusy && providers[radio.value]) selectedProvider = radio.value;
+      if (!liveBusy && providers[radio.value]) {
+        selectedProvider = radio.value;
+        if (["budget_exhausted", "total_budget_exhausted", "credit_exhausted"].includes(liveStatus)) liveStatus = "";
+        localizeLive();
+      }
     }));
-    $("#compare-all").addEventListener("change", renderMatrix);
+    $("#compare-all").addEventListener("change", localizeLive);
     $("#example-saved").addEventListener("click", () => selectExampleSaved());
     $("#result-edit").addEventListener("click", editResult);
     $("#history-refresh").addEventListener("click", refreshHistory);
