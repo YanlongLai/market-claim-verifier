@@ -171,3 +171,14 @@ Built Oct 27 – Nov 4, 2026. Muse Code was not used.
 Fact-checking a finance post is an agent problem, not a summarisation problem: the model has to split a post into checkable assertions, decide which filing fact answers each one, call a tool with the right ticker, metric and period, read what comes back and try again when the period is wrong. Muse Spark did that reliably enough that we could make the program, not the model, the judge: the model proposes tools and interpretations; Python binds evidence and decides. That split is what turns 20.7% (direct answers) into 90.2% (held-out, with tools), and it is only possible because tool calling with structured arguments works consistently across the open-weight and API routes.
 
 The open weights matter for cost and control: Muse Spark Open on Baseten gives us about $0.02 per claim and 6–25 s, which is what makes "check every number before you post" affordable for a small publisher; the same weights on Fireworks give a second route; the Meta Model API adds OCR and speech so screenshots, PDFs, podcasts and videos enter the same pipeline. One model family across text, image and audio keeps the system simple enough that a solo developer could build, evaluate and ship it in nine days, with every run auditable.
+
+### Social distribution (for the Most Viral bonus and reach)
+
+The 60-second cut of the demo is posted on X first (its URL goes into the form), then cross-posted through DappGo's Postiz schedule to Threads, the Facebook Page and Instagram/Facebook Reels (9:16 variant). Links are recorded here after posting:
+
+| Channel | URL |
+| --- | --- |
+| X | `<X post URL>` |
+| Threads | `<URL>` |
+| Facebook Page | `<URL>` |
+| Instagram Reels | `<URL>` |
