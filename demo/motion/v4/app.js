@@ -10,6 +10,7 @@ const brollPaths={
 };
 function body(state){
  const scene=data.scenes[state.index];
+ if(scene.recording)return video(scene.recording.asset);
  if(state.placeholder)return `<section class="scene placeholder"><div class="kicker">DIRECTOR RECORDING PENDING · ${state.shot}</div><h1>${state.index===5?'Live site run — uncut':'Corrected draft + SEC filing'}</h1><p class="duration">${scene.target_s.toFixed(3)} seconds</p><p>${state.index===5?'Paste → Check → Meta trace → CONTRADICTED → SEC filing → corrected draft':'End on the working result · hackathon.dappgo.com'}</p><p class="note">Exact director duration. No live call, site recording or production receipt has been created for this scene.</p></section>`;
  switch(state.index){
  case 0:return `<iframe class="hero" src="${root}docs/site/index.html" title="Saved local site hero"></iframe><section class="disclosure"><h1>DappGo existed before this hackathon.</h1><p>This verifier, its site and every piece of evidence were built between October 27 and November 4.</p><p class="note">Director disclosure · local site source preview · no live call</p></section>`;
@@ -40,7 +41,7 @@ function seekVideo(el,time){
  pending.push(task);
 }
 window.seek=t=>{
- const state=stateAt(t);pending=[];
+ const state=stateAt(t,data.scenes);pending=[];
  if(previous!==state.shot){stage.innerHTML=body(state);previous=state.shot;}
  if(state.index===1)document.querySelector('#reposts').textContent=Math.floor(Math.min(1,state.local/12)*1000).toLocaleString('en-US');
  if(state.index===2){

@@ -16,7 +16,7 @@ from scale_v4 import compile_scale
 
 ROOT=Path(__file__).resolve().parent.parent
 OUT='demo/motion/v4'
-BOUNDARIES=[0.,6.,26.,40.,56.,72.,122.,146.,162.,178.]
+BOUNDARIES=[0.,9.,26.,40.,56.,72.,122.,146.,162.,178.]
 
 
 def scale_narration(scale):
@@ -40,8 +40,12 @@ def validate(story):
             raise BuildError(f"{s['id']}: subtitle cues differ from locked narration")
         if any(len(c.splitlines())>3 or max(map(len,c.splitlines()))>42 for c in s['subtitle_cues']):
             raise BuildError(f"{s['id']}: cue exceeds 3 x 42 characters")
-    if [s['id'] for s in scenes if s.get('placeholder')] != ['v406','v409']:
-        raise BuildError('Only beats 6 and 9 are the director site placeholders.')
+    for s in scenes:
+        if s['id'] in ('v406','v409'):
+            if bool(s.get('placeholder')) == bool(s.get('recording')):
+                raise BuildError('Each live scene requires either a pending placeholder or a retained recording.')
+        elif s.get('placeholder') or s.get('recording'):
+            raise BuildError('Only beats 6 and 9 accept site recordings.')
     if sum(s['target_s'] for s in scenes)>178 or story['max_total_s']>178:
         raise BuildError('v4 must remain <=178.0 seconds.')
 
@@ -49,6 +53,11 @@ def validate(story):
 def compile_data(root=ROOT, story=None, voices=None):
     story=copy.deepcopy(story or yaml.safe_load((root/'demo/storyboard-v4.yaml').read_text()))
     validate(story)
+    from record_v4 import check_recordings, RecordingError
+    try:
+        check_recordings(story, root, required=False)
+    except RecordingError as error:
+        raise BuildError(str(error)) from error
     scale=read_json(root/'demo/data/scale-v4.json')
     if scale!=compile_scale(root):
         raise BuildError('scale-v4.json is stale; rebuild it before motion preparation.')
@@ -129,7 +138,7 @@ def compile_data(root=ROOT, story=None, voices=None):
         product=product,phone_post=phone_post,metrics=metrics,inputs=inputs,provenance=provenance,
         scale=dict(median=scale['cohorts'][scale['selected_cohort']]['median_wall_seconds'],
                    hours=scale['projection']['sequential_hours_at_median']),
-        asset_status=dict(site_footage='director pending: v406=50 s, v409=16 s',
+        asset_status=dict(site_footage='recorded live takes' if all(s.get('recording') for s in story['scenes'] if s['id'] in ('v406','v409')) else 'director pending: v406=50 s, v409=16 s',
                           terminal='real PTY recordings',broll='see demo/prompts/broll/prompts-r4.json'))
 
 
@@ -143,6 +152,12 @@ def artifacts(data):
 
 
 def prepare(builder, *, require_voice=False):
+    if require_voice:
+        from record_v4 import check_recordings, RecordingError
+        try:
+            check_recordings(builder.story, builder.repo)
+        except RecordingError as error:
+            raise BuildError(str(error)) from error
     voices=None
     try:
         voices=[builder.require_voice(s) for s in builder.scenes]
@@ -166,8 +181,8 @@ def main():
     else:
         for relative,content in outputs.items():
             path=ROOT/relative;path.parent.mkdir(parents=True,exist_ok=True);path.write_text(content)
-    print('PASS v4: nine locked beats, 178.000 s, bounded cues, source hashes, two exact site placeholders')
-    print('Preview timing only. Voice is unmeasured; no live site footage has been recorded.')
+    print('PASS v4: nine locked beats, 178.000 s, bounded cues, source hashes, live-take validation')
+    print('Target preview only; measured voice timing is prepared separately on the host.')
 
 
 if __name__=='__main__':main()

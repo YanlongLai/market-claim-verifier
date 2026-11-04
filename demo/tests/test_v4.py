@@ -24,9 +24,9 @@ STORY=yaml.safe_load((ROOT/'demo/storyboard-v4.yaml').read_text())
 
 def test_director_nine_beats_and_two_exact_placeholders():
     motion_v4.validate(STORY)
-    assert [s['target_s'] for s in STORY['scenes']]==[6,20,14,16,16,50,24,16,16]
+    assert [s['target_s'] for s in STORY['scenes']]==[9,17,14,16,16,50,24,16,16]
     assert sum(s['target_s'] for s in STORY['scenes'])==178.0
-    assert [(s['id'],s['target_s']) for s in STORY['scenes'] if s.get('placeholder')]==[('v406',50),('v409',16)]
+    assert [(s['id'],s['target_s']) for s in STORY['scenes'] if s.get('placeholder') or s.get('recording')]==[('v406',50),('v409',16)]
     assert (ROOT/'demo/NARRATION-v4.txt').read_text().strip().split('\n\n')==[s['narration'] for s in STORY['scenes']]
     for s in STORY['scenes']:
         assert ' '.join(' '.join(s['subtitle_cues']).split())==' '.join(s['narration'].split())
@@ -194,7 +194,25 @@ def test_motion_compiler_keeps_v3_host_outputs_and_rejects_voice_overrun():
     assert motion_build.motion_folder(builder)==ROOT/'demo/motion/v4'
     assert motion_build.renderer_args(builder)==['--entry','v4/index.html']
     with pytest.raises(BuildError,match='never sped up or cut'):
-        motion_v4.compile_data(voices=[{'voice_s':7}]*9)
+        motion_v4.compile_data(voices=[{'voice_s':9}]*9)
+
+
+def test_r3_measured_cues_fit_the_director_reallocation_without_changing_later_cuts(tmp_path, monkeypatch):
+    audit=json.loads((ROOT/'demo/prep/v4/voice-timing-r3.json').read_text())
+    assert audit['status']=='measured-all-fit' and audit['other_overruns']==[]
+    assert [r['voice_s'] for r in audit['records']]==[8.24,10.64,7.44,12.24,13.84,20.64,16.8,12.8,4.88]
+    assert audit['director_change']['total_s']==178
+    audio=tmp_path/'offline-audio-hash-fixture.wav';audio.write_bytes(b'not decoded: detector stubbed')
+    monkeypatch.setattr(motion_v4,'detect_silences',lambda *_args:[])
+    voices=[]
+    for scene,row in zip(STORY['scenes'],audit['records']):
+        assert row['scene_id']==scene['id'] and row['narration_matches']
+        assert row['voice_s']+STORY['pad_s']<=scene['target_s']
+        voices.append(dict(voice_s=row['voice_s'],key='offline-fixture',artifacts={'audio':{'path':str(audio)}}))
+    timing=motion_v4.compile_data(voices=voices)['timing']
+    assert timing['shots'][0]['voice_end']==8.24 and timing['shots'][0]['end']==9
+    assert timing['shots'][1]['start']==9 and timing['shots'][1]['end']==26
+    assert [shot['end'] for shot in timing['shots'][1:]]==[26,40,56,72,122,146,162,178]
 
 
 def test_architecture_svg_size_legibility_and_wan_quality_lock():
