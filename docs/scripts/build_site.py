@@ -99,7 +99,7 @@ STAMP_PERSONAS = {
     },
     "tw-social-post-meta": {
         "id": "lazy-cat", "name": {"en": "US Stocks in 1 Minute", "zh": "美股懶人包"},
-        "byline": {"en": "@stocksin1minute", "zh": "美股懶人包"}, "followers": 43000,
+        "byline": {"en": "@usstocks1min", "zh": "美股懶人包"}, "followers": 43000,
         "follower_label": {"en": "43K followers", "zh": "4.3 萬 追蹤"},
     },
     "market-recap-repost": {
@@ -115,9 +115,9 @@ STAMP_PERSONAS = {
 }
 
 SYSTEM_ORDER = [
+    "agent@meta",
     "agent@baseten",
     "agent@fireworks",
-    "agent@meta",
     "single_shot@meta",
     "single_shot@baseten",
     "single_shot@fireworks",
@@ -128,8 +128,8 @@ PROVIDER_ORDER = ("meta", "baseten", "fireworks")
 SYSTEM_META = {
     "agent@baseten": {"mode": "agent", "provider": "Baseten", "short": "Agent · Baseten"},
     "agent@fireworks": {"mode": "agent", "provider": "Fireworks", "short": "Agent · Fireworks"},
-    "agent@meta": {"mode": "agent", "provider": "Meta API", "short": "Agent · Meta API"},
-    "single_shot@meta": {"mode": "single-shot", "provider": "Meta API", "short": "Single-shot · Meta API"},
+    "agent@meta": {"mode": "agent", "provider": "Meta Model API", "short": "Agent · Meta Model API"},
+    "single_shot@meta": {"mode": "single-shot", "provider": "Meta Model API", "short": "Single-shot · Meta Model API"},
     "single_shot@baseten": {"mode": "single-shot", "provider": "Baseten", "short": "Single-shot · Baseten"},
     "single_shot@fireworks": {"mode": "single-shot", "provider": "Fireworks", "short": "Single-shot · Fireworks"},
 }

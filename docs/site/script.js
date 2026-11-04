@@ -58,7 +58,7 @@
       example: {
         title: "A real post, checked.",
         english: "English post",
-        chinese: "中文貼文",
+        chinese: "Chinese post",
         postLabel: "Post",
         loading: "Loading the report...",
         unavailable: "The report is not available in this view.",
@@ -365,13 +365,13 @@
     scope: "US equities · SEC financial facts only. No prices, forecasts, crypto or investment advice.",
     input: "Paste a financial sentence or short post", submit: "Check against SEC", useExample: "Use Apple example",
     password: "Live-check password",
-    passwordNote: "Judges: password in the submission notes; saved examples need none",
+    passwordNote: "Judges: the password is our team name; saved examples need none.",
     privacy: "Text goes to Baseten for this check; we do not save it. Anonymous rate counters expire after 10 minutes. 5 checks / 10 min.",
     recordedTitle: "Saved checks",
     savedPost: "Saved check · viral post · 28 Oct 2026", savedClaim: "Saved check · one claim",
     recordedNote: "Saved run · 28 Oct 2026 · actual model calls and SEC evidence. Available even when the live budget runs out.",
     loading: "Loading the recorded trace…", loadingFailed: "The saved trace could not load. Try refreshing the page.",
-    pending: "Muse Spark is choosing tools and checking SEC facts…", complete: "Check complete. The program verdict and trace are below.",
+    pending: "Muse Spark is choosing tools and checking SEC facts… 6–90 s by provider.", complete: "Check complete. The program verdict and trace are below.",
     recorded: "Recorded run", live: "Live check", mock: "Offline replay · saved result for the Apple example only",
     claims: "Program checks", evidence: "SEC evidence", trace: "Agent trace", model: "Model step", tool_call: "Tool call",
     tool_result: "Tool result", program_check: "Program check", program_binding: "Program evidence binding", verdict: "Program verdict", raw: "Inspect data",
@@ -426,13 +426,13 @@
     scope: "限美股 SEC 財務事實。不查股價、預測、加密貨幣，也不提供投資建議。",
     input: "貼上一句財務敘述或短貼文", submit: "比對 SEC 資料", useExample: "使用 Apple 範例",
     password: "即時查核密碼",
-    passwordNote: "即時查核需要密碼；評審密碼在提交備註中，已儲存範例免密碼。",
+    passwordNote: "評審：密碼是我們的隊名；已儲存範例免密碼。",
     privacy: "文字會傳至 Baseten 進行查核；本站不儲存文字。匿名限流計數於 10 分鐘後刪除。每 10 分鐘限 5 次。",
     recordedTitle: "已儲存的查核",
     savedPost: "已儲存查核 · 熱傳貼文 · 2026 年 10 月 28 日", savedClaim: "已儲存查核 · 單一主張",
     recordedNote: "已儲存紀錄 · 2026 年 10 月 28 日 · 真實模型呼叫與 SEC 證據。即時預算用完仍可查看。",
     loading: "正在讀取查核紀錄…", loadingFailed: "無法讀取查核紀錄，請重新整理頁面。",
-    pending: "Muse Spark 正在選擇工具並比對 SEC 事實…", complete: "查核完成。以下是程式裁定與執行過程。",
+    pending: "Muse Spark 正在選擇工具並比對 SEC 事實… 依供應商約需 6–90 秒。", complete: "查核完成。以下是程式裁定與執行過程。",
     recorded: "已儲存的執行紀錄", live: "即時查核", mock: "離線重播 · 僅回放已儲存的 Apple 範例",
     claims: "程式檢查", evidence: "SEC 證據", trace: "代理執行過程", model: "模型步驟", tool_call: "工具呼叫",
     tool_result: "工具回傳", program_check: "程式檢查", program_binding: "程式證據綁定", verdict: "程式裁定", raw: "檢視資料",
@@ -826,9 +826,9 @@
   "privacySummary": "驗證後查核公開保留 14 天 · 每個網路位址每 10 分鐘限 5 次",
   "privacyDetails": "通過驗證的輸入文字會隨查核保留。圖片與語音由官方模型介面讀取，申報查核使用所選供應商。共用辦公室網路也共用額度；達到限制時顯示重設時間。",
   "noscriptTrace": "互動紀錄需要啟用瀏覽器指令。",
-  "providerBaseten": "供應商一",
-  "providerFireworks": "供應商二",
-  "providerMeta": "官方模型介面",
+  "providerBaseten": "Baseten",
+  "providerFireworks": "Fireworks",
+  "providerMeta": "Meta Model API",
   "today": "今天",
   "yesterday": "昨天",
   "utc": "世界協調時間",
@@ -896,9 +896,9 @@
   let examplesIndex = [];
   let exampleSavedStatus = "";
   const providers = {
+    meta: { label: "Meta Model API", model: "muse-spark-1.3" },
     baseten: { label: "Baseten", model: "meta-models/muse-spark-open-1026" },
-    fireworks: { label: "Fireworks", model: "accounts/fireworks/models/muse-spark-open" },
-    meta: { label: "Meta Model API", model: "muse-spark-1.3" }
+    fireworks: { label: "Fireworks", model: "accounts/fireworks/models/muse-spark-open" }
   };
   let stories = [
     { id: "A", titleKey: "storyA", expectedKey: "expectedA" },
@@ -1714,8 +1714,8 @@
       liveStatus = compare ? "comparing" : exampleId && selectedKind !== "text" ? "mediaPending" : "pending";
       localizeLive();
       const controller = new AbortController();
-      // Comparison runs sequentially on the origin; allow all three bounded runs.
-      const timer = setTimeout(() => controller.abort(), compare ? 210000 : exampleId ? 70000 : 32000);
+      // Pages fetches comparison members sequentially, each with its own origin timeout.
+      const timer = setTimeout(() => controller.abort(), compare ? 290000 : 100000);
       try {
         const response = await fetch(compare ? "/api/compare" : exampleId ? "/api/check-example" : "/api/check", {
           method: "POST", headers: { "Content-Type": "application/json" },
@@ -3671,7 +3671,7 @@
   }
 
   function providerName(provider) {
-    const names = { meta: "Meta API", baseten: "Baseten", fireworks: "Fireworks" };
+    const names = { meta: "Meta Model API", baseten: "Baseten", fireworks: "Fireworks" };
     return names[provider] || provider;
   }
 

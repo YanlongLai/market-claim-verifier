@@ -68,7 +68,8 @@ def test_replay_through_real_http_adapter_preserves_python_verdict_cost_and_priv
     async def run():
         responses = iter(TRACE["requests"])
         async def transport(req):
-            assert req.extensions["timeout"] == dict.fromkeys(("connect", "read", "write", "pool"), 22)
+            assert req.extensions["timeout"] == dict.fromkeys(("connect", "read", "write", "pool"),
+                                                            85 if req.url.host == "inference.baseten.co" else 22)
             if req.url.host == "inference.baseten.co":
                 assert req.headers["Authorization"] == "Bearer offline-api-key-marker"
                 payload = json.loads(req.content)
@@ -322,7 +323,7 @@ def test_sec_allowlist_redirect_rejection_and_six_hour_memory_disk_cache(tmp_pat
 
 def test_overall_timeout_keeps_reservation_and_returns_same_504_shape(tmp_path, monkeypatch):
     timeout = asyncio.timeout
-    monkeypatch.setattr(server.asyncio, "timeout", lambda seconds: timeout(.01 if seconds == 55 else seconds))
+    monkeypatch.setattr(server.asyncio, "timeout", lambda seconds: timeout(.01 if seconds == 90 else seconds))
     async def transport(req):
         await asyncio.Event().wait()
     async def run():

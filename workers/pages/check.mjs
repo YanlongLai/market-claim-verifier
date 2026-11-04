@@ -10,7 +10,7 @@ const diagnostic = originStatus => new Response(JSON.stringify({ error: "unavail
   origin_status: originStatus }), { status: 503, headers });
 const error = (code, status) => new Response(JSON.stringify({ error: code, demo: "data/live-demo.json" }), { status, headers });
 
-async function originFetch(env, path, options = {}, timeout = 55000) {
+async function originFetch(env, path, options = {}, timeout = 92000) {
   // Dashboard pastes can carry a trailing newline, which is invalid in a header.
   const clean = value => typeof value === "string" ? value.trim() : value;
   env = { ...env, LIVE_ORIGIN_HOST: clean(env.LIVE_ORIGIN_HOST), LIVE_ACCESS_CLIENT_ID: clean(env.LIVE_ACCESS_CLIENT_ID),
@@ -231,28 +231,33 @@ async function onCheck({ request, env }, action) {
     }
     const ip = request.headers.get("CF-Connecting-IP");
     if (!ip) return error("unavailable", 503);
-    const { response, data: result } = await originFetch(env, `/api/${action}`, {
-      method: "POST", headers: { "Content-Type": "application/json", "X-Live-Client-IP": ip,
-        ...(request.headers.get("User-Agent") ? { "User-Agent": request.headers.get("User-Agent").slice(0, 1024) } : {}) },
-      body: JSON.stringify({ ...(example ? { example_id: data.example_id } : { text: data.text.trim() }),
-        password: typeof data.password === "string" ? data.password : "",
-        ...(compare ? { providers: data.providers } : "provider" in data ? { provider: data.provider } : {}) }),
-    }, compare ? 195000 : example ? 65000 : 55000);
-    if (compare && response.status === 200) {
-      if (!Array.isArray(result?.runs) || !result.runs.length || result.runs.length > requestedProviders.length) return error("unavailable", 503);
-      const runs = result.runs.map(run => publicEnvelope(run, true));
-      if (runs.some((run, i) => !run || run.receipt.provider !== requestedProviders[i] ||
-          example && run.input.example_id !== data.example_id)) return error("unavailable", 503);
-      const stopped = new Set(["rate_limited"]);
-      if (runs.slice(0, -1).some(run => stopped.has(run.error)) ||
-          runs.length < requestedProviders.length && !stopped.has(runs.at(-1).error)) return error("unavailable", 503);
-      return Response.json({ runs }, { headers });
+    // Each member gets a separate origin response below Cloudflare's 100 s limit.
+    // The shared deadline also bounds three 97 s example requests to 290 s total.
+    const deadline = Date.now() + 290000;
+    const runs = [];
+    for (const selected of requestedProviders) {
+      const remaining = deadline - Date.now();
+      if (remaining <= 0) return error("timeout", 504);
+      const { response, data: result } = await originFetch(env, `/api/${example ? "check-example" : "check"}`, {
+        method: "POST", headers: { "Content-Type": "application/json", "X-Live-Client-IP": ip,
+          ...(request.headers.get("User-Agent") ? { "User-Agent": request.headers.get("User-Agent").slice(0, 1024) } : {}) },
+        body: JSON.stringify({ ...(example ? { example_id: data.example_id } : { text: data.text.trim() }),
+          password: typeof data.password === "string" ? data.password : "",
+          ...(compare || "provider" in data ? { provider: selected } : {}) }),
+      }, Math.min(example ? 97000 : 92000, remaining));
+      if (response.status !== 200 && (![400, 401, 422, 429, 503, 504].includes(response.status) || !errors.has(result?.error))) return error("unavailable", 503);
+      // Authentication/validation failures have not started a member run.
+      const rejected = ["invalid_input", "unauthorized", "auth_rate_limited", "unknown_provider", "out_of_scope", "unknown_example", "example_unavailable"].includes(result?.error);
+      const requireReceipt = response.status === 200 || compare && !rejected;
+      const publicResult = publicEnvelope(result, requireReceipt);
+      if (!publicResult || response.status === 200 && !verdicts.has(publicResult.verdict) ||
+          requireReceipt && (publicResult.receipt.provider !== selected ||
+            example && publicResult.input.example_id !== data.example_id)) return error("unavailable", 503);
+      if (!compare || rejected) return Response.json(publicResult, { status: response.status, headers });
+      runs.push(publicResult);
+      if (publicResult.error === "rate_limited") break;
     }
-    if (response.status !== 200 && (![400, 401, 422, 429, 503, 504].includes(response.status) || !errors.has(result?.error))) return error("unavailable", 503);
-    const publicResult = publicEnvelope(result, response.status === 200);
-    if (!publicResult || response.status === 200 && (!verdicts.has(publicResult.verdict) || publicResult.receipt.provider !== requestedProviders[0]) ||
-        example && response.status === 200 && publicResult.input.example_id !== data.example_id) return error("unavailable", 503);
-    return Response.json(publicResult, { status: response.status, headers });
+    return Response.json({ runs }, { headers });
   } catch {
     return error("unavailable", 503);
   }

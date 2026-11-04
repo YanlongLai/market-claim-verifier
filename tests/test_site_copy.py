@@ -169,7 +169,24 @@ def test_provider_budget_placeholders_and_meters_are_in_the_chooser():
     for relative in ("docs/site/index.html", "docs/zh/index.html"):
         html = (ROOT / relative).read_text()
         chooser = html.split('<fieldset class="provider-picker">', 1)[1].split('</fieldset>', 1)[0]
+        assert re.findall(r'name="provider" value="([^"]+)"', chooser) == ['meta', 'baseten', 'fireworks']
+        assert re.findall(r'name="provider" value="([^"]+)" checked', chooser) == ['baseten']
+        assert re.findall(r'data-chart-provider="([^"]+)"', html) == ['all', 'meta', 'baseten', 'fireworks']
         for provider in ("baseten", "fireworks", "meta"):
             assert f'id="budget-{provider}-text"' in chooser
             assert f'id="budget-{provider}-meter"' in chooser
         assert 'id="live-budget-meter"' not in html
+
+
+def test_judge_password_hint_and_timeout_copy_do_not_embed_the_password():
+    import subprocess
+    copy = json.loads(subprocess.run(
+        ['node', '-e', 'process.stdout.write(JSON.stringify(require(process.argv[1])))',
+         str(ROOT / 'docs/site/script.js')], check=True, capture_output=True, text=True).stdout)
+    assert copy['en']['live']['passwordNote'] == 'Judges: the password is our team name; saved examples need none.'
+    assert copy['zh']['live']['passwordNote'] == '評審：密碼是我們的隊名；已儲存範例免密碼。'
+    assert '6–90 s by provider' in copy['en']['live']['pending']
+    for language in ('en', 'zh'):
+        assert 'dappgo' not in copy[language]['live']['passwordNote'].lower()
+    for relative in ('README.md', 'JUDGES.md', 'docs/SUBMISSION.md'):
+        assert 'Password: the team name (dappgo)' in (ROOT / relative).read_text()

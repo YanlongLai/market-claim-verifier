@@ -127,7 +127,7 @@ DISCOVERY = r"""
 await new Promise(resolve=>setImmediate(resolve));
 assert.equal(tree.querySelector('#example-saved').textContent,config.language==='zh'?'查看已儲存結果':'See saved result');
 assert.ok(tree.querySelector('#example-recording').textContent.includes('2026-11-03'));
-assert.ok(tree.querySelector('#example-recording').textContent.includes(config.language==='zh'?'供應商一':'Baseten'));
+assert.ok(tree.querySelector('#example-recording').textContent.includes('Baseten'));
 await click('#example-saved');
 assert.equal(paid.length,0);assert.equal(tree.querySelector('#live-result').hidden,false);
 assert.ok(tree.querySelector('#live-result .live-corrections'));

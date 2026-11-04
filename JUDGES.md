@@ -9,7 +9,7 @@
 | Step | Open | Inspect |
 | --- | --- | --- |
 | Watch | [Demo video — publication pending](#demo-video-todo) | Post → evidence → program verdict → corrected draft. |
-| Try | [Live check](https://hackathon.dappgo.com/#live-check) | Choose a story, input and provider. Judges: password in the submission notes. |
+| Try | [Live check](https://hackathon.dappgo.com/#live-check) | Choose a story, input and provider. Password: the team name (dappgo). |
 | Replay | [Saved check](https://hackathon.dappgo.com/#recorded-run) | No password; open the corrected draft, SEC citations and agent trace. |
 | Audit | [Original benchmark](docs/evidence/eval-v2-2026-10-27/REPORT.md#metrics) | Read held-out results, failures and the corrected-gold disclosure. |
 
@@ -26,8 +26,8 @@ Muse Spark chooses SEC tools; Python binds evidence, calculates the verdict and 
 | What it does | Extracts assertions, checks SEC evidence and returns verdicts, a corrected draft, trace and receipt. [Correction report](docs/evidence/corrected-draft-2026-11-03/REPORT.md). |
 | Coverage | US-GAAP SEC filers: ≈8,000 companies; 23 tested. SEC XBRL periods, generally 2009 onward through the latest filing. Annual, quarterly and growth comparisons. [Scope report](docs/evidence/REVIEW_GUIDE.md#facts-in-detail). |
 | Inputs | Website: text ≤600 characters and 3 stories × 5 packaged inputs. CLI: text, images, PDFs, audio and video. [Site report](docs/evidence/try-v3-site-2026-11-03/REPORT.md), [format report](docs/evidence/input-formats-2026-10-30/REPORT.md). |
-| Providers | Baseten, Fireworks and Meta Model API, all Meta verifier models; media uses Meta OCR/ASR. [Recorded models](docs/evidence/eval-v2-2026-10-27/manifest.json). |
-| Cost & speed | Live headline: $0.01 / 6 s. Planning band: $0.01–0.04 / 6–25 s by input size, plus media preprocessing. Benchmark: $0.02 per claim, 10 s median, p95 21 s. [Receipts and scope](docs/evidence/readme-v3-2026-11-04/REPORT.md#cost-and-speed). |
+| Providers | Meta Model API, Baseten and Fireworks, all Meta verifier models; media uses Meta OCR/ASR. [Recorded models](docs/evidence/eval-v2-2026-10-27/manifest.json). |
+| Cost & speed | Live headline: $0.01 / 6 s. Planning band: $0.01–0.04 / 6–90 s by provider, plus media preprocessing. Benchmark: $0.02 per claim, 10 s median, p95 21 s. [Receipts and scope](docs/evidence/readme-v3-2026-11-04/REPORT.md#cost-and-speed). |
 | Accuracy | 90.2% (240/266) held out; false support 1/139 reference contradicted/insufficient claims. Failures count as wrong. [Original report](docs/evidence/eval-v2-2026-10-27/REPORT.md#metrics). |
 | Corrections | Strike disproved numbers, insert program values and cite component filings. Only uniquely bound checked assertions change; never article approval. [Retained Apple example](docs/evidence/corrected-draft-2026-11-03/REPORT.md#retained-apple-example). |
 | Live limits | Per-provider daily/lifetime caps; 5 checks / 10 min per IP. Authenticated inputs/results are public for 14 days. [Cap settings and migration](deploy/README.md#setting-provider-caps). |

@@ -26,6 +26,11 @@ def test_compare_uses_one_sequential_api_request_and_three_provider_columns(lang
     run_check(SETUP + COMPARE, language=language, custom=custom)
 
 
+@pytest.mark.parametrize('custom,compare', [(True, False), (False, False), (False, True)])
+def test_browser_deadline_covers_text_examples_and_all_comparison_members(custom, compare):
+    run_check(SETUP + DEADLINE, custom=custom, compare=compare)
+
+
 @pytest.mark.parametrize("language", ["en", "zh"])
 def test_public_history_opens_full_envelope_then_edits_text_and_provider(language):
     run_check(SETUP + HISTORY, language=language)
@@ -181,14 +186,14 @@ const running=submit();
 assert.ok(tree.querySelector('#live-submit').disabled);assert.ok(password.disabled);
 await submit();assert.equal(paid.length,1);
 assert.equal(paid[0].url,'/api/compare');
-assert.deepEqual(paid[0].body,{...(config.custom?{text:'Apple revenue test'}:{example_id:'a-video'}),password:'password-marker',providers:['baseten','fireworks','meta']});
+assert.deepEqual(paid[0].body,{...(config.custom?{text:'Apple revenue test'}:{example_id:'a-video'}),password:'password-marker',providers:['meta','baseten','fireworks']});
 finish({ok:true,status:200,json:async()=>({runs:Object.keys(modelIds).map(provider=>envelope('a-video',provider))})});await running;
 const table=tree.querySelector('.compare-table');
 assert.equal(table.querySelectorAll('th').length,3);assert.equal(table.querySelectorAll('tbody tr').length,6);
-assert.ok(table.textContent.includes(config.language==='zh'?'供應商二':'Fireworks'));assert.ok(table.textContent.includes('$0.01'));
-assert.equal(tree.querySelector('#live-result .live-receipt').textContent.includes(config.language==='zh'?'供應商一':'Baseten'),true);
-await table.querySelectorAll('button')[1].events.click();
-assert.ok(tree.querySelector('#live-result .live-receipt').textContent.includes(config.language==='zh'?'供應商二':'Fireworks'));
+assert.ok(table.textContent.includes('Fireworks'));assert.ok(table.textContent.includes('$0.01'));
+assert.equal(tree.querySelector('#live-result .live-receipt').textContent.includes('Meta Model API'),true);
+await table.querySelectorAll('button')[2].events.click();
+assert.ok(tree.querySelector('#live-result .live-receipt').textContent.includes('Fireworks'));
 context.stamps.setLanguage(config.language==='zh'?'en':'zh');
 assert.equal(tree.querySelectorAll('.compare-table th').length,3);
 assert.equal(tree.querySelector('.compare-table caption').textContent,config.language==='zh'?'Provider comparison':'供應商比較');
@@ -283,6 +288,14 @@ await context.liveTest.loadExamples();assert.ok(tree.querySelector('#input-previ
 """
 
 LAYOUT = r"""
+assert.equal(property('.hero-layout','grid-template-columns'),'minmax(0, 1fr)');
+assert.equal(property('.hero-layout .hero-copy','max-width'),'none');
+assert.equal(property('.hero-layout .hero-lede','max-width'),'none');
+assert.equal(property('.hero-layout .stamp-scene','width'),'100%');
+assert.equal(property('.hero-layout .stamp-scene','max-width'),'none');
+assert.equal(property('.stamp-stage','grid-template-columns'),viewport<=639?'minmax(0, 1fr)':'minmax(0, 1fr) var(--stamp-robot-width) minmax(0, 1fr)');
+assert.equal(property('.stamp-author','overflow-wrap'),'normal');
+assert.equal(property('.stamp-company','overflow-wrap'),'normal');
 assert.equal(property('.try-layout','grid-template-columns'),viewport<=1023?'minmax(0, 1fr)':'minmax(0, 1.3fr) minmax(0, 1fr)');
 assert.equal(property('.try-layout > *','min-width'),'0');
 assert.equal(property('.history-table','table-layout'),'fixed');
@@ -291,6 +304,24 @@ assert.equal(property('.provider-options','grid-template-columns'),'repeat(3, mi
 assert.equal(tree.querySelector('.try-layout').children.filter(node=>node.tagName!=='#text')[1].className,'history-panel');
 assert.equal(tree.querySelectorAll('.history-table th').length,4);
 assert.equal(property('.live-section [hidden]','display'),'none');
+"""
+
+
+DEADLINE = r"""
+password.value='password-marker';
+if(config.custom){tree.querySelector('#live-input').value='Apple revenue test';tree.querySelector('#live-input').events.input();}
+tree.querySelector('#compare-all').checked=config.compare;
+tree.querySelector('#compare-all').events.change();
+const durations=[],cleared=[];
+context.setTimeout=(fn,ms)=>{durations.push(ms);return durations.length;};
+context.clearTimeout=id=>cleared.push(id);
+let finish;
+responseFactory=()=>new Promise(resolve=>finish=resolve);
+const running=submit();
+assert.equal(durations[0],config.compare?290000:100000);
+finish({ok:true,status:200,json:async()=>config.compare?{runs:['meta','baseten','fireworks'].map(id=>envelope('a-text',id))}:envelope()});
+await running;
+assert.ok(cleared.includes(1));
 """
 
 

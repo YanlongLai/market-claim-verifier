@@ -11,6 +11,7 @@ import hashlib
 import json
 from pathlib import Path
 import re
+import subprocess
 
 import pytest
 
@@ -152,6 +153,56 @@ def test_identifiers_urls_and_code_are_allowed():
     assert CJK.search('한글')
 
 
+def english_site_prose(value, path=''):
+    """Inspect English locale values, including data rendered by shared JS."""
+    if isinstance(value, dict):
+        for key, child in value.items():
+            if key == 'en':
+                yield f'{path}.en', json.dumps(child, ensure_ascii=False)
+            elif key != 'zh':
+                yield from english_site_prose(child, f'{path}.{key}')
+    elif isinstance(value, list):
+        for index, child in enumerate(value):
+            yield from english_site_prose(child, f'{path}[{index}]')
+
+
+def test_english_site_copy_and_rendered_stamp_data_are_language_pure():
+    data = json.loads((ROOT / 'docs/site/data/site.json').read_text())
+    copy = json.loads(subprocess.run(
+        ['node', '-e', 'process.stdout.write(JSON.stringify(require(process.argv[1]).en))',
+         str(ROOT / 'docs/site/script.js')], check=True, capture_output=True, text=True).stdout)
+    prose = [('COPY.en', json.dumps(copy, ensure_ascii=False)), *english_site_prose(data)]
+    # These nonlocalized fields also enter the English hero markup. Original
+    # quotes and raw records remain bilingual and are deliberately preserved.
+    prose.extend((f'{card["id"]}.company', card['company']) for card in data['stamp_cards'])
+    assert not [path for path, text in prose if CJK.search(text)]
+    persona = next(card['persona'] for card in data['stamp_cards'] if card['persona']['id'] == 'lazy-cat')
+    assert f'{persona["name"]["en"]} · {persona["byline"]["en"]}' == 'US Stocks in 1 Minute · @usstocks1min'
+    assert persona['name']['zh'] == persona['byline']['zh'] == '美股懶人包'
+
+
+def original_site_presentation(content):
+    """Reverse only the owner's 2026-11-04 presentation changes for the old hash.
+
+    Keep the original protected-record receipt intact. All financial values,
+    source records, excerpts and other snapshot bytes still match that receipt.
+    """
+    data = json.loads(content)
+    order = ['agent@baseten', 'agent@fireworks', 'agent@meta',
+             'single_shot@meta', 'single_shot@baseten', 'single_shot@fireworks']
+    data['systems'].sort(key=lambda row: order.index(row['id']))
+    for row in data['systems']:
+        for key in ('provider', 'short'):
+            row[key] = row[key].replace('Meta Model API', 'Meta API')
+    for row in data['chart']:
+        row['provider'] = row['provider'].replace('Meta Model API', 'Meta API')
+    for card in data['stamp_cards']:
+        persona = card['persona']
+        if persona['id'] == 'lazy-cat' and persona['byline']['en'] == '@usstocks1min':
+            persona['byline']['en'] = '@stocksin1minute'
+    return (json.dumps(data, ensure_ascii=False, indent=2) + '\n').encode('utf-8')
+
+
 def test_language_migration_retains_original_sources_and_input_bytes():
     directory = ROOT / 'docs/evidence/readme-v3-2026-11-04'
     archive = json.loads((directory / 'original-language-sources.json').read_text())
@@ -170,4 +221,7 @@ def test_documentation_update_keeps_recorded_financial_evidence_unchanged():
     hashes = json.loads((directory / 'protected-records.json').read_text())
     hashes.update(json.loads((directory / 'locked-demo-outputs.json').read_text()))
     for relative, expected in hashes.items():
-        assert hashlib.sha256((ROOT / relative).read_bytes()).hexdigest() == expected, relative
+        content = (ROOT / relative).read_bytes()
+        if relative == 'docs/site/data/site.json':
+            content = original_site_presentation(content)
+        assert hashlib.sha256(content).hexdigest() == expected, relative

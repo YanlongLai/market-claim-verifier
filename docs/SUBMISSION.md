@@ -81,7 +81,7 @@ Implemented work includes the SEC tool loop, claim-aware program checks, provide
 
 | Destination | URL / status |
 | --- | --- |
-| Public site / saved demo | [hackathon.dappgo.com](https://hackathon.dappgo.com/) |
+| Public site / saved demo | [hackathon.dappgo.com](https://hackathon.dappgo.com/). Password: the team name (dappgo). Saved examples need none. |
 | Public repository | [YanlongLai/market-claim-verifier](https://github.com/YanlongLai/market-claim-verifier) |
 | Results explorer | [Saved per-claim results](https://hackathon.dappgo.com/explorer/) |
 | Demo video | `VIDEO_URL_PENDING` — Owner replaces with a public YouTube or Vimeo URL after checking the final upload against the [video checklist](SUBMIT_CHECKLIST.md#video) and [opening disclosure](../demo/JUDGE_INTRO.md). |
@@ -148,7 +148,7 @@ How it works: Meta's Muse Spark reads the post, extracts each financial assertio
 
 Results: on 266 held-out text claims the agent scores 90.2% (240/266) and wrongly says "supported" once in 139; asking the same model directly, without tools, gets 20.7%. A live check costs about $0.02 and takes 6–25 s on Baseten; Fireworks and the Meta Model API are also wired. Inputs: text, screenshots (Muse OCR), PDFs, audio and video (Muse Voice Transcribe) — media becomes claim text first, verdicts still require SEC evidence.
 
-What you can try: hackathon.dappgo.com has three stories × five input formats with saved results (no password) and live checks on any of the three providers (password = team name), with a public history that shows every run's provider, verdict, duration and cost. The repository (MIT) includes the CLI, the evaluation set frozen before execution, per-claim traces, an offline verifier that reproduces every committed data output, and a disclosure of what pre-existed (nothing in this repository — DappGo the company did).
+What you can try: hackathon.dappgo.com has three stories × five input formats with saved results (no password) and live checks on any of the three providers (Password: the team name (dappgo)), with a public history that shows every run's provider, verdict, duration and cost. The repository (MIT) includes the CLI, the evaluation set frozen before execution, per-claim traces, an offline verifier that reproduces every committed data output, and a disclosure of what pre-existed (nothing in this repository — DappGo the company did).
 
 Limits, stated plainly: text-benchmark accuracy is not accuracy on every post; coverage on real posts is reported separately; two gold labels were corrected after the run and both scorings are published; only US-GAAP SEC filers; extraction can miss claims.
 
