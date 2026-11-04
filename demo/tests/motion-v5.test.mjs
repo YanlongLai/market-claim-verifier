@@ -11,7 +11,7 @@ import {assertNamedClearance,checkV5Layout} from '../motion/v5/layout-checks.mjs
 import {installCaptureDOM,validateGeometry,hasCJK,presentation,showTraceAndFiling,validateLiveResult,redact,endingExpectedLinks,coverDocument,captureCoverCSS,revealCaptureDOM,namedSelectors,requestIdFromLog,saveRequestId} from '../record_v5.mjs';
 import {parseArgs} from '../motion/render.mjs';
 import {liveTerminalAt,localTerminalAt} from '../motion/v5/live-terminal.mjs';
-import {assertLiveTerminal} from '../motion/v5/layout-checks.mjs';
+import {assertLiveTerminal,assertWaitCue} from '../motion/v5/layout-checks.mjs';
 const ctx={window:{}};vm.runInNewContext(readFileSync(new URL('../motion/v5/data.js',import.meta.url),'utf8'),ctx);
 const data=JSON.parse(JSON.stringify(ctx.window.MOTION_DATA)),scenes=data.scenes,segments=data.chapter_bar.segments;
 const terminalFixtures=JSON.parse(readFileSync(new URL('./fixtures/v5-terminals.json',import.meta.url),'utf8'));
@@ -20,18 +20,17 @@ const state=t=>stateAt(t,scenes,segments);
 test('real-log terminal uses runner elapsed, scrolls five rows, freezes at verdict and yields to card 3',()=>{
  const trace=data.live_terminal,start=trace.start_scene_s;
  assert.equal(liveTerminalAt(trace.typing_start_scene_s-.001,trace),null);
- assert.equal(liveTerminalAt(trace.typing_start_scene_s,trace).rows[0].text,'');
- const halfway=liveTerminalAt(start-.3,trace).rows[0].text;
- assert(halfway.length>0&&halfway.length<trace.command.length);
- assert.equal(liveTerminalAt(start,trace).rows[0].text,trace.command);
+ assert.equal(trace.typing_start_scene_s,start);
+ assert.equal(liveTerminalAt(start,trace).rows[0].kind,'request');
+ assert(!liveTerminalAt(start,trace).rows[0].text.startsWith('$'));
  assert.equal(liveTerminalAt(start,trace).clock,'00.0 s');
  for(const row of trace.rows){
-  assert(!liveTerminalAt(start+row.at_s-.001,trace).rows.some(r=>r.text===row.text));
+  assert(!(liveTerminalAt(start+row.at_s-.001,trace)?.rows||[]).some(r=>r.text===row.text));
   assert(liveTerminalAt(start+row.at_s,trace).rows.some(r=>r.text===row.text));
  }
  const reasoning=liveTerminalAt(start+9,trace);
  assert.equal(reasoning.rows.length,5);assert(!reasoning.rows.some(r=>r.kind==='command'));
- assert(reasoning.rows.at(-1).text.includes('model reasoning (Muse Spark) · step 3'));
+ assert(reasoning.rows.at(-1).text.includes('model · step 3'));
  let previous=0;
  for(let f=Math.ceil(trace.typing_start_scene_s*30);f/30<trace.end_scene_s;f++){
   const picture=liveTerminalAt(f/30,trace);assert(picture.rows.length<=5);
@@ -53,7 +52,7 @@ test('terminal cursor and stopwatch use seek time, including backward and nonseq
  const later=structuredClone(trace);later.verdict.at_s=12.345;
  assert.equal(liveTerminalAt(start+13,later).clock,'12.3 s');
  const instant=structuredClone(trace);instant.rows[0]={...instant.rows[0],kind:'call'};
- assert(!liveTerminalAt(start-.1,instant).rows.some(r=>r.kind==='call'));
+ assert(!(liveTerminalAt(start-.1,instant)?.rows||[]).some(r=>r.kind==='call'));
  assert(liveTerminalAt(start,instant).rows.some(r=>r.kind==='call'));
 });
 
@@ -61,7 +60,7 @@ test('terminal audit rejects fabricated rows, small text, clipping and coverage 
  const trace=data.live_terminal,expected=liveTerminalAt(trace.start_scene_s+10,trace);
  const terminal={left:80,right:1840,top:558,bottom:790,colour:'rgb(17, 26, 32)',opacity:'1',
   title:trace.title,dots:3,footer:trace.honesty_label,clock:expected.clock,running:String(expected.running),cursor:expected.cursor,
-  rows:expected.rows.map((r,i)=>({...r,left:103,right:1817,top:591+i*34,bottom:625+i*34,width:1714,font:28,lineHeight:34,scroll:1714}))};
+  rows:expected.rows.map((r,i)=>({...r,left:103,right:1817,top:603+i*36,bottom:639+i*36,width:1714,font:30,lineHeight:36,scroll:1714}))};
  const native={phase:'check_against_sec',elements:[{name:'native in-progress SEC status',left:180,right:1531,top:187,bottom:224}]};
  assertLiveTerminal(terminal,expected,native,trace);
  for(const mutate of [t=>t.clock='99.9 s',t=>t.rows[0].text='invented call',t=>t.rows[0].font=27,t=>t.rows[0].lineHeight=33,t=>t.rows.push(t.rows[0]),t=>t.opacity='.9',t=>t.rows[0].scroll=2000,t=>t.rows[0].bottom=800]){
@@ -69,6 +68,38 @@ test('terminal audit rejects fabricated rows, small text, clipping and coverage 
  }
  native.elements[0].bottom=560;
  assert.throws(()=>assertLiveTerminal(terminal,expected,native,trace),/covers/);
+});
+
+test('wait narration is checked against its named source rows on every spoken film frame',()=>{
+ const film=JSON.parse(JSON.stringify(ctx.window.MOTION_DATA)),trace=film.live_terminal;
+ for(const e of film.cues._events.v505.filter(e=>e.receipt_phase==='check_against_sec')){
+  for(let f=Math.ceil(e.cue_start*30);f/30<=e.cue_end;f++){
+   const picture=liveTerminalAt(f/30-58,trace);
+   assert.equal(assertWaitCue(picture,trace,e.event).status,'pass');
+  }
+ }
+ const first=trace.rows.find(r=>r.event==='tool_call');
+ assert.throws(()=>assertWaitCue(liveTerminalAt(trace.start_scene_s+first.at_s-.001,trace),trace,'tools'),/First real tool_call/);
+ const claims=film.cues._events.v505.find(e=>e.event==='claims');
+ const three=liveTerminalAt(claims.cue_start-58,trace);three.rows.pop();
+ assert.throws(()=>assertWaitCue(three,trace,'claims'),/four real tool_call/);
+ const ids=film.cues._events.v505.find(e=>e.event==='evidence_ids');
+ const missing=liveTerminalAt(ids.cue_start-58,trace);missing.rows=missing.rows.filter(r=>!r.text.includes('→ E6'));
+ assert.throws(()=>assertWaitCue(missing,trace,'evidence_ids'),/evidence-ID/);
+ const thinking=film.cues._events.v505.find(e=>e.event==='thinking');
+ assert.throws(()=>assertWaitCue(liveTerminalAt(thinking.cue_start-58,trace),trace,'decide'),/real checks and final verdict/);
+});
+
+test('terminal header audit rejects unreadable or overlapping source/replay disclosures',()=>{
+ const trace=data.live_terminal,expected=liveTerminalAt(trace.start_scene_s+10,trace);
+ const terminal={left:80,right:1840,top:558,bottom:790,colour:'rgb(17, 26, 32)',opacity:'1',
+  title:trace.title,dots:3,footer:trace.honesty_label,clock:expected.clock,running:String(expected.running),cursor:expected.cursor,
+  rows:expected.rows.map((r,i)=>({...r,left:103,right:1817,top:603+i*36,bottom:639+i*36,width:1714,font:30,lineHeight:36,scroll:1714})),
+  header:[{left:103,right:500,bottom:600,font:30},{left:600,right:1400,bottom:600,font:30}]};
+ assertLiveTerminal(terminal,expected,null,trace);
+ for(const mutate of [t=>t.header[1].font=22,t=>t.header[1].left=490,t=>t.header[1].right=1900]){
+  const bad=structuredClone(terminal);mutate(bad);assert.throws(()=>assertLiveTerminal(bad,expected,null,trace));
+ }
 });
 
 test('ten binding cuts, full-frame live playback, 178-second film',()=>{
@@ -226,7 +257,7 @@ test('real local session types the recorded command, compresses chunk times and 
  assert(localTerminalAt(.6,trace).rows.some(r=>r.text.startsWith('$ uv run python -m claimcheck')));
  for(const frame of trace.frames){
   const at=trace.start_scene_s+frame.at_s/trace.speed;
-  assert.deepEqual(localTerminalAt(at,trace).rows.slice(-frame.rows.length),frame.rows);
+  assert.deepEqual(localTerminalAt(at,trace).rows.slice(-frame.rows.length),frame.rows.map(({kind,text})=>({kind,text})));
  }
  const final=localTerminalAt(trace.end_scene_s-.001,trace);
  assert(final.done);assert(final.rows.at(-1).text.includes('$0.0611'));
@@ -369,7 +400,7 @@ test('whole-composite audit checks full-width gutters and higher password mask b
   band:{left:0,right:1920,top:790,bottom:1080,colour:'rgb(17, 26, 32)',opacity:'1'},
   labels:centres.map((c,i)=>({font:32,left:c-45,right:c+45,bottom:834,current:i===5})),
   segments:current.chapters.map(s=>({width:1920*s.duration_s/178,fill:s.fill})),onScreen:[],textBoxes:[],namedChecks:[],
-  plate:{left:0,right:1920,top:530,bottom:790,state:'password',topBand:false,colour:'rgb(17, 26, 32)',opacity:'1'},
+  plate:{left:0,right:1920,top:542,bottom:790,state:'password',topBand:false,colour:'rgb(17, 26, 32)',opacity:'1'},
   overlay:{left:80,right:1840,top:558,bottom:790,phase:current.overlay.receipt_phase,colour:'rgb(17, 26, 32)',opacity:'1',fonts:[56],keyFonts:[],scroll:232,client:232},
   video:{source:[1920,1080],fit:'contain',transform:'none',left:0,right:1920,top:0,bottom:1080},
   decodedFrame:{ready:true,left:0,right:1920,top:0,bottom:1080,sourceTime:.1},liveTrace:data.live_terminal};

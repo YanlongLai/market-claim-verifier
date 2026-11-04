@@ -103,13 +103,15 @@ async function paintVideoFrame(video,time,canvas){
 function liveTerminalAt(local,trace){
  if(!trace||local+1e-9<trace.typing_start_scene_s||local+1e-9>=trace.end_scene_s)return null;
  const elapsed=local-trace.start_scene_s,done=elapsed+1e-9>=trace.verdict.at_s;
- const progress=Math.max(0,Math.min(1,(local-trace.typing_start_scene_s)/.6));
- const command=trace.command.slice(0,Math.floor(progress*trace.command.length+1e-7));
- const rows=[{kind:'command',text:command}];
- for(const row of trace.rows)if(elapsed+1e-9>=row.at_s)rows.push({kind:row.kind,text:row.text});
+ const available=trace.rows.filter(row=>elapsed+1e-9>=row.at_s);
+ const focus=trace.focus_windows?.find(w=>local+1e-9>=w.start_scene_s&&local+1e-9<w.end_scene_s)?.event;
+ let selected=available;
+ if(['tools','claims','lookups'].includes(focus))selected=available.filter(r=>r.event==='tool_call');
+ if(['evidence_ids','thinking'].includes(focus))selected=available.filter(r=>r.event==='tool_result'||r.kind==='reasoning'&&r.args?.step==='2');
+ const rows=selected.map(({kind,text})=>({kind,text}));
  const reasoning=rows.at(-1)?.kind==='reasoning'&&!done;
  const tenths=done?Math.round(trace.verdict.at_s*10):Math.floor((Math.max(0,elapsed)+1e-9)*10);
- return {rows:rows.slice(-5),clock:`${(tenths/10).toFixed(1).padStart(4,'0')} s`,
+ return {rows:rows.slice(-5),clock:`${(tenths/10).toFixed(1).padStart(4,'0')} s`,focus,
   running:local+1e-9>=trace.start_scene_s&&!done,done,
   cursor:reasoning&&Math.floor(elapsed/.65)%2===0};
 }
@@ -121,27 +123,31 @@ function localTerminalAt(local,trace){
  const elapsed=Math.max(0,(local-trace.start_scene_s)*trace.speed);
  const rows=command.split('\n').map(text=>({kind:'command',text}));
  const frame=[...trace.frames].reverse().find(frame=>elapsed+1e-9>=frame.at_s);
- if(frame)rows.push(...frame.rows);
- const done=elapsed+1e-9>=trace.frames.at(-1).at_s;
+ if(frame)rows.push(...frame.rows.map(({kind,text})=>({kind,text})));
+ const done=elapsed+1e-9>=trace.source_duration_s;
  return {rows:rows.slice(-5),clock:`${Math.min(elapsed,trace.source_duration_s).toFixed(1)} s`,running:!done,done,cursor:false};
 }
 const data=window.MOTION_DATA,stage=document.querySelector('#stage'),root='../../../';
 const esc=s=>String(s).replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;');
 let previous='',pending=[];
 const video=(path,classes='terminal')=>`<video muted preload="auto" class="${classes}" data-source="${esc(path)}" src="${root}${esc(path)}"></video><canvas class="native-video-frame" width="1920" height="1080" aria-label="Decoded native page"></canvas>`;
-const post=()=>`<article class="post-card"><p class="post-byline">Illustrative post</p>${data.post_text.split('\n\n').map((p,i)=>i===0?`<h2>${esc(p)}</h2>`:`<p class="post-paragraph${p.includes('Apple')?' apple-line':''}">${esc(p)}</p>`).join('')}<p class="post-focus"><strong>$416.2 billion</strong><br>… fiscal Q4 2025</p></article>`;
+const post=()=>`<article class="post-card"><p class="post-byline">Illustrative viral-post scenario</p>${data.post_text.split('\n\n').map((p,i)=>i===0?`<h2>${esc(p)}</h2>`:`<p class="post-paragraph${p.includes('Apple')?' apple-line':''}">${esc(p)}</p>`).join('')}<p class="post-focus"><strong>$416.2 billion</strong><br>… fiscal Q4 2025</p></article>`;
 function terminalMarkup(state,trace,classes='',cue=''){
  return `<aside class="terminal-window ${classes}" data-phase="check_against_sec" data-cue="${esc(cue)}" aria-label="${esc(trace.title)}">
- <header><span class="terminal-dots" aria-hidden="true"><i></i><i></i><i></i></span><span class="live-terminal-title">${esc(trace.title)}</span><time class="live-stopwatch" data-running="${state.running}">${state.clock}</time></header>
- <div class="live-terminal-lines">${state.rows.map(row=>`<div class="live-terminal-line" data-kind="${row.kind}">${esc(row.text)}${row.kind==='reasoning'?`<span class="live-terminal-cursor" style="visibility:${state.cursor?'visible':'hidden'}">▎</span>`:''}</div>`).join('')}</div><footer>${esc(trace.honesty_label)}</footer></aside>`;
+ <header><span class="terminal-dots" aria-hidden="true"><i></i><i></i><i></i></span><span class="live-terminal-title">${esc(trace.title)}</span><footer>${esc(trace.honesty_label)}</footer><span class="clock-label">${classes.includes('local-terminal')?'Run':'Request elapsed'}</span><time class="live-stopwatch" data-running="${state.running}">${state.clock}</time></header>
+ <div class="live-terminal-lines">${state.rows.map(row=>`<div class="live-terminal-line" data-kind="${row.kind}">${esc(row.text)}${row.kind==='reasoning'?`<span class="live-terminal-cursor" style="visibility:${state.cursor?'visible':'hidden'}">▎</span>`:''}</div>`).join('')}</div></aside>`;
 }
 function liveOverlay(event,local){
  const terminal=liveTerminalAt(local,data.live_terminal);
- if(terminal)return terminalMarkup(terminal,data.live_terminal,'live-overlay live-terminal',event?.receipt_phase==='check_against_sec'?event.event:'');
+ if(terminal){
+  const context=terminal.focus==='claims'?'4 factual claims':terminal.focus==='lookups'?'4 tool calls: 3 lookups + 1 calculation':'';
+  return (context?`<aside class="live-annotation" data-context="${terminal.focus}">Context · ${context}</aside>`:'')+terminalMarkup(terminal,data.live_terminal,'live-overlay live-terminal',terminal.focus||'');
+ }
  if(!event)return '';
  const titles={draft:'4 · Corrected draft',evidence:'5 · SEC evidence',trace:'6 · Agent trace',each:'6 · Each tool call',program:'6 · Program verdict',receipt:'7 · Live take'};
  if(event.event==='verdict')titles.verdict='3 · Contradicted · Apple SEC · E3';
- const items=event.event==='draft'?'<p class="principal"><strong>$416.2B → $102.5B</strong></p>':event.event==='evidence'?'<div class="equation"><p><span>10-K annual</span><strong>$416.2B</strong></p><b>−</b><p><span>10-Q nine months</span><strong>$313.7B</strong></p><b>=</b><p><span>Fiscal Q4</span><strong>$102.5B</strong></p></div>':event.event==='trace'?`<p class="principal"><strong>${data.live_receipt?data.live_receipt.tool_calls:4}</strong> tool calls · on the record</p>`:event.event==='receipt'?`<p class="principal">${data.live_receipt?`<strong>$${data.live_receipt.cost_usd.toFixed(4)}</strong> · <strong>${(data.live_receipt.latency_ms/1000).toFixed(1)} s</strong>`:'Measured cost · elapsed time · capture pending'}</p>`:'';
+ const evidenceHandoff=event.event==='evidence'&&local>=(data.scenes[5].recording?.timings.find(t=>t.phase==='agent_trace_expand')?.at_s??Infinity);
+ const items=event.event==='draft'?'<p class="principal"><strong>$416.2B → $102.5B</strong></p>':event.event==='evidence'&&!evidenceHandoff?'<div class="equation"><p><span>10-K annual</span><strong>$416.2B</strong></p><b>−</b><p><span>10-Q nine months</span><strong>$313.7B</strong></p><b>=</b><p><span>Fiscal Q4</span><strong>$102.5B</strong></p></div>':event.event==='trace'?`<p class="principal"><strong>${data.live_receipt?data.live_receipt.tool_calls:4}</strong> tool calls · on the record</p>`:event.event==='receipt'?`<p class="principal">${data.live_receipt?`<strong>$${data.live_receipt.cost_usd.toFixed(4)}</strong> · <strong>${(data.live_receipt.latency_ms/1000).toFixed(1)} s</strong>`:'Measured cost · elapsed time · capture pending'}</p>`:'';
  const binding=data.cues._events.v505.find(e=>e.event===event.event);
  const native=binding?.native_check;
  // The recorder reserves one of two full bands. Audit both speech boundaries
@@ -182,11 +188,12 @@ window.seek=t=>{
  }
  const rows=document.querySelector('#terminal-rows');if(rows){
   const local=state.index===6?localTerminalAt(state.local,data.local_terminal):null;
-  const localWindow=document.querySelector('#local-terminal');if(localWindow)localWindow.innerHTML=local?terminalMarkup(local,data.local_terminal,'local-terminal'):'';
-  rows.style.display=local?'none':'';
+  const localWindow=document.querySelector('#local-terminal');if(localWindow)localWindow.innerHTML=local?terminalMarkup(local,data.local_terminal,'local-terminal')+'<p class="local-source-note">Selected call/result pairs · receipt summary · command --out path omitted</p>':'';
   const terminal=terminalAt(state.local,data.terminal_replays[state.index===3?'beat3':'beat6']);
+  rows.style.display=state.index===6&&terminal.block==='run'?'none':'';
+  rows.classList.toggle('batch-evidence',state.index===6);
   rows.innerHTML=terminal.rows.map(row=>`<p data-row="${row.row}" class="terminal-row${row.principal?' principal':''}">${esc(row.text)}</p>`).join('');
-  const block=document.querySelector('#batch-block');block.textContent=data.batch_labels[state.index===3?'comparison':local?'run':terminal.block];block.dataset.block=local?'run':terminal.block;
+  const block=document.querySelector('#batch-block');block.textContent=data.batch_labels[state.index===3?'comparison':terminal.block];block.dataset.block=terminal.block;
  }
  if(state.cascade)stage.querySelectorAll('.post-copy').forEach((el,i)=>{const s=state.cascade[i];el.style.cssText=`transform:translate(${s.x}px,${s.y}px) rotate(${s.rotation}deg) scale(${s.scale});opacity:${s.opacity}`;});
  if(state.inputs)stage.querySelectorAll('.input-tile').forEach((el,i)=>{el.style.transform='none';el.style.opacity=1;});
@@ -206,9 +213,11 @@ window.seek=t=>{
   robot.querySelectorAll('img').forEach(img=>{img.style.opacity=Number(img.dataset.pose===motion.pose);});
   const ink=stamp.querySelector('.stamp-imprint');ink.style.opacity=motion.ink;ink.style.transform=`scale(${.9+.1*motion.ink}) rotate(-8deg)`;
  }
- for(const el of stage.querySelectorAll('video'))seekVideo(el,state.local+(data.scenes[state.index].recording?.offset_s||0));
+ const hold=sceneHold(state.local,data.scenes[state.index].native_holds);
+ for(const el of stage.querySelectorAll('video'))seekVideo(el,hold+(data.scenes[state.index].recording?.offset_s||0));
  updateChapters(state);return state;
 };
+function sceneHold(local,holds=[]){return holds.find(h=>local>=h.from_scene_s&&local<h.until_scene_s)?.source_at_s??local;}
 document.querySelector('#chapter-layer').innerHTML=chapterMarkup(data.chapter_bar.segments);
 window.settleMotion=async()=>{await Promise.all(pending);await document.fonts.ready;};
 window.timeline=data.timing;window.motionReady=true;window.seek(0);

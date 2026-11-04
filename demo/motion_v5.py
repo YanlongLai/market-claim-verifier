@@ -34,7 +34,7 @@ def validate(story):
         raise BuildError('Live sentence cues must cover the recorded picture phases, in order')
     previous_phase=-1;previous_offset=-1
     for event in live_events:
-        phase=LIVE_PHASES.index(event['receipt_phase']);offset=event.get('offset_s',0)
+        phase=LIVE_PHASES.index(event['receipt_phase']);offset=event['at_scene_s']
         if (type(offset) not in (int,float) or not math.isfinite(offset) or offset<0 or phase<previous_phase
             or phase==previous_phase and offset<=previous_offset):
             raise BuildError('Live phase offsets must be finite, nonnegative and ordered')
@@ -93,7 +93,7 @@ def cue_spans(scene,voice=None):
         a=onset-leading
         same_phase=live and i>0 and events[i-1].get('receipt_phase')==event['receipt_phase']
         if not live or same_phase:a=max(a,previous_end+(.06 if i else 0),previous_speech_end+.2-leading)
-        if live and event['receipt_phase']=='check_against_sec' and a+duration>limit-.4+1e-8:
+        if live and event['receipt_phase']=='check_against_sec' and event['event']!='decide' and a+duration>limit-.4+1e-8:
             raise BuildError(f"{scene['id']} / {event['event']}: measured voice needs 0.4 s margin before verdict_reveal; retain the take and repair narration")
         if duration<=0 or a+duration>limit+1e-8 or (live and a<previous_end-1e-8):
             raise BuildError(f"{scene['id']} / {event['event']}: measured voice {duration:.3f} s exceeds {limit-a:.3f} s visual budget. Retain the take; no speech is cut or accelerated.")
@@ -152,6 +152,11 @@ def compile_data(root=ROOT,story=None,voices=None,*,preview=False):
         if resolved!=live['cue_events']:raise BuildError('Live cues are stale for their receipt; rewire on host')
     else:
         for event in live['cue_events']:event['at_scene_s']=event['preview_at_scene_s']
+    if live_receipt:
+        for hold in live.get('native_holds',[]):
+            check=next(c for c in live_receipt['named_element_checks'] if c['phase']==hold['source_phase'])
+            hold.update(from_scene_s=check['visible_until_s']-1/30,source_at_s=check['visible_until_s']-1/30,
+                until_scene_s=next(t['at_s'] for t in live_receipt['timings'] if t['phase']==hold['until_phase'])-.01)
     for scene in story['scenes']:
         if not scene.get('recording'):continue
         recording=scene['recording'];path=root/recording['receipt']
@@ -187,11 +192,23 @@ def compile_data(root=ROOT,story=None,voices=None,*,preview=False):
                 # Lead the sentence by 0.2 s, but never take the picture from the previous
                 # sentence before its last word (+0.05 s); the lead then shrinks to the gap.
                 picture=max(0,onset-.2)
+                if event.get('log_event'):
+                    picture=max(picture,event['at_scene_s']-event.get('offset_s',0))
                 if previous_speech_end is not None:
                     picture=max(picture,min(onset-.1,previous_speech_end+.05))
                 previous_speech_end=end
                 event['picture_at_scene_s']=picture
                 native=next((c for c in (live_receipt or {}).get('named_element_checks',[]) if c['phase']==event.get('receipt_phase')),None)
+                if event.get('receipt_phase')=='check_against_sec':
+                    # These referents are real log rows. Native page clearance
+                    # is audited independently at the rendered film time.
+                    native=None
+                elif native and event['event']=='verdict' and scene.get('native_holds'):
+                    hold=scene['native_holds'][0]
+                    if not native['at_s']<=hold['source_at_s']<=native['visible_until_s']:
+                        raise BuildError('Held verdict frame is outside the recorded stationary proof interval')
+                    native={**native,'source_visible_until_s':native['visible_until_s'],
+                        'visible_until_s':hold['until_scene_s'],'editorial_hold':hold}
                 if voice and native and (onset<native['at_s'] or end>native.get('visible_until_s',-1)):
                     raise BuildError(f"{scene['id']} / {event['event']}: named native element is not held through the measured last word; retain and repair the take")
                 local.append(dict(text=event['narration'],start=onset,end=end,event=event['event'],measured=bool(source),measurement=source['measurement'] if source else None))
@@ -249,18 +266,28 @@ def compile_data(root=ROOT,story=None,voices=None,*,preview=False):
     data['asset_status']['terminal']='Real pod log + recorded local CLI; OCR/ASR remain labelled saved replays'
     local_block=next(b for b in terminal['beat6']['blocks'] if b['block']=='run')
     local_trace=data['local_terminal']
-    # Retain time for typing and a readable final receipt; compression is explicit.
-    window=local_block['end_s']-local_block['at_s']
+    # The local recording remains above the saved media/scale proof for the
+    # whole batch block. At 3x its genuine 38.6 s clock fits with an 8 s receipt hold.
+    window=story['scenes'][6]['target_s']-local_block['at_s']
     if window<=1:raise BuildError('Local CLI block needs room for typing, replay and final receipt hold')
-    speed=max(1,math.ceil(local_trace['source_duration_s']/(window-1.0)))
+    speed=3
+    if local_trace['source_duration_s']/speed+1>window:
+        raise BuildError('Local recording cannot fit at 3x with its final receipt hold')
     local_trace.update(start_scene_s=local_block['at_s']+.6,typing_start_scene_s=local_block['at_s'],
-        end_scene_s=local_block['end_s'],speed=speed,honesty_label=f'replayed at {speed}×' if speed>1 else 'recorded local CLI · real time')
+        end_scene_s=local_block['at_s']+window,speed=speed,
+        honesty_label=f'replayed at {speed}× · {local_trace["source_duration_s"]:.1f} s run')
     for path in ('demo/assets/cli-v5/local-cli.json','demo/assets/cli-v5/receipt.json'):
         data['provenance'][path]=file_hash(root/path)
     if data['live_terminal']:
         trace=data['live_terminal'];start=58+trace['start_scene_s']
+        wait=[e for e in cues['_events']['v505'] if e['receipt_phase']=='check_against_sec']
+        verdict_cue=next(e for e in cues['_events']['v505'] if e['event']=='verdict')
+        trace['end_scene_s']=verdict_cue['picture_start']-58
+        trace['typing_start_scene_s']=trace['start_scene_s']
+        trace['focus_windows']=[dict(event=e['event'],start_scene_s=e['picture_start']-58,
+            end_scene_s=(wait[i+1]['picture_start']-58 if i+1<len(wait) else trace['end_scene_s'])) for i,e in enumerate(wait)]
         keyframes.extend(dict(t=t,shot='v505',cue=cue) for t,cue in [
-            (58+trace['typing_start_scene_s'],'terminal command starts'),
+            (58+trace['typing_start_scene_s'],'server request window starts'),
             (start,'terminal stopwatch starts'),
             *[(start+r['at_s'],f"server log {r['event']}") for r in trace['rows']],
             (start+trace['verdict']['at_s'],'terminal verdict and stopped clock'),
@@ -268,6 +295,10 @@ def compile_data(root=ROOT,story=None,voices=None,*,preview=False):
         data['keyframes']=sorted(keyframes,key=lambda f:f['t'])
         data['provenance'][live_receipt['server_log']['path']]=live_receipt['server_log']['sha256']
     keyframes.extend(dict(t=116+local_trace['start_scene_s']+r['at_s']/speed,shot='v506',cue='local CLI chunk') for r in local_trace['frames'])
+    receipt_at=math.ceil((116+local_trace['start_scene_s']+local_trace['frames'][-1]['at_s']/speed)*30)/30
+    keyframes.extend(dict(t=t,shot='v506',cue='local final receipt hold') for t in (receipt_at,138-1/30))
+    for hold in story['scenes'][5].get('native_holds',[]):
+        keyframes.extend(dict(t=58+t,shot='v505',cue='retained native verdict frame hold') for t in (hold['from_scene_s'],hold['until_scene_s']-1/30))
     # Whole-composite checks include the silent spaces, both gutters and mask changes.
     keyframes.extend(dict(t=t,shot='v505',cue='whole composite continuity') for t in range(58,116))
     keyframes.extend(dict(t=e['t']+delta,shot='v505',cue='composite cue edge') for e in cues['_events']['v505'] for delta in (-1/30,0,1/30) if 58<=e['t']+delta<116)

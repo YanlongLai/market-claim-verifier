@@ -3,7 +3,7 @@
 
 Acoustic PCM bounds and real-frame checks do not replace final film listening.
 """
-import argparse,json
+import argparse,json,math
 from pathlib import Path
 from motion_v5 import ROOT
 from pipeline import BuildError,file_hash
@@ -20,18 +20,18 @@ VISUALS={
          'program':'Python arithmetic and verdict nodes',
          'principle':'Model proposes; program decides.'},
  'v505':{'live':'Centred native Try workspace', 'paste':'The real English post in the centred live workspace',
-         'tools':'Terminal window: receipt-bound command, trace and clock; native in-progress SEC status clear above it',
-         'claims':'Terminal window: recorded tool calls; native in-progress SEC status clear above it',
-         'lookups':'Terminal window: recorded SEC calls and their evidence IDs; native status clear above it',
+         'tools':'Terminal window: first real tool_call row, held throughout speech; request elapsed clock',
+         'claims':'Four real tool_call rows and editorial 4 factual claims annotation',
+         'lookups':'Four real tool_call rows and editorial 4 tool calls: 3 lookups + 1 calculation annotation',
          'evidence_ids':'Terminal window: receipt-bound evidence IDs on filed-number rows; native status clear above it',
-         'thinking':'Terminal window: running stopwatch and Muse Spark reasoning line; native status clear above it',
-         'decide':'Terminal window: model clock and recorded trace held through the last word; native status clear above it',
+         'thinking':'Terminal window: whole-request elapsed stopwatch and real model · step 2 row',
+         'decide':'Terminal window: real program_check group and contradicted verdict; stopped request elapsed clock',
          'verdict':'The native CONTRADICTED verdict + Apple SEC E3 component filings: 10-K fiscal 2025 annual; 10-Q nine months to 28 Jun 2025 (form and period, receipt-bound citations)',
          'draft':'The native corrected draft; $416.2B to $102.5B overlay',
          'evidence':'The native SEC filing evidence; annual minus nine-month equation',
          'trace':'First native SEC tool-call row', 'each':'Native tool-call walk', 'program':'Native program-verdict row',
          'receipt':'The actual native receipt; measured cost and elapsed time'},
- 'v506':{'run':'Real local CLI session, recorded 2026-11-04; command, timestamped progress and final receipt; labelled replay speed',
+ 'v506':{'run':'Local · CLI · recorded 2026-11-04; command typed; timestamped progress rows; replayed at 3× · 38.6 s run. Final receipt is a later separate hold.',
          'ocr':'Saved Muse OCR terminal block',
          'asr':'Saved Muse Voice Transcribe terminal block',
          'median':'Measured 6.8-second saved Threads-post median',
@@ -56,10 +56,10 @@ def ledger_rows(timing,cues,index):
             or {c.get('form') for c in checks[0].get('filings',[])}!={'10-K','10-Q'}):
             raise BuildError('Verdict sentence frame audit must name both verdict and filing referents')
         if shot=='v505' and event in ('tools','claims','lookups','evidence_ids','thinking','decide') and (
-            checks[0].get('referents')!=['terminal window','native in-progress SEC status']
-            or not checks[0].get('native',{}).get('elements')
+            checks[0].get('referents')!=['terminal window','recorded log events']
+            or checks[0].get('semantic',{}).get('status')!='pass'
             or not any(e.get('name')=='.live-terminal' for e in checks[0]['elements'])):
-            raise BuildError('Live wait sentence frame audit must name the terminal window and clear native status')
+            raise BuildError('Live wait sentence frame audit must verify its named real log events')
         return f['captioned_file'],checks[0]
     for shot in timing['shots']:
         sid=shot['id'];events=cues['_events'][sid]
@@ -96,6 +96,17 @@ def main():
     if any('preview' in m for m in cues['_methods'].values()):
         raise BuildError('Synthesize changed cues and compile --measured before making the sync ledger')
     index=json.loads((args.frames/'index.json').read_text());rows=ledger_rows(timing,cues,index)
+    data=json.loads((folder/'data.js').read_text().removeprefix('window.MOTION_DATA = ').removesuffix(';\n'))
+    local=data['local_terminal'];receipt_text=local['rows'][-1]['text']
+    hold_from=math.ceil((116+local['start_scene_s']+local['frames'][-1]['at_s']/local['speed'])*30)/30
+    hold_until=116+local['end_scene_s']
+    hold_frames=[]
+    for at in (hold_from,hold_until-1/30):
+        f=next((f for f in index if abs(f['t']-at)<1e-7 and f['shot']=='v506'),None)
+        audit=(f or {}).get('terminal_audit') or {}
+        if not audit.get('rows') or audit['rows'][-1]['text']!=receipt_text or audit.get('footer')!=local['honesty_label']:
+            raise BuildError('Separate local final-receipt hold requires actual start/end terminal frame audits')
+        hold_frames.append(f['captioned_file'])
     for row in rows:
         for field in ('onset_frame','end_frame'):
             row[field+'_sha256']=file_hash(args.frames/row[field])
@@ -105,7 +116,10 @@ def main():
         timing_note='Every row has one independent PCM WAV, measured acoustic onset/end and source hash. Pictures lead measured speech by 0.2 s. Actual Chromium onset/end frames passed named-element visibility and clearance; native proof uses capture rectangles over a recorded stationary interval. Final listening and continuous-picture review remain pending.',
         acceptance='Every sentence referent must remain visible throughout actual speech; picture may lead speech by at most 0.5 s and must never follow it. Supply verified_frame, actual times, visual visibility interval, reviewer and pass/blocker status for every row. Inspect silent holds too.',
         inputs={name:file_hash(folder/name) for name in ('timing.json','cues.json','data.js')},
-        review_index_sha256=file_hash(args.frames/'index.json'),rows=rows)
+        review_index_sha256=file_hash(args.frames/'index.json'),rows=rows,
+        silent_holds=[dict(id='local-final-receipt',from_s=hold_from,until_s=hold_until,text=receipt_text,
+            source_receipt_elapsed_s=local['receipt_source_elapsed_s'],session_sha256=local['session_sha256'],
+            frames=hold_frames,status='pending encoded-picture review')])
     out.write_text(json.dumps(report,indent=2)+'\n')
     lines=['# V5 sentence sync ledger','',report['timing_note'],'',report['acceptance'],'',
         '| Sentence / cue phrase | Cue start–end (s) | Required visual | Review frames | Verified frame |',

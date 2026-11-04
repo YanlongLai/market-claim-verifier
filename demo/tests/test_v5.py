@@ -28,15 +28,19 @@ def test_chapter_durations_and_safe_lane(story):
 def test_phase_coverage_and_real_receipt_clock(story):
     scene=story['scenes'][5]
     assert tuple(dict.fromkeys(e['receipt_phase'] for e in scene['cue_events']))==LIVE_PHASES
-    bases={e['receipt_phase']:e['preview_at_scene_s'] for e in scene['cue_events'] if not e.get('offset_s')}
-    receipt={'timings':[dict(phase=p,at_s=bases[p]) for p in LIVE_PHASES]}
+    receipt=read_json(Path(scene['recording']['receipt']))
+    receipt=recorder.with_phase_aliases(receipt)
+    bases={t['phase']:t['at_s'] for t in receipt['timings']}
     events=recorder.live_cue_events(scene,receipt)
-    assert [e['at_scene_s'] for e in events]==[bases[e['receipt_phase']]+e.get('offset_s',0) for e in events]
+    from live_terminal_v5 import read_server_log
+    rows=read_server_log(receipt,ROOT)
+    assert [e['at_scene_s'] for e in events]==[bases[e['receipt_phase']]+e.get('offset_s',0)+
+        (next(r['at_s'] for r in rows if r['event']==e['log_event']) if e.get('log_event') else 0) for e in events]
     by_name={e['event']:e for e in events}
     assert by_name['trace']['receipt_phase']=='tool_call_2_reveal'
     assert by_name['each']['receipt_phase']=='tool_call_4_reveal'
     assert by_name['program']['receipt_phase']=='program_verdict_reveal'
-    receipt['timings'].pop()
+    receipt['timings']=[t for t in receipt['timings'] if t['phase']!='hover_receipt']
     with pytest.raises(recorder.RecordingError):recorder.live_cue_events(scene,receipt)
 
 def synthetic_voices(story):
@@ -56,7 +60,7 @@ def test_picture_leads_every_measured_unit_without_hiding_previous_speech(measur
     for scene in measured_data['scenes']:
         previous_end=-1
         for event in measured_data['cues']['_events'][scene['id']]:
-            assert event['cue_start']-event['picture_start']==pytest.approx(.2)
+            assert .1-1e-7<=event['cue_start']-event['picture_start']<=.3+1e-7
             assert event['picture_start']>=previous_end-1e-7
             assert event['alignment']=='measured PCM speech bounds'
             previous_end=event['cue_end']
@@ -78,7 +82,7 @@ def test_sentence_ledger_covers_every_phrase_with_start_and_end_evidence(measure
         for check in frame['frame_audit']:
             if check['scene']=='v505' and check['event']=='verdict':check.update(referents=['verdict','filing'],filings=[{'form':'10-K'},{'form':'10-Q'}])
             if check['scene']=='v505' and check['event'] in ('tools','claims','lookups','evidence_ids','thinking','decide'):
-                check.update(referents=['terminal window','native in-progress SEC status'],elements=[{'name':'.live-terminal'}],native={'elements':[{'name':'native in-progress SEC status'}]})
+                check.update(referents=['terminal window','recorded log events'],elements=[{'name':'.live-terminal'}],semantic={'status':'pass'})
     rows=ledger_rows(data['timing'],data['cues'],index)
     expected=sum(len(data['cues'][s['id']]) for s in data['scenes'])
     assert len(rows)==expected
@@ -98,7 +102,7 @@ def test_sentence_ledger_covers_every_phrase_with_start_and_end_evidence(measure
     for f in bad:
         for check in f['frame_audit']:
             if check['scene']=='v505' and check['event']=='thinking':check.pop('referents')
-    with pytest.raises(BuildError,match='terminal window'):ledger_rows(data['timing'],data['cues'],bad)
+    with pytest.raises(BuildError,match='named real log events'):ledger_rows(data['timing'],data['cues'],bad)
 
 def test_english_only_templates_data_and_captions(data):
     for p in (ROOT/'demo/motion/v5').iterdir():
@@ -241,7 +245,8 @@ def test_batch_run_is_real_cli_and_old_saved_run_is_empty(data):
     assert all(not frame['rows'] for frame in run['frames'])
     trace=data['local_terminal'];window=trace['end_scene_s']-trace['start_scene_s']
     assert trace['source_duration_s']/trace['speed']<window
-    assert trace['honesty_label']==f"replayed at {trace['speed']}×"
+    assert trace['speed']==3 and trace['honesty_label']=='replayed at 3× · 38.6 s run'
+    assert trace['end_scene_s']==22
     assert 'CoreWeave' not in trace['command']
     assert data['batch_labels']['median']=='78 attempts · 72 completed · median 6.8 s'
 
@@ -340,6 +345,8 @@ def test_pcm_bounds_measure_leading_trailing_silence_and_keep_internal_pause(tmp
 
 def test_sync_refuses_any_unmeasured_row_even_with_real_frame_names(data):
     from sync_v5 import ledger_rows
+    data=copy.deepcopy(data)
+    data['cues']['_methods']['v505']='target preview; unmeasured'
     index=[dict(shot=f['shot'],t=f['t'],captioned_file=f'{i}.png') for i,f in enumerate(data['keyframes'])]
     with pytest.raises(BuildError,match='measured sentence onset'):ledger_rows(data['timing'],data['cues'],index)
 
@@ -349,13 +356,15 @@ def test_compiler_does_not_abandon_native_evidence_mid_sentence(story):
     from unittest.mock import patch
     changed=copy.deepcopy(story)
     changed['scenes'][5].pop('placeholder',None);changed['scenes'][5]['recording']={'asset':'absent.mp4','receipt':'absent.json','receipt_sha256':'a'*64,'offset_s':0}
-    receipt={'timings':[dict(phase=e['receipt_phase'],at_s=e['at_scene_s']) for e in changed['scenes'][5]['cue_events'] if not e.get('offset_s')],
-             'named_element_checks':[dict(phase=e['receipt_phase'],at_s=e['at_scene_s'],visible_until_s=e['at_scene_s']+.3,elements=[{}]) for e in changed['scenes'][5]['cue_events']]}
+    receipt=read_json(Path(story['scenes'][5]['recording']['receipt']))
+    for check in receipt['named_element_checks']:check['visible_until_s']=check['at_s']+.3
+    changed['scenes'][5].pop('native_holds',None)
     # Inject a retained capture summary, never an accepted take. The compiler must
     # reject its inadequate hold even though the audio and reveal clocks are valid.
     import motion_v5
     saved=copy.deepcopy(read_json(ROOT/'demo/motion/v5/inputs.json'))
     receipt['result']=saved['recordings']['v505']['receipt']['result']
+    receipt['result'].pop('request_id',None)
     saved['recordings']['v505']={'recording':changed['scenes'][5]['recording'],'receipt':receipt}
     read=motion_v5.read_json
     with patch.object(motion_v5,'read_json',side_effect=lambda p:saved if p==ROOT/'demo/motion/v5/inputs.json' else read(p)):

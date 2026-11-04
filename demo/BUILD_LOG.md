@@ -363,3 +363,33 @@ Changed scene cache keys: v500: render; v501: render; v502: render; v503: render
 Changed global cache keys: assembly_cache_key, audio_master_cache_key.
 
 Output: `/Users/yan/git/market-claim-verifier-video/demo/out/demo-v022.mp4`; SHA-256 `1dc5a48a33704eeb48f339f3436b9e7a0676ca33bda5b5edfe3a86e6bcc1fba8`.
+
+## 2026-11-04 — v5 round 7: readable, source-bound terminal replays
+
+Retained the host v022 take and every underlying source. Both terminal windows now
+use five 30 px monospace rows at 36 px pitch, with 30 px source/replay labels inside
+the header. The online replay starts with the recorded request event, retains the
+whole-request stopwatch, and groups the six actual program checks. Its cue clock
+reads the first real tool call and verdict directly from the captured log.
+
+The local recording has twelve selected event rows, including all five condensed
+tool call/result pairs and each claim verdict. It plays at 3x above the separately
+labelled saved OCR/ASR and scale evidence throughout the batch block. The final
+receipt summary holds from 129.433 s to the 138 s block boundary. The opening local
+ledger row requires command typing and timestamped progress; the later receipt is
+recorded separately. The full command remains in metadata and the omitted --out
+path is explicitly disclosed in the picture.
+
+Synthesized only the whole-request clock explanation and "Four tool calls" with
+the locked local Breeze voice; all other voice units are reused. The clock cue
+keeps its original start. Count annotations, focused source rows, a declared hold
+of the original verdict frame, a larger illustrative-scenario label, helper-text
+spacing and the SEC-to-trace handoff address the supplied AI2 findings. Actual
+browser audits and offline regressions now verify the named log events as well as
+geometry. The supplied review, source hashes, failed attempts and measurements
+are retained in [round-7 records](prep/v5/r7/README.md).
+
+Headless Chromium could not launch in this workspace. The v022 MP4 and earlier
+review remain historical; no r7 encoded-picture or listening pass is claimed.
+The [host completion commands](REVIEW-v5.md#host-completion) render from the same
+take and sources without recording another request.

@@ -34,12 +34,44 @@ export function assertLiveTerminal(terminal,expected,native,trace,top=558){
  assert.deepEqual(terminal.rows.map(r=>({kind:r.kind,text:r.text})),expected.rows);
  assert(terminal.rows.length<=5,'Terminal scrolls at five lines');
  for(const row of terminal.rows){
-  assert(row.font>=28);assert(row.lineHeight>=34);
-  assert(row.left>=terminal.left&&row.right<=terminal.right&&row.top>=terminal.top+32&&row.bottom<=terminal.bottom-28,'Terminal row is clipped');
+  assert(row.font>=30);assert(row.lineHeight>=36);
+  assert(row.left>=terminal.left&&row.right<=terminal.right&&row.top>=terminal.top+44&&row.bottom<=terminal.bottom-4,'Terminal row is clipped');
   assert(row.scroll<=row.width+1,'Terminal row overflows horizontally');
  }
  assert.equal(terminal.cursor,expected.cursor,'Cursor blink must follow the film clock');
+ if(terminal.header){
+  for(const label of terminal.header){
+   assert(label.font>=30,'Terminal source, replay and stopwatch labels must be at least 30 px');
+   assert(label.left>=terminal.left&&label.right<=terminal.right&&label.bottom<=terminal.top+44,'Terminal header label is clipped');
+  }
+  for(let i=1;i<terminal.header.length;i++)assert(terminal.header[i].left>=terminal.header[i-1].right,'Terminal header labels overlap');
+ }
  assertNamedClearance([terminal],native?[native]:[]);
+}
+
+export function assertWaitCue(picture,trace,event){
+ const visible=text=>picture.rows.some(r=>r.text===text);
+ let source=[];
+ if(['tools','claims','lookups'].includes(event)){
+  source=trace.rows.filter(r=>r.event==='tool_call');
+  if(event==='tools'){
+   assert(visible(source[0].text),'First real tool_call must be visible throughout the tools sentence');source=source.slice(0,1);
+  }
+  else {
+   assert.equal(source.length,4);assert.equal(source.filter(r=>r.args.name==='lookup_fact').length,3);assert.equal(source.filter(r=>r.args.name==='compute_change').length,1);
+   assert(source.every(r=>visible(r.text)),'All four real tool_call rows must accompany the claim/call counts');
+  }
+ }else if(event==='evidence_ids'){
+  source=trace.rows.filter(r=>r.event==='tool_result'&&r.args.evidence_id);
+  assert(source.length&&source.every(r=>visible(r.text)),'Every recorded evidence-ID result must be visible');
+ }else if(event==='thinking'){
+  source=trace.rows.filter(r=>r.event==='model'&&r.args.phase==='running'&&r.args.step==='2');
+  assert(source.length&&source.every(r=>visible(r.text))&&picture.running,'Step 2 and the whole-request clock must be visible');
+ }else if(event==='decide'){
+  source=trace.rows.filter(r=>['program_check','verdict'].includes(r.event));
+  assert(picture.done&&source.some(r=>r.event==='verdict')&&source.every(r=>visible(r.text)),'Decision narration requires the real checks and final verdict');
+ }
+ return {status:'pass',event,source_rows:source.map(r=>({text:r.text,source_indices:r.source_indices,at_s:r.at_s}))};
 }
 
 export async function checkV5Layout(page,state){
@@ -71,21 +103,23 @@ export async function checkV5Layout(page,state){
    if(sid==='v502'&&e.event==='formats'&&elements.length!==4)throw new Error('All four real previews must be present at sentence onset');
    if(expected&&!elements.some(el=>el.text.includes(expected)))throw new Error(`Incomplete named text at onset/end: ${sid}/${e.event}`);
    const native=index===5?e.native_check:index===8?{phase:'ending hold',at_s:0,visible_until_s:16,elements:data.ending_named_elements}:null;
-   if([5,8].includes(index)&&(!native?.elements?.length||local<native.at_s-1e-6||local>native.visible_until_s+1e-6))throw new Error(`Native proof not held through sentence: ${sid}/${e.event}`);
+   if(([5,8].includes(index)&&!selectors.includes('.live-terminal'))&&(!native?.elements?.length||local<native.at_s-1e-6||local>native.visible_until_s+1e-6))throw new Error(`Native proof not held through sentence: ${sid}/${e.event}`);
    const filings=sid==='v505'&&e.event==='verdict'?[...document.querySelectorAll('.filing-citation')].filter(visible).map(el=>({form:el.dataset.form,evidence_id:el.dataset.evidenceId,href:el.href,text:el.textContent,font:parseFloat(getComputedStyle(el).fontSize)})):null;
    return {scene:sid,event:e.event,at_s:at,measured:e.measured,status:'pass',elements,native,expected,filings,
-    ...(selectors.includes('.live-terminal')?{referents:['terminal window','native in-progress SEC status']}:{} )};
+    ...(selectors.includes('.live-terminal')?{referents:['terminal window','recorded log events']}:{} )};
   });
   return {
    sentenceChecks,
    expectedFilings:data.live_filing_citations,
    liveTrace:data.live_terminal,
    localTrace:data.local_terminal,
+   nativeSourceTime:data.scenes[index].native_holds?.find(h=>local>=h.from_scene_s&&local<h.until_scene_s)?.source_at_s??local,
    plate:plate?{...box(plate),state:plate.dataset.state,colour:getComputedStyle(plate).backgroundColor,opacity:getComputedStyle(plate).opacity}:null,
    terminalNative:data.live_named_elements.find(c=>c.phase==='check_against_sec'),
    terminal:terminal?{...box(terminal),colour:getComputedStyle(terminal).backgroundColor,opacity:getComputedStyle(terminal).opacity,
     title:terminal.querySelector('.live-terminal-title').textContent,dots:terminal.querySelectorAll('.terminal-dots i').length,
     footer:terminal.querySelector('footer').textContent,clock:terminal.querySelector('time').textContent,running:terminal.querySelector('time').dataset.running,
+    header:[...terminal.querySelectorAll('.live-terminal-title,footer,.clock-label,time')].map(el=>({...box(el),font:parseFloat(getComputedStyle(el).fontSize)})),
     cursor:!!terminal.querySelector('.live-terminal-cursor')&&getComputedStyle(terminal.querySelector('.live-terminal-cursor')).visibility==='visible',
     rows:[...terminal.querySelectorAll('.live-terminal-line')].map(el=>({...box(el),kind:el.dataset.kind,text:el.firstChild?.nodeValue||'',font:parseFloat(getComputedStyle(el).fontSize),lineHeight:parseFloat(getComputedStyle(el).lineHeight),scroll:el.scrollWidth}))}:null,
    cjk:cjk.test(document.body.innerText),bar:box(document.querySelector('.chapter-rail')),
@@ -129,13 +163,13 @@ export async function checkV5Layout(page,state){
   assert(actual.plate,'Whole-composite backplate required, including between cues');
   assert.equal(actual.plate.left,0);assert.equal(actual.plate.right,1920);
   assert.equal(actual.plate.colour,'rgb(17, 26, 32)');assert.equal(actual.plate.opacity,'1');
-  assert.equal(actual.plate.top,state.index===8?610:actual.plate.state==='password'?530:558);
+  assert.equal(actual.plate.top,state.index===8?610:actual.plate.state==='password'?542:558);
   assert.equal(actual.plate.bottom,790);
   assert.deepEqual(actual.video.source,[1920,1080]);assert.equal(actual.video.fit,'contain');assert.equal(actual.video.transform,'none');
   assert.equal(actual.video.left,0);assert.equal(actual.video.top,0);assert.equal(actual.video.right,1920);assert.equal(actual.video.bottom,1080);
   assert(actual.decodedFrame?.ready,'Decoded native image must be painted before composing the frame, including the ending cut');
   assert.equal(actual.decodedFrame.left,0);assert.equal(actual.decodedFrame.top,0);assert.equal(actual.decodedFrame.right,1920);assert.equal(actual.decodedFrame.bottom,1080);
-  assert(Math.abs(actual.decodedFrame.sourceTime-state.local)<1/30+.0001,'Decoded native frame must follow the unchanged take clock');
+  assert(Math.abs(actual.decodedFrame.sourceTime-(actual.nativeSourceTime??state.local))<1/30+.0001,'Decoded native frame must follow the declared take clock or retained proof-frame hold');
  }
  if(state.index===5&&state.overlay){
   const terminal=liveTerminalAt(state.local,actual.liveTrace);
@@ -147,14 +181,15 @@ export async function checkV5Layout(page,state){
   if(Math.abs(state.local-state.overlay.at_scene_s)<1e-6)assert(actual.namedChecks.length,'Missing named element audit at cue onset');
  }
  const local=state.index===6?localTerminalAt(state.local,actual.localTrace):null;
- if(local)assertLiveTerminal(actual.terminal,local,null,actual.localTrace,250);
+ if(local)assertLiveTerminal(actual.terminal,local,null,actual.localTrace,64);
  assertNamedClearance([actual.overlay,actual.plate,actual.band,{left:0,right:1920,top:880,bottom:1080}],actual.namedChecks);
  for(const check of actual.namedChecks)if(state.index===5)assertCardFrame(check.card_edge_audit,cardBands[check.overlay_band],{verdict:check.phase==='verdict_reveal'});
  for(const check of actual.sentenceChecks){
   for(const r of check.elements){assert(r.width>0&&r.height>0&&r.left>=0&&r.right<=1920&&r.top>=0&&r.bottom<=790,`${check.scene}/${check.event}: named proof is clipped`);}
   // Web proof may itself be the overlay; native proof must clear it completely.
   assertNamedClearance([actual.overlay,actual.plate,actual.band,{left:0,right:1920,top:880,bottom:1080}],check.native?[check.native]:[]);
-  if(state.index===5)assertCardFrame(check.native?.card_edge_audit,cardBands[check.native?.overlay_band],{verdict:check.event==='verdict'});
+  if(state.index===5&&check.native)assertCardFrame(check.native.card_edge_audit,cardBands[check.native.overlay_band],{verdict:check.event==='verdict'});
+  if(state.index===5&&['tools','claims','lookups','evidence_ids','thinking','decide'].includes(check.event))check.semantic=assertWaitCue(liveTerminalAt(state.local,actual.liveTrace),actual.liveTrace,check.event);
   if(check.scene==='v505'&&check.event==='verdict'){
    assertVerdictReferents(check,actual.expectedFilings);
    check.referents=['verdict','filing'];

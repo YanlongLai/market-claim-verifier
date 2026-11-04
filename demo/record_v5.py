@@ -98,6 +98,13 @@ def live_cue_events(scene, receipt):
         offset=spec.get('offset_s',0)
         if phase not in LIVE_PHASES or phase not in phases or type(offset) not in (float,int) or not math.isfinite(offset) or offset<0:
             raise RecordingError('Every live cue requires a recorded picture phase and a finite nonnegative offset')
+        if spec.get('log_event'):
+            from live_terminal_v5 import read_server_log
+            matching=[r for r in read_server_log(receipt,ROOT) if r['event']==spec['log_event']]
+            ordinal=spec.get('log_ordinal',0)
+            if type(ordinal) is not int or ordinal<0 or ordinal>=len(matching):
+                raise RecordingError('Live cue requires its named real server-log event')
+            offset+=matching[ordinal]['at_s']
         at = phases[phase]+offset
         if type(at) not in (float, int) or not math.isfinite(at) or not 0 <= at < scene["target_s"]:
             raise RecordingError("Live narration cue falls outside the locked scene")

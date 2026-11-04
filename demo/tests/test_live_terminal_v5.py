@@ -19,9 +19,10 @@ def receipt(v5_story):
 
 def test_terminal_uses_pod_elapsed_not_arrival_or_response_events(receipt):
     before=copy.deepcopy(receipt);trace=compile_live_terminal(receipt)
-    assert trace['title']=='Online · hackathon.dappgo.com · server log'
+    assert trace['title']=='Online · hackathon.dappgo.com'
     assert trace['honesty_label']=='live request 00000000 · pod log'
-    assert trace['typing_start_scene_s']==pytest.approx(trace['start_scene_s']-.6)
+    assert trace['typing_start_scene_s']==pytest.approx(trace['start_scene_s'])
+    assert 'command' not in trace and trace['rows'][0]['kind']=='request'
     assert trace['rows'][2]['at_s']==2.13 # JSONL host arrivals are all after +100 s.
     assert trace['rows'][3]['text'].endswith('2023Q3  → E1')
     assert trace['rows'][-1]['text']=='verdict  contradicted  16.4 s  $0.0215'
@@ -51,10 +52,17 @@ def test_local_cli_is_byte_identical_and_final_receipt_is_real():
     assert trace['session_sha256']==file_hash(ROOT/'demo/assets/cli-v5/local-cli.json')
     assert trace['source_duration_s']==38.571843 and not session['dry_run']
     assert all(len(f['rows'])<=5 and all(len(r['text'])<=98 for r in f['rows']) for f in trace['frames'])
-    assert any('screen_reason' in r['text'] for f in trace['frames'] for r in f['rows'])
+    assert len(trace['rows'])==12
+    assert not any('screen_reason' in r['text'] or 'event=' in r['text'] for f in trace['frames'] for r in f['rows'])
     assert 'uv run python -m claimcheck post docs/examples/post.txt' in trace['command']
-    assert trace['frames'][-1]['rows'][-1]['text']=='verdict  2 supported · 1 contradicted  $0.0611'
-    assert [f['at_s'] for f in trace['frames']]==[c['t_rel_s'] for c in session['chunks']]
+    assert trace['frames'][-1]['rows'][-1]['text']=='verdict  2 supported · 1 contradicted  38.6 s  $0.0611'
+    arrivals={c['t_rel_s'] for c in session['chunks']}
+    assert all(f['at_s'] in arrivals for f in trace['frames'])
+    assert len([r for r in trace['rows'] if len(r['source_event_indices'])==2])==5
+    assert trace['rows'][-1]['source_elapsed_s']==38.32
+    assert trace['rows'][2]['text']=='+9.8 s  lookup_fact  AMZN  revenue  2023Q3  → E1'
+    assert trace['rows'][3]['args']['phase']=='completed' and trace['rows'][3]['args']['count']=='2'
+    assert trace['rows'][3]['text']=='+15.8 s  model · step 2'
 
 
 def unit(event,start,duration=1,leading=.1):

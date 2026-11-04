@@ -9,6 +9,7 @@ from pathlib import Path
 from pipeline import BuildError, file_hash
 
 LIVE = re.compile(r'\blive id=([0-9a-f]{32}) \+([0-9.]+)s event=(\w+)(.*)$')
+CLI = re.compile(r'cli \+([0-9.]+)s event=(\w+)([^\r\n]*)')
 
 
 def trace_events(events):
@@ -28,16 +29,19 @@ def fields(text):
 
 def condensed(at, event, args):
     """Keep the public progress semantics; never expose raw model reasoning."""
-    time=f'+{at:4.1f} s  '
+    time=f'+{at:.1f} s  '
     if event in ('tool_call','tool_result'):
         period=args.get('period','')
         if args.get('base_period'):period+=f" vs {args['base_period']}"
-        text=(f"{time}{args.get('name',event):<14}  {args.get('ticker',''):<4}  "
-              f"{args.get('metric',''):<7}  {period}")
+        text='  '.join(x for x in (time.rstrip(),args.get('name',event),args.get('ticker',''),args.get('metric',''),period) if x)
         if args.get('evidence_id'):text+=f"  → {args['evidence_id']}"
-        return 'call',text.rstrip()
+        return 'result' if event=='tool_result' else 'call',text.rstrip()
     if event=='model' and args.get('phase')=='running':
-        return 'reasoning',f"{time}… model reasoning (Muse Spark)"+(f" · step {args['step']}" if 'step' in args else '')
+        return 'reasoning',f"{time}model"+(f" · step {args['step']}" if 'step' in args else '')
+    if event=='start':
+        # The captured runner logs a placeholder chars=0 before preprocessing.
+        # Do not replace it with a guessed input length or a fictitious CLI command.
+        return 'request',f"{time}request  POST /api/check · {args.get('kind','text')} · {args['provider']}"
     if event=='verdict':
         cost=args.get('cost',args.get('cost_usd','0')).lstrip('$')
         return 'verdict',f"verdict  {args['verdict']}  {at:.1f} s  ${float(cost):.4f}"
@@ -81,11 +85,24 @@ def compile_live_terminal(receipt,root=Path(__file__).resolve().parents[1]):
     if (args.get('cost_is_bound')=='true' or result.get('cost_is_bound') or not math.isfinite(cost) or cost<0
         or args['verdict']!=result['verdict'] or f"{result['cost_usd']:.4f}"!=f'{cost:.4f}'):
         raise BuildError('Real log verdict/cost is incomplete or differs from the response')
-    return dict(start_scene_s=start,typing_start_scene_s=start-.6,end_scene_s=end,
-        title='Online · hackathon.dappgo.com · server log',
-        command=f"$ claimcheck post post.txt --provider {result['provider']} --budget 1",
-        rows=rows,verdict=dict(at_s=verdict['at_s'],verdict=args['verdict']),cost_usd=cost,
+    return dict(start_scene_s=start,typing_start_scene_s=start,end_scene_s=end,
+        title='Online · hackathon.dappgo.com',
+        rows=collapse_program_checks(rows),verdict=dict(at_s=verdict['at_s'],verdict=args['verdict']),cost_usd=cost,
         honesty_label=f"live request {receipt['server_log']['request_id'][:8]} · pod log")
+
+
+def collapse_program_checks(rows):
+    """One display row, with every contributing source index retained."""
+    out=[]
+    for index,row in enumerate(rows):
+        row={**row,'source_indices':[index]}
+        if row['event']=='program_check' and out and out[-1]['event']=='program_check' and out[-1]['at_s']==row['at_s']:
+            out[-1]['source_indices'].append(index)
+        else:out.append(row)
+    for row in out:
+        if row['event']=='program_check':
+            row['text']=f"+{row['at_s']:.1f} s  program_check × {len(row['source_indices'])}"
+    return out
 
 
 def compile_local_terminal(root):
@@ -95,28 +112,53 @@ def compile_local_terminal(root):
     session=json.loads(path.read_text())
     if session['dry_run'] or session['exit_code']!=0 or session['interrupted'] or not session['receipt_summary']['available']:
         raise BuildError('Local terminal requires a completed real CLI recording')
-    frames=[];content='';previous=-1.
+    content='';previous=-1.;arrivals=[]
     for chunk in session['chunks']:
         at=chunk['t_rel_s']
         if type(at) not in (int,float) or not math.isfinite(at) or at<previous:raise BuildError('Local chunks must retain ordered timestamps')
-        previous=at;content+=chunk['text']
-        # This recording is plain PTY text. Reflow every chunk, including partial
-        # lines and the final report JSON; never replace it with a saved replay.
-        lines=content.replace('\r\n','\n').replace('\r','').split('\n')
-        if lines[-1]=='':lines.pop()
-        wrapped=[part for line in lines for part in ([line[a:a+98] for a in range(0,len(line),98)] or [''])]
-        rows=[dict(kind='verdict' if 'event=verdict' in text or 'event=receipt' in text else 'output',text=text) for text in wrapped[-5:]]
-        frames.append(dict(at_s=at,rows=rows))
+        previous=at;content+=chunk['text'];arrivals.append((len(content),at))
+    records=[]
+    for index,match in enumerate(CLI.finditer(content)):
+        elapsed,event,tail=match.groups();args=fields(tail)
+        at=float(elapsed);kind,text=condensed(at,event,args)
+        if event=='start':kind,text='status',f"+{at:.1f} s  start  {args.get('kind','text')} · {args['provider']}"
+        if event=='verdict':text=f"+{at:.1f} s  verdict  {args['verdict']}  {args['cost']}"
+        records.append(dict(at_s=next(t for n,t in arrivals if n>=match.end()),source_elapsed_s=at,
+            event=event,kind=kind,text=text,args=args,source_event_indices=[index]))
+    selected=[];pending=None
+    for row in records:
+        event=row['event']
+        if event=='tool_call':pending=row
+        elif event=='tool_result':
+            if not pending or pending['args']['name']!=row['args']['name']:
+                raise BuildError('Local tool result must match its recorded call')
+            # One condensed pair appears only once its real result has arrived.
+            _,pair_text=condensed(pending['source_elapsed_s'],'tool_result',row['args'])
+            selected.append({**row,'text':pair_text,'source_call_elapsed_s':pending['source_elapsed_s'],
+                'source_event_indices':pending['source_event_indices']+row['source_event_indices']})
+            pending=None
+        elif event in ('start','verdict'):selected.append(row)
+        elif event=='model' and row['args'].get('phase')=='extraction':
+            selected.append({**row,'kind':'reasoning','text':f"+{row['source_elapsed_s']:.1f} s  model · extraction"})
+        elif (event=='model' and row['args'].get('phase')=='completed' and row['args'].get('count')=='2'
+              and not any(r['event']=='verdict' for r in selected)):
+            # The printed count is the source's completed step count, not an
+            # invented ordinal for a later running notification.
+            selected.append({**row,'kind':'status','text':f"+{row['source_elapsed_s']:.1f} s  model · step 2"})
+        elif event=='receipt':selected.append(row)
     summary=session['receipt_summary'];v=summary['verdicts'];cost=summary['cost_usd']
-    frames[-1]['rows']=(frames[-1]['rows']+[dict(kind='verdict',
-        text=f"verdict  {v['supported']} supported · {v['contradicted']} contradicted  ${cost:.4f}")])[-5:]
-    # Wrap the literal shell command with continuation characters, never shrink it.
-    command=shlex.join(session['command']);parts=[];line='$ '
-    for token in shlex.split(command):
-        word=shlex.quote(token)
-        if len(line)+len(word)>94:parts.append(line.rstrip()+' \\');line='  '
-        line+=word+' '
-    parts.append(line.rstrip())
-    return dict(title='Local · CLI · recorded 2026-11-04',command='\n'.join(parts),frames=frames,
+    if not selected or selected[-1]['event']!='receipt' or len(selected)>12:
+        raise BuildError('Local selection needs its real final receipt and at most twelve rows')
+    final=selected[-1]
+    if (int(final['args']['supported'])!=v['supported'] or int(final['args']['contradicted'])!=v['contradicted']
+        or f"{cost:.4f}"!=final['args']['cost'].lstrip('$')):raise BuildError('Local receipt summary differs from the source event')
+    final.update(kind='verdict',text=f"verdict  {v['supported']} supported · {v['contradicted']} contradicted  {session['duration_s']:.1f} s  ${cost:.4f}")
+    frames=[dict(at_s=row['at_s'],rows=selected[max(0,i-4):i+1]) for i,row in enumerate(selected)]
+    # Keep the actual command available verbatim. The long absolute --out path
+    # is disclosed as an omitted argument, outside the recorded event rows.
+    command='$ '+shlex.join(session['command'][:session['command'].index('--out')])+' …'
+    return dict(title='Local · CLI · recorded 2026-11-04',command=command,full_command=shlex.join(session['command']),
+        command_note='Command display omits the recorded --out path; full argv retained in the session.',frames=frames,
+        rows=selected,receipt_source_elapsed_s=final['source_elapsed_s'],
         source_duration_s=session['duration_s'],session_sha256=file_hash(path),cost_usd=cost,
-        note='Every original PTY chunk, including partial lines and report JSON, reflowed to 98 columns; final counts/cost from the session receipt.')
+        note='Selected real events; each call/result pair shares one row at result arrival. Final row condenses the source receipt; duration is the retained session duration. Raw chunks and JSON remain unchanged.')
