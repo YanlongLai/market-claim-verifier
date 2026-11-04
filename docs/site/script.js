@@ -679,6 +679,176 @@
   Object.assign(COPY.en.live.errors, { invalid_provider: "Choose an available provider.", invalid_providers: "Choose available providers." });
   Object.assign(COPY.zh.live.errors, { invalid_provider: "請選擇可用的供應商。", invalid_providers: "請選擇可用的供應商。" });
 
+
+  COPY.en.brand = "market claim verifier";
+  COPY.zh.brand = "財經主張查核器";
+  // Site presentation v2: shared static and runtime copy.
+  COPY.en.facts = {
+  "title": "Facts",
+  "question": "Fact",
+  "answer": "Recorded scope",
+  "caption": "Six answers about the verifier",
+  "source": "Evidence",
+  "question1": "What it checks",
+  "detail1": "A number needs a company, period and unit. The model selects tools; the program checks the evidence.",
+  "answer1": "Checks financial claims against SEC filings; returns verdicts and cited corrections.",
+  "question2": "Coverage",
+  "detail2": "Annual, quarterly and growth comparisons use reported periods. Foreign filers and funds have limited support.",
+  "answer2": "US-GAAP SEC filers: ≈8,000 companies; 23 tested. SEC XBRL periods, generally 2009 onward, through the latest filing.",
+  "question3": "Inputs",
+  "detail3": "Choose a prepared example or paste your own text on the site. The command line also accepts local media.",
+  "answer3": "Website: text ≤600 characters. CLI: text, images, PDFs, audio and video.",
+  "question4": "Cost & speed",
+  "detail4": "Live observations vary with input size. Benchmark measurements are per claim, not a promise for every post.",
+  "answer4": "$0.01 per live check; 6–20 s live (one claim → four-assertion post). $0.02 per claim; 10 s median in the benchmark. $10/day; $60 lifetime.",
+  "question5": "Accuracy",
+  "detail5": "Held-out text measures verdict accuracy. Real-world coverage is reported separately; coverage ≠ accuracy.",
+  "answer5": "90.2% (240/266) held out; false support 1/139.",
+  "question6": "Corrections",
+  "detail6": "Only disproved numbers change. Opinions, unchecked assertions and the rest of the post keep their original wording.",
+  "answer6": "Corrects disproved numbers and cites the filing. Never labels an article approved."
+};
+  COPY.en.language = {
+  "en": "EN",
+  "zh": "ZH"
+};
+  COPY.en.presentation = {
+  "follow": "Follow one number",
+  "followNote": "The viral post puts an annual number in a single quarter. Open each step from the saved check.",
+  "saved": "Saved check · 28 Oct 2026 · Baseten",
+  "claim": "Extracted claim",
+  "fact": "Filed facts",
+  "check": "Program check",
+  "loading": "Loading the saved check…",
+  "failed": "The saved check could not load. Open the retained record below.",
+  "raw": "Open the saved check data",
+  "claimNote": "Apple revenue · fiscal Q4 2025 · stated $416.2B",
+  "annual": "Annual revenue",
+  "nineMonths": "Nine-month revenue",
+  "quarter": "Quarter = annual − nine months",
+  "source": "Open the component filing",
+  "noScript": "The saved claim, filing values and program verdict are available in the retained data.",
+  "historical": "Historical results",
+  "historicalNote": "All 357 claims: 91 development + 266 held out; corrected gold. This chart is historical. The held-out headline above uses 266 claims.",
+  "providers": "Filter historical results by provider",
+  "all": "All providers",
+  "limits": "Limits & honesty",
+  "limit1": "Two gold answers were corrected after the original run; registered-gold scores remain available.",
+  "limit2": "The run manifest records a dirty working tree.",
+  "limit3": "Post-hoc rechecks reuse seen inputs and are not a fresh held-out evaluation.",
+  "limit4": "Frozen-transcript rechecks do not retest image reading or speech transcription (OCR/ASR). Extraction can miss assertions.",
+  "limit5": "Live runs share $10/day and $60 lifetime; 5 checks / 10 min per IP. Authenticated runs are public for 14 days.",
+  "details": "Details",
+  "privacySummary": "Authenticated runs are public in history for 14 days · 5 checks / 10 min per IP",
+  "privacyDetails": "Input text is retained with each authenticated run. Images and speech use the Meta Model API; SEC checks use your chosen provider. A shared office IP shares the rate limit. Limited requests show the reset time.",
+  "noscriptTrace": "The interactive trace needs JavaScript.",
+  "providerBaseten": "Baseten",
+  "providerFireworks": "Fireworks",
+  "providerMeta": "Meta Model API",
+  "today": "today",
+  "yesterday": "yesterday",
+  "utc": "UTC",
+  "savedOn": "Recorded",
+  "readmeAlt": "Auditor robot comparing a post with a filing and stamping the program verdict"
+};
+  COPY.zh.facts = {
+  "title": "產品事實",
+  "question": "項目",
+  "answer": "已記錄範圍",
+  "caption": "關於查核器的六個答案",
+  "source": "查閱證據",
+  "question1": "查核內容",
+  "detail1": "每個數字都需要公司、期間與單位。模型選擇工具，程式核對證據。",
+  "answer1": "以美國證管會申報核對財務主張，提供判定與附出處的修正。",
+  "question2": "涵蓋範圍",
+  "detail2": "依申報期間核對年度、季度與成長比較。外國申報公司與基金的支援有限。",
+  "answer2": "美國會計準則申報公司：約 8,000 家，已測試 23 家。結構化申報期間大致自 2009 年起至最新申報。",
+  "question3": "輸入格式",
+  "detail3": "網站可選擇預製範例或貼上自己的文字。命令列也能讀取本機媒體。",
+  "answer3": "網站：≤600 字元。命令列：文字、圖片、文字型文件、音訊與影片。",
+  "question4": "費用與速度",
+  "detail4": "即時實測耗時隨輸入大小而異。基準數字以每題計算，不保證每篇貼文的表現。",
+  "answer4": "即時查核每次 $0.01；即時 6–20 秒（單一主張 → 含四項主張的貼文）。基準測試每題 $0.02；中位數 10 秒。每日 $10；累計 $60。",
+  "question5": "準確率",
+  "detail5": "保留文字測試衡量判定準確率。真實貼文的涵蓋率另列；涵蓋率 ≠ 準確率。",
+  "answer5": "保留測試 90.2% (240/266)；誤判為支持 1/139。",
+  "question6": "修正範圍",
+  "detail6": "只修改被證明錯誤的數字。觀點、未查核主張與其他文字保留原樣。",
+  "answer6": "修正被證明錯誤的數字，並附申報出處。絕不標示整篇文章已核准。"
+};
+  COPY.zh.language = {
+  "en": "英文",
+  "zh": "繁中"
+};
+  COPY.zh.presentation = {
+  "follow": "跟著一個數字查到底",
+  "followNote": "熱門貼文把全年營收寫成單季營收。逐步打開這份已儲存查核。",
+  "saved": "已儲存查核 · 2026-10-28 · 供應商一",
+  "claim": "擷取的主張",
+  "fact": "申報數值",
+  "check": "程式檢查",
+  "loading": "正在讀取已儲存查核…",
+  "failed": "無法讀取已儲存查核，請開啟下方保留紀錄。",
+  "raw": "開啟已儲存查核資料",
+  "claimNote": "蘋果公司營收 · 2025 會計年度第 4 季 · 主張 $416.2B",
+  "annual": "全年營收",
+  "nineMonths": "前九個月營收",
+  "quarter": "單季＝全年－前九個月",
+  "source": "開啟組成數值的申報文件",
+  "noScript": "保留資料包含擷取的主張、申報數值與程式判定。",
+  "historical": "歷史測試結果",
+  "historicalNote": "全部 357 題：91 題開發資料與 266 題保留測試，採修正後參考答案。此圖為歷史結果；上方準確率採 266 題保留測試。",
+  "providers": "依供應商篩選歷史結果",
+  "all": "全部供應商",
+  "limits": "限制與誠實揭露",
+  "limit1": "原始執行後修正了兩題參考答案；原先登記答案的分數仍保留。",
+  "limit2": "執行清單記錄當時工作目錄有未提交的變更。",
+  "limit3": "事後重查使用已看過的輸入，不是全新的保留測試。",
+  "limit4": "凍結對話重查未重測圖片辨識或語音轉錄；擷取可能遺漏主張。",
+  "limit5": "即時查核共用每日 $10、累計 $60 預算；每個網路位址每 10 分鐘限 5 次。驗證後的查核公開保留 14 天。",
+  "details": "詳細規則",
+  "privacySummary": "驗證後查核公開保留 14 天 · 每個網路位址每 10 分鐘限 5 次",
+  "privacyDetails": "通過驗證的輸入文字會隨查核保留。圖片與語音由官方模型介面讀取，申報查核使用所選供應商。共用辦公室網路也共用額度；達到限制時顯示重設時間。",
+  "noscriptTrace": "互動紀錄需要啟用瀏覽器指令。",
+  "providerBaseten": "供應商一",
+  "providerFireworks": "供應商二",
+  "providerMeta": "官方模型介面",
+  "today": "今天",
+  "yesterday": "昨天",
+  "utc": "世界協調時間",
+  "savedOn": "記錄日期",
+  "readmeAlt": "稽核機器人比對貼文與申報文件，蓋上程式判定印章"
+};
+  Object.assign(COPY.en.nav, { how: "How it works" });
+  Object.assign(COPY.zh.nav, { how: "運作方式" });
+  Object.assign(COPY.zh.a11y, { home: "財經主張查核器首頁", chart: "歷史準確率比較圖" });
+  Object.assign(COPY.zh.hero, { titleLine1: "貼上財經貼文。", lede: "逐一用美國證管會申報資料核對數字，並產出附出處的修正版草稿。" });
+  Object.assign(COPY.zh.workflow, { evidence: "模型尋找申報證據", decide: "程式判定並產出修正版草稿" });
+  Object.assign(COPY.zh.how, { lede: "從貼文一路找到可開啟的來源。" });
+  COPY.zh.how.step1.body = "模型擷取貼文中的數字、期間與比較。";
+  COPY.zh.how.step2.body = "查找同一家公司、數字與期間的申報資料。";
+  COPY.zh.how.step3.body = "程式核對數字，產出支持、矛盾或證據不足的判定。";
+  COPY.zh.metaTitle = "財經主張查核器 · 核對貼文數字";
+  COPY.zh.metaDescription = "貼上財經貼文，逐一用美國證管會申報資料核對數字，並產出附出處的修正版草稿。保留文字測試：90.2% (240/266)；誤判為支持 1/139。採修正後參考答案。";
+  Object.assign(COPY.zh.footer, { source: "原始碼程式庫", license: "開放原始碼授權", builtBy: "由團隊打造", disclosure: "原有財經評論服務在黑客松前已存在；此查核器、網站與證據從 2026-10-27 起於黑客松期間建立。" });
+  Object.assign(COPY.zh.evidence, { origin: "團隊發布美股評論。內部查核發現，數字正確也可能配錯期間、單位或比較方式。模型提出，程式判定。", coverage: "涵蓋率 ≠ 準確率；事後重查未重測圖片辨識與語音轉錄。" });
+  Object.assign(COPY.zh.examples, { pdfTitle: "文件", image: "模型讀取貼文截圖。", pdf: "單頁文件，可直接擷取文字。", audio: "固定聲線旁白，由模型轉錄。", video: "模型讀取影格與旁白。", openPdf: "開啟文件", text: "科技股貼文，含蘋果公司季度錯誤。" });
+  Object.assign(COPY.zh.live, { scope: "美股申報財務數據；不含價格、預測、加密資產或投資建議。", pending: "模型正在選擇工具並核對申報事實…", evidence: "申報證據", filing: "開啟申報文件", honesty: "模型選擇工具並提出主張，程式核對數字、期間與證據識別碼。支持判定只適用於已擷取的主張，擷取可能遺漏。申報可能不完整或經過重述；申報資料可能快取六小時。" });
+  COPY.en.live.privacy = COPY.en.presentation.privacySummary;
+  COPY.zh.live.privacy = COPY.zh.presentation.privacySummary;
+  COPY.en.matrix.privacy = COPY.en.presentation.privacySummary;
+  COPY.zh.matrix.privacy = COPY.zh.presentation.privacySummary;
+  COPY.en.examples.privacy = COPY.en.presentation.privacyDetails;
+  COPY.zh.examples.privacy = COPY.zh.presentation.privacyDetails;
+
+  COPY.en.presentation.benchmarkDuration = "10 s";
+  COPY.en.how.step1.body = "Muse extracts each number, period and comparison.";
+  COPY.en.how.step2.body = "Find the same company, metric and period in the filing.";
+  COPY.en.how.step3.body = "Python checks the values and their numeric tolerance.";
+  COPY.zh.presentation.benchmarkDuration = "10 秒";
+  COPY.zh.stamps.filingPanel = "② 申報文件";
+  COPY.zh.live.recordedNote = "已儲存紀錄 · 2026-10-28 · 真實模型呼叫與申報證據。即時預算用完仍可查看。";
+  COPY.zh.matrix.noScript = "請啟用瀏覽器指令以選擇輸入或讀取即時歷史紀錄。下方也提供已儲存的文字查核。";
   // The static page builder imports this same dictionary through Node.
   // No DOM, provider calls or page initialization run during generation.
   if (typeof document === "undefined") {
@@ -689,6 +859,8 @@
   let pageLanguage = readLanguage();
   let exampleLanguage = pageLanguage;
   let siteData = null;
+  let chartProvider = "all", followStep = 1, followRecord = null;
+  const savedExampleRecords = new Map();
   let stampConveyor = null;
   let activeFilingClaim = null;
   let filingReturnFocus = null;
@@ -726,7 +898,7 @@
   function matrixCopy(key) { return COPY[pageLanguage].matrix[key] || ""; }
   function validId(value) { return typeof value === "string" && /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,79}$/.test(value); }
   function selectedAsset() { return examplesIndex.find(row => row.story === selectedStory && row.kind === selectedKind); }
-  function providerLabel(value) { return providers[value]?.label || String(value || liveCopy("notRecorded")); }
+  function providerLabel(value) { return pageLanguage === "zh" && providers[value] ? getCopy(`presentation.provider${value[0].toUpperCase()}${value.slice(1)}`) : providers[value]?.label || String(value || liveCopy("notRecorded")); }
   function money(value, decimals = 5) { return Number.isFinite(value) ? `$${value.toFixed(decimals)}` : "—"; }
   function duration(value) { return Number.isFinite(value) ? `${(value / 1000).toFixed(1)} ${liveCopy("seconds")}` : "—"; }
   function runReceipt(result) {
@@ -1150,6 +1322,8 @@
       if (!response.ok) throw Error("missing manifest");
       acceptManifest(await response.json());
       await loadExampleText();
+      const id = selectedAsset()?.id;
+      if (id) readExampleSaved(id).then(() => { if (selectedAsset()?.id === id) renderMatrix(); }).catch(() => {});
     } catch { inputLoadState = "assetsFailed"; }
     localizeLive();
   }
@@ -1215,8 +1389,13 @@
     $("#compare-all").disabled = liveBusy;
     $("#live-submit").textContent = matrixCopy($("#compare-all").checked ? "runCompare" : "run");
     $("#live-count").textContent = `${Array.from($("#live-input").value || "").length} / 600`;
-    const saved = asset && asset.saved_result === `/data/examples/${asset.id}.json`;
+    const saved = asset && (savedExampleRecords.get(asset.id) || asset.saved_result === `/data/examples/${asset.id}.json`);
     $("#example-saved").textContent = COPY[pageLanguage].examples[saved ? "saved" : "savedPending"];
+    const note = $("#example-recording");
+    if (note) {
+      const record = asset && savedExampleRecords.get(asset.id);
+      note.textContent = record ? savedRecordingLabel(record) : "";
+    }
   }
 
   async function loadExampleText() {
@@ -1251,6 +1430,10 @@
     if (kind === "text") $("#live-input").value = "";
     await loadExampleText();
     localizeLive();
+    const id = selectedAsset()?.id;
+    if (id && !savedExampleRecords.has(id)) readExampleSaved(id).then(() => {
+      if (selectedAsset()?.id === id) renderMatrix();
+    }).catch(() => {});
   }
 
   function showResult(result, source = {}) {
@@ -1271,15 +1454,13 @@
     exampleSavedStatus = validId(id) ? "loading" : "savedPending";
     localizeLive();
     const asset = examplesIndex.find(row => row.id === id);
-    if (!validId(id) || asset?.saved_result !== `/data/examples/${id}.json`) {
+    if (!validId(id) || !asset) {
       exampleSavedStatus = "savedPending";
       localizeLive();
       return;
     }
     try {
-      const response = await fetch(`/data/examples/${encodeURIComponent(id)}.json`, { cache: "no-store" });
-      if (!response.ok) throw Error("saved example pending");
-      const result = await response.json();
+      const result = await readExampleSaved(id);
       if (request !== resultRequest) return;
       if (result.mode !== "recorded" || result.input?.example_id !== id || typeof result.input.text_read !== "string") throw Error("invalid saved example");
       exampleSavedStatus = "";
@@ -1349,9 +1530,8 @@
     $(".history-table").hidden = !historyRows.length;
     target.replaceChildren();
     historyRows.forEach(record => {
-      const row = liveNode("tr"), time = liveNode("td"), date = new Date(record.at);
-      const label = Number.isFinite(date.getTime()) ? date.toLocaleString(pageLanguage === "zh" ? "zh-TW" : "en-US",
-        { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : record.at || "—";
+      const row = liveNode("tr"), time = liveNode("td");
+      const label = historyTime(record.at);
       const open = liveNode("button", label, "history-open");
       open.type = "button"; open.setAttribute("data-history-id", record.id); open.disabled = liveBusy;
       open.setAttribute("aria-label", `${matrixCopy("openResult")}: ${label} · ${record.story || matrixCopy("custom")} · ${record.kind || "text"} · ${providerLabel(record.provider)}`);
@@ -1361,11 +1541,11 @@
       const input = liveNode("td");
       input.append(liveNode("span", record.story || matrixCopy("custom")), liveNode("small", COPY[pageLanguage].examples[`${record.kind}Title`] || record.kind || "—"));
       const provider = liveNode("td");
-      provider.append(liveNode("span", providerLabel(record.provider)), liveNode("small", record.verdict ? liveVerdict(record.verdict) : "—"));
+      provider.append(liveNode("span", providerLabel(record.provider)), liveNode("small", record.verdict ? liveVerdict(record.verdict) : "—", `history-verdict is-${record.verdict || "unchecked"}`));
       const metrics = liveNode("td");
-      metrics.append(liveNode("span", duration(record.latency_ms)), liveNode("small", money(record.cost_usd)));
+      metrics.append(liveNode("span", duration(record.latency_ms)), liveNode("small", money(record.cost_usd, 2)));
       if (Number.isFinite(record.preprocessing_cost_usd) && record.preprocessing_cost_usd > 0)
-        metrics.append(liveNode("small", `+ ${money(record.preprocessing_cost_usd)} ${liveCopy("preprocessing")}`));
+        metrics.append(liveNode("small", `+ ${money(record.preprocessing_cost_usd, 2)} ${liveCopy("preprocessing")}`));
       row.append(time, input, provider, metrics); target.append(row);
     });
   }
@@ -1390,7 +1570,7 @@
       showResult(result, record);
       localizeLive();
       $("#live-result").focus?.({ preventScroll: true });
-      $("#live-result").scrollIntoView?.({ behavior: "smooth", block: "nearest" });
+      $("#live-result").scrollIntoView?.({ behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "nearest" });
     } catch { if (request === resultRequest) { historyState = "historyFailed"; renderHistory(); } }
   }
 
@@ -1399,13 +1579,19 @@
     ++resultRequest; ++inputRequest;
     const sourceStory = liveResult.input?.story || resultContext.story;
     if (stories.some(story => story.id === sourceStory)) selectedStory = sourceStory;
-    selectedKind = "text"; customText = true; inputLoadState = "";
+    const input = typeof liveResult.input === "object" ? liveResult.input : {};
+    const exampleId = input.example_id || resultContext.example_id;
+    const asset = examplesIndex.find(row => row.id === exampleId);
+    selectedKind = asset?.kind || input.kind || resultContext.kind || "text";
+    if (!exampleIds.includes(selectedKind)) selectedKind = "text";
+    customText = selectedKind === "text";
+    inputLoadState = "";
     $("#live-input").value = resultContext.text;
     if (providers[resultContext.provider]) selectedProvider = resultContext.provider;
     $("#compare-all").checked = false;
     localizeLive();
-    $("#live-form").scrollIntoView?.({ behavior: "smooth", block: "start" });
-    $("#live-input").focus?.();
+    $("#live-form").scrollIntoView?.({ behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "start" });
+    (selectedKind === "text" ? $("#live-input") : $("#live-submit")).focus?.();
   }
 
   async function selectSavedDemo(kind) {
@@ -1593,10 +1779,12 @@
     localizeLive();
     if (siteData) {
       renderStampScene();
-      renderExample(siteData.examples[exampleLanguage]);
+      if (document.documentElement.dataset.evidenceTour !== undefined) renderExample(siteData.examples[exampleLanguage]);
       renderChart(siteData);
-      renderPosthocRerun(siteData);
-      renderResearch(siteData);
+      if (document.documentElement.dataset.evidenceTour !== undefined) {
+        renderPosthocRerun(siteData);
+        renderResearch(siteData);
+      }
       const dialog = $("#filing-dialog");
       if (activeFilingClaim && dialog && dialog.open) renderFilingDialog(activeFilingClaim);
     }
@@ -3470,12 +3658,12 @@
     const caption = $(".chart-caption");
     if (caption) caption.textContent = getCopy("results.caption")(data.eval.claim_count);
     chart.replaceChildren();
-    data.chart.forEach((item) => {
+    data.chart.filter(item => chartProvider === "all" || item.id === chartProvider).forEach((item) => {
       const row = document.createElement("div");
       row.className = "chart-row";
       const provider = document.createElement("strong");
       provider.className = "chart-provider";
-      provider.textContent = item.provider;
+      provider.textContent = providerLabel(item.id);
       row.append(provider);
       row.append(createBarLine(getCopy("results.without"), item.without.percent, "is-without"));
       row.append(createBarLine(getCopy("results.withChecks"), item.with_checks.percent, "is-with-checks"));
@@ -3547,7 +3735,113 @@
     corrections.forEach((correction) => addResearchItem(list, correction));
   }
 
+  function historyTime(value, now = new Date()) {
+    const date = new Date(value);
+    if (!Number.isFinite(date.getTime())) return "—";
+    const day = date.toISOString().slice(0, 10), today = now.toISOString().slice(0, 10);
+    const yesterday = new Date(now.getTime() - 86400000).toISOString().slice(0, 10);
+    const relative = day === today ? getCopy("presentation.today") : day === yesterday ? getCopy("presentation.yesterday") : day;
+    return `${date.toISOString().slice(11, 16)} ${getCopy("presentation.utc")} · ${relative}`;
+  }
+
+  const savedExampleRequests = new Map();
+  function readExampleSaved(id) {
+    if (savedExampleRecords.has(id)) return Promise.resolve(savedExampleRecords.get(id));
+    if (savedExampleRequests.has(id)) return savedExampleRequests.get(id);
+    const request = (async () => {
+      const response = await fetch(`/data/examples/${encodeURIComponent(id)}.json`, { cache: "no-store" });
+      if (!response.ok) throw Error("saved example pending");
+      const result = await response.json();
+      if (result.mode !== "recorded" || result.input?.example_id !== id || typeof result.input.text_read !== "string") throw Error("invalid saved example");
+      savedExampleRecords.set(id, result);
+      return result;
+    })();
+    savedExampleRequests.set(id, request);
+    request.finally(() => savedExampleRequests.delete(id)).catch(() => {});
+    return request;
+  }
+
+  function savedRecordingLabel(result) {
+    const path = String(result.recording?.receipt || result.source || "");
+    const compact = path.match(/(?:^|\/)(\d{4})(\d{2})(\d{2})T\d/);
+    const recordedDate = path.match(/\d{4}-\d{2}-\d{2}/)?.[0] ||
+      (compact ? `${compact[1]}-${compact[2]}-${compact[3]}` : null);
+    const timestamp = result.recording?.recorded_at || result.recorded_at ||
+      result.events?.find(event => event.timestamp)?.timestamp || recordedDate;
+    const date = timestamp && Number.isFinite(Date.parse(timestamp)) ? new Date(timestamp).toISOString().slice(0, 10) : liveCopy("notRecorded");
+    return `${getCopy("presentation.savedOn")} ${date} · ${providerLabel(runReceipt(result).provider || result.provider)}`;
+  }
+
+  function renderFollowNumber() {
+    const panel = $("#follow-panel");
+    if (!panel || !followRecord) return;
+    const claim = followRecord.claims.find(row => row.program_verdict === "contradicted");
+    const fact = followRecord.evidence.find(row => claim?.evidence_ids?.includes(row.evidence_id));
+    if (!claim || !fact) throw Error("saved claim has no matching fact");
+    panel.replaceChildren();
+    panel.setAttribute("aria-labelledby", `follow-step-${followStep}`);
+    const heading = liveNode("h3", getCopy(`presentation.${["claim", "fact", "check"][followStep - 1]}`));
+    panel.append(heading);
+    if (followStep === 1) {
+      panel.append(liveNode("p", getCopy("presentation.claimNote")));
+      // These fields come directly from the saved claim and its bound SEC fact.
+      const snapshot = pageLanguage === "zh" ? { 代號: fact.ticker, 期間: fact.period, 主張值: claim.stated_value, 證據: claim.evidence_ids }
+        : { ticker: fact.ticker, period: fact.period, stated_value: claim.stated_value, evidence_ids: claim.evidence_ids };
+      const pre = liveNode("pre"); pre.append(liveNode("code", JSON.stringify(snapshot, null, 2))); panel.append(pre);
+    } else if (followStep === 2) {
+      const list = liveNode("dl", null, "follow-values");
+      panel.append(list);
+      (fact.components || [fact]).forEach((component, index) => {
+        list.append(liveNode("dt", getCopy(`presentation.${index === 0 ? "annual" : "nineMonths"}`)),
+          liveNode("dd", financialNumber(component.value)));
+        // SEC archive URL derived from the retained CIK/accession, never model text.
+        const url = component.filing_url || (fact.cik && component.accn ? `https://www.sec.gov/Archives/edgar/data/${Number(fact.cik)}/${component.accn.replaceAll("-", "")}/` : null);
+        const link = secLink(url, `${component.form} · ${component.filed} · ${getCopy("presentation.source")}`);
+        if (link) panel.append(link);
+      });
+      list.append(liveNode("dt", getCopy("presentation.quarter")), liveNode("dd", financialNumber(fact.value)));
+    } else {
+      const list = liveNode("dl", null, "follow-values");
+      [["stated", claim.stated_value], ["actual", claim.actual_value], ["tolerance", claim.tolerance]].forEach(([key, value]) => {
+        list.append(liveNode("dt", liveCopy(key)), liveNode("dd", liveNumber(value)));
+      });
+      panel.append(list);
+      const pre = liveNode("pre");
+      pre.append(liveNode("code", `abs(${claim.actual_value} − ${claim.stated_value}) > ${claim.tolerance}`));
+      panel.append(pre, liveNode("strong", liveVerdict(claim.program_verdict), `follow-verdict is-${claim.program_verdict}`));
+    }
+  }
+
+  async function setupFollowNumber() {
+    const panel = $("#follow-panel");
+    if (!panel) return;
+    const tabs = $$('[data-follow-step]');
+    const select = (tab) => {
+      followStep = Number(tab.dataset.followStep);
+      tabs.forEach(other => { const active = other === tab; other.setAttribute("aria-selected", String(active)); other.setAttribute("tabindex", active ? "0" : "-1"); });
+      renderFollowNumber();
+    };
+    tabs.forEach((tab, index) => {
+      tab.addEventListener("click", () => select(tab));
+      tab.addEventListener("keydown", event => {
+        const next = event.key === "Home" ? 0 : event.key === "End" ? 2 : event.key === "ArrowRight" ? (index + 1) % 3 : event.key === "ArrowLeft" ? (index + 2) % 3 : null;
+        if (next !== null) { event.preventDefault(); select(tabs[next]); tabs[next].focus(); }
+      });
+    });
+    try {
+      const response = await fetch("/data/live-demo-post.json", { cache: "no-store" });
+      if (!response.ok) throw Error("missing saved check");
+      followRecord = await response.json();
+      renderFollowNumber();
+    } catch { followRecord = null; panel.replaceChildren(liveNode("p", getCopy("presentation.failed"))); }
+  }
+
   function setupControls() {
+    $$('[data-chart-provider]').forEach(button => button.addEventListener("click", () => {
+      chartProvider = button.dataset.chartProvider;
+      $$('[data-chart-provider]').forEach(other => other.setAttribute("aria-pressed", String(other === button)));
+      if (siteData) renderChart(siteData);
+    }));
     const revealSavedCheck = () => {
       const saved = $("#saved-check-details");
       if (saved && window.location.hash === "#recorded-run") {
@@ -3578,18 +3872,17 @@
   }
 
   async function loadData() {
-    // Historical widgets live on the evidence tour. Legacy homepage bookmarks
-    // keep their IDs, but must never become chart or example render targets.
-    if (document.documentElement.dataset.evidenceTour === undefined) return;
     try {
       const response = await fetch("/data/site.json", { cache: "no-store" });
       if (!response.ok) throw new Error("site data unavailable");
       siteData = await response.json();
       renderStampScene();
-      renderExample(siteData.examples[exampleLanguage] || siteData.examples.en);
+      if (document.documentElement.dataset.evidenceTour !== undefined) renderExample(siteData.examples[exampleLanguage] || siteData.examples.en);
       renderChart(siteData);
-      renderPosthocRerun(siteData);
-      renderResearch(siteData);
+      if (document.documentElement.dataset.evidenceTour !== undefined) {
+        renderPosthocRerun(siteData);
+        renderResearch(siteData);
+      }
     } catch (_error) {
       const list = $("#claim-list");
       if (list) {
@@ -3605,6 +3898,7 @@
   setupLive();
   setupFilingDialog();
   setupControls();
+  setupFollowNumber();
   applyCopy();
   loadData();
 })();

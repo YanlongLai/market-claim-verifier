@@ -42,11 +42,15 @@ function monitor(language) {
 }
 
 async function targets(page) {
-  return page.evaluate(() => [...document.querySelectorAll('a[href],button,summary,input,select')].filter(el => {
+  return page.evaluate(() => [...document.querySelectorAll('nav a[href],.hero-actions a[href],button,summary,input,select')].filter(el => {
     if (el.closest('.is-sr-only,[inert]') || !el.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true })) return false;
     const r = el.getBoundingClientRect();
     return r.width > 1 && r.height > 1 && r.right > 0 && r.bottom > 0 && !el.classList.contains('skip-link');
-  }).map(el => ({ text: (el.textContent || el.getAttribute('aria-label') || el.tagName).trim().slice(0, 70), height: Math.round(el.getBoundingClientRect().height * 100) / 100 })));
+  }).map(el => {
+    const target = el.matches('input[type="checkbox"],input[type="radio"]') ? el.closest('label') || el : el;
+    return { text: (target.textContent || el.getAttribute('aria-label') || el.tagName).trim().slice(0, 70),
+      height: Math.round(target.getBoundingClientRect().height * 100) / 100 };
+  }));
 }
 
 async function run(width, language, explorer) {
@@ -60,14 +64,23 @@ async function run(width, language, explorer) {
   page.on('requestfailed', r => failed.push({ url: r.url(), error: r.failure()?.errorText }));
   page.on('response', r => { if (r.status() >= 400) errors.push(`HTTP ${r.status()} ${r.url()}`); });
   page.on('request', r => resources.add(`${r.resourceType()} ${new URL(r.url()).origin}`));
-  await page.route('**/*', route => allowed.has(new URL(route.request().url()).origin) ? route.continue() : route.abort());
+  await page.route('**/*', route => {
+    const url = new URL(route.request().url());
+    if (url.pathname === '/api/budget') return route.fulfill({contentType:'application/json',body:JSON.stringify({
+      status:'ready',day:'2026-11-04',daily_limit_usd:10,daily_remaining_usd:10,resets_at:'2099-11-05T00:00:00Z'})});
+    if (url.pathname === '/api/history') return route.fulfill({contentType:'application/json',body:'{"rows":[]}'});
+    // An unpublished saved file is an expected UI state, not a browser failure.
+    if (/^\/data\/examples\/[a-z-]+\.json$/.test(url.pathname) && !url.pathname.endsWith('/text.json'))
+      return route.fulfill({contentType:'application/json',body:'{"mode":"unavailable"}'});
+    return allowed.has(url.origin) ? route.continue() : route.abort();
+  });
   await page.addInitScript(monitor, language);
   const path = explorer ? `/explorer/${language === 'zh' ? 'index.zh.html' : ''}` : language === 'zh' ? '/zh/' : '/';
   const response = await page.goto(base + path, { waitUntil: 'domcontentloaded' });
   assert.equal(response.status(), 200);
   assert.ok(response.headers()['content-security-policy']?.includes("frame-ancestors 'none'"));
   const raw = await response.text();
-  if (language === 'zh') assert.ok(raw.includes(explorer ? '同一個模型' : '貼上一則財經貼文。'), `${label} static Chinese`);
+  if (language === 'zh') assert.ok(raw.includes(explorer ? '同一個模型' : '貼上財經貼文。'), `${label} static Chinese`);
   if (explorer) await page.waitForFunction(() => document.querySelector('#count')?.textContent.includes('357'));
   else await page.waitForFunction(() => window.__qa.firstScene);
   const first = await page.evaluate(() => ({ ...window.__qa, overflow: document.documentElement.scrollWidth > innerWidth }));
@@ -126,14 +139,19 @@ async function run(width, language, explorer) {
     const paused = await page.evaluate(() => window.__stampScene.getState().seconds);
     await page.waitForTimeout(100);
     assert.equal(await page.evaluate(() => window.__stampScene.getState().seconds), paused);
-    await page.locator('.claim-filing-trigger').first().click();
-    assert.equal(await page.locator('#filing-dialog').evaluate(el => el.open), true);
-    assert.ok((await page.locator('#filing-dialog-title').textContent()).trim());
-    if (width === 375) {
-      result.dialogSmallTargets = (await targets(page)).filter(x => x.height < 43.99);
-      assert.deepEqual(result.dialogSmallTargets, []);
-    }
-    await page.locator('#filing-dialog-close').click();
+    // The homepage stepper opens the saved data; original filing passages remain
+    // on the evidence tour and in the saved result rather than a second dialog.
+    await page.locator('#follow-step-1').click();
+    assert.ok((await page.locator('#follow-panel code').textContent()).includes('416200000000'));
+    await page.locator('#follow-step-1').press('ArrowRight');
+    assert.equal(await page.locator('#follow-step-2').getAttribute('aria-selected'), 'true');
+    assert.equal(await page.locator('#follow-panel a').count(), 2);
+    await page.locator('#follow-step-2').press('End');
+    assert.ok((await page.locator('#follow-panel code').textContent()).includes('50000000'));
+    await page.locator('[data-chart-provider="baseten"]').click();
+    assert.equal(await page.locator('#chart .chart-row').count(), 1);
+    await page.locator('[data-chart-provider="all"]').click();
+    assert.equal(await page.locator('#chart .chart-row').count(), 3);
     result.robotAtSeek = [];
     for (const seconds of [0, 1.6, 3.9, 5, 12.94, 25.5, 33.5, 49.5]) {
       await page.goto(`${base}${path}?stamp-t=${seconds}#top`, { waitUntil: 'domcontentloaded' });

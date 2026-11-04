@@ -102,8 +102,8 @@ Its [retained trace](evidence/posts-2026-10-28/demo-thread-baseten/traces/202610
 | Calls | At most four model calls, 2,000 output tokens each; at most six tool calls; no automatic provider retry |
 | Time | 28-second text / 60-second example run; 22-second verifier/SEC and 50-second Meta preprocessing I/O; Pages: 25-second text / 65-second example / 195-second compare; browser timing belongs to the site; no measured production SLA |
 | Rate | Five accepted checks per IP per ten minutes; raw IP never stored |
-| Daily spend | `DAILY_BUDGET_USD`, default $3 per UTC day; zero disables calls; invalid/negative/nonfinite values fail closed |
-| Lifetime spend | `TOTAL_BUDGET_USD`, default $20 across all days; lack of reservation room latches a stop |
+| Daily spend | `DAILY_BUDGET_USD`, deployment $10 per UTC day; zero disables calls; invalid/negative/nonfinite values fail closed |
+| Lifetime spend | `TOTAL_BUDGET_USD`, deployment $60 across all days; lack of reservation room latches a stop |
 | Provider credit | 402, or 403/429 with credit/payment/quota exhaustion wording, durably pauses calls; ordinary auth/rate errors do not latch a credit stop |
 | SEC cache | Six-hour memory/disk cache of successful JSON bodies only; HTTPS host allowlist `www.sec.gov` / `data.sec.gov`; redirects disabled |
 
@@ -116,12 +116,12 @@ Provider errors, incomplete/model-invalid responses, SEC failures and timeouts i
 `GET /api/budget` uses [the budget Function](../functions/api/budget.ts) and the same persistent ledger as checks. Visitors need no review password to read the aggregate; Pages still authenticates to Access and the origin. The [boundary](../workers/pages/check.mjs) returns only:
 
 ```json
-{"day":"2026-11-02","daily_limit_usd":3.0,"daily_spent_usd":0.59,"daily_remaining_usd":2.41,"resets_at":"2026-11-03T00:00:00Z","status":"ready"}
+{"day":"2026-11-02","daily_limit_usd":10.0,"daily_spent_usd":0.59,"daily_remaining_usd":9.41,"resets_at":"2026-11-03T00:00:00Z","status":"ready"}
 ```
 
 Status is `ready`, `budget_exhausted`, `total_budget_exhausted` or `credit_exhausted`. This is an application allowance, not the provider balance. Successful responses allow five seconds of shared caching; errors are `no-store`. A visitor request with `Cache-Control: no-cache` receives `no-store` and a fresh ledger read, without forwarding that header.
 
-The bilingual live box refreshes on page load, attempted checks, visibility and the next UTC midnight. The accessible meter includes reservations. Below $0.10 it shows “Almost used up” / “預算即將用完”. Daily stops disable submission and show the next UTC reset. Lifetime/provider stops show a pause without promising a midnight restart. Unavailable budgets disable submission until refreshed successfully.
+The live box in each language refreshes on page load, attempted checks, visibility and the next UTC midnight. The accessible meter includes reservations. Below $0.10 it shows “Almost used up” / “預算即將用完”. Daily stops disable submission and show the next UTC reset. Lifetime/provider stops show a pause without promising a midnight restart. Unavailable budgets disable submission until refreshed successfully.
 
 ## Atomic cost cap
 

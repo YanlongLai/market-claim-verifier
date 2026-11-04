@@ -486,7 +486,7 @@ def test_paper_text_and_severity_colours_keep_4_5_contrast_with_grain(theme):
     assert tokens["severity-minor"] == tokens["severity-moderate"], "Both middle severities use amber"
 
 
-def test_approved_ia_keeps_the_stamp_walkthrough_on_its_linked_evidence_page():
+def test_site_v2_restores_the_scene_and_stepper_and_keeps_the_evidence_tour():
     from html.parser import HTMLParser
 
     class Structure(HTMLParser):
@@ -517,10 +517,11 @@ def test_approved_ia_keeps_the_stamp_walkthrough_on_its_linked_evidence_page():
     structure = Structure()
     structure.feed(html)
     assert not structure.stack
-    assert structure.sections == ["top", "live-check", "facts", "evidence"]
-    assert structure.nav == ["#live-check", "#facts", "#evidence"]
+    assert structure.sections == ["top", "how", "live-check", "facts", "evidence", "limits"]
+    assert structure.nav == ["#how", "#live-check", "#facts", "#evidence"]
     assert 'href="/evidence/site-tour/"' in html
-    assert 'class="stamp-track"' not in html
+    assert 'class="stamp-track"' in html
+    assert any(attrs.get("id") == "top" for _, attrs in structure.parents["stamp-scene"])
 
     html = (ROOT / "docs/evidence/site-tour/index.html").read_text()
     structure = Structure()

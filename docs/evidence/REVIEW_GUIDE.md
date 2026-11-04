@@ -35,7 +35,7 @@ same rounded observations. These qualifications are part of those facts.
   The [held-out benchmark](eval-v2-2026-10-27/REPORT.md#metrics) recorded
   $0.019880 mean cost per claim, rounded to $0.02; median latency was
   10 seconds and p95 was 21 seconds. These are observations, not service
-  guarantees. The live budget is $3/day.
+  guarantees. The live budget is $10/day and $60 lifetime, configured in [Kubernetes](../../deploy/k8s/live-check.yaml) and [the Worker configuration](../../workers/live/wrangler.toml); the owner reports the cluster already uses these limits. The linked production receipt retains the budget in effect when it was recorded.
 - **Accuracy:** Baseten Muse Spark Open scored 90.2% (240/266) on held-out
   text with corrected gold (two changes); failures count as wrong.
   False support was 1/139 reference contradicted/insufficient claims.

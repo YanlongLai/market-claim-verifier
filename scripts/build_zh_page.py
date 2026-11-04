@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""Build /zh/ from the English HTML and the production COPY dictionary.
+"""Generate the complete Traditional Chinese mirror from the shared page structure.
 
-Node imports the complete script's DOM-free export, rather than extracting a
-JavaScript object with a regex. Only translated spans/attributes are replaced;
-the English layout stays the template. Run after stamping CSS/JS, or use --check.
+Each prose element has a key in the production COPY dictionary. A parsed tree
+emits one locale per element; bilingual answer spans are rejected. This keeps
+all seven sections, the form, stepper, chart and no-script fallbacks in parity.
+Run after stamping CSS/JS, or use --check. No network or model calls.
 """
 
 import argparse
@@ -41,18 +42,14 @@ def attribute(tag, name, value):
     return replaced
 
 
-class Translate(HTMLParser):
-    def __init__(self, source, copy):
-        super().__init__(convert_charrefs=False)
-        self.source, self.copy = source, copy
-        self.lines = [0]
-        for match in re.finditer("\n", source):
-            self.lines.append(match.end())
-        self.stack, self.edits = [], []
+class LocalizedPage(HTMLParser):
+    """Parse the semantic template, then render its structure in one language."""
 
-    def position(self):
-        row, column = self.getpos()
-        return self.lines[row - 1] + column
+    def __init__(self, copy):
+        super().__init__(convert_charrefs=False)
+        self.copy = copy
+        self.root = {"children": []}
+        self.stack = [self.root]
 
     def value(self, path):
         value = self.copy
@@ -64,8 +61,34 @@ class Translate(HTMLParser):
 
     def handle_starttag(self, tag, attrs):
         meta = dict(attrs)
-        start = self.position()
-        raw = self.get_starttag_text()
+        if tag == "span" and meta.get("lang"):
+            raise ValueError("Use a single localized element, not mixed-language spans")
+        node = {"tag": tag, "meta": meta, "raw": self.get_starttag_text(), "children": []}
+        self.stack[-1]["children"].append(node)
+        if tag not in VOID:
+            self.stack.append(node)
+
+    def handle_endtag(self, tag):
+        if len(self.stack) == 1 or self.stack[-1]["tag"] != tag:
+            raise ValueError(f"Unexpected closing tag: {tag}")
+        self.stack.pop()
+
+    def handle_data(self, data):
+        self.stack[-1]["children"].append(data)
+
+    def handle_entityref(self, name):
+        self.handle_data("&" + name + ";")
+
+    def handle_charref(self, name):
+        self.handle_data("&#" + name + ";")
+
+    def handle_decl(self, decl):
+        self.handle_data("<!" + decl + ">")
+
+    def handle_comment(self, data):
+        self.handle_data("<!--" + data + "-->")
+
+    def opening(self, tag, meta, raw):
         translated = raw
         if tag == "html":
             translated = attribute(translated, "lang", "zh-Hant")
@@ -103,43 +126,39 @@ class Translate(HTMLParser):
             translated = attribute(translated, "aria-selected", str(active).lower())
         if meta.get("data-i18n") == "footer.explorer":
             translated = attribute(translated, "href", "/explorer/index.zh.html")
-        if translated != raw:
-            self.edits.append((start, start + len(raw), translated))
-        if tag not in VOID:
-            self.stack.append((tag, start + len(raw), meta))
+        return translated
 
-    def handle_endtag(self, tag):
-        if not self.stack or self.stack[-1][0] != tag:
-            raise ValueError(f"Unexpected closing tag: {tag}")
-        _, start, meta = self.stack.pop()
-        end = self.position()
-        value = None
+    def emit(self, node):
+        if isinstance(node, str):
+            return node
+        if "tag" not in node:
+            return "".join(self.emit(child) for child in node["children"])
+        tag, meta = node["tag"], node["meta"]
+        opening = self.opening(tag, meta, node["raw"])
+        if tag in VOID:
+            return opening
+        contents = "".join(self.emit(child) for child in node["children"])
         if "data-i18n" in meta:
-            value = html.escape(self.value(meta["data-i18n"]), quote=False)
+            contents = html.escape(self.value(meta["data-i18n"]), quote=False)
         elif tag == "title":
-            value = html.escape(self.copy["metaTitle"], quote=False)
+            contents = html.escape(self.copy["metaTitle"], quote=False)
         elif tag == "script" and meta.get("type") == "application/ld+json":
-            data = json.loads(self.source[start:end])
-            data.update(url=ORIGIN + "/zh/", description=self.copy["metaDescription"], inLanguage="zh-Hant")
-            value = "\n" + json.dumps(data, ensure_ascii=False, indent=4) + "\n    "
-        if value is not None:
-            self.edits.append((start, end, value))
+            data = json.loads(contents)
+            data.update(name=self.copy["brand"], url=ORIGIN + "/zh/",
+                        description=self.copy["metaDescription"], inLanguage="zh-Hant")
+            contents = "\n" + json.dumps(data, ensure_ascii=False, indent=4) + "\n    "
+        return opening + contents + "</" + tag + ">"
 
 
 def render(copy=None):
     source = (ROOT / "docs/site/index.html").read_text()
-    parser = Translate(source, (copy or load_copy())["zh"])
+    parser = LocalizedPage((copy or load_copy())["zh"])
     parser.feed(source)
     parser.close()
-    if parser.stack:
+    if len(parser.stack) != 1:
         raise ValueError("Unclosed HTML elements")
-    end = len(source)
-    for start, stop, replacement in sorted(parser.edits, reverse=True):
-        if stop > end:
-            raise ValueError("Overlapping translated elements")
-        source = source[:start] + replacement + source[stop:]
-        end = start
-    return source.replace("<!doctype html>", "<!doctype html>\n<!-- Generated by scripts/build_zh_page.py; edit docs/site/index.html and its COPY dictionary. -->", 1)
+    output = parser.emit(parser.root)
+    return output.replace("<!doctype html>", "<!doctype html>\n<!-- Generated by scripts/build_zh_page.py from the shared semantic structure and localized COPY. -->", 1)
 
 
 def main():
@@ -151,7 +170,7 @@ def main():
         if not TARGET.is_file() or TARGET.read_text() != expected:
             print("Stale /zh/ page: run python3 scripts/build_zh_page.py")
             return 1
-        print("PASS static /zh/ matches English HTML and production COPY")
+        print("PASS complete /zh/ structure matches the shared template and localized COPY")
     else:
         TARGET.parent.mkdir(parents=True, exist_ok=True)
         TARGET.write_text(expected)
