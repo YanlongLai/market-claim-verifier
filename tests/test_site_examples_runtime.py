@@ -185,10 +185,10 @@ assert.deepEqual(paid[0].body,{...(config.custom?{text:'Apple revenue test'}:{ex
 finish({ok:true,status:200,json:async()=>({runs:Object.keys(modelIds).map(provider=>envelope('a-video',provider))})});await running;
 const table=tree.querySelector('.compare-table');
 assert.equal(table.querySelectorAll('th').length,3);assert.equal(table.querySelectorAll('tbody tr').length,6);
-assert.ok(table.textContent.includes('Fireworks'));assert.ok(table.textContent.includes('$0.00050'));
-assert.equal(tree.querySelector('#live-result .live-receipt').textContent.includes('Baseten'),true);
+assert.ok(table.textContent.includes(config.language==='zh'?'供應商二':'Fireworks'));assert.ok(table.textContent.includes('$0.01'));
+assert.equal(tree.querySelector('#live-result .live-receipt').textContent.includes(config.language==='zh'?'供應商一':'Baseten'),true);
 await table.querySelectorAll('button')[1].events.click();
-assert.ok(tree.querySelector('#live-result .live-receipt').textContent.includes('Fireworks'));
+assert.ok(tree.querySelector('#live-result .live-receipt').textContent.includes(config.language==='zh'?'供應商二':'Fireworks'));
 context.stamps.setLanguage(config.language==='zh'?'en':'zh');
 assert.equal(tree.querySelectorAll('.compare-table th').length,3);
 assert.equal(tree.querySelector('.compare-table caption').textContent,config.language==='zh'?'Provider comparison':'供應商比較');
@@ -197,21 +197,23 @@ assert.equal(tree.querySelector('.compare-table caption').textContent,config.lan
 HISTORY = r"""
 historyData=Array.from({length:57},(_,i)=>({id:`run-${i}`,at:'2026-11-03T17:05:00Z',device:'Desktop',browser:'Chrome',
  story:'c',kind:'image',example_id:'c-image',provider:'fireworks',model:modelIds.fireworks,verdict:'contradicted',
- input_text:'An editable saved claim',latency_ms:6300,cost_usd:.01,preprocessing_cost_usd:.0005}));
+ input_text:'An editable saved claim',latency_ms:10900,cost_usd:.01,preprocessing_cost_usd:.0005}));
 historyDetails['run-0']={envelope:{...envelope('c-image','fireworks'),input:{kind:'image',story:'c',text_read:'An editable saved claim'}}};
 await click('#history-refresh');
 assert.equal(tree.querySelectorAll('#history-rows tr').length,50);
 assert.ok(tree.querySelector('#history-rows').textContent.includes('Desktop / Chrome'));
-assert.ok(tree.querySelector('#history-rows').textContent.includes('$0.00050'));
+assert.ok(tree.querySelector('#history-rows').textContent.includes('$0.01'));
+assert.ok(tree.querySelector('#history-rows').textContent.includes(config.language==='zh'?'10.9 秒':'10.9 s'));
+assert.ok(tree.querySelector('#history-rows .history-verdict').className.includes('is-contradicted'));
 await tree.querySelector('#history-rows tr').events.click();
 assert.equal(paid.length,0);assert.ok(reads.includes('/api/history/run-0'));
 assert.equal(tree.querySelector('#live-result .trace-input').textContent,'An editable saved claim');
 await click('#result-edit');
 assert.equal(tree.querySelector('#live-input').value,'An editable saved claim');
 assert.equal(context.liveTest.state().selectedProvider,'fireworks');
-assert.equal(tree.querySelector('#input-tab-text').getAttribute('aria-selected'),'true');
+assert.equal(tree.querySelector('#input-tab-image').getAttribute('aria-selected'),'true');
 assert.equal(password.value,'');password.value='password-marker';await submit();
-assert.deepEqual(paid.at(-1).body,{text:'An editable saved claim',password:'password-marker',provider:'fireworks'});
+assert.deepEqual(paid.at(-1).body,{example_id:'c-image',password:'password-marker',provider:'fireworks'});
 """
 
 PARTIAL = r"""
@@ -306,14 +308,14 @@ context.fetch=async(url,options={})=>{
     resets_at:'2099-11-04T00:00:00Z',status:'ready'})};
   if(url==='/api/history?limit=50')return {ok:true,json:async()=>({rows:[]})};
   const saved=catalogue.find(row=>row.saved_result===url);
-  assert.ok(saved,`must not request an absent saved result: ${url}`);
+  if(!saved)return {ok:false,status:404};
   return {ok:true,json:async()=>JSON.parse(readFileSync(root+'/docs/site'+url,'utf8'))};
 };
 context.liveTest.setupLive();await new Promise(resolve=>setImmediate(resolve));
 const click=async selector=>{await tree.querySelector(selector).events.click();await new Promise(resolve=>setImmediate(resolve));};
 assert.ok(!tree.querySelector('#corrected-draft'));
 assert.ok(tree.querySelector('.compare-choice').textContent.includes(config.language==='zh'?'≈3× 費用':'≈3× cost'));
-assert.ok(tree.querySelector('#live-privacy').textContent.includes('IP'));
+assert.ok(tree.querySelector('#live-privacy').textContent.includes(config.language==='zh'?'網路位址':'IP'));
 for(const [index,story] of ['a','b','c'].entries()){
   await click(`[data-story-slot="${index}"]`);
   for(const kind of ['text','image','pdf','audio','video']){
@@ -332,7 +334,8 @@ for(const [index,story] of ['a','b','c'].entries()){
     if(!asset.saved_result){
       const before=gets.length;
       assert.equal(tree.querySelector('#example-saved').textContent,config.language==='zh'?'已儲存結果待補':'Saved result pending');
-      await click('#example-saved');assert.equal(gets.length,before);
+      await click('#example-saved');assert.equal(gets.length,before+1);
+      assert.equal(gets.at(-1),`/data/examples/${asset.id}.json`);
       assert.equal(tree.querySelector('#example-saved-status').textContent,config.language==='zh'?'已儲存結果待補':'Saved result pending');
       assert.ok(tree.querySelector('#live-result').hidden);
     }

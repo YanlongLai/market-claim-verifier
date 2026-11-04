@@ -3,7 +3,9 @@
 // SITE_URL=http://127.0.0.1:8765 SHOTS_DIR=/tmp/site-shots PLAYWRIGHT_MODULE=/tmp/og-tools/node_modules/playwright-core/index.mjs node scripts/check_site_browser.mjs
 import assert from 'node:assert/strict';
 import { mkdir, writeFile } from 'node:fs/promises';
+import { createRequire } from 'node:module';
 import { resolve } from 'node:path';
+const COPY = createRequire(import.meta.url)('../docs/site/script.js');
 const { chromium } = await import(process.env.PLAYWRIGHT_MODULE || 'playwright-core');
 const base = process.env.SITE_URL || 'http://127.0.0.1:8765';
 const out = resolve(process.env.SHOTS_DIR || '/tmp/hk-polish-shots');
@@ -42,16 +44,20 @@ function monitor(language) {
 }
 
 async function targets(page) {
-  return page.evaluate(() => [...document.querySelectorAll('a[href],button,summary,input,select')].filter(el => {
+  return page.evaluate(() => [...document.querySelectorAll('nav a[href],.hero-actions a[href],button,summary,input,select')].filter(el => {
     if (el.closest('.is-sr-only,[inert]') || !el.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true })) return false;
     const r = el.getBoundingClientRect();
     return r.width > 1 && r.height > 1 && r.right > 0 && r.bottom > 0 && !el.classList.contains('skip-link');
-  }).map(el => ({ text: (el.textContent || el.getAttribute('aria-label') || el.tagName).trim().slice(0, 70), height: Math.round(el.getBoundingClientRect().height * 100) / 100 })));
+  }).map(el => {
+    const target = el.matches('input[type="checkbox"],input[type="radio"]') ? el.closest('label') || el : el;
+    return { text: (target.textContent || el.getAttribute('aria-label') || el.tagName).trim().slice(0, 70),
+      height: Math.round(target.getBoundingClientRect().height * 100) / 100 };
+  }));
 }
 
 async function run(width, language, explorer) {
   const label = `${explorer ? 'explorer' : 'home'}-${width}-${language}`;
-  const ctx = await browser.newContext({ viewport: { width, height: width === 375 ? 812 : 900 }, colorScheme: 'light', deviceScaleFactor: 1 });
+  const ctx = await browser.newContext({ viewport: { width, height: width === 375 ? 812 : 900 }, colorScheme: 'light', reducedMotion: 'no-preference', deviceScaleFactor: 1 });
   const page = await ctx.newPage();
   const errors = [], failed = [], violations = [], resources = new Set();
   await page.exposeFunction('__recordCSP', violation => violations.push(violation));
@@ -60,14 +66,23 @@ async function run(width, language, explorer) {
   page.on('requestfailed', r => failed.push({ url: r.url(), error: r.failure()?.errorText }));
   page.on('response', r => { if (r.status() >= 400) errors.push(`HTTP ${r.status()} ${r.url()}`); });
   page.on('request', r => resources.add(`${r.resourceType()} ${new URL(r.url()).origin}`));
-  await page.route('**/*', route => allowed.has(new URL(route.request().url()).origin) ? route.continue() : route.abort());
+  await page.route('**/*', route => {
+    const url = new URL(route.request().url());
+    if (url.pathname === '/api/budget') return route.fulfill({contentType:'application/json',body:JSON.stringify({
+      status:'ready',day:'2026-11-04',daily_limit_usd:10,daily_remaining_usd:10,resets_at:'2099-11-05T00:00:00Z'})});
+    if (url.pathname === '/api/history') return route.fulfill({contentType:'application/json',body:'{"rows":[]}'});
+    // An unpublished saved file is an expected UI state, not a browser failure.
+    if (/^\/data\/examples\/[a-z-]+\.json$/.test(url.pathname) && !url.pathname.endsWith('/text.json'))
+      return route.fulfill({contentType:'application/json',body:'{"mode":"unavailable"}'});
+    return allowed.has(url.origin) ? route.continue() : route.abort();
+  });
   await page.addInitScript(monitor, language);
   const path = explorer ? `/explorer/${language === 'zh' ? 'index.zh.html' : ''}` : language === 'zh' ? '/zh/' : '/';
   const response = await page.goto(base + path, { waitUntil: 'domcontentloaded' });
   assert.equal(response.status(), 200);
   assert.ok(response.headers()['content-security-policy']?.includes("frame-ancestors 'none'"));
   const raw = await response.text();
-  if (language === 'zh') assert.ok(raw.includes(explorer ? '同一個模型' : '貼上一則財經貼文。'), `${label} static Chinese`);
+  if (language === 'zh') assert.ok(raw.includes(explorer ? '同一個模型' : '貼上財經貼文。'), `${label} static Chinese`);
   if (explorer) await page.waitForFunction(() => document.querySelector('#count')?.textContent.includes('357'));
   else await page.waitForFunction(() => window.__qa.firstScene);
   const first = await page.evaluate(() => ({ ...window.__qa, overflow: document.documentElement.scrollWidth > innerWidth }));
@@ -115,25 +130,71 @@ async function run(width, language, explorer) {
   }
   if (!explorer) {
     assert.ok(first.firstScene.post && first.firstScene.filing, `${label} first scene is populated`);
+    await page.evaluate(() => document.fonts.ready);
+    result.presentation = await page.evaluate(() => {
+      const scene = document.querySelector('#stamp-scene');
+      const rect = selector => {
+        const { top, right, bottom, left, width, height } = document.querySelector(selector).getBoundingClientRect();
+        return { top, right, bottom, left, width, height };
+      };
+      // All text nodes count, including inactive cards and the reduced-motion
+      // list. Names, bylines and attribution must not escape the language test.
+      const text = document.createTreeWalker(scene, NodeFilter.SHOW_TEXT), chinese = [];
+      while (text.nextNode()) if (/[\u3400-\u9fff]/u.test(text.currentNode.textContent)) chinese.push(text.currentNode.textContent);
+      for (const node of [scene, ...scene.querySelectorAll('*')]) for (const key of ['alt', 'aria-label', 'title']) {
+        if (/[\u3400-\u9fff]/u.test(node.getAttribute(key) || '')) chinese.push(`${key}: ${node.getAttribute(key)}`);
+      }
+      const facts = [...document.querySelectorAll('.fact-section')].map(article => ({
+        titles: article.querySelectorAll('h3').length, tables: article.querySelectorAll('table').length,
+        lines: [...article.querySelectorAll('.fact-detail,.fact-line')].map(node => ({
+          text: node.textContent.trim(),
+          count: Math.round(node.getBoundingClientRect().height / parseFloat(getComputedStyle(node).lineHeight)),
+        })),
+      }));
+      return { chinese, facts, stage: rect('.stamp-stage'), controls: rect('.stamp-strip'),
+        cards: [...document.querySelectorAll('.follow-step')].map(node => {
+          const { top, bottom, left, right } = node.getBoundingClientRect();
+          return { top, bottom, left, right };
+        }) };
+    });
+    if (language === 'en') assert.deepEqual(result.presentation.chinese, [], `${label} every stamp text node and label is English`);
+    assert.ok(result.presentation.controls.top >= result.presentation.stage.bottom - 1, `${label} playback controls sit beneath the scene`);
+    assert.equal(result.presentation.facts.length, 6);
+    for (const fact of result.presentation.facts) {
+      assert.equal(fact.titles, 1); assert.equal(fact.tables, 0); assert.equal(fact.lines.length, 2);
+      for (const line of fact.lines) assert.ok(line.count >= 1 && line.count <= 2, `${label} Facts ≤2 lines: ${line.text} (${line.count})`);
+    }
+    if (width === 375) for (let index = 0; index < result.presentation.cards.length; index++) {
+      const card = result.presentation.cards[index];
+      assert.ok(card.left >= 0 && card.right <= width, `${label} step card stays inside the viewport`);
+      if (index) assert.ok(card.top >= result.presentation.cards[index - 1].bottom, `${label} step cards stack`);
+    }
+    await page.locator('#how').screenshot({ path: `${out}/${label}-how.png` });
+    await page.locator('#facts').screenshot({ path: `${out}/${label}-facts.png` });
     for (let step = 1; step <= 4; step++) {
       await page.locator('.stamp-step').nth(step - 1).click();
       assert.equal(await page.evaluate(() => window.__stampScene.getState().step), step);
       assert.equal(await page.locator('#stamp-pause').getAttribute('aria-pressed'), 'true');
     }
-    await page.locator('#stamp-pause').click();
+    await page.locator('#stamp-pause').press('Space');
     assert.equal(await page.locator('#stamp-scene').getAttribute('data-running'), 'true');
-    await page.locator('#stamp-pause').click();
+    await page.locator('#stamp-pause').press('Space');
     const paused = await page.evaluate(() => window.__stampScene.getState().seconds);
     await page.waitForTimeout(100);
     assert.equal(await page.evaluate(() => window.__stampScene.getState().seconds), paused);
-    await page.locator('.claim-filing-trigger').first().click();
-    assert.equal(await page.locator('#filing-dialog').evaluate(el => el.open), true);
-    assert.ok((await page.locator('#filing-dialog-title').textContent()).trim());
-    if (width === 375) {
-      result.dialogSmallTargets = (await targets(page)).filter(x => x.height < 43.99);
-      assert.deepEqual(result.dialogSmallTargets, []);
-    }
-    await page.locator('#filing-dialog-close').click();
+    // The homepage stepper opens the saved data; original filing passages remain
+    // on the evidence tour and in the saved result rather than a second dialog.
+    await page.locator('#follow-step-1').click();
+    assert.ok((await page.locator('#follow-panel code').textContent()).includes('416200000000'));
+    await page.locator('#follow-step-1').press('ArrowRight');
+    assert.equal(await page.locator('#follow-step-2').getAttribute('aria-selected'), 'true');
+    assert.equal(await page.locator('#follow-panel a').count(), 2);
+    await page.locator('#follow-step-2').press('End');
+    assert.ok((await page.locator('#follow-panel code').textContent()).includes('50000000'));
+    await page.locator('[data-chart-provider="baseten"]').click();
+    assert.equal(await page.locator('#chart .chart-row').count(), 1);
+    await page.locator('[data-chart-provider="all"]').click();
+    assert.equal(await page.locator('#chart .chart-row').count(), 3);
     result.robotAtSeek = [];
     for (const seconds of [0, 1.6, 3.9, 5, 12.94, 25.5, 33.5, 49.5]) {
       await page.goto(`${base}${path}?stamp-t=${seconds}#top`, { waitUntil: 'domcontentloaded' });
@@ -159,7 +220,7 @@ async function run(width, language, explorer) {
     const other = language === 'en' ? 'zh' : 'en';
     await page.locator(`[data-language="${other}"]`).click();
     await page.waitForURL(base + (other === 'zh' ? '/zh/' : '/'));
-    assert.equal(await page.title(), other === 'en' ? 'SEC fact-checks for finance posts · Market claim verifier' : '財經貼文查核：用 SEC 申報文件驗證數字 · DappGo');
+    assert.equal(await page.title(), COPY[other].metaTitle);
   } else {
     await page.locator('#f-q').fill('G0119');
     await page.waitForFunction(() => document.querySelector('#count').textContent.startsWith('1 / 357'));

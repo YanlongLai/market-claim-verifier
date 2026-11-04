@@ -17,6 +17,7 @@ PUBLIC_FIXTURES = r"""
 const publicFixture = url => {
   if(url==='/examples/manifest.json' || url==='/data/examples/index.json')return {ok:true,json:async()=>JSON.parse(readFileSync(root+'/docs/examples/manifest.json','utf8'))};
   if(/^\/examples\/[a-z-]+\.txt$/.test(url))return {ok:true,text:async()=>readFileSync(root+'/docs'+url,'utf8')};
+  if(/^\/data\/examples\/[a-z-]+\.json$/.test(url))return {ok:false,status:404};
   if(url==='/api/history?limit=50')return {ok:true,json:async()=>({rows:[]})};
   return null;
 };
@@ -24,7 +25,7 @@ const publicFixture = url => {
 
 
 @pytest.mark.parametrize("language", ["en", "zh"])
-def test_homepage_boot_leaves_legacy_anchors_and_historical_data_on_evidence_page(language):
+def test_homepage_boot_restores_chart_and_preserves_legacy_example_anchors(language):
     run_check(HOMEPAGE_BOOT, language=language)
 
 
@@ -112,7 +113,7 @@ def test_pages_boundary_without_provider_key_or_network():
 
 
 HOMEPAGE_BOOT = r"""
-const ids=['post-text','claim-list','chart','posthoc-rerun','research-list'];
+const ids=['post-text','claim-list','posthoc-rerun','research-list'];
 const labels=ids.map(id=>tree.querySelector('#'+id).textContent);
 const requests=[];
 context.fetch=async url=>{
@@ -124,7 +125,8 @@ context.window.addEventListener=()=>{};
 context.window.location.hash='';
 context.liveTest.setupControls();
 await context.liveTest.loadData();
-assert.deepEqual(requests,[], 'the homepage must not load the historical chart dataset');
+assert.deepEqual(requests,['/data/site.json']);
+assert.equal(tree.querySelectorAll('#chart .chart-row').length,3);
 assert.deepEqual(ids.map(id=>tree.querySelector('#'+id).textContent),labels);
 context.stamps.setLanguage(config.language==='zh'?'en':'zh');
 for(const id of ids)assert.ok(tree.querySelector('#'+id).children.every(child=>child.tagName==='#text'));
@@ -332,8 +334,8 @@ const verify=language=>{
   assert.ok(links[1].href.endsWith('/000032019326000020/'));
   const citationLines=corrections.querySelectorAll('.citation-primary').map(node=>node.textContent);
   assert.deepEqual(citationLines,language==='zh'?[
-    '10-K · 2025 財年（全年） · $416.2B 營收 · 開啟 SEC 申報',
-    '10-Q · 截至 2025 年 6 月 28 日的 9 個月 · $313.7B 營收 · 開啟 SEC 申報'
+    '10-K · 2025 財年（全年） · $416.2B 營收 · 開啟申報文件',
+    '10-Q · 截至 2025 年 6 月 28 日的 9 個月 · $313.7B 營收 · 開啟申報文件'
   ]:[
     '10-K · fiscal 2025 (annual) · $416.2B revenue · Open SEC filing',
     '10-Q · nine months to 28 Jun 2025 · $313.7B revenue · Open SEC filing'

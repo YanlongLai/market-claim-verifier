@@ -88,28 +88,28 @@ STAMP_POST_DATES = {
 
 STAMP_PERSONAS = {
     "demo-thread-baseten": {
-        "id": "retail-owl", "name": {"en": "Ticker Owl", "zh": "Ticker Owl"},
+        "id": "retail-owl", "name": {"en": "Ticker Owl", "zh": "行情貓頭鷹"},
         "byline": {"en": "@tickerowl", "zh": "@tickerowl"}, "followers": 18400,
         "follower_label": {"en": "18.4K followers", "zh": "1.84 萬 追蹤"},
     },
     "bigtech-thread-baseten": {
-        "id": "chart-raccoon", "name": {"en": "Chart Coon", "zh": "Chart Coon"},
+        "id": "chart-raccoon", "name": {"en": "Chart Coon", "zh": "看盤浣熊"},
         "byline": {"en": "@chartcoon", "zh": "@chartcoon"}, "followers": 52100,
         "follower_label": {"en": "52.1K followers", "zh": "5.21 萬 追蹤"},
     },
     "tw-social-post-meta": {
         "id": "lazy-cat", "name": {"en": "US Stocks in 1 Minute", "zh": "美股懶人包"},
-        "byline": {"en": "美股懶人包", "zh": "US Stocks in 1 Minute"}, "followers": 43000,
+        "byline": {"en": "@stocksin1minute", "zh": "美股懶人包"}, "followers": 43000,
         "follower_label": {"en": "43K followers", "zh": "4.3 萬 追蹤"},
     },
     "market-recap-repost": {
-        "id": "repost-bird", "name": {"en": "Market Recap", "zh": "Market Recap"},
-        "byline": {"en": "Market Recap", "zh": "Market Recap"}, "followers": 210000,
+        "id": "repost-bird", "name": {"en": "Market Recap", "zh": "市場快報"},
+        "byline": {"en": "Market Recap", "zh": "市場快報"}, "followers": 210000,
         "follower_label": {"en": "210K followers", "zh": "21 萬 追蹤"},
     },
     "banana-news-article": {
-        "id": "banana-news", "name": {"en": "Banana News Flash", "zh": "香蕉新聞快報"},
-        "byline": {"en": "香蕉新聞快報", "zh": "Banana News Flash"}, "followers": 96000,
+        "id": "banana-news", "name": {"en": "Banana Bulletin", "zh": "香蕉新聞快報"},
+        "byline": {"en": "@bananabulletin", "zh": "香蕉新聞快報"}, "followers": 96000,
         "follower_label": {"en": "96K followers", "zh": "9.6 萬 追蹤"},
     },
 }
@@ -755,7 +755,7 @@ def stamp_cards(filing_fetcher: SECFilingFetcher | None = None, cached_site: dic
          "text": {"en": "Amazon reports $143.1B in Q3 2023 revenue.", "zh": "亞馬遜 2023 年第 3 季營收達 1,431 億美元。"}},
         {**coca_cola, "id": "market-recap-repost", "same_claim_as": coca_cola["id"],
          "persona": stamp_persona("market-recap-repost"), "source_kind": "repost",
-         "post_date": STAMP_POST_DATES["market-recap-repost"], "reposted_from": "美股懶人包"},
+         "post_date": STAMP_POST_DATES["market-recap-repost"], "reposted_from": coca_cola["persona"]["name"]},
     ])
     # Show every Day-4 addition in the first minute; retain the opening three beats.
     cards[3:3] = [release_stamp_card("L4-01"), media_stamp_card("audio-two-voices", fetcher, cached_site),

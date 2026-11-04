@@ -260,7 +260,8 @@ let postHeight = px('.stamp-track','height'), filingHeight = px('.stamp-filing-b
 const stripHeight = length(variables['--stamp-strip-height']), stripGap = length(variables['--stamp-strip-gap']);
 let stageHeight = px('.stamp-stage','height');
 let sceneHeight = property('.stamp-scene','height') === 'auto' ? stageHeight+stripHeight+stripGap : px('.stamp-scene','height');
-const stageTop = phone ? stripHeight : 0;
+const stripFirst = property('.stamp-strip','order') === '-1';
+const stageTop = stripFirst ? stripHeight : 0;
 const postTop = stageTop + letterboxHeight + labelHeight;
 const filingLeft = phone ? 0 : panelWidth + 2 * columnGap + robotWidth;
 let filingTop, robotTop;
@@ -366,7 +367,7 @@ class Element {
       return rect(filing?filingLeft:0,(filing?filingTop:postTop)-labelHeight,panelWidth,labelHeight);
     }
     if (this.classList.contains('stamp-caption')) return rect(phone?robotLeft+robotWidth+10:robotLeft,phone?robotTop+12:robotTop+robotHeight+6,phone?sceneWidth-robotWidth-26:robotWidth,px('.stamp-caption','height'));
-    if (this.classList.contains('stamp-strip')) return rect(0,phone?0:stageTop+stageHeight+stripGap,sceneWidth,stripHeight);
+    if (this.classList.contains('stamp-strip')) return rect(0,stripFirst?0:stageTop+stageHeight+stripGap,sceneWidth,stripHeight);
     if (this.classList.contains('stamp-track')) return rect(0,postTop,panelWidth,postHeight);
     if (this.classList.contains('stamp-filing-box')) return rect(filingLeft,filingTop,panelWidth,filingHeight);
     if (this.classList.contains('stamp-filing-content')||this.classList.contains('stamp-passage'))return rect(passageLeft,passageTop,passageWidth,passageHeight);
@@ -424,11 +425,11 @@ const context = vm.createContext({
   ResizeObserver: class { constructor(fn) { onResize = fn; } observe() {} },
   requestAnimationFrame: fn => { callbacks.set(++nextFrame,fn); return nextFrame; }, cancelAnimationFrame: id => callbacks.delete(id)
 });
-const boot = '  setupLive();\n  setupFilingDialog();\n  setupControls();\n  applyCopy();\n  loadData();';
+const boot = '  setupLive();\n  setupFilingDialog();\n  setupControls();\n  setupFollowNumber();\n  applyCopy();\n  loadData();';
 assert.ok(source.includes(boot));
 vm.runInContext(source.replace(boot, `
   globalThis.stamps = { createStampConveyor, setLanguage: language => { pageLanguage = language; applyCopy(); } };
-  globalThis.liveTest = { setupLive, renderLiveTrace, localizeLive, refreshLiveBudget, loadData, setupControls,
+  globalThis.liveTest = { setupLive, renderLiveTrace, localizeLive, refreshLiveBudget, loadData, setupControls, setupFollowNumber, historyTime,
     selectMatrix, loadExamples, refreshHistory, state: () => ({ liveResult, liveStatus, savedLiveDemo, liveBudget, selectedStory, selectedKind, selectedProvider }) };
 `), context);
 const conveyor = tree.querySelector('.stamp-stage') ? context.stamps.createStampConveyor(cards) : null;
@@ -633,7 +634,8 @@ for(const box of [post,filed]){
   assert.ok(box.left>=0&&box.right<=sceneWidth);assert.ok(box.top>=0&&box.bottom<=sceneHeight);
 }
 if(phone){
-  assert.equal(property('.stamp-strip','order'),'-1');near(stripHeight,44);
+  assert.equal(property('.stamp-strip','order'),'0');near(stripHeight,44);
+  assert.ok(tree.querySelector('.stamp-strip').getBoundingClientRect().top >= stageTop + stageHeight);
   assert.equal(property('.stamp-strip','display'),'flex');assert.equal(property('.stamp-next','display'),'none');
   assert.equal(property('.stamp-pause-label','display'),'none');assert.equal(property('.stamp-pause-icon','display'),'inline');
   assert.ok(post.bottom<=robotTop);near(robotTop,post.bottom+4);near(robotLeft,8);
@@ -826,7 +828,7 @@ function check(language){
       assert.ok(find(body,'stamp-example').title.includes(language==='en'?'Fictional':'虛構'));
       const avatar=find(body,'stamp-avatar');assert.equal(avatar.src,'/'+card.persona.avatar);assert.equal(avatar.alt,'');
       assert.equal(avatar.loading,'lazy');assert.equal(avatar.decoding,'async');
-      if(card.reposted_from)assert.equal(find(body,'stamp-reposted').textContent,`${language==='en'?'Reposted from':'轉貼自'} 美股懶人包`);
+      if(card.reposted_from)assert.equal(find(body,'stamp-reposted').textContent,`${language==='en'?'Reposted from':'轉貼自'} ${card.reposted_from[language]}`);
       if(card.source_kind==='article')assert.equal(find(body,'stamp-source').textContent,language==='en'?'Article':'新聞報導');
     }
     const tickers=scene.querySelectorAll('.stamp-next-chip').map(node=>node.textContent);

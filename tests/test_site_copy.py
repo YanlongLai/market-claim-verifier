@@ -1,6 +1,6 @@
-"""Keep the public summary concise and distinct from historical evidence."""
-
+"""Presentation v2: separate languages, shared facts and traceable evidence."""
 import html
+from html.parser import HTMLParser
 import json
 import re
 import subprocess
@@ -8,88 +8,159 @@ from pathlib import Path
 
 import pytest
 
+from test_site_stamps_runtime import run_check
+
 ROOT = Path(__file__).resolve().parents[1]
-GUIDE_URL = "https://github.com/YanlongLai/market-claim-verifier/blob/main/docs/evidence/REVIEW_GUIDE.md"
-SURFACES = (
-    "README.md", "README.zh-TW.md", "JUDGES.md", "llms.txt",
-    "docs/llms.txt", "docs/site/index.html", "docs/zh/index.html",
-    "docs/site/script.js",
-)
-CANONICAL = (
-    "$0.01 per live check", "$0.02 per claim", "6–20 s live", "10 s median",
-    "90.2% (240/266)", "1/139", "≈8,000 companies", "23 tested",
-    "≤600 characters",
-)
+SURFACES = ("README.md", "README.zh-TW.md", "JUDGES.md", "JUDGES.zh-TW.md", "llms.txt",
+            "docs/llms.txt", "docs/site/index.html", "docs/zh/index.html", "docs/site/script.js")
+CANONICAL = ("$0.01 per live check", "$0.02 per claim", "6–20 s live", "10 s median",
+             "90.2% (240/266)", "1/139", "≈8,000 companies", "23 tested", "≤600 characters")
+ZH_NUMBERS = ("$0.01", "$0.02", "6–20 秒", "10 秒", "90.2% (240/266)", "1/139", "8,000 家", "23 家", "≤600 字元")
 
 
 @pytest.mark.parametrize("relative", SURFACES)
 def test_public_summaries_reject_old_number_variants(relative):
-    # Scan the full HTML, including JSON-LD, meta, OG and Twitter descriptions.
-    # Historical evidence pages retain the measurements and full-set scores.
     source = (ROOT / relative).read_text()
-    forbidden = re.findall(r"\$0\.020\b|0\.0099\d*|90\.5%", source)
-    assert not forbidden, (relative, forbidden)
+    assert not re.findall(r"\$0\.020\b|0\.0099\d*|90\.5%", source)
     assert not re.search(r"(?<![\d.])6 s live|即時(?:查核需時)? 6 秒|240/266\s*[（(]90\.2%", source)
 
 
-@pytest.mark.parametrize("relative", (
-    "README.md", "JUDGES.md", "llms.txt", "docs/llms.txt",
-    "docs/site/index.html", "docs/zh/index.html",
-))
-def test_public_summaries_use_the_canonical_number_set(relative):
+@pytest.mark.parametrize("relative", SURFACES[:-1])
+def test_public_summaries_use_the_canonical_number_set_in_their_language(relative):
     source = html.unescape((ROOT / relative).read_text())
-    assert all(value in source for value in CANONICAL), relative
+    values = ZH_NUMBERS if "zh" in relative else CANONICAL
+    assert all(value in source for value in values), relative
 
 
-def fact_table(source):
-    return re.search(r"\| Question \| Answer \|\n.*?(?=\n\n)", source, re.S)[0]
+class Prose(HTMLParser):
+    def __init__(self):
+        super().__init__()
+        self.skip, self.text, self.ids, self.headings = 0, [], [], []
+
+    def handle_starttag(self, tag, attrs):
+        attrs = dict(attrs)
+        if tag in {"script", "style"}: self.skip += 1
+        if attrs.get("id"): self.ids.append(attrs["id"])
+        if tag == "section" and attrs.get("id"): self.headings.append(attrs["id"])
+        for key in ("alt", "aria-label", "title"):
+            if attrs.get(key): self.text.append(attrs[key])
+
+    def handle_endtag(self, tag):
+        if tag in {"script", "style"}: self.skip -= 1
+
+    def handle_data(self, value):
+        if not self.skip and value.strip(): self.text.append(value.strip())
 
 
-def test_facts_are_short_bilingual_and_identical_across_surfaces():
-    table = fact_table((ROOT / "README.md").read_text())
-    rows = [line.split("|")[1:-1] for line in table.splitlines()[2:]]
-    assert len(rows) == 8 and all(len(row) == 2 for row in rows)
-    for relative in ("JUDGES.md", "README.zh-TW.md"):
-        assert fact_table((ROOT / relative).read_text()) == table
-    copy = json.loads(subprocess.run(
-        ["node", "-e", "process.stdout.write(JSON.stringify(require('./docs/site/script.js')))"],
-        cwd=ROOT, check=True, text=True, capture_output=True,
-    ).stdout)
+def markdown_prose(source):
+    source = re.sub(r"```.*?```|<!--.*?-->", "", source, flags=re.S)
+    source = re.sub(r"`[^`]*`", "", source)
+    source = re.sub(r"\]\([^)]*\)", "]", source)
+    return re.sub(r"<[^>]*>", "", source)
+
+
+@pytest.mark.parametrize("relative", ("docs/site/index.html", "README.md", "JUDGES.md", "llms.txt", "docs/llms.txt"))
+def test_english_presentation_contains_no_chinese(relative):
+    assert not re.search(r"[\u3400-\u9fff]", (ROOT / relative).read_text()), relative
+
+
+@pytest.mark.parametrize("viewport", (375, 1440))
+@pytest.mark.parametrize("reduced", (False, True))
+def test_english_stamp_scene_contains_no_chinese_in_any_text_node_or_label(viewport, reduced):
+    # Exercise the shipped data and renderer, including hidden/static cards,
+    # bylines, repost attribution, media labels, captions and accessible names.
+    # Do not strip tokens or limit this to prose elements.
+    run_check(r"""
+function check(node) {
+  assert.ok(!/[\u3400-\u9fff]/u.test(node.textContent), node.textContent);
+  for (const key of ['alt', 'aria-label', 'title']) {
+    const value = node.getAttribute(key) || '';
+    assert.ok(!/[\u3400-\u9fff]/u.test(value), `${key}: ${value}`);
+  }
+  node.children.forEach(check);
+}
+for (let index = 0; index < cards.length; index++) {
+  for (const age of [.1, 1.8, 2.95, 4.1, 4.94]) {
+    seek(api.timing.starts[index] + age);
+    check(scene);
+  }
+}
+""", viewport=viewport, reduced=reduced, language="en", page="docs/site/index.html")
+
+
+@pytest.mark.parametrize("relative", ("docs/zh/index.html", "README.zh-TW.md", "JUDGES.zh-TW.md"))
+def test_chinese_presentation_contains_no_english_prose(relative):
+    source = (ROOT / relative).read_text()
+    if relative.endswith(".html"):
+        parser = Prose(); parser.feed(source); source = "\n".join(parser.text)
+    else:
+        source = markdown_prose(source)
+    # Exact model identifiers and numeric suffixes are data, not UI prose.
+    for model in ("meta-models/muse-spark-open-1026", "accounts/fireworks/models/muse-spark-open", "muse-spark-1.3"):
+        source = source.replace(model, "")
+    source = re.sub(r"\$[\d,.]+[BM]?", "", source)
+    assert not re.search(r"[A-Za-z]{2,}", source), (relative, source)
+
+
+def load_copy():
+    return json.loads(subprocess.run(["node", "-e", "process.stdout.write(JSON.stringify(require('./docs/site/script.js')))"],
+                                    cwd=ROOT, check=True, text=True, capture_output=True).stdout)
+
+
+@pytest.mark.parametrize("language", ("en", "zh"))
+def test_six_facts_have_one_title_compact_copy_and_the_shared_evidence(language):
+    copy = load_copy()[language]["facts"]
+    suffix = "" if language == "en" else ".zh-TW"
+    readme, judges = [(ROOT / f"{name}{suffix}.md").read_text() for name in ("README", "JUDGES")]
+    header = "| Fact | Answer |" if language == "en" else "| 項目 | 答案 |"
+    pattern = re.escape(header) + r"\n.*?(?=\n\n)"
+    table = re.search(pattern, readme, re.S)[0]
+    assert re.search(pattern, judges, re.S)[0] == table
+    rows = table.splitlines()[2:]
+    assert len(rows) == 6
+    page = (ROOT / ("docs/site/index.html" if language == "en" else "docs/zh/index.html")).read_text()
+    articles = re.findall(r'<article class="fact-section".*?</article>', page, re.S)
+    assert len(articles) == 6
+    for i, (row, article) in enumerate(zip(rows, articles), 1):
+        answer = copy[f"answer{i}"]
+        assert answer in row
+        for key in (f"question{i}", f"detail{i}", f"summary{i}", "label", "source"):
+            assert article.count(f'data-i18n="facts.{key}"') == 1
+            assert f'>{html.escape(copy[key], quote=False)}<' in article
+        target = re.search(r'\]\((docs/evidence/[^)]+)\)', row)[1]
+        assert (ROOT / target.split("#")[0]).is_file()
+        assert f'/blob/main/{target}"' in article
+        assert 'lang="en"' not in article and 'lang="zh-Hant"' not in article
+        assert '<table' not in article and '<th' not in article
+        assert article.count('<h3') == 1 and article.count('<p') == 2
+        assert 'class="fact-line"' in article and 'class="fact-reference"> · <a' in article
+
+
+def test_complete_mirrors_have_the_same_sections_and_unique_ids():
+    expected = ["top", "stamp-scene", "how", "live-check", "facts", "evidence", "limits"]
     for relative in ("docs/site/index.html", "docs/zh/index.html"):
-        source = (ROOT / relative).read_text()
-        body = re.search(r'<table class="facts-table">.*?</table>', source, re.S)[0]
-        assert len(re.findall(r'<th scope="col"', body)) == 2
-        answers = re.findall(r'<span class="fact-answer" lang="([^"]+)">(.*?)</span>', body)
-        assert len(answers) == 16
-        for index, (_, answer) in enumerate(rows, 1):
-            en, zh = answer.strip().split("<br>")
-            assert len(en) <= 110 and len(zh) <= 45
-            assert answers[(index - 1) * 2:index * 2] == [
-                ("en", html.escape(en)), ("zh-Hant", html.escape(zh)),
-            ]
-            assert copy["en"]["facts"][f"answer{index}"] == en
-            assert copy["zh"]["facts"][f"answer{index}"] == zh
-        assert source.count(f'href="{GUIDE_URL}#facts-in-detail"') == 1
+        parser = Prose(); parser.feed((ROOT / relative).read_text())
+        assert parser.headings == expected
+        assert len(parser.ids) == len(set(parser.ids))
 
 
-def test_readme_first_screen_keeps_four_short_facts_in_twelve_lines():
-    source = (ROOT / "README.md").read_text().splitlines()
-    assert source[12:15] == ["", "## Facts", ""]
-    assert all(0 < len(line) <= 70 and "·" not in line for line in source[5:9])
-    assert all(line.count("·") <= 2 for line in source[:12])
+def test_readmes_open_with_the_robot_and_stay_within_180_lines():
+    for relative in ("README.md", "README.zh-TW.md"):
+        lines = (ROOT / relative).read_text().splitlines()
+        assert len(lines) <= 180
+        assert "readme-robot.gif" in lines[2]
+        assert re.search(r'!\[[^\]]+\]\(docs/site/img/readme-robot.gif\)', lines[2])
+        assert re.search(r'\[[^\]]+\]\(docs/site/img/readme-robot.png\)', lines[3])
+        assert (ROOT / "docs/site/img/readme-robot.png").read_bytes().startswith(b"\x89PNG\r\n\x1a\n")
+        assert lines[5].startswith("**")
+        assert any(line.startswith("## ") for line in lines[:12])
 
 
-def test_legacy_bookmarks_have_one_visible_reference_and_no_link_list():
-    judges = (ROOT / "JUDGES.md").read_text()
-    assert "<details>" not in judges
-    anchor_line, = [line for line in judges.splitlines() if line.startswith('<a id="60-second-path"')]
-    assert len(re.findall(r'<a id="[^"]+"></a>', anchor_line)) == 16
-    assert 'Earlier anchors → [REVIEW_GUIDE.md](docs/evidence/REVIEW_GUIDE.md).' in judges
+def test_budget_configuration_and_public_meter_use_10_daily_60_lifetime():
+    yaml = (ROOT / "deploy/k8s/live-check.yaml").read_text()
+    toml = (ROOT / "workers/live/wrangler.toml").read_text()
+    assert re.search(r'name: DAILY_BUDGET_USD\s+value: "10"', yaml)
+    assert re.search(r'name: TOTAL_BUDGET_USD\s+value: "60"', yaml)
+    assert 'DAILY_BUDGET_USD = "10"' in toml and 'TOTAL_BUDGET_USD = "60"' in toml
     for relative in ("docs/site/index.html", "docs/zh/index.html"):
-        source = (ROOT / relative).read_text()
-        assert '<details class="earlier-sections">' not in source
-        assert 'id="how" hidden></a>' in source
-        assert f'Earlier anchors → <a href="{GUIDE_URL}">REVIEW_GUIDE.md</a>' in source
-        assert 'id="corrected-draft"' not in source
-        assert 'data-i18n="draft.rule"' not in source
-        assert 'data-i18n="live.lede"' not in source
+        assert 'id="live-budget-meter" max="10"' in (ROOT / relative).read_text()
