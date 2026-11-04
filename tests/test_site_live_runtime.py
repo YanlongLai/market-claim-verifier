@@ -567,8 +567,8 @@ assert.equal(password.getAttribute('autocomplete'),'off');assert.equal(form.getA
 assert.ok(tree.querySelector('#recorded-trace').textContent.includes('FY2025Q4'));
 assert.ok(tree.querySelector('#budget-baseten-text').textContent.includes('$3'));
 assert.equal(tree.querySelector('#live-password-note').textContent,config.language==='zh'?
-  '評審：密碼是我們的隊名；已儲存範例免密碼。':
-  'Judges: the password is our team name; saved examples need none.');
+  '密碼是我們的隊名。查看儲存結果不需密碼。':
+  'Password is our team name. Saved results need none.');
 await form.events.submit({preventDefault(){}});assert.equal(requests.length,0);
 password.value=credential;
 const denied=form.events.submit({preventDefault(){}});
@@ -637,10 +637,10 @@ const text=tree.querySelector('#budget-baseten-text'),meter=tree.querySelector('
 const note=tree.querySelector('#budget-baseten-status'),input=tree.querySelector('#live-input'),submit=tree.querySelector('#live-submit');
 assert.equal(tree.querySelectorAll('.provider-budget-meter').length,3);
 assert.ok(!tree.querySelector('#live-budget-meter'));
-assert.ok(text.textContent.includes('$2.41'));assert.ok(text.textContent.includes('$20'));
+assert.ok(text.textContent.includes('$2.41'));assert.ok(tree.querySelectorAll('.provider-model')[1].title.includes('$20.00'));
 assert.equal(meter.max,3);assert.equal(meter.value,2.41);
-assert.ok(tree.querySelector('#budget-fireworks-text').textContent.includes('$38'));
-assert.ok(tree.querySelector('#budget-meta-text').textContent.includes('$100'));
+assert.ok(tree.querySelectorAll('.provider-model')[2].title.includes('$38.00'));
+assert.ok(tree.querySelectorAll('.provider-model')[0].title.includes('$100.00'));
 assert.equal(input.disabled,false);assert.equal(note.hidden,true);
 for(const status of ['budget_exhausted','credit_exhausted','total_budget_exhausted']){
   data.providers.baseten={...data.providers.baseten,daily_remaining:0,status};

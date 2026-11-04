@@ -2461,7 +2461,7 @@ window.MOTION_PREVIEW = {
       "docs/site/img/fx/beam-pool.webp": "32c517dea8f06c1aff761782e81259b331a52faa4e8b9cfb21458de08b865cff",
       "docs/site/img/fx/lens-flare.webp": "29706263cec22a41cdb3eebd938acda906bfe71514cce6ad040a9d54fae61d73",
       "docs/site/img/stamp-paper.webp": "4dc3df2ae96c1f945b5c4a80fb0e9b9c3efbcaa9f45bb1de75a2f86b1baec906",
-      "docs/site/script.js": "18c87c94963b08cb803a4eabfec087e044b651d060057fcdda9088f6a7f97f6d",
+      "docs/site/script.js": "f4dd37ea8fab4eb35e882a79e1595d421d4b377f6cb497d767248ae839858930",
       "tests/fixtures/multimodal/example-post.png": "06fc3980cd17a30c665ae86eaedd501805e8e4ad25267dc0b7bb57e3bc43b557",
       "tests/fixtures/multimodal/generation.json": "bbfb8be8d07ce2b9689ef3fe90dcb4d7c45332377cb074a819ca7d57de953efa",
       "tests/fixtures/multimodal/release-reading.wav": "06dc5144bc0f3d3ebdf0509a679cb53ab76d523ec104a29c68d62997a991c122",

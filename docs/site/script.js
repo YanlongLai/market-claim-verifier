@@ -694,6 +694,44 @@
   COPY.zh.live.privacy = COPY.zh.matrix.privacy;
   COPY.en.examples.privacy = COPY.en.matrix.privacy;
   COPY.zh.examples.privacy = COPY.zh.matrix.privacy;
+  COPY.en.tryUI = {
+    runTitle: "Run a check", runIntro: "Pick a story and an input, or paste your own post.",
+    storyA: "Wrong period", storyB: "All correct", storyC: "Mixed claims",
+    storyAShort: "Wrong", storyBShort: "Correct", storyCShort: "Mixed", expected: "Expected",
+    sidebar: "Current and recent checks", now: "Now", idle: "No check running.",
+    idleHint: "Press Run check to watch each server step here.",
+    running: "Running", checking: "Checking…", done: "Done", viewRunning: "View running check",
+    stage0: "Sent", stage1: "Model", stage2: "SEC tools", stage3: "Model", stage4: "Program checks", stage5: "Verdict", stage2Short: "SEC", stage4Short: "Checks",
+    stageSentences: ["Request sent to the server", "Model is reading the input", "SEC tools are checking the filings",
+      "Model is reading the SEC evidence", "Program is checking the numbers", "Preparing the verdict"],
+    modelStep: n => ` (step ${n})`, finished: time => `finished in ${time}`, time: "Time", cost: "Cost", claims: "Claims",
+    serverLog: "Server log · this request", lines: n => `${n} lines`, log: n => `Server log (${n} lines)`,
+    viewResult: "View result ↓", showMore: "Show more", you: "you", nowTime: "now",
+    minutesAgo: n => `${n} min ago`, hoursAgo: n => `${n} h ago`, story: letter => `Story ${letter}`,
+    daily: amount => `${amount} left today`, lifetime: (left, limit) => `lifetime ${left} of ${limit}`, providerMetaShort: "Meta"
+  };
+  COPY.zh.tryUI = {
+    runTitle: "執行查核", runIntro: "選擇故事和輸入格式，或貼上自己的貼文。",
+    storyA: "期間錯誤", storyB: "全部正確", storyC: "混合主張",
+    storyAShort: "期間錯", storyBShort: "全對", storyCShort: "混合", expected: "預期",
+    sidebar: "目前與最近的查核", now: "目前狀態", idle: "目前沒有執行中的查核。",
+    idleHint: "按下「執行查核」，即可在這裡看到伺服器的每個步驟。",
+    running: "執行中", checking: "查核中…", done: "完成", viewRunning: "查看執行中的查核",
+    stage0: "已送出", stage1: "模型", stage2: "SEC 工具", stage3: "模型", stage4: "程式檢查", stage5: "判定", stage2Short: "SEC", stage4Short: "檢查",
+    stageSentences: ["請求已送至伺服器", "模型正在讀取輸入內容", "SEC 工具正在核對申報文件",
+      "模型正在讀取 SEC 證據", "程式正在核對數字", "正在產生判定"],
+    modelStep: n => `（第 ${n} 步）`, finished: time => `用時 ${time}`, time: "用時", cost: "費用", claims: "主張",
+    serverLog: "伺服器紀錄 · 本次請求", lines: n => `${n} 行`, log: n => `伺服器紀錄（${n} 行）`,
+    viewResult: "查看結果 ↓", showMore: "顯示更多", you: "你", nowTime: "剛剛",
+    minutesAgo: n => `${n} 分鐘前`, hoursAgo: n => `${n} 小時前`, story: letter => `故事 ${letter}`,
+    daily: amount => `今日剩餘 ${amount}`, lifetime: (left, limit) => `累計額度剩餘 ${left}，上限 ${limit}`, providerMetaShort: "Meta"
+  };
+  Object.assign(COPY.en.matrix, { story: "Story", kind: "Input", provider: "Model provider", fireworksNote: "Slow today",
+    compareAll: "Compare on all three", compareNote: "runs one after another", historyNote: "Last 50 runs · public · kept 14 days" });
+  Object.assign(COPY.zh.matrix, { story: "故事", kind: "輸入", provider: "模型供應商", fireworksNote: "今日較慢",
+    compareAll: "比較三家供應商", compareNote: "依序執行，各有獨立預算" });
+  Object.assign(COPY.en.live, { password: "Password", passwordNote: "Password is our team name. Saved results need none." });
+  Object.assign(COPY.zh.live, { password: "密碼", passwordNote: "密碼是我們的隊名。查看儲存結果不需密碼。" });
   Object.assign(COPY.en.live.errors, { invalid_provider: "Choose an available provider.", invalid_providers: "Choose available providers." });
   Object.assign(COPY.zh.live.errors, { invalid_provider: "請選擇可用的供應商。", invalid_providers: "請選擇可用的供應商。" });
 
@@ -925,11 +963,16 @@
   let customText = false, inputLoadState = "assetsLoading", compareRuns = [], resultContext = null;
   let rateLimitReset = null;
   let historyRows = [], historyState = "historyLoading", historyRequest = 0, resultRequest = 0, inputRequest = 0;
+  let historyVisible = 6, pendingHistoryRows = [], liveTerminalView = null;
   let historyDetailRequest = 0, historyDetailController = null, historyModalRecord = null, historyModalResult = null;
   let historyModalState = "", historyReturnId = null, historyBodyOverflow = "";
   const exampleTexts = new Map();
 
   function matrixCopy(key) { return COPY[pageLanguage].matrix[key] || ""; }
+  function tryCopy(key, ...args) {
+    const value = COPY[pageLanguage].tryUI[key];
+    return typeof value === "function" ? value(...args) : value;
+  }
   function validId(value) { return typeof value === "string" && /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,79}$/.test(value); }
   function selectedAsset() { return examplesIndex.find(row => row.story === selectedStory && row.kind === selectedKind); }
   function providerLabel(value) { return pageLanguage === "zh" && providers[value] ? getCopy(`presentation.provider${value[0].toUpperCase()}${value.slice(1)}`) : providers[value]?.label || String(value || liveCopy("notRecorded")); }
@@ -1128,7 +1171,7 @@
       : `${matrixCopy("noPreprocessing")} · ${receipt.preprocessing === null ? "$0.00" : liveCopy("notRecorded")}`, "live-small"));
     target.append(receiptBlock);
     const head = liveNode("div", null, "trace-head");
-    head.append(liveNode("p", liveCopy(result.mode === "recorded" ? "recorded" : result.mode === "mock" ? "mock" : "live"), "trace-mode"));
+    head.append(liveNode("p", target === $("#live-result") && result.mode === "recorded" && input?.example_id ? savedRecordingLabel(result) : liveCopy(result.mode === "recorded" ? "recorded" : result.mode === "mock" ? "mock" : "live"), "trace-mode"));
     if (result.error) head.append(liveNode("p", liveErrorText(result.error), "live-error"));
     if (result.started_at) head.append(liveNode("p", `${result.started_at} → ${result.finished_at}`, "live-small"));
     if (result.verdict) head.append(liveNode("h4", liveVerdict(result.verdict), `trace-verdict is-${result.verdict}`));
@@ -1257,19 +1300,25 @@
   function renderLiveBudget() {
     if (!$("#budget-baseten-text")) return;  // Historical evidence pages have no live chooser.
     const copy = liveCopy("budget");
-    const dollars = amount => `$${amount.toFixed(2).replace(/\.00$/, "")}`;
+    const dollars = amount => `$${amount.toFixed(2)}`;
     Object.keys(providers).forEach(id => {
       const text = $(`#budget-${id}-text`), meter = $(`#budget-${id}-meter`), note = $(`#budget-${id}-status`);
       const budget = liveBudget?.providers?.[id], stop = providerStop(id);
-      text.textContent = budget ? copy.providerRemaining.replace("{daily}", dollars(budget.daily_remaining))
-        .replace("{dailyLimit}", dollars(budget.daily_limit)).replace("{lifetime}", dollars(budget.lifetime_remaining))
-        .replace("{lifetimeLimit}", dollars(budget.lifetime_limit)) : copy[budgetLoaded ? "unavailable" : "loading"];
+      text.replaceChildren();
+      if (budget) {
+        const amount = liveNode("span", dollars(budget.daily_remaining), "provider-amount");
+        const caption = liveNode("span", tryCopy("daily", dollars(budget.daily_remaining)), "provider-daily");
+        text.append(amount, caption);
+      } else text.textContent = copy[budgetLoaded ? "unavailable" : "loading"];
+      const model = $(`#live-form input[value="${id}"]`)?.parentElement?.querySelector("small") ||
+        $$(".provider-model")[Object.keys(providers).indexOf(id)];
+      if (model) model.title = [providers[id].model, budget ? tryCopy("lifetime", dollars(budget.lifetime_remaining), dollars(budget.lifetime_limit)) : ""].filter(Boolean).join(" · ");
       if (liveBudget?.mode === "mock") text.textContent = copy.mock;
       meter.hidden = !budget;
       if (budget) {
         meter.max = Math.max(budget.daily_limit, 0.01);
         meter.value = budget.daily_remaining;
-        meter.setAttribute("aria-valuetext", text.textContent);
+        meter.setAttribute("aria-valuetext", tryCopy("daily", dollars(budget.daily_remaining)));
       }
       note.textContent = stop ? copy[{ budget_exhausted: "dailyStop", total_budget_exhausted: "lifetimeStop", credit_exhausted: "creditStop" }[stop]] : "";
       note.hidden = !note.textContent;
@@ -1325,6 +1374,7 @@
     if (status) status.textContent = liveStop() ? budgetStopText(liveStop()) : liveStatus === "comparing"
       ? matrixCopy("comparing") : ["pending", "complete", "mediaPending"].includes(liveStatus)
         ? liveCopy(liveStatus) : liveStatus ? liveErrorText(liveStatus) : "";
+    if (status) status.classList.toggle("visually-hidden", !liveStop() && ["pending", "complete", "mediaPending", "comparing"].includes(liveStatus));
     const savedStatus = $("#example-saved-status");
     if (savedStatus) savedStatus.textContent = COPY[pageLanguage].examples[exampleSavedStatus] || "";
     if ($("#result-edit")) $("#result-edit").hidden = !liveResult;
@@ -1333,6 +1383,7 @@
     renderHistory();
     renderHistoryDialog();
     renderLiveBudget();
+    liveTerminalView?.();
   }
 
   // Asset paths are confined to our committed examples, including previews.
@@ -1393,13 +1444,20 @@
       const story = stories[index];
       if (!story) return;
       button.setAttribute("aria-pressed", String(story.id === selectedStory));
-      button.querySelector("strong").textContent = story.titleKey ? matrixCopy(story.titleKey) : story[`title_${pageLanguage}`];
+      const letter = "ABC"[index];
+      button.querySelector(".story-label").textContent = tryCopy(`story${letter}`);
+      button.querySelector(".story-short").textContent = tryCopy(`story${letter}Short`);
       let expected = story.expectedKey ? matrixCopy(story.expectedKey) : story.expected?.[pageLanguage] || story.expected;
       if (expected === "supported") expected = matrixCopy("expectedB");
       else if (expected === "mixed") expected = matrixCopy("expectedC");
       else if (expected === "contradicted" && index === 0) expected = matrixCopy("expectedA");
       else if (["contradicted", "insufficient_evidence"].includes(expected)) expected = liveVerdict(expected);
-      button.querySelector("span").textContent = `${matrixCopy("expected")}: ${typeof expected === "string" ? expected : "—"}`;
+      if (story.id === selectedStory) {
+        const hint = $("#story-expected");
+        const [verdict, ...detail] = (typeof expected === "string" ? expected : "—").split(" · ");
+        hint.replaceChildren(document.createTextNode(`${tryCopy("expected")}${pageLanguage === "zh" ? "：" : ": "}`), liveNode("strong", verdict), document.createTextNode(detail.length ? ` · ${detail.join(" · ")}` : ""));
+        hint.title = hint.textContent;
+      }
       button.disabled = liveBusy;
     });
     $$("[data-input-kind]").forEach(button => {
@@ -1416,6 +1474,9 @@
     const description = customText ? matrixCopy("custom") : asset?.[`what_${pageLanguage}`] || asset?.contains?.[pageLanguage] || "";
     $("#input-description").textContent = inputLoadState ? matrixCopy(inputLoadState) :
       asset?.ready || customText ? description : matrixCopy(asset ? "assetPending" : "assetsLoading");
+    $("#input-description").title = $("#input-description").textContent;
+    $("#live-example").hidden = selectedKind !== "text";
+    $("#live-count").hidden = selectedKind !== "text";
     const link = $("#input-file");
     link.hidden = !asset?.ready || customText;
     if (asset?.ready) link.href = asset.url;
@@ -1447,7 +1508,10 @@
     $$('#live-form input[name="provider"]').forEach(radio => { radio.checked = radio.value === selectedProvider; radio.disabled = liveBusy; });
     $("#fireworks-note").hidden = selectedProvider !== "fireworks";
     $("#compare-all").disabled = liveBusy;
-    $("#live-submit").textContent = matrixCopy($("#compare-all").checked ? "runCompare" : "run");
+    const submit = $("#live-submit");
+    submit.replaceChildren();
+    if (liveBusy) { const spinner = liveNode("span", "", "try-spinner"); spinner.setAttribute("aria-hidden", "true"); submit.append(spinner); }
+    submit.append(document.createTextNode(liveBusy ? tryCopy("checking") : matrixCopy("run")));
     $("#live-count").textContent = `${Array.from($("#live-input").value || "").length} / 600`;
     const saved = asset && (savedExampleRecords.get(asset.id) || asset.saved_result === `/data/examples/${asset.id}.json`);
     $("#example-saved").textContent = COPY[pageLanguage].examples[saved ? "saved" : "savedPending"];
@@ -1455,6 +1519,7 @@
     if (note) {
       const record = asset && savedExampleRecords.get(asset.id);
       note.textContent = record ? savedRecordingLabel(record) : "";
+      $("#example-saved").title = note.textContent;
     }
   }
 
@@ -1576,11 +1641,38 @@
       if (!Array.isArray(rows)) throw Error("invalid history");
       if (request !== historyRequest) return;
       historyRows = rows.filter(row => row && validId(String(row.id))).slice(0, 50);
+      pendingHistoryRows = pendingHistoryRows.filter(row => !row.finished);
       if (request !== historyRequest) return;
       historyState = historyRows.length ? "" : "historyEmpty";
-    } catch { if (request === historyRequest) historyState = "historyUnavailable"; }
+    } catch {
+      if (request === historyRequest) {
+        historyState = "historyUnavailable";
+        pendingHistoryRows = pendingHistoryRows.filter(row => !row.finished);
+      }
+    }
     finally { clearTimeout(timer); }
     if (request === historyRequest) renderHistory();
+  }
+
+  function historySubject(record) {
+    return [record.story ? tryCopy("story", String(record.story).toUpperCase()) : matrixCopy("custom"),
+      COPY[pageLanguage].examples[`${record.kind}Title`] || record.kind || "—"].join(" · ");
+  }
+
+  function relativeHistoryTime(value, now = Date.now()) {
+    const date = new Date(value), age = Math.max(0, now - date.getTime());
+    if (!Number.isFinite(date.getTime())) return "—";
+    if (age < 60000) return tryCopy("nowTime");
+    if (age < 3600000) return tryCopy("minutesAgo", Math.floor(age / 60000));
+    if (age < 86400000) return tryCopy("hoursAgo", Math.floor(age / 3600000));
+    return date.toLocaleDateString(pageLanguage === "zh" ? "zh-TW" : "en-US", {
+      month: "short", day: "numeric", timeZone: "UTC", ...(date.getUTCFullYear() !== new Date(now).getUTCFullYear() ? { year: "numeric" } : {})
+    });
+  }
+
+  function updateTrySticky() {
+    const sidebar = $(".try-sidebar");
+    if (sidebar) sidebar.classList.toggle("is-sticky", sidebar.getBoundingClientRect().height + 48 <= (window.innerHeight || 0));
   }
 
   function renderHistory() {
@@ -1588,42 +1680,48 @@
     if (!target) return;
     $("#history-status").textContent = matrixCopy(historyState);
     $("#history-refresh").disabled = historyState === "historyLoading";
-    $(".history-table").hidden = !historyRows.length;
+    const own = pendingHistoryRows.filter(record => !historyRows.some(saved => saved.id === record.id));
+    const visible = Math.max(0, historyVisible - own.length);
+    target.hidden = !historyRows.length && !own.length;
+    $("#history-more").hidden = historyRows.length <= visible;
     target.replaceChildren();
-    historyRows.forEach(record => {
-      const row = liveNode("tr"), time = liveNode("td");
-      row.setAttribute("tabindex", "0");
-      row.setAttribute("data-history-row", record.id);
-      row.setAttribute("aria-haspopup", "dialog");
-      row.addEventListener("keydown", event => {
-        if (event.target === row && ["Enter", " "].includes(event.key)) {
-          event.preventDefault();
-          return openHistoryRow(record);
-        }
-      });
-      const label = historyTime(record.at);
-      const open = liveNode("button", label, "history-open");
-      open.type = "button"; open.setAttribute("tabindex", "-1"); open.setAttribute("aria-haspopup", "dialog"); open.setAttribute("data-history-id", record.id); open.disabled = liveBusy;
-      open.setAttribute("aria-label", `${matrixCopy("openResult")}: ${label} · ${record.story || matrixCopy("custom")} · ${record.kind || "text"} · ${providerLabel(record.provider)}`);
-      row.setAttribute("aria-label", open.getAttribute("aria-label"));
-      open.addEventListener("click", event => { event?.stopPropagation?.(); return openHistoryRow(record); });
-      row.addEventListener("click", () => { if (!liveBusy) return openHistoryRow(record); });
-      time.append(open, liveNode("small", [record.device, record.browser].filter(Boolean).join(" / ") || "—"));
-      const input = liveNode("td");
-      input.append(liveNode("span", record.story || matrixCopy("custom")), liveNode("small", COPY[pageLanguage].examples[`${record.kind}Title`] || record.kind || "—"));
-      const provider = liveNode("td");
+    [...own, ...historyRows.slice(0, visible)].forEach(record => {
+      const item = liveNode("li"), row = liveNode("button", "", `history-row history-open${record.pending ? " is-mine" : ""}`);
+      row.type = "button";
       const errors = COPY[pageLanguage].matrix.historyErrors;
-      const status = record.verdict ? liveVerdict(record.verdict) : errors[record.error] || errors.unknown;
-      provider.append(liveNode("span", providerLabel(record.provider)), liveNode("small", status, `history-verdict is-${record.verdict || "unchecked"}`));
-      const metrics = liveNode("td");
-      metrics.append(liveNode("span", duration(record.latency_ms)), liveNode("small", money(record.cost_usd, 2)));
-      if (Number.isFinite(record.preprocessing_cost_usd) && record.preprocessing_cost_usd > 0)
-        metrics.append(liveNode("small", `+ ${money(record.preprocessing_cost_usd, 2)} ${liveCopy("preprocessing")}`));
+      const status = record.pending ? tryCopy("running") : record.verdict ? liveVerdict(record.verdict) : errors[record.error] || errors.unknown;
+      const verdict = liveNode("span", "", `history-verdict is-${record.pending ? "running" : record.verdict || "unchecked"}${record.error === "timeout" ? " is-timeout" : ""}`);
+      if (record.pending) { const spinner = liveNode("span", "", "try-spinner"); spinner.setAttribute("aria-hidden", "true"); verdict.append(spinner); }
+      verdict.append(document.createTextNode(status));
+      const subject = historySubject(record), relative = record.pending ? tryCopy("nowTime") : relativeHistoryTime(record.at);
+      const detail = liveNode("span", "", "history-description");
+      const metrics = [providerLabel(record.provider), ...(record.pending ? [tryCopy("you")] : [duration(record.latency_ms), money(record.cost_usd, 2)])];
+      const second = liveNode("span", "", "history-line-two");
+      second.append(liveNode("span", providerLabel(record.provider), "history-provider-full"));
+      if (record.provider === "meta") second.append(liveNode("span", tryCopy("providerMetaShort"), "history-provider-short"));
+      second.append(document.createTextNode(` · ${record.pending ? tryCopy("you") : duration(record.latency_ms)}`));
+      if (!record.pending) second.append(liveNode("span", ` · ${money(record.cost_usd, 2)}`, "history-cost"));
+      second.append(liveNode("span", ` · ${relative}`, "history-mobile-time"));
+      detail.append(liveNode("span", subject, "history-line-one"), second);
+      row.title = [Number.isFinite(Date.parse(record.at)) ? new Date(record.at).toISOString() : "", record.device, record.browser,
+        Number.isFinite(record.preprocessing_cost_usd) && record.preprocessing_cost_usd > 0 ? `+ ${money(record.preprocessing_cost_usd, 2)} ${liveCopy("preprocessing")}` : ""].filter(Boolean).join(" · ");
+      row.setAttribute("aria-label", [subject, status, ...metrics, relative].join(" · "));
+      if (!record.pending) {
+        row.setAttribute("data-history-row", record.id);
+        row.setAttribute("data-history-id", record.id);
+        row.setAttribute("aria-haspopup", "dialog");
+        row.setAttribute("tabindex", "0");
+        row.addEventListener("keydown", event => {
+          if (event.target === row && ["Enter", " "].includes(event.key)) { event.preventDefault(); return openHistoryRow(record); }
+        });
+        row.addEventListener("click", () => { if (!liveBusy) return openHistoryRow(record); });
+      } else row.setAttribute("aria-disabled", "true");
       const chevron = liveNode("span", "›", "history-chevron");
       chevron.setAttribute("aria-hidden", "true");
-      metrics.append(chevron);
-      row.append(time, input, provider, metrics); target.append(row);
+      row.append(verdict, detail, liveNode("span", relative, "history-when"), chevron);
+      item.append(row); target.append(item);
     });
+    updateTrySticky();
   }
 
   function renderHistoryDialog() {
@@ -1791,45 +1889,131 @@
   }
 
   function openLiveTerminals(ids, memberProviders) {
-    const zh = pageLanguage === "zh";
-    const copy = zh ? { title: "即時 · 本次請求的伺服器紀錄", log: n => `伺服器紀錄（${n} 行）`,
-      stages: ["已送出", "模型", "SEC 工具", "模型", "程式檢查", "判定"], seconds: "秒" } :
-      { title: "Live · server log of this request", log: n => `Server log (${n} lines)`,
-        stages: ["Sent", "Model", "SEC tools", "Model", "Program checks", "Verdict"], seconds: "s" };
-    const host = $("#live-progress");
+    const host = $("#live-progress"), bar = $("#live-running-bar");
     host.replaceChildren();
     host.hidden = false;
+    $("#live-idle").hidden = true;
     const started = Date.now();
     let stopped = false, polling = false, timer = null, lastPoll = -Infinity, pending = Promise.resolve();
+    pendingHistoryRows = [{ id: ids[0], pending: true, story: customText ? null : selectedStory,
+      kind: customText ? "text" : selectedKind, provider: memberProviders[0] }];
     const panels = ids.map((id, index) => {
-      const panel = liveNode("details", "", "live-terminal");
-      panel.open = true;
-      const summary = liveNode("summary", copy.title + (ids.length > 1 ? ` · ${providerLabel(memberProviders[index])}` : ""));
-      const clock = liveNode("span", "0.0 " + copy.seconds, "terminal-clock");
+      const panel = liveNode("section", "", "live-terminal");
+      const header = liveNode("div", "", "terminal-header");
+      const dot = liveNode("span", "", "running-dot"); dot.setAttribute("aria-hidden", "true");
+      const heading = liveNode("h3", tryCopy("running"));
+      const clock = liveNode("span", "0:00", "terminal-clock");
+      const pill = liveNode("span", "", "history-verdict"); pill.hidden = true;
+      header.append(dot, heading, clock, pill);
+      const status = liveNode("p", "", "terminal-status");
+      status.setAttribute("role", "status"); status.setAttribute("aria-live", "polite");
       const stages = liveNode("div", "", "terminal-stages");
-      const chips = copy.stages.map((label, stage) => {
-        const chip = liveNode("span", label); chip.dataset.active = String(stage === 0); stages.append(chip); return chip;
+      const chips = Array.from({ length: 6 }, (_, stage) => {
+        const chip = liveNode("span"); chip.dataset.active = String(stage === 0);
+        const mark = liveNode("i"); mark.setAttribute("aria-hidden", "true");
+        chip.append(mark, liveNode("span", tryCopy(`stage${stage}`), "stage-label-full"));
+        if ([2, 4].includes(stage)) chip.append(liveNode("span", tryCopy(`stage${stage}Short`), "stage-label-short"));
+        stages.append(chip); return chip;
       });
+      const metrics = liveNode("div", "", "terminal-metrics"); metrics.hidden = true;
+      const footer = liveNode("div", "", "terminal-footer");
+      const log = liveNode("details", "", "terminal-log"); log.open = true;
+      const summary = liveNode("summary", tryCopy("serverLog"));
       const lines = liveNode("pre", "", "terminal-lines");
-      // Raw protocol tokens are server records; UI labels follow the reading language.
+      // Protocol strings are only text nodes; no server text is ever parsed as HTML.
       lines.setAttribute("translate", "no");
-      panel.append(summary, clock, stages, lines); host.append(panel);
-      return { id, panel, summary, clock, chips, lines, next: 0, done: false, count: 0, stage: 0, sawTools: false };
+      log.append(summary, lines);
+      const link = liveNode("a", tryCopy("viewResult"), "terminal-result-link");
+      link.href = "#live-result"; link.hidden = true;
+      link.addEventListener("click", () => {
+        const result = compareRuns.find(run => runReceipt(run).provider === memberProviders[index]);
+        if (result && !result._notRun) { ++resultRequest; showResult(result); }
+      });
+      footer.append(log, link);
+      panel.append(header, status, stages, metrics, footer); host.append(panel);
+      return { id, provider: memberProviders[index], panel, dot, heading, pill, status, summary, log, clock, chips, lines, metrics, link,
+        next: 0, done: false, count: 0, stage: 0, step: null, sawTools: false, result: null };
     });
+    const elapsed = () => {
+      const seconds = Math.floor((Date.now() - started) / 1000);
+      return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
+    };
+    const current = () => panels.find(panel => !panel.done) || panels[panels.length - 1];
+    const stageSentence = panel => COPY[pageLanguage].tryUI.stageSentences[panel.stage] +
+      ([1, 3].includes(panel.stage) && panel.step ? tryCopy("modelStep", panel.step) : "");
+    const updateRunningBar = () => {
+      const bounds = $("#live-now").getBoundingClientRect();
+      bar.hidden = stopped || !window.matchMedia("(max-width: 959px)").matches ||
+        (bounds.bottom > 0 && bounds.top < (window.innerHeight || 900));
+      bar.querySelector(".running-bar-stage").textContent = stageSentence(current());
+      bar.querySelector(".running-bar-clock").textContent = elapsed();
+    };
+    const render = () => {
+      panels.forEach(panel => {
+        const result = panel.result, failed = Boolean(result?.error || result?._notRun);
+        panel.heading.textContent = stopped ? tryCopy("done") : tryCopy("running");
+        panel.clock.textContent = elapsed(); panel.clock.hidden = stopped;
+        panel.dot.hidden = stopped;
+        panel.pill.hidden = !stopped;
+        if (stopped) {
+          panel.pill.textContent = result?._notRun ? matrixCopy("notRun") : failed ? COPY[pageLanguage].matrix.historyErrors[result.error] || COPY[pageLanguage].matrix.historyErrors.unknown : liveVerdict(result?.verdict);
+          panel.pill.className = `history-verdict is-${failed ? "unchecked" : result?.verdict || "unchecked"}${result?.error === "timeout" ? " is-timeout" : ""}`;
+        }
+        const receipt = result ? runReceipt(result) : null;
+        const time = duration(receipt?.latency_ms ?? Date.now() - started);
+        const sentence = stopped ? failed ? result?._notRun ? matrixCopy("notRun") : liveErrorText(result.error) : tryCopy("finished", time) : stageSentence(panel);
+        if (panel.status.textContent !== `${providerLabel(panel.provider)} · ${sentence}`)
+          panel.status.replaceChildren(liveNode("strong", providerLabel(panel.provider)), document.createTextNode(` · ${sentence}`));
+        panel.chips.forEach((chip, index) => {
+          chip.dataset.active = String(index === panel.stage);
+          const done = (stopped && !failed) || index < panel.stage;
+          chip.dataset.done = String(done);
+          chip.children[0].textContent = done ? "✓" : "";
+          chip.children[1].textContent = tryCopy(`stage${index}`);
+          if (chip.children[2]) chip.children[2].textContent = tryCopy(`stage${index}Short`);
+        });
+        panel.summary.textContent = stopped ? tryCopy("log", panel.count) : `${tryCopy("serverLog")} · ${tryCopy("lines", panel.count)}`;
+        panel.link.textContent = tryCopy("viewResult");
+        panel.link.hidden = !stopped || !result || Boolean(result._notRun) || (!result.verdict && !result.events?.length);
+        panel.metrics.hidden = !stopped || failed;
+        if (stopped && !failed) {
+          panel.metrics.replaceChildren();
+          [["time", time], ["cost", money(receipt?.cost_usd, 2)], ["claims", String(result?.claims?.length ?? 0)]].forEach(([key, value]) => {
+            const tile = liveNode("div"); tile.append(liveNode("span", tryCopy(key)), liveNode("b", value)); panel.metrics.append(tile);
+          });
+        }
+      });
+      if (!stopped && pendingHistoryRows[0]?.provider !== current().provider) {
+        pendingHistoryRows[0].provider = current().provider;
+        renderHistory();
+      }
+      updateRunningBar();
+      updateTrySticky();
+    };
+    liveTerminalView = render;
+    window.addEventListener?.("scroll", updateRunningBar, { passive: true });
+    window.addEventListener?.("resize", updateRunningBar);
+    // Display-only tidy of the server log line; stage detection above reads the raw text.
+    const terminalDisplay = text => text.replace(/\s{2,}/g, " ").replace(/\bstep=(\d+)/g, "step $1")
+      .replace(/\b\d{7,}\b/g, digits => Number(digits).toLocaleString("en-US"));
     const append = (panel, data) => {
       if (!Array.isArray(data.lines) || typeof data.done !== "boolean" || !Number.isSafeInteger(data.next)) return;
       for (const line of data.lines) {
         if (!Number.isFinite(line.t_s) || typeof line.text !== "string") continue;
         const text = line.text;
         if (text.startsWith("tool_")) { panel.stage = 2; panel.sawTools = true; }
-        else if (text.startsWith("model")) panel.stage = panel.sawTools ? 3 : 1;
-        else if (text.startsWith("program_check")) panel.stage = 4;
+        else if (text.startsWith("model")) {
+          panel.stage = panel.sawTools ? 3 : 1;
+          panel.step = text.match(/step[= ]+(\d+)/)?.[1] || null;
+        } else if (text.startsWith("program_check")) panel.stage = 4;
         else if (text.startsWith("verdict")) panel.stage = 5;
-        panel.lines.append(document.createTextNode(`+${line.t_s.toFixed(1)} s  ${text}\n`));
+        const row = liveNode("span", "", "terminal-line");
+        row.append(liveNode("span", `+${line.t_s.toFixed(1)} s `, "terminal-time"), document.createTextNode(terminalDisplay(text)));
+        panel.lines.append(row);
         panel.count++;
       }
       panel.next = data.next; panel.done = data.done;
-      panel.chips.forEach((chip, index) => { chip.dataset.active = String(index === panel.stage); });
+      render();
       panel.lines.scrollTop = panel.lines.scrollHeight;
     };
     const poll = async panel => {
@@ -1844,7 +2028,7 @@
     };
     const tick = () => {
       if (stopped) return;
-      panels.forEach(panel => { panel.clock.textContent = `${((Date.now() - started) / 1000).toFixed(1)} ${copy.seconds}`; });
+      render();
       const panel = panels.find(item => !item.done);
       // Shared network cadence keeps compare + budget/history below 30/IP/min.
       // The clock/stage UI ticks every 700 ms; no overlapping progress fetches.
@@ -1855,15 +2039,22 @@
       }
       timer = setTimeout(tick, 700);
     };
+    render();
     timer = setTimeout(tick, 700);
-    return async finalRead => {
-      stopped = true; clearTimeout(timer);
+    return async (finalRead, results) => {
+      stopped = true; clearTimeout(timer); bar.hidden = true;
+      window.removeEventListener?.("scroll", updateRunningBar);
+      window.removeEventListener?.("resize", updateRunningBar);
       await pending;
       if (finalRead) await Promise.allSettled(panels.map(panel => poll(panel)));
       panels.forEach((panel, index) => {
-        panel.panel.open = false;
-        panel.summary.textContent = copy.log(panel.count) + (ids.length > 1 ? ` · ${providerLabel(memberProviders[index])}` : "");
+        panel.result = results.find(result => runReceipt(result).provider === panel.provider) || results[index] || { error: "unavailable" };
+        const failed = Boolean(panel.result.error || panel.result._notRun);
+        panel.log.open = failed;
+        if (!failed) panel.stage = 5;
       });
+      pendingHistoryRows.forEach(row => { row.finished = true; });
+      render();
     };
   }
 
@@ -1899,6 +2090,9 @@
     $("#example-saved").addEventListener("click", () => selectExampleSaved());
     $("#result-edit").addEventListener("click", editResult);
     $("#history-refresh").addEventListener("click", refreshHistory);
+    $("#history-more").addEventListener("click", () => { historyVisible += 10; renderHistory(); });
+    window.addEventListener?.("resize", updateTrySticky);
+    $("#live-running-bar").addEventListener("click", () => $("#live-now").scrollIntoView({ behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "start" }));
     setupHistoryDialog();
     $$('[data-saved-demo]').forEach(button => button.addEventListener("click", () => selectSavedDemo(button.dataset.savedDemo)));
 
@@ -1970,7 +2164,7 @@
       } catch (error) { if (request === resultRequest) liveStatus = error.name === "AbortError" ? "timeout" : "unavailable"; }
       finally {
         clearTimeout(timer);
-        await finishTerminals(postComplete);
+        await finishTerminals(postComplete, compareRuns.length ? compareRuns : [liveResult || { error: liveStatus, receipt: { provider } }]);
         await Promise.allSettled([refreshLiveBudget(), refreshHistory()]);
         liveBusy = false;
         form.setAttribute("aria-busy", "false");

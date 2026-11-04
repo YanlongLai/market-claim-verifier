@@ -131,4 +131,7 @@ assert.ok(tree.querySelector('#example-recording').textContent.includes('Baseten
 await click('#example-saved');
 assert.equal(paid.length,0);assert.equal(tree.querySelector('#live-result').hidden,false);
 assert.ok(tree.querySelector('#live-result .live-corrections'));
+assert.ok(tree.querySelector('#live-result .trace-mode').textContent.includes('2026-11-03'));
+assert.ok(tree.querySelector('#live-result .trace-mode').textContent.includes('Baseten'));
+assert.equal(tree.querySelector('#example-saved').title,tree.querySelector('#example-recording').textContent);
 """

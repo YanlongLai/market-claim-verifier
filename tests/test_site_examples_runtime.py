@@ -236,7 +236,7 @@ assert.equal(tree.querySelector('#fireworks-note').hidden,true);
 const radio=tree.querySelector('input[name="provider"][value="fireworks"]');
 radio.checked=true;await radio.events.change();
 assert.equal(tree.querySelector('#fireworks-note').hidden,false);
-assert.ok(tree.querySelector('#fireworks-note').textContent.includes(config.language==='zh'?'供應商端':'provider-side'));
+assert.ok(tree.querySelector('#fireworks-note').textContent.includes(config.language==='zh'?'今日較慢':'Slow today'));
 const baseten=tree.querySelector('input[name="provider"][value="baseten"]');
 baseten.checked=true;await baseten.events.change();
 assert.equal(tree.querySelector('#fireworks-note').hidden,true);
@@ -248,12 +248,16 @@ historyData=Array.from({length:57},(_,i)=>({id:`run-${i}`,at:'2026-11-03T17:05:0
  input_text:'An editable saved claim',latency_ms:10900,cost_usd:.01,preprocessing_cost_usd:.0005}));
 historyDetails['run-0']={envelope:{...envelope('c-image','fireworks'),input:{kind:'image',story:'c',text_read:'An editable saved claim'}}};
 await click('#history-refresh');
-assert.equal(tree.querySelectorAll('#history-rows tr').length,50);
-assert.ok(tree.querySelector('#history-rows').textContent.includes('Desktop / Chrome'));
+assert.equal(tree.querySelectorAll('#history-rows [data-history-row]').length,6);
+for(let page=0;page<5;page++)await click('#history-more');
+assert.equal(tree.querySelectorAll('#history-rows [data-history-row]').length,50);
+assert.equal(tree.querySelector('#history-more').hidden,true);
+assert.ok(tree.querySelector('[data-history-row]').title.includes('Desktop · Chrome'));
+assert.ok(tree.querySelector('[data-history-row]').title.includes('2026-11-03T17:05:00.000Z'));
 assert.ok(tree.querySelector('#history-rows').textContent.includes('$0.01'));
 assert.ok(tree.querySelector('#history-rows').textContent.includes(config.language==='zh'?'10.9 秒':'10.9 s'));
 assert.ok(tree.querySelector('#history-rows .history-verdict').className.includes('is-contradicted'));
-await tree.querySelector('#history-rows tr').events.click();
+await tree.querySelector('#history-rows [data-history-row]').events.click();
 assert.equal(paid.length,0);assert.ok(reads.includes('/api/history/run-0'));
 const dialog=tree.querySelector('#history-dialog');
 assert.equal(dialog.open,true);
@@ -349,13 +353,14 @@ assert.equal(property('.hero-layout .stamp-scene','max-width'),'none');
 assert.equal(property('.stamp-stage','grid-template-columns'),viewport<=639?'minmax(0, 1fr)':'minmax(0, 1fr) var(--stamp-robot-width) minmax(0, 1fr)');
 assert.equal(property('.stamp-author','overflow-wrap'),'normal');
 assert.equal(property('.stamp-company','overflow-wrap'),'normal');
-assert.equal(property('.try-layout','grid-template-columns'),viewport<=1023?'minmax(0, 1fr)':'minmax(0, 1.3fr) minmax(0, 1fr)');
+assert.equal(property('.try-layout','grid-template-columns'),viewport<=959?'minmax(0, 1fr)':'minmax(0, 1.35fr) minmax(0, 1fr)');
 assert.equal(property('.try-layout > *','min-width'),'0');
-assert.equal(property('.history-table','table-layout'),'fixed');
+assert.equal(property('.history-row','grid-template-columns'),viewport<=639?'96px minmax(0, 1fr) 12px':'112px minmax(0, 1fr) auto 12px');
 assert.equal(property('.compare-table','table-layout'),'fixed');
-assert.equal(property('.provider-options','grid-template-columns'),'repeat(3, minmax(0, 1fr))');
-assert.equal(tree.querySelector('.try-layout').children.filter(node=>node.tagName!=='#text')[1].className,'history-panel');
-assert.equal(tree.querySelectorAll('.history-table th').length,4);
+assert.equal(property('.provider-options','grid-template-columns'),viewport<=639?'minmax(0, 1fr)':'repeat(3, minmax(0, 1fr))');
+assert.equal(tree.querySelector('.try-layout').children.filter(node=>node.tagName!=='#text')[1].className,'try-sidebar');
+assert.equal(tree.querySelector('#history-rows').tagName,'ul');
+assert.equal(tree.querySelector('.try-sidebar').children.filter(node=>node.tagName!=='#text')[0].attributes.id,'live-now');
 assert.equal(property('.live-section [hidden]','display'),'none');
 """
 
@@ -407,7 +412,7 @@ context.fetch=async(url,options={})=>{
 context.liveTest.setupLive();await new Promise(resolve=>setImmediate(resolve));
 const click=async selector=>{await tree.querySelector(selector).events.click();await new Promise(resolve=>setImmediate(resolve));};
 assert.ok(!tree.querySelector('#corrected-draft'));
-assert.ok(tree.querySelector('.compare-choice').textContent.includes(config.language==='zh'?'獨立預算':'separate provider budgets'));
+assert.ok(tree.querySelector('.compare-choice').textContent.includes(config.language==='zh'?'獨立預算':'runs one after another'));
 assert.ok(tree.querySelector('#live-privacy').textContent.includes(config.language==='zh'?'網路位址':'IP'));
 for(const [index,story] of ['a','b','c'].entries()){
   await click(`[data-story-slot="${index}"]`);

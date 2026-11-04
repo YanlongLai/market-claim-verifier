@@ -45,25 +45,31 @@ const input=tree.querySelector('#live-input');input.value='Apple FY2025 revenue 
 tree.querySelector('#live-password').value='offline-password';
 tree.querySelector('#compare-all').checked=config.compare;
 const pending=tree.querySelector('#live-form').events.submit({preventDefault(){}});
-const panels=tree.querySelector('#live-progress').querySelectorAll('details');
+const panels=tree.querySelector('#live-progress').querySelectorAll('.live-terminal');
 assert.equal(panels.length,config.compare?3:1);
-assert.ok(panels.every(panel=>panel.open));
-assert.ok(panels[0].querySelector('summary').textContent.includes(config.language==='zh'?'即時 · 本次請求的伺服器紀錄':'Live · server log of this request'));
+assert.ok(panels.every(panel=>panel.querySelector('details').open));
+assert.equal(panels[0].querySelector('h3').textContent,config.language==='zh'?'執行中':'Running');
+assert.equal(panels[0].querySelector('.terminal-clock').textContent,'0:00');
+assert.ok(panels[0].querySelector('.terminal-status').textContent.includes(config.compare?'Meta Model API':'Baseten'));
+assert.equal(tree.querySelector('#live-submit').textContent,config.language==='zh'?'查核中…':'Checking…');
+assert.equal(tree.querySelector('#live-submit').disabled,true);
 assert.match(writes[0].client_run_id,/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
 const tick=async()=>{const entry=[...timers].find(([,timer])=>timer.ms===700);assert.ok(entry);timers.delete(entry[0]);now+=700;entry[1].fn();await new Promise(resolve=>setImmediate(resolve));};
 await tick();assert.equal(polls.length,1);
 assert.ok(polls[0].url.includes(writes[0].client_run_id+'?after=0'));
-assert.ok(panels[0].querySelector('pre').textContent.includes('+4.3 s  tool_call  lookup_fact  AMZN  revenue  2023Q3'));
+assert.ok(panels[0].querySelector('pre').textContent.includes('+4.3 s tool_call lookup_fact AMZN revenue 2023Q3'));
 assert.equal(panels[0].querySelector('.terminal-stages').children[2].dataset.active,'true');
-assert.ok(panels[0].querySelector('.terminal-clock').textContent.startsWith('0.7'));
+assert.ok(panels[0].querySelector('.terminal-clock').textContent === '0:00');
 for(let index=0;index<4;index++)await tick();
 assert.equal(polls.length,1,'700 ms UI ticks do not burst the origin');
 await tick();assert.equal(polls.length,2);assert.ok(polls[1].at-polls[0].at>=3000);
 assert.equal(panels[0].querySelector('.terminal-stages').children[3].dataset.active,'true');
+assert.equal(panels[0].querySelector('.terminal-clock').textContent,'0:04');
+assert.equal(panels[0].querySelector('.terminal-stages').children[2].dataset.done,'true');
 completed=true;
 finishPost({ok:true,status:200,json:async()=>config.compare?{runs:providerIds.map(result)}:result('baseten')});
 await pending;
-assert.ok(panels.every(panel=>!panel.open));
+assert.ok(panels.every(panel=>!panel.querySelector('details').open));
 assert.ok(panels.every(panel=>panel.querySelector('summary').textContent.includes(config.language==='zh'?'伺服器紀錄（5 行）':'Server log (5 lines)')));
 assert.ok(panels.every(panel=>panel.querySelector('.terminal-stages').children[5].dataset.active==='true'));
 assert.equal(tree.querySelector('#live-result').hidden,false);
@@ -105,7 +111,8 @@ const messages=config.language==='zh'?{locked:'已鎖定 30 分鐘',busy:'伺服
 assert.ok(message.includes(messages[config.error]),message);
 if(config.language==='en')assert.ok(!/[\u3400-\u9fff]/.test(message));
 else assert.ok(!/[A-Za-z]{2,}/.test(message));
-assert.equal(tree.querySelector('#live-progress').querySelector('details').open,false);
+assert.equal(tree.querySelector('#live-progress').querySelector('details').open,true,'failures retain the open server log');
+assert.ok(tree.querySelector('#live-progress .history-verdict').textContent);
 assert.ok(![...timers.values()].some(timer=>timer.ms===700));
 """, language=language, error=error,
               page="docs/zh/index.html" if language == "zh" else "docs/site/index.html")

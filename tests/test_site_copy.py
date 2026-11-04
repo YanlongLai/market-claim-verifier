@@ -183,8 +183,8 @@ def test_judge_password_hint_and_timeout_copy_do_not_embed_the_password():
     copy = json.loads(subprocess.run(
         ['node', '-e', 'process.stdout.write(JSON.stringify(require(process.argv[1])))',
          str(ROOT / 'docs/site/script.js')], check=True, capture_output=True, text=True).stdout)
-    assert copy['en']['live']['passwordNote'] == 'Judges: the password is our team name; saved examples need none.'
-    assert copy['zh']['live']['passwordNote'] == '評審：密碼是我們的隊名；已儲存範例免密碼。'
+    assert copy['en']['live']['passwordNote'] == 'Password is our team name. Saved results need none.'
+    assert copy['zh']['live']['passwordNote'] == '密碼是我們的隊名。查看儲存結果不需密碼。'
     assert '6–90 s by provider' in copy['en']['live']['pending']
     for language in ('en', 'zh'):
         assert 'dappgo' not in copy[language]['live']['passwordNote'].lower()
