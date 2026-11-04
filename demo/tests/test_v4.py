@@ -24,9 +24,9 @@ STORY=yaml.safe_load((ROOT/'demo/storyboard-v4.yaml').read_text())
 
 def test_director_nine_beats_and_two_exact_placeholders():
     motion_v4.validate(STORY)
-    assert [s['target_s'] for s in STORY['scenes']]==[9,17,14,16,16,50,24,16,16]
+    assert [s['target_s'] for s in STORY['scenes']]==[9,13,12,16,16,58,24,16,14]
     assert sum(s['target_s'] for s in STORY['scenes'])==178.0
-    assert [(s['id'],s['target_s']) for s in STORY['scenes'] if s.get('placeholder') or s.get('recording')]==[('v406',50),('v409',16)]
+    assert [(s['id'],s['target_s']) for s in STORY['scenes'] if s.get('placeholder') or s.get('recording')]==[('v406',58),('v409',14)]
     assert (ROOT/'demo/NARRATION-v4.txt').read_text().strip().split('\n\n')==[s['narration'] for s in STORY['scenes']]
     for s in STORY['scenes']:
         assert ' '.join(' '.join(s['subtitle_cues']).split())==' '.join(s['narration'].split())
@@ -57,7 +57,7 @@ def test_scale_is_rebuildable_with_all_sources_retained_and_no_parallel_projecti
     assert saved['projection']['parallel_1000_posts'] is None
     assert motion_v4.scale_narration(saved) in STORY['scenes'][6]['narration']
     assert STORY['scenes'][6]['narration'].endswith('At that median, a thousand posts take about two hours on one worker.')
-    assert 'About a cent. Under ten seconds.' in STORY['scenes'][5]['narration']
+    assert 'About two cents and twenty seconds.' in STORY['scenes'][5]['narration']
     assert saved['cohorts']['news/baseten/post']['items']==80
     assert saved['recorded_parallel_batches']['threads']['workers']==3
     assert saved['eval_v2']['median_completed_latency_seconds']==pytest.approx(10.012793354457244)
@@ -187,9 +187,22 @@ def test_motion_compiler_keeps_v3_host_outputs_and_rejects_voice_overrun():
     assert data['metrics']['negative_n']==139
     assert data['phone_post']['path']==phone_v4.ASSET
     assert data['phone_post']['sha256']==hashlib.sha256((ROOT/phone_v4.ASSET).read_bytes()).hexdigest()
+    for frame in data['keyframes']:
+        scene=next(s for s in STORY['scenes'] if s['id']==frame['shot'])
+        assert scene['target_start_s']<=frame['t']<scene['target_end_s']
     assert all(len(c['text'].splitlines())<=3 and max(map(len,c['text'].splitlines()))<=42 for c in data['subtitles'])
-    for relative,content in motion_v4.artifacts(data).items():
-        assert (ROOT/relative).read_text()==content
+    # Host preparation replaces target cue timing with measured voice timing.
+    # Both forms must keep the evidence current and all saved outputs consistent.
+    saved=json.loads((ROOT/'demo/motion/v4/data.js').read_text().removeprefix('window.MOTION_DATA = ').removesuffix(';\n'))
+    for key in ('scenes','provenance','hero','metrics','phone_post'):
+        assert saved[key]==data[key]
+    assert [s['end'] for s in saved['timing']['shots']]==motion_v4.BOUNDARIES[1:]
+    for relative,content in motion_v4.artifacts(saved).items():
+        actual=(ROOT/relative).read_text()
+        if relative.endswith('.json'):
+            assert json.loads(actual)==json.loads(content)
+        else:
+            assert actual==content
     builder=SimpleNamespace(demo=ROOT/'demo',story=STORY)
     assert motion_build.motion_folder(builder)==ROOT/'demo/motion/v4'
     assert motion_build.renderer_args(builder)==['--entry','v4/index.html']
@@ -211,8 +224,23 @@ def test_r3_measured_cues_fit_the_director_reallocation_without_changing_later_c
         voices.append(dict(voice_s=row['voice_s'],key='offline-fixture',artifacts={'audio':{'path':str(audio)}}))
     timing=motion_v4.compile_data(voices=voices)['timing']
     assert timing['shots'][0]['voice_end']==8.24 and timing['shots'][0]['end']==9
-    assert timing['shots'][1]['start']==9 and timing['shots'][1]['end']==26
-    assert [shot['end'] for shot in timing['shots'][1:]]==[26,40,56,72,122,146,162,178]
+    assert timing['shots'][1]['start']==9 and timing['shots'][1]['end']==22
+    assert [shot['end'] for shot in timing['shots'][1:]]==[22,34,50,66,124,148,164,178]
+
+
+def test_opening_iframe_uses_only_the_current_worktree_hero_without_navigation_or_scripts():
+    hero=motion_v4.site_hero(ROOT)
+    body=hero['html'].split('</head>',1)[1]
+    assert 'Paste a finance post.' in body
+    assert 'Every number is checked against SEC filings' in body
+    assert body.count('<section ')==1
+    assert '<nav' not in body and '<header' not in body and '<script' not in hero['html']
+    assert 'What it can check' not in body and 'robot' not in body.lower()
+    assert 'overflow:hidden' in hero['html']
+    for path,digest in hero['sources'].items():
+        assert hashlib.sha256((ROOT/path).read_bytes()).hexdigest()==digest
+    source='<section class="hero" id="top"><section>nested</section></section><nav>excluded</nav>'
+    assert motion_v4.HeroSection(source).markup==source.split('<nav>')[0]
 
 
 def test_architecture_svg_size_legibility_and_wan_quality_lock():

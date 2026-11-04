@@ -6,6 +6,7 @@ import {fileURLToPath, pathToFileURL} from 'node:url';
 import {launch, restrictNetwork} from '../capture/browser.mjs';
 import {checkLayout} from './layout-checks.mjs';
 import {checkV3Layout} from './v3/layout-checks.mjs';
+import {checkV4Layout} from './v4/layout-checks.mjs';
 
 export function parseArgs(args) {
   const out={times:[],fps:30};
@@ -57,6 +58,7 @@ export async function renderFrames(options) {
       if(errors.length) throw new Error(errors.join('\n'));
       const layout=await checkLayout(page);
       if(options.entry==='v3/index.html') layout.v3=await checkV3Layout(page);
+      if(options.entry==='v4/index.html') layout.v4=await checkV4Layout(page,state);
       const name=frameName(i,t,options.sequence);
       await page.screenshot({path:path.join(options.out,name),type:'png',animations:'disabled',fullPage:false});
       frames.push({file:name,t,shot:state.shot,layout});

@@ -52,7 +52,9 @@ def test_proxy_sends_only_expected_headers_and_never_logs_body(tmp_path, monkeyp
     assert instance.proxy_request()
     request = calls[0]
     assert request.full_url == "https://hackathon.dappgo.com/api/check"
-    assert dict(request.header_items()) == {"Origin": recorder.ORIGIN, "Content-type": "application/json", "Accept": "application/json"}
+    headers=dict(request.header_items())
+    assert headers.pop('User-agent').endswith(' live-check-preview')
+    assert headers == {"Origin": recorder.ORIGIN, "Content-type": "application/json", "Accept": "application/json"}
     assert b'"password":"private-test-secret"' in request.data
     assert instance.statuses == [200] and instance.wfile.getvalue() == b'{"verdict":"contradicted"}'
     instance.log_message("%s", request.data)
@@ -99,10 +101,12 @@ def test_static_preview_and_redirects_cannot_forward_credentials(tmp_path):
 
 def make_takes(tmp_path, monkeypatch):
     story = {"scenes": []}
-    for scene_id, (beat, seconds) in recorder.BEATS.items():
+    lengths={s['id']:s['target_s'] for s in yaml.safe_load(recorder.STORYBOARD.read_text())['scenes']}
+    for scene_id, (beat, _) in recorder.BEATS.items():
+        seconds=lengths[scene_id]
         receipt = {"status": "ready", "scene_id": scene_id,
                    "result": {"mode": "live", "provider": "baseten", "model": "meta-models/muse-spark-open-1026",
-                              "cost_usd": .01, "latency_ms": 6000}}
+                              "cost_usd": .02, "latency_ms": 20000}}
         for kind in ("webm", "mp4"):
             path = tmp_path / f"{beat}.{kind}"
             path.write_bytes(f"synthetic {kind} fixture".encode())
@@ -111,7 +115,7 @@ def make_takes(tmp_path, monkeypatch):
         recorder.save(receipt_path, receipt)
         story["scenes"].append({"id": scene_id, "target_s": seconds,
                                 "recording": {"asset": f"{beat}.mp4", "receipt": receipt_path.name, "offset_s": 0}})
-    monkeypatch.setattr(recorder, "probe", lambda path: {"duration_s": 50 if "beat6" in str(path) else 16,
+    monkeypatch.setattr(recorder, "probe", lambda path: {"duration_s": lengths['v406' if 'beat6' in str(path) else 'v409'],
                                                        "width": 1920, "height": 1080, "fps": "30/1"})
     return story
 
@@ -126,7 +130,7 @@ def test_both_recordings_must_exist_match_hashes_and_cover_the_scene(tmp_path, m
 
 def test_too_short_changed_or_non_live_takes_are_rejected(tmp_path, monkeypatch):
     story = make_takes(tmp_path, monkeypatch)
-    monkeypatch.setattr(recorder, "probe", lambda _: {"duration_s": 49.99, "width": 1920, "height": 1080, "fps": "30/1"})
+    monkeypatch.setattr(recorder, "probe", lambda _: {"duration_s": story['scenes'][0]['target_s']-.01, "width": 1920, "height": 1080, "fps": "30/1"})
     with pytest.raises(recorder.RecordingError, match="shorter"):
         recorder.check_recordings(story, tmp_path)
     story = make_takes(tmp_path, monkeypatch)
@@ -158,10 +162,13 @@ def test_source_preview_stays_rebuildable_without_ignored_host_cache(tmp_path):
 
 
 def test_new_live_measurements_must_support_the_unchanged_price_and_speed_copy():
-    assert recorder.live_copy_supported({"cost_usd": .01, "latency_ms": 6000})
+    assert recorder.live_copy_supported({"cost_usd": .02, "latency_ms": 20000})
+    assert recorder.live_copy_supported({"cost_usd": .01, "latency_ms": 10900})
     for result in ({"cost_usd": .062084, "latency_ms": 38400},
-                   {"cost_usd": .01, "latency_ms": 10000},
-                   {"cost_usd": .01, "latency_ms": 6000, "cost_is_bound": True}):
+                   {"cost_usd": .01, "latency_ms": 6000},
+                   {"cost_usd": .03, "latency_ms": 20000},
+                   {"cost_usd": .02, "latency_ms": 25000},
+                   {"cost_usd": .02, "latency_ms": 20000, "cost_is_bound": True}):
         assert not recorder.live_copy_supported(result)
 
 

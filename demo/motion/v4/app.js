@@ -5,16 +5,18 @@ const esc=s=>String(s).replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll
 let previous='',pending=[];
 const video=(path,classes='terminal')=>`<video muted preload="auto" class="${classes}" data-source="${esc(path)}" src="${root}${esc(path)}"></video>`;
 const brollPaths={
-  'cards-fanning-out':'demo/assets/broll-v4/cards-fanning-out.mp4',
   'numbers-raining-into-filing':'demo/assets/broll-v4/numbers-raining-into-filing.mp4',
 };
 function body(state){
  const scene=data.scenes[state.index];
- if(scene.recording)return video(scene.recording.asset);
+ if(scene.recording){
+  const crop=state.liveTake;
+  return `<section class="live-take-frame" style="--take-scale:${crop.scale};--take-x:${crop.x}px;--take-y:${crop.y}px">${video(scene.recording.asset,'live-take')}${state.siteURL?`<span class="site-url">${state.siteURL}</span>`:''}</section>`;
+ }
  if(state.placeholder)return `<section class="scene placeholder"><div class="kicker">DIRECTOR RECORDING PENDING · ${state.shot}</div><h1>${state.index===5?'Live site run — uncut':'Corrected draft + SEC filing'}</h1><p class="duration">${scene.target_s.toFixed(3)} seconds</p><p>${state.index===5?'Paste → Check → Meta trace → CONTRADICTED → SEC filing → corrected draft':'End on the working result · hackathon.dappgo.com'}</p><p class="note">Exact director duration. No live call, site recording or production receipt has been created for this scene.</p></section>`;
  switch(state.index){
- case 0:return `<iframe class="hero" src="${root}docs/site/index.html" title="Saved local site hero"></iframe><section class="disclosure"><h1>DappGo existed before this hackathon.</h1><p>This verifier, its site and every piece of evidence were built between October 27 and November 4.</p><p class="note">Director disclosure · local site source preview · no live call</p></section>`;
- case 1:return `<section class="scene"><img class="phone" src="${root}${esc(data.phone_post.path)}" alt="Full saved finance post · 28 Oct 2026"><div class="viral-question"><h1>Is it right?</h1><strong id="reposts">0</strong><p class="note">Illustrative repost counter — not measured reach</p><p>A real number.<br>The wrong period.</p></div></section>`;
+ case 0:return `<iframe class="hero" srcdoc="${esc(data.hero.html)}" sandbox="allow-same-origin" scrolling="no" title="Current local site hero only"></iframe><section class="disclosure"><h1>DappGo existed before this hackathon.</h1><p>This verifier, its site and every piece of evidence were built between October 27 and November 4.</p><p class="note">Director disclosure · local site source preview · no live call</p></section>`;
+ case 1:return `<section class="scene"><div class="repost-cascade" aria-hidden="true">${state.cascade.map(()=>`<img class="phone repost-copy" src="${root}${esc(data.phone_post.path)}" alt="">`).join('')}</div><img class="phone original-post" src="${root}${esc(data.phone_post.path)}" alt="Full saved finance post · 28 Oct 2026"><div class="viral-question"><h1>A real number.<br>The wrong period.</h1></div></section>`;
  case 2:return `<section class="scene"><div class="kicker">REAL SAVED CLI INPUTS · CONTROLLED FIXTURES</div><h1 id="input-label"></h1><div id="input-preview"></div><div class="input-details"><p>One verification path.</p><p>Extract claims → SEC tools → Python verdict</p><code id="input-path"></code><p class="note">fair-multimodal-v1 · saved inputs and outputs<br>Not a new OCR/ASR execution.</p></div></section>`;
  case 3:return video('demo/assets/terminal-v4/beat4.mp4');
  case 4:return `<div class="architecture">${data.architecture_svg}</div>`;
@@ -43,7 +45,11 @@ function seekVideo(el,time){
 window.seek=t=>{
  const state=stateAt(t,data.scenes);pending=[];
  if(previous!==state.shot){stage.innerHTML=body(state);previous=state.shot;}
- if(state.index===1)document.querySelector('#reposts').textContent=Math.floor(Math.min(1,state.local/12)*1000).toLocaleString('en-US');
+ if(state.cascade)stage.querySelectorAll('.repost-copy').forEach((copy,i)=>{
+  const {x,y,rotation,scale,opacity}=state.cascade[i];
+  copy.style.transform=`translate(${x}px,${y}px) rotate(${rotation}deg) scale(${scale})`;
+  copy.style.opacity=opacity;
+ });
  if(state.index===2){
   const index=Math.min(3,Math.floor(state.local/3.5)),input=data.inputs[index];
   document.querySelector('#input-label').textContent=input.label;
@@ -70,9 +76,15 @@ window.seek=t=>{
  }else accent?.remove();
  for(const el of stage.querySelectorAll('video')){
   const isAccent=el.closest('[data-accent]');
-  seekVideo(el,isAccent?state.local-(state.index===1?14:8):state.index===2?state.local-10.5:state.local);
+  seekVideo(el,isAccent?state.local-8:state.index===2?state.local-10.5:state.local);
  }
  return state;
 };
-window.settleMotion=async()=>{await Promise.all(pending);};
+window.settleMotion=async()=>{
+ await Promise.all(pending);
+ for(const frame of stage.querySelectorAll('iframe')){
+  if(frame.contentDocument?.URL!=='about:srcdoc'||frame.contentDocument?.readyState!=='complete')await new Promise(resolve=>frame.addEventListener('load',resolve,{once:true}));
+  await frame.contentDocument.fonts.ready;
+ }
+};
 window.timeline=data.timing;window.motionReady=true;window.seek(0);
