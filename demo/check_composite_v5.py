@@ -23,7 +23,8 @@ def update_review_encode(review,video,loudness,validation,run_receipt):
 def mask_pixels(image):
     delta=ImageChops.difference(image.convert('RGB'),Image.new('RGB',image.size,COLOUR))
     # Small H.264/YUV rounding is expected, readable native glyphs are not.
-    return max(ImageStat.Stat(delta).mean)<=2 and max(v[1] for v in delta.getextrema())<=14
+    # H.264 YUV rounding renders #111a20 about +2 in green everywhere; glyph rows measure >100.
+    return max(ImageStat.Stat(delta).mean)<=4 and max(v[1] for v in delta.getextrema())<=16
 
 def check_composite(video,data,out):
     out.mkdir(parents=True,exist_ok=True)
