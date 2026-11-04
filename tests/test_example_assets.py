@@ -17,16 +17,26 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def isolated(tmp_path, monkeypatch):
-    for directory in ("docs/site/examples", "docs/site/data/examples"):
+    for directory in ("docs/examples", "docs/site/examples", "docs/site/data/examples", "tests/fixtures/sec-offline"):
         shutil.copytree(ROOT / directory, tmp_path / directory)
+    # Recorder tests start fresh even after the owner records the real inputs.
+    # Only disposable copies are cleared; the real records are checked by the
+    # catalogue builder and test_fifteen_ids_... against the original root.
+    catalogue = tmp_path / "docs/examples/manifest.json"
+    rows = json.loads(catalogue.read_text())
+    for row in rows:
+        row["saved_result"] = None
+        (tmp_path / f"docs/site/data/examples/{row['id']}.json").unlink(missing_ok=True)
+    catalogue.write_bytes(assets.encoded(rows))
     shutil.copyfile(ROOT / "docs/site/data/live-demo-post.json", tmp_path / "docs/site/data/live-demo-post.json")
     monkeypatch.setattr(assets, "ROOT", tmp_path)
-    monkeypatch.setattr(assets, "EXAMPLES", tmp_path / "docs/site/examples")
+    monkeypatch.setattr(assets, "EXAMPLES", tmp_path / "docs/examples")
     monkeypatch.setattr(results, "ROOT", tmp_path)
     monkeypatch.setattr(results, "OUTPUT", tmp_path / "docs/site/data/examples")
     monkeypatch.setattr(recorder, "ROOT", tmp_path)
     for name in ("server/live/server.py", "workers/live/src/live.py", "src/claimcheck/ingest_media.py",
-                 "src/claimcheck/agent.py", "src/claimcheck/budget.py", "src/claimcheck/providers.py"):
+                 "src/claimcheck/agent.py", "src/claimcheck/budget.py", "src/claimcheck/providers.py",
+                 "scripts/build_examples.py", "scripts/run_example_records.py"):
         target = tmp_path / name
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(ROOT / name, target)
@@ -57,14 +67,14 @@ def test_five_example_manifest_hashes_native_pdf_and_root_relative_routes():
 
 def test_asset_and_saved_envelope_builders_reproduce_every_byte_and_detect_staleness(tmp_path, monkeypatch):
     isolated(tmp_path, monkeypatch)
-    before = {path.relative_to(tmp_path): path.read_bytes() for path in (tmp_path / "docs/site").rglob("*") if path.is_file()}
+    before = {path.relative_to(tmp_path): path.read_bytes() for path in (tmp_path / "docs").rglob("*") if path.is_file()}
     for _ in range(2):
         assets.build()
         results.build()
         assets.build(check=True)
         results.build(check=True)
-    assert before == {path.relative_to(tmp_path): path.read_bytes() for path in (tmp_path / "docs/site").rglob("*") if path.is_file()}
-    (assets.EXAMPLES / "post.txt").write_text("wrong")
+    assert before == {path.relative_to(tmp_path): path.read_bytes() for path in (tmp_path / "docs").rglob("*") if path.is_file()}
+    (assets.EXAMPLES / "a.txt").write_text("wrong")
     with pytest.raises(ValueError, match="Stale example"):
         assets.build(check=True)
 
@@ -87,7 +97,7 @@ def test_text_reuses_actual_envelope_and_other_saved_results_are_explicitly_pend
 
 def test_host_recorder_requires_explicit_execution_before_any_request(tmp_path, monkeypatch):
     isolated(tmp_path, monkeypatch)
-    monkeypatch.setattr(sys, "argv", ["run_example_records.py", "--origin", "https://example.test", "--ids", "text", "--max-spend-usd", "3"])
+    monkeypatch.setattr(sys, "argv", ["run_example_records.py", "--origin", "https://example.test", "--ids", "a-text", "--max-spend-usd", "3"])
     monkeypatch.setattr(recorder, "fetch", lambda *a: pytest.fail("host recording executed implicitly"))
     with pytest.raises(SystemExit) as error:
         recorder.main()
@@ -95,51 +105,64 @@ def test_host_recorder_requires_explicit_execution_before_any_request(tmp_path, 
     assert not (tmp_path / "docs/evidence/example-records").exists()
 
 
-def test_host_recorder_freezes_all_cases_retains_failure_and_does_not_store_password(tmp_path, monkeypatch):
+def test_host_recorder_freezes_all_cases_retains_failure_and_does_not_store_password(tmp_path, monkeypatch, capsys):
     isolated(tmp_path, monkeypatch)
     output = tmp_path / "docs/evidence/example-records/offline-fixture"
-    monkeypatch.setattr(sys, "argv", ["run_example_records.py", "--origin", "https://example.test", "--ids", "text", "image",
+    monkeypatch.setattr(sys, "argv", ["run_example_records.py", "--origin", "https://example.test", "--ids", "a-text", "a-image",
         "--max-spend-usd", "3", "--output", str(output), "--execute"])
-    monkeypatch.setenv("LIVE_CHECK_PASSWORD", "recording-secret-marker")
+    password_file = tmp_path / "password"
+    password_file.write_text("recording-secret-marker\n")
+    monkeypatch.setenv("LIVE_CHECK_PASSWORD_FILE", str(password_file))
     calls = []
     text = json.loads((results.OUTPUT / "text.json").read_text())
     text["mode"] = "live"
+    text["input"].update(example_id="a-text", story="a")
+    text["input"]["text_read"] = (assets.EXAMPLES / "a.txt").read_text()
+    text["receipt"] = {"provider": "baseten", "model": recorder.MODEL}
     def fetch(origin, path, body=None):
         calls.append((path, body))
+        if path == "/examples/manifest.json":
+            return 200, (assets.EXAMPLES / "manifest.json").read_bytes()
         if path == "/api/budget":
             return 200, json.dumps({"day": "2026-11-03", "status": "ready", "daily_limit_usd": 3,
                                     "daily_remaining_usd": 3, "resets_at": "2099-11-04T00:00:00Z"}).encode()
         value = json.loads(body)
         assert (output / "plan.json").exists()
         assert value["password"] == "recording-secret-marker"
-        return (200, json.dumps(text).encode()) if value["example_id"] == "text" else (504, b'{"error":"timeout","cost_is_bound":true}')
+        assert value["provider"] == "baseten"
+        return (200, json.dumps(text).encode()) if value["example_id"] == "a-text" else (504, b'{"error":"timeout","cost_is_bound":true,"echo":"recording-secret-marker"}')
     monkeypatch.setattr(recorder, "fetch", fetch)
-    with pytest.raises(SystemExit, match="incomplete/failed attempts: image"):
+    with pytest.raises(SystemExit, match="Recording incomplete"):
         recorder.main()
     assert len([call for call in calls if call[0] == "/api/check-example"]) == 2
     assert json.loads((output / "plan.json").read_text())["attempts_per_id"] == 1
-    for example_id, status in (("text", 200), ("image", 504)):
+    for example_id, status in (("a-text", 200), ("a-image", 504)):
         receipt = json.loads((output / example_id / "receipt.json").read_text())
         assert receipt["http_status"] == status
         assert receipt["response_sha256"] == hashlib.sha256((output / example_id / "response.json").read_bytes()).hexdigest()
     assert all("recording-secret-marker" not in path.read_text() for path in output.rglob("*") if path.is_file())
-    before = (results.OUTPUT / "text.json").read_bytes()
-    with pytest.raises(ValueError, match="Incomplete/mismatched"):
-        results.build(records=output)
-    assert (results.OUTPUT / "text.json").read_bytes() == before
-    # Select a complete retained case only when explicitly requested, never a
-    # fabricated image result or an implicit retry of the failed case.
-    image = next(row for row in json.loads((assets.EXAMPLES / "manifest.json").read_text()) if row["id"] == "image")
-    raw = json.dumps({**text, "input": {**text["input"], "example_id": "image", "kind": "image"}}).encode()
-    retained = tmp_path / "docs/evidence/example-records/complete-offline-fixture/image"
-    retained.mkdir(parents=True)
-    (retained / "response.json").write_bytes(raw)
-    (retained / "receipt.json").write_text(json.dumps({"http_status": 200, "attempts": 1, "example_id": "image",
-        "response_sha256": hashlib.sha256(raw).hexdigest(), "asset_sha256": image["sha256"]}))
-    results.build(records=retained.parent)
-    results.build(check=True)
-    saved = json.loads((results.OUTPUT / "image.json").read_text())
+    assert "recording-secret-marker" not in str(capsys.readouterr())
+    assert not (results.OUTPUT / "a-image.json").exists()
+    saved = json.loads((results.OUTPUT / "a-text.json").read_text())
     assert saved["mode"] == "recorded" and saved["recording"]["attempts"] == 1
-    (retained / "response.json").write_text("tampered")
-    with pytest.raises((ValueError, json.JSONDecodeError)):
-        results.build(check=True)
+    assert saved["recording"]["retests_ocr_asr"] is False
+    assert saved["source_sha256"] == hashlib.sha256((output / "a-text/response.json").read_bytes()).hexdigest()
+    assert saved["recording"]["receipt_sha256"] == hashlib.sha256((output / "a-text/receipt.json").read_bytes()).hexdigest()
+    asset = next(row for row in json.loads((assets.EXAMPLES / "manifest.json").read_text()) if row["id"] == "a-text")
+    assert recorder.check_saved(asset) == "/data/examples/a-text.json"
+    before = (results.OUTPUT / "a-text.json").read_bytes()
+    assert recorder.encoded(recorder.recorded_envelope(output / "a-text", asset)) == before
+    assets.build()
+    assets.build(check=True)
+    assert next(row for row in json.loads((assets.EXAMPLES / "manifest.json").read_text()) if row["id"] == "a-text")["saved_result"] == "/data/examples/a-text.json"
+    response = output / "a-text/response.json"
+    original = response.read_bytes()
+    response.write_bytes(original + b"\n")
+    with pytest.raises(ValueError, match="mismatched"):
+        recorder.check_saved(asset)
+    response.write_bytes(original)
+    # A second invocation cannot pay again or silently replace a recorded case.
+    monkeypatch.setattr(recorder, "fetch", lambda *a: pytest.fail("repeat paid request"))
+    with pytest.raises(SystemExit) as error:
+        recorder.main()
+    assert error.value.code == 2
