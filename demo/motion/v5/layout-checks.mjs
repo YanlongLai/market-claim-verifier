@@ -1,5 +1,6 @@
 /** Assertions run against every actual Chromium frame before host PNG capture. */
 import assert from 'node:assert/strict';
+import {targets,requiredText} from './sentence-targets.mjs';
 
 export function intersects(a,b){
  return a.left<b.right&&a.right>b.left&&a.top<b.bottom&&a.bottom>b.top;
@@ -12,40 +13,59 @@ export function assertNamedClearance(obstructions,checks){
 }
 
 export async function checkV5Layout(page,state){
- const actual=await page.evaluate(({index,local})=>{
+ const actual=await page.evaluate(({index,local,targets,requiredText})=>{
   const data=window.MOTION_DATA;
   const box=el=>{const r=el.getBoundingClientRect();return {left:r.left,right:r.right,top:r.top,bottom:r.bottom,width:r.width,height:r.height};};
+  const visible=el=>{let opacity=1;for(let p=el;p;p=p.parentElement){const s=getComputedStyle(p);if(s.visibility==='hidden'||s.display==='none')return false;opacity*=Number(s.opacity);}return opacity>=.5;};
   const cjk=/[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/u;
   const overlay=document.querySelector('.live-overlay'),v=document.querySelector('.live-take');
   const textBoxes=[],walker=document.createTreeWalker(document.querySelector('#stage'),NodeFilter.SHOW_TEXT);
   for(let node;node=walker.nextNode();){
-   if(!node.textContent.trim())continue;
+   if(!node.textContent.trim()||!visible(node.parentElement)||node.parentElement.closest('.post-copy'))continue;
    const range=document.createRange();range.selectNodeContents(node);
    const rect=box(range),clip=node.parentElement.closest('.scene,.architecture');
-   if(clip){assertClip(clip);rect.bottom=Math.min(rect.bottom,clip.getBoundingClientRect().bottom);}
+   if(clip)assertClip(clip);
    textBoxes.push({text:node.textContent,...rect});
   }
   function assertClip(el){if(getComputedStyle(el).overflow!=='hidden'||el.getBoundingClientRect().bottom>766)throw new Error('Scene must stop before the chapter band');}
+  const sid=data.scenes[index].id,at=data.scenes[index].target_start_s+local;
+  const sentenceChecks=data.cues._events[sid].filter(e=>at+1e-7>=e.cue_start&&at<=e.cue_end+1e-7).map(e=>{
+   const selectors=targets[sid]?.[e.event];if(!selectors?.length)throw new Error(`Missing named targets: ${sid}/${e.event}`);
+   const elements=selectors.flatMap(selector=>{
+    const els=[...document.querySelectorAll(selector)].filter(visible);
+    if(!els.length)throw new Error(`Named element absent or dim at sentence onset/end: ${sid}/${e.event} ${selector}`);
+    return els.map(el=>({name:selector,...box(el),text:el.textContent}));
+   });
+   const expected=requiredText[`${sid}/${e.event}`];
+   if(sid==='v502'&&e.event==='formats'&&elements.length!==4)throw new Error('All four real previews must be present at sentence onset');
+   if(expected&&!elements.some(el=>el.text.includes(expected)))throw new Error(`Incomplete named text at onset/end: ${sid}/${e.event}`);
+   const native=index===5?e.native_check:index===8?{phase:'ending hold',at_s:0,visible_until_s:16,elements:data.ending_named_elements}:null;
+   if([5,8].includes(index)&&(!native?.elements?.length||local<native.at_s-1e-6||local>native.visible_until_s+1e-6))throw new Error(`Native proof not held through sentence: ${sid}/${e.event}`);
+   return {scene:sid,event:e.event,at_s:at,measured:e.measured,status:'pass',elements,native,expected};
+  });
   return {
+   sentenceChecks,
    cjk:cjk.test(document.body.innerText),bar:box(document.querySelector('.chapter-rail')),
    band:{...box(document.querySelector('#chapters')),colour:getComputedStyle(document.querySelector('#chapters')).backgroundColor,opacity:getComputedStyle(document.querySelector('#chapters')).opacity},
    labels:[...document.querySelectorAll('[data-chapter]')].map(el=>({text:el.textContent,...box(el),font:parseFloat(getComputedStyle(el).fontSize),current:el.classList.contains('current')})),
    segments:[...document.querySelectorAll('[data-segment]')].map(el=>({...box(el),fill:new DOMMatrix(getComputedStyle(el.querySelector('b')).transform).a})),
-   overlay:overlay?{...box(overlay),phase:overlay.dataset.phase,fonts:[...overlay.querySelectorAll('h2,p,code,span')].map(el=>parseFloat(getComputedStyle(el).fontSize)),keyFonts:[...overlay.querySelectorAll('strong,.equation b')].map(el=>parseFloat(getComputedStyle(el).fontSize)),scroll:overlay.scrollHeight,client:overlay.clientHeight}:null,
+   overlay:overlay?{...box(overlay),phase:overlay.dataset.phase,colour:getComputedStyle(overlay).backgroundColor,opacity:getComputedStyle(overlay).opacity,fonts:[...overlay.querySelectorAll('h2,p,code,span')].map(el=>parseFloat(getComputedStyle(el).fontSize)),keyFonts:[...overlay.querySelectorAll('strong,.equation b')].map(el=>parseFloat(getComputedStyle(el).fontSize)),scroll:overlay.scrollHeight,client:overlay.clientHeight}:null,
    video:v?{...box(v),fit:getComputedStyle(v).objectFit,transform:getComputedStyle(v).transform,source:[v.videoWidth,v.videoHeight]}:null,
    captureVersion:data.portable_inputs.recordings[data.scenes[index].id]?.receipt.capture_version,
    onScreen:[...document.querySelectorAll('[data-on-screen]')].map(el=>({scene:el.dataset.onScreen,text:el.textContent,expected:data.scenes.find(s=>s.id===el.dataset.onScreen).on_screen})),
    textBoxes,terminalCaption:document.querySelector('.terminal-caption')?{...box(document.querySelector('.terminal-caption')),font:parseFloat(getComputedStyle(document.querySelector('.terminal-caption')).fontSize)}:null,
-   namedChecks:index===5?data.live_named_elements.filter(c=>Math.abs(c.at_s-local)<1e-6):index===8?[{phase:'ending hold',elements:data.ending_named_elements}]:[],
+   namedChecks:index===5?data.live_named_elements.filter(c=>local+1e-6>=c.at_s&&local<=c.visible_until_s):index===8?[{phase:'ending hold',elements:data.ending_named_elements}]:[],
    copies:document.querySelectorAll('.post-copy').length,tiles:document.querySelectorAll('.input-tile').length,
+   cascadeClip:document.querySelector('.cascade')?box(document.querySelector('.cascade')):null,
+   viralHeadline:document.querySelector('.viral-headline')?box(document.querySelector('.viral-headline')):null,
    inserts:document.querySelectorAll('.scale-accent,[data-accent],iframe').length,
   };
- },{index:state.index,local:state.local});
+ },{index:state.index,local:state.local,targets,requiredText});
  assert.equal(actual.cjk,false,'Film DOM contains non-English glyphs');
  assert.equal(actual.inserts,0,'All motion is native web code');
- if([5,8].includes(state.index))assert.equal(actual.captureVersion,7,'A v7 take with an audited startup cover is required before frame capture');
+ if([5,8].includes(state.index))assert.equal(actual.captureVersion,8,'A v8 take with a decoded workspace start is required before frame capture');
  assert.equal(actual.bar.height,12);assert.equal(actual.bar.width,1920);assert.equal(actual.bar.top,844);
- assert.equal(actual.band.colour,'rgb(17, 26, 32)','Chapter band must be fully opaque');assert.equal(actual.band.opacity,'1');
+ assert.equal(actual.band.colour,'rgb(17, 26, 32)','Chapter band must be fully opaque');assert(Math.abs(Number(actual.band.opacity)-state.fade)<1e-6,'Rail must fade with the sign-off');
  assert.equal(actual.band.left,0);assert.equal(actual.band.right,1920);assert(actual.band.bottom>=1080);
  assert.equal(actual.labels.length,10);assert.equal(actual.segments.length,10);
  assert.equal(actual.labels.filter(l=>l.current).length,1);assert(actual.labels[state.index].current);
@@ -59,18 +79,23 @@ export async function checkV5Layout(page,state){
  const textLimit=actual.video?790:766;
  actual.textBoxes.forEach(r=>assert(r.bottom<=textLimit+.1,`Scene text enters reserved rail/caption lane: ${r.text}`));
  if(actual.terminalCaption){assert.equal(actual.terminalCaption.font,56);assert(actual.terminalCaption.bottom<=Math.min(800,actual.band.top-24));}
- if(state.index===1)assert.equal(actual.copies,7);
+ if(state.index===1){assert.equal(actual.copies,7);assert(actual.cascadeClip.right<=1056);assert(actual.viralHeadline.left>=1056,'Headline column is reserved');}
  if(state.index===2)assert.equal(actual.tiles,4);
  if(actual.video){
   assert.deepEqual(actual.video.source,[1920,1080]);assert.equal(actual.video.fit,'contain');assert.equal(actual.video.transform,'none');
   assert.equal(actual.video.left,0);assert.equal(actual.video.top,0);assert.equal(actual.video.right,1920);assert.equal(actual.video.bottom,1080);
  }
  if(state.index===5&&state.overlay){
-  assert.equal(actual.overlay?.phase,state.overlay.receipt_phase);assert(actual.overlay.bottom<790);
+  assert.equal(actual.overlay?.phase,state.overlay.receipt_phase);assert.equal(actual.overlay.colour,'rgb(17, 26, 32)');assert.equal(actual.overlay.opacity,'1');assert(actual.overlay.bottom<790);
   assert(actual.overlay.fonts.every(x=>x>=56));assert(actual.overlay.keyFonts.every(x=>x>=96),'Key numbers must be at least 96 px');
   assert(actual.overlay.scroll<=actual.overlay.client+2,'Live explanation overflows');
   if(Math.abs(state.local-state.overlay.at_scene_s)<1e-6)assert(actual.namedChecks.length,'Missing named element audit at cue onset');
  }
  assertNamedClearance([actual.overlay,actual.band,{left:0,right:1920,top:880,bottom:1080}],actual.namedChecks);
+ for(const check of actual.sentenceChecks){
+  for(const r of check.elements){assert(r.width>0&&r.height>0&&r.left>=0&&r.right<=1920&&r.top>=0&&r.bottom<=790,`${check.scene}/${check.event}: named proof is clipped`);}
+  // Web proof may itself be the overlay; native proof must clear it completely.
+  assertNamedClearance([actual.overlay,actual.band,{left:0,right:1920,top:880,bottom:1080}],check.native?[check.native]:[]);
+ }
  return actual;
 }

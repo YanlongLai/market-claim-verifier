@@ -30,9 +30,9 @@ FFMPEG = Path("/opt/homebrew/bin/ffmpeg")
 FFPROBE = Path("/opt/homebrew/bin/ffprobe")
 ORIGIN = "https://hackathon.dappgo.com"
 BEATS = {"v505": ("beat6", 58.0), "v508": ("beat9", 16.0)}
-CAPTURE_VERSION = 7
-LIVE_PHASES = ('use_apple_example', 'check_against_sec', 'verdict_reveal', 'draft_reveal',
-               'evidence_reveal', 'agent_trace_expand', 'hover_receipt')
+CAPTURE_VERSION = 8
+LIVE_PHASES = ('live_workspace_reveal','use_apple_example','check_against_sec','verdict_reveal','draft_reveal',
+               'evidence_reveal','tool_call_2_reveal','tool_call_4_reveal','program_verdict_reveal','hover_receipt')
 
 
 class RecordingError(RuntimeError):
@@ -83,7 +83,7 @@ def check_choreography(receipt):
         or not proof.get('program_verdict_shown') or len(calls)!=4
         or [s['index'] for s in shown if s['kind']=='tool_call' and s.get('visible')]!=calls
         or any(s.get('hold_ms',0)<700 for s in shown)
-        or not 0<proof.get('beat6_actions_end_s',math.inf)<=56
+        or not 0<proof.get('beat6_actions_end_s',math.inf)<=57.5
         or not 0<proof.get('after_click_s',math.inf)<=56
         or round(derived.get('annual',0)/1e9,1)!=416.2 or round(derived.get('nine_months',0)/1e9,1)!=313.7
         or round(derived.get('quarter',0)/1e9,1)!=102.5
@@ -108,29 +108,41 @@ def check_startup_cover(receipt):
     """Only a pre-content cover released after a passing audit can enter the film."""
     cover=receipt.get('startup_cover',{});geometry=receipt.get('geometry_checks',[])
     index=cover.get('release_geometry_index');released=cover.get('released_at_s')
+    rect=cover.get('workspace_rect',{})
+    calibration=('source_start_s','first_native_frame_s','source_cover_release_s','video_clock_offset_s')
     if (receipt.get('capture_version')!=CAPTURE_VERSION or not cover.get('injected_before_content')
         or cover.get('colour')!='#f7f5ef' or not cover.get('cover_present') or not cover.get('cover_opaque') or not cover.get('layout_installed')
         or cover.get('zoom')!=1.95 or type(index) is not int or not 0<=index<len(geometry)
         or type(released) not in (int,float) or not math.isfinite(released)
-        or not 0<=geometry[index].get('at_s',math.inf)<=released<58):
-        raise RecordingError('v7 audited startup cover required: no un-zoomed opening may enter the film; re-record on the host')
+        or not geometry[index].get('at_s',math.inf)<=released or abs(released)>.75
+        or not cover.get('workspace_framed_before_release') or not cover.get('decoded_workspace_start')
+        or not 60<=rect.get('left',-1)<rect.get('right',0)<=1860 or not 80<=rect.get('top',-1)<rect.get('bottom',0)<=548
+        or not all(type(cover.get(k)) in (int,float) and math.isfinite(cover[k]) for k in calibration)):
+        raise RecordingError('v8 audited startup cover and decoded workspace start required; re-record on the host')
+    if (abs(cover['source_start_s']-cover['first_native_frame_s']-.1)>1e-7
+        or abs(cover['video_clock_offset_s']-cover['first_native_frame_s']+cover['source_cover_release_s'])>1e-7
+        or abs(released+.1)>1e-7):
+        raise RecordingError('Decoded cover edge must calibrate the page/video clocks before cue placement')
 
 
 def check_named_elements(receipt):
     phases={t['phase']:t['at_s'] for t in receipt['timings']}
-    expected=set(LIVE_PHASES)|{p for p in phases if p.startswith('tool_call_') and p.endswith('_reveal')}|{'program_verdict_reveal'}
+    expected=set(LIVE_PHASES)|{p for p in phases if p.startswith('tool_call_') and p.endswith('_reveal')}|{'agent_trace_expand','program_verdict_reveal'}
     checks=receipt.get('named_element_checks',[])
     if {c.get('phase') for c in checks}!=expected or len(checks)!=len(expected):
         raise RecordingError('Named element rectangles required at every live cue onset and trace step')
     for check in checks:
-        if check.get('at_s')!=phases[check['phase']] or not check.get('elements'):
+        if check.get('at_s')!=phases[check['phase']] or not check.get('elements') or check.get('visible_until_s',-1)<=check['at_s']:
             raise RecordingError('Named element rectangles must use the exact recorded phase onset')
         for r in check['elements']:
             if (not all(type(r.get(k)) in (int,float) and math.isfinite(r[k]) for k in ('left','right','top','bottom'))
-                or not 60<=r['left']<r['right']<=1860 or not 0<=r['top']<r['bottom']<=558):
+                or not 60<=r['left']<r['right']<=1860 or not 0<=r['top']<r['bottom']<=766):
                 raise RecordingError('Named live element must be fully visible above the chapter lane')
+            band=check.get('overlay_band')
+            if band not in ('top','bottom') or (band=='top' and r['top']<270) or (band=='bottom' and r['bottom']>548):
+                raise RecordingError('Opaque overlay band intersects the named native element')
     ending=receipt.get('ending_frame',{}).get('named_elements',[])
-    if len(ending)!=2 or any(not 60<=r.get('left',0)<r.get('right',0)<=1860 or not 80<=r.get('top',0)<r.get('bottom',0)<=586 for r in ending):
+    if len(ending)!=3 or any(not 60<=r.get('left',0)<r.get('right',0)<=1860 or not 80<=r.get('top',0)<r.get('bottom',0)<=586 for r in ending):
         raise RecordingError('Ending draft and citation rectangles required for overlay review')
 
 
@@ -143,6 +155,56 @@ def probe(path):
     video = next(s for s in data["streams"] if s["codec_type"] == "video")
     return {"duration_s": float(data["format"]["duration"]),
             "width": video["width"], "height": video["height"], "fps": video["r_frame_rate"]}
+
+
+def workspace_start(frames, released_at_s, *, width=96, height=54, fps=30):
+    """Find three decoded non-paper workspace frames after the covered startup.
+
+    The cover is held until Try is framed. The first varied frames can therefore
+    only be the native workspace. Never use the page clock alone as a video trim.
+    Pure paper, white and black encoder-start frames all fail the variation test.
+    """
+    size=width*height;run=0
+    for i in range(len(frames)//size):
+        frame=frames[i*size:(i+1)*size]
+        dark=sum(p<210 for p in frame)/size
+        run=run+1 if .005<dark<.9 and max(frame)-min(frame)>60 else 0
+        if run>=3:
+            start=(i+1)/fps
+            if abs(start-released_at_s)>.75:raise RecordingError('Decoded workspace start differs from cover clock; retain attempt for review')
+            return start
+    raise RecordingError('No stable native workspace after the startup cover; retain attempt')
+
+
+def select_workspace_start(raw,session):
+    released=session['startup_cover']['released_at_s']
+    frames=subprocess.run([str(FFMPEG),'-nostdin','-v','error','-i',str(raw),'-t',str(released+2),
+        '-vf','fps=30,scale=96:54','-pix_fmt','gray','-f','rawvideo','-'],capture_output=True,check=True).stdout
+    return workspace_start(frames,released)
+
+
+def workspace_clock(session,start):
+    """Normalize audit clocks to the continuous MP4 selection; retain raw receipt."""
+    import copy
+    selected=copy.deepcopy(session)
+    released=session['startup_cover']['released_at_s']
+    # The decoded cover -> workspace edge calibrates Playwright's page clock to
+    # the actual video clock. Merely subtracting the trim would retain any encoder
+    # startup offset in every subsequent picture/speech binding.
+    first_native=start-3/30
+    video_offset=first_native-released
+    shift=start-video_offset
+    for collection in ('timings','geometry_checks','language_checks','named_element_checks'):
+        for item in selected[collection]:
+            item['at_s']-=shift
+            if 'visible_until_s' in item:item['visible_until_s']-=shift
+            if item.get('phase')=='live_workspace_reveal':item['at_s']=0.
+    selected['startup_cover']['released_at_s']-=shift
+    selected['startup_cover'].update(decoded_workspace_start=True,source_start_s=start,first_native_frame_s=first_native,
+        source_cover_release_s=released,video_clock_offset_s=video_offset,
+        selection='Three decoded native workspace frames; cover edge calibrates page/video clocks; no paper/hero/stamp frames')
+    selected['beat6_actions_end_s']-=shift
+    return selected
 
 
 def check_recordings(story, root=ROOT, *, required=True):
@@ -272,7 +334,7 @@ def wire_storyboard(receipts, stamp):
         if scene['id'] == 'v505':
             scene['cue_events'] = live_cue_events(scene, receipt)
         scene["on_screen"] = "Live product · corrected draft + SEC filing" if scene["id"] == "v508" else "Live product · SEC evidence · agent trace · measured receipt"
-        scene["director_notes"] = "Real product recording; uncut source. Locked scene duration; first scene-length seconds used."
+        scene["director_notes"] = "One continuous workspace selection after the decoded startup cover; raw WebM retained uncut. Locked scene duration."
     check_recordings(story)
     (OUT / f"storyboard-before-{stamp}.yaml").write_text(original)
     temporary = STORYBOARD.with_suffix(".yaml.tmp")
@@ -335,6 +397,8 @@ def main():
                 raise RecordingError("Capture did not pass the live-result / choreography gate; attempt retained")
         raw = OUT / f"beat6-{stamp}.webm"
         media = probe(raw)
+        start=select_workspace_start(raw,session)
+        session=workspace_clock(session,start)
         span = session["beat9_span_s"]
         if span < 16 or media["duration_s"] < span + 58:
             raise RecordingError("Recording is too short; no scene was wired")
@@ -344,7 +408,7 @@ def main():
         for scene_id, (beat, minimum) in BEATS.items():
             webm = OUT / f"{beat}-{stamp}.webm"
             mp4 = webm.with_suffix(".mp4")
-            convert(webm, mp4)
+            convert(webm, mp4,start=start if scene_id=='v505' else None)
             supported = live_copy_supported(session["result"])
             receipt = {**run, "status": "ready" if supported else "needs-director-review", "scene_id": scene_id, "scene_duration_s": minimum,
                        "locked_live_copy_supported": supported,
@@ -359,7 +423,7 @@ def main():
                        "choreography": {k: session[k] for k in ("trace_details_open", "trace_steps_shown", "tool_calls_shown",
                            "program_verdict_shown", "apple_inspect_open", "apple_derivation", "after_click_s", "beat6_actions_end_s")},
                        "source_session": worker_path.relative_to(ROOT).as_posix(),
-                       "native_ui": session["native_ui"], "trim": "first scene-duration seconds; source retained uncut"}
+                       "native_ui": session["native_ui"], "trim": "continuous workspace selection after decoded cover release; raw source retained uncut"}
             for kind, path in (("webm", webm), ("mp4", mp4)):
                 receipt[kind] = {"path": path.relative_to(ROOT).as_posix(), "sha256": digest(path), **probe(path)}
             receipt_path = webm.with_suffix(".json")

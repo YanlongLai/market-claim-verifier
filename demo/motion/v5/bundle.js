@@ -8,14 +8,14 @@ function chapterState(t,segments){
 }
 function repostCascade(local){
  return Array.from({length:7},(_,i)=>{
-  const p=clamp((local-.35-i*.25)/2.8),ease=1-(1-p)**3;
-  return {x:(120+i*94)*ease,y:([-44,44,-68,68,-24,24,0][i])*ease,
+  const p=clamp((local-i*.12)/1.2),ease=1-(1-p)**3;
+  return {x:(30+i*30)*ease,y:([-44,44,-68,68,-24,24,0][i])*ease,
    rotation:(i-3)*2.4*ease,scale:1-.035*(i+1)*ease,opacity:p===0?0:.12+.055*(7-i)};
  });
 }
 function overlayAt(local,events){
  // Adding then subtracting a scene offset can lose a few floating-point bits.
- return [...events].reverse().find(e=>local+1e-9>=e.at_scene_s)||null;
+ return [...events].reverse().find(e=>local+1e-9>=(e.picture_at_scene_s??e.at_scene_s))||null;
 }
 function terminalAt(local,replay){
  const block=[...replay.blocks].reverse().find(b=>local+1e-9>=b.at_s)||replay.blocks[0];
@@ -32,15 +32,21 @@ function outroStampAt(local){
 function stateAt(t,scenes,chapters){
  if(!Number.isFinite(t)||t<0||t>178)throw new Error('v5 time must be in 0..178');
  const index=t===178?9:boundaries.findIndex((a,i)=>i<10&&t>=a&&t<boundaries[i+1]);
- const local=t-boundaries[index],scene=scenes[index];
- return {shot:`v50${index}`,index,local,placeholder:Boolean(scene.placeholder),
-  // Playback is 1:1. All framing is done by the recorder; no post-capture crop.
+ const local=t-boundaries[index],scene=scenes[index],active=overlayAt(local,scene.cue_events);
+ const ready=name=>local+1e-9>=(scene.cue_events.find(e=>e.event===name)?.picture_at_scene_s??Infinity);
+ const repostAt=scene.cue_events.find(e=>e.event==='reposts')?.picture_at_scene_s??Infinity;
+ const program=ready('program'),principle=ready('principle');
+ return {shot:`v50${index}`,index,local,active:active?.event||null,placeholder:Boolean(scene.placeholder),
   liveTake:[5,8].includes(index)?{scale:1,x:0,y:0}:null,
-  cascade:index===1?repostCascade(local):null,
-  inputs:index===2?Array.from({length:4},(_,i)=>clamp((local-i*.55)/.75)):null,
-  overlay:index===5?overlayAt(local,scene.cue_events):null,
-  terminal:index===6?overlayAt(local,scene.cue_events):null,
-  architecture:index===4?{nodes:[1,1,1,1,1],links:Array.from({length:4},(_,i)=>clamp((local-i*1.8-1.1)/.4))}:null,
+  cascade:index===1?repostCascade(local-repostAt):null,
+  inputs:index===2?['screenshot','pdf','podcast','video'].map(name=>ready(name)):null,
+  overlay:index===5?active:null,
+  terminal:index===6?active:null,
+  architecture:index===4?{nodes:program?[.3,.3,.3,1,1]:[.65,1,1,.15,.15],links:program?[.2,.2,1,1]:[1,1,.1,.1],headline:principle}:null,
+  buildDisclosure:index===0&&ready('disclosure_build'),
+  postFocus:index===1&&ready('period'),question:index===2&&ready('question'),
+  results:index===7?{accuracy:ready('accuracy'),false_support:ready('false_support'),cost_time:ready('cost_time'),coverage:ready('coverage')}:null,
+  url:index===8&&ready('url'),wordmark:index===9&&ready('wordmark'),
   chapters:chapterState(t,chapters),fade:index===9?clamp((178-t)/1.2):1};
 }
 function chapterMarkup(segments){
@@ -56,6 +62,7 @@ function labelPositions(segments,widths,width=1920,padding=25){
  return centres;
 }
 function updateChapters(state){
+ document.querySelector('#chapters').style.opacity=state.fade;
  const labels=state.chapters.map(s=>{
   const segment=document.querySelector(`[data-segment="${s.scene}"]`),label=document.querySelector(`[data-chapter="${s.scene}"]`);
   segment.querySelector('b').style.transform=`scaleX(${s.fill})`;
@@ -70,28 +77,33 @@ const data=window.MOTION_DATA,stage=document.querySelector('#stage'),root='../..
 const esc=s=>String(s).replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;');
 let previous='',pending=[];
 const video=(path,classes='terminal')=>`<video muted preload="auto" class="${classes}" data-source="${esc(path)}" src="${root}${esc(path)}"></video>`;
-const post=()=>`<article class="post-card"><p class="post-byline">DappGo · Saved post</p>${data.post_text.split('\n\n').map((p,i)=>i===0?`<h2>${esc(p)}</h2>`:`<p>${esc(p)}</p>`).join('')}</article>`;
+const post=()=>`<article class="post-card"><p class="post-byline">Illustrative post</p>${data.post_text.split('\n\n').map((p,i)=>i===0?`<h2>${esc(p)}</h2>`:`<p class="post-paragraph${p.includes('Apple')?' apple-line':''}">${esc(p)}</p>`).join('')}<p class="post-focus"><strong>$416.2 billion</strong><br>… fiscal Q4 2025</p></article>`;
 function liveOverlay(event){
  if(!event)return '';
- const titles={draft:'4 · Corrected draft',evidence:'5 · SEC evidence',trace:'6 · Agent trace',receipt:'7 · Receipt'};
- const items=event.event==='draft'?'<p class="principal"><strong>$416.2B → $102.5B</strong></p>':event.event==='evidence'?'<div class="equation"><p><span>10-K annual</span><strong>$416.2B</strong></p><b>−</b><p><span>10-Q nine months</span><strong>$313.7B</strong></p><b>=</b><p><span>Fiscal Q4</span><strong>$102.5B</strong></p></div>':event.event==='trace'?`<p class="principal"><strong>${data.live_receipt?data.live_receipt.tool_calls:4}</strong> tool calls · <code>${esc(data.live_receipt?.model||'meta-models/muse-spark-open-1026')}</code></p>`:event.event==='receipt'?`<p class="principal">${data.live_receipt?`<strong>$${data.live_receipt.cost_usd.toFixed(4)}</strong> · <strong>${(data.live_receipt.latency_ms/1000).toFixed(1)}</strong> seconds`:'Measured cost · elapsed time · capture pending'}</p>`:'';
- return `<aside class="live-overlay" data-phase="${event.receipt_phase}" aria-label="${esc(event.overlay)}">${event.event==='evidence'?'':`<h2>${esc(titles[event.event]||event.overlay)}</h2>`}${items}</aside>`;
+ const titles={draft:'4 · Corrected draft',evidence:'5 · SEC evidence',trace:'6 · Agent trace',each:'6 · Each tool call',program:'6 · Program verdict',receipt:'7 · Live take'};
+ const items=event.event==='draft'?'<p class="principal"><strong>$416.2B → $102.5B</strong></p>':event.event==='evidence'?'<div class="equation"><p><span>10-K annual</span><strong>$416.2B</strong></p><b>−</b><p><span>10-Q nine months</span><strong>$313.7B</strong></p><b>=</b><p><span>Fiscal Q4</span><strong>$102.5B</strong></p></div>':event.event==='trace'?`<p class="principal"><strong>${data.live_receipt?data.live_receipt.tool_calls:4}</strong> tool calls · on the record</p>`:event.event==='receipt'?`<p class="principal">${data.live_receipt?`<strong>$${data.live_receipt.cost_usd.toFixed(4)}</strong> · <strong>${(data.live_receipt.latency_ms/1000).toFixed(1)} s</strong>`:'Measured cost · elapsed time · capture pending'}</p>`:'';
+ const binding=data.cues._events.v505.find(e=>e.event===event.event);
+ const native=binding?.native_check;
+ // The recorder reserves one of two full bands. Audit both speech boundaries
+ // against its rectangles; never infer clearance from overlay opacity.
+ const top=native?.overlay_band==='top';
+ return `<aside class="live-overlay${top?' top-band':''}" data-phase="${event.receipt_phase}" aria-label="${esc(event.overlay)}">${event.event==='evidence'?'':`<h2>${esc(titles[event.event]||event.overlay)}</h2>`}${items}</aside>`;
 }
 function body(state){
  const scene=data.scenes[state.index];
  if(state.liveTake){
-  const picture=scene.recording?video(scene.recording.asset,'live-take'):`<div class="pending"><h1>Host live capture pending</h1><p>${state.index===5?'One real check · seven receipt phases':'Corrected draft · both SEC filing links'}</p><p>Layout preview · no new live result</p></div>`;
+  const picture=scene.recording?video(scene.recording.asset,'live-take'):`<div class="pending"><h1>Host live capture pending</h1><p>${state.index===5?'One real check · sentence-bound receipt phases':'Corrected draft · both SEC filing links'}</p><p>Layout preview · no new live result</p></div>`;
   return `<section class="live-take-frame">${picture}${state.index===5?'<div id="live-overlay"></div>':'<aside class="live-overlay ending"><h2>Every number, checked against the filing.</h2></aside><span class="site-url">hackathon.dappgo.com</span>'}</section>`;
  }
  switch(state.index){
- case 0:return `<section class="scene brand intro"><div class="brand-rule"></div><p class="wordmark">${esc(data.brand.wordmark)}</p><h1>${esc(data.brand.title)}</h1><p class="disclosure" data-on-screen="${scene.id}">${esc(scene.on_screen)}</p></section>`;
- case 1:return `<section class="scene viral"><div class="cascade" aria-hidden="true">${state.cascade.map(()=>`<div class="post-copy">${post()}</div>`).join('')}</div><div class="post-original">${post()}</div><h1>A real number.<br>The wrong period.</h1></section>`;
- case 2:return `<section class="scene inputs"><h1>How do you check all of them?</h1><div class="input-tiles">${data.inputs.map(i=>`<article class="input-tile"><div class="asset-preview">${i.type==='audio'?`<div class="waveform" aria-label="Waveform from a.mp3">${data.waveform.map(v=>`<i style="height:${8+v*210}px"></i>`).join('')}</div>`:`<img src="${root}${i.preview}" alt="${esc(i.label)} preview from ${esc(i.source)}">`}</div><h2>${i.label}</h2></article>`).join('')}</div></section>`;
+ case 0:return `<section class="scene brand intro"><div class="brand-rule"></div><p class="wordmark">${esc(data.brand.wordmark)}</p><h1>${esc(data.brand.title)}</h1><p class="origin">DappGo existed before this hackathon.</p><p class="disclosure" data-on-screen="${scene.id}">${esc(scene.on_screen)}</p></section>`;
+ case 1:return `<section class="scene viral"><div class="cascade" aria-hidden="true">${state.cascade.map(()=>`<div class="post-copy">${post()}</div>`).join('')}</div><div class="post-original">${post()}</div><h1 class="viral-headline">A real number.<br>The wrong period.</h1></section>`;
+ case 2:return `<section class="scene inputs"><h1 class="inputs-headline">More than text.</h1><h1 class="inputs-question">How do you check all of them?</h1><div class="input-tiles">${data.inputs.map(i=>`<article class="input-tile"><div class="asset-preview">${i.type==='audio'?`<div class="waveform" aria-label="Waveform from a.mp3">${data.waveform.map(v=>`<i style="height:${8+v*210}px"></i>`).join('')}</div>`:`<img src="${root}${i.preview}" alt="${esc(i.label)} preview from ${esc(i.source)}">`}</div><h2>${i.label}</h2></article>`).join('')}</div></section>`;
  case 3:return '<section class="scene terminal-scene"><div id="terminal-rows"></div><p class="terminal-caption" id="batch-block"></p></section>';
  case 4:return `<div class="architecture">${data.architecture_svg}</div>`;
  case 6:return '<section class="scene terminal-scene"><div id="terminal-rows"></div><p class="terminal-caption" id="batch-block"></p></section>';
- case 7:{const m=data.metrics;return `<section class="scene results"><h1>Held-out text claims</h1><div class="metrics"><div class="metric"><strong>${(100*m.heldout_correct/m.heldout_n).toFixed(1)}%</strong><span>${m.heldout_correct}/${m.heldout_n} correct</span></div><div class="metric"><strong>${m.false_support}/${m.negative_n}</strong><span>false support</span></div><div class="metric"><strong>$${m.mean_cost_usd.toFixed(2)}</strong><span>mean / claim</span></div><div class="metric"><strong>${Math.round(m.median_claim_seconds)} s</strong><span>median / claim</span></div></div><p class="results-note">Real posts: coverage ≠ accuracy.</p><p class="provenance">Original v2 · Baseten · corrected gold · failures count as wrong</p></section>`;}
- case 9:return `<section class="scene brand outro"><div class="brand-rule"></div><div class="outro-stamp" aria-label="Site auditor robot stamps the sign-off"><div class="stamp-imprint" aria-hidden="true"></div><div class="stamp-robot">${Object.entries(data.brand_motion.poses).map(([pose,src])=>`<img data-pose="${pose}" src="${root}${src}" alt="">`).join('')}</div></div><h1>${esc(data.brand.url)}</h1><p class="credit">${esc(data.brand.credit)}</p><p class="wordmark">${esc(data.brand.wordmark)}</p></section>`;
+ case 7:{const m=data.metrics;return `<section class="scene results"><h1>Held-out text claims</h1><div class="metrics"><div class="metric" data-metric="accuracy"><strong>${(100*m.heldout_correct/m.heldout_n).toFixed(1)}%</strong><span>${m.heldout_correct}/${m.heldout_n} correct</span></div><div class="metric" data-metric="false_support"><strong>${m.false_support}/${m.negative_n}</strong><span>non-supported claims<br>wrongly supported</span></div><div class="metric" data-metric="cost_time"><strong>$${m.mean_cost_usd.toFixed(2)}</strong><span>mean / claim</span></div><div class="metric" data-metric="cost_time"><strong>${Math.round(m.median_claim_seconds)} s</strong><span>median / claim</span></div></div><p class="results-note">Real posts: coverage ≠ accuracy.</p><p class="provenance">Original v2 · Baseten · corrected gold · failures count as wrong</p></section>`;}
+ case 9:return `<section class="scene brand outro"><div class="brand-rule"></div><div class="outro-stamp" aria-label="Site auditor robot stamps the sign-off"><div class="stamp-imprint" aria-label="Completed stamp">DappGo</div><div class="stamp-robot">${Object.entries(data.brand_motion.poses).map(([pose,src])=>`<img data-pose="${pose}" src="${root}${src}" alt="">`).join('')}</div></div><h1>${esc(data.brand.url)}</h1><p class="credit">${esc(data.brand.credit)}</p><p class="wordmark">${esc(data.brand.wordmark)}</p></section>`;
  default:throw new Error('Unknown v5 scene');
  }
 }
@@ -117,11 +129,19 @@ window.seek=t=>{
   const block=document.querySelector('#batch-block');block.textContent=data.batch_labels[state.index===3?'comparison':terminal.block];block.dataset.block=terminal.block;
  }
  if(state.cascade)stage.querySelectorAll('.post-copy').forEach((el,i)=>{const s=state.cascade[i];el.style.cssText=`transform:translate(${s.x}px,${s.y}px) rotate(${s.rotation}deg) scale(${s.scale});opacity:${s.opacity}`;});
- if(state.inputs)stage.querySelectorAll('.input-tile').forEach((el,i)=>{el.style.transform=`translateY(${(1-state.inputs[i])*60}px)`;el.style.opacity=state.inputs[i];});
+ if(state.inputs)stage.querySelectorAll('.input-tile').forEach((el,i)=>{el.style.transform='none';el.style.opacity=1;});
  if(state.architecture){state.architecture.nodes.forEach((v,i)=>document.querySelector(`#node-${i}`).style.opacity=v);state.architecture.links.forEach((v,i)=>document.querySelector(`#link-${i}`).style.opacity=v);}
- const brand=stage.querySelector('.brand');if(brand){brand.style.opacity=state.fade;brand.style.setProperty('--reveal',Math.min(1,state.local/1.2));}
+ stage.dataset.active=state.active||'';
+ const visible=(selector,yes)=>{const el=stage.querySelector(selector);if(el){el.style.opacity=Number(Boolean(yes));el.style.visibility=yes?'visible':'hidden';}};
+ visible('.disclosure',state.buildDisclosure);visible('.origin',!state.buildDisclosure);
+ const viral=stage.querySelector('.viral');if(viral){viral.classList.toggle('focus-period',state.postFocus);viral.querySelector('.viral-headline').innerHTML=state.active==='question'?'Is it right?':state.active==='stakes'?'Numbers<br>move money.':'A real number.<br>The wrong period.';}
+ if(state.inputs){stage.querySelectorAll('.input-tile').forEach((el,i)=>el.classList.toggle('lit',state.inputs[i]));visible('.inputs-question',state.question);visible('.inputs-headline',!state.question);}
+ if(state.results){stage.querySelectorAll('[data-metric]').forEach(el=>{const yes=state.results[el.dataset.metric];el.classList.toggle('lit',yes);el.style.visibility=yes?'visible':'hidden';});visible('.results-note',state.results.coverage);}
+ visible('.site-url',state.url);visible('.outro .wordmark',state.wordmark);
+ const heading=stage.querySelector('.architecture [data-on-screen]');if(heading){heading.style.opacity=Number(state.architecture.headline);heading.style.visibility=state.architecture.headline?'visible':'hidden';}
+ const brand=stage.querySelector('.brand');if(brand){brand.style.opacity=state.fade;brand.style.setProperty('--reveal',1);}
  const stamp=stage.querySelector('.outro-stamp');if(stamp){
-  const motion=outroStampAt(state.local),robot=stamp.querySelector('.stamp-robot');
+  const motion=outroStampAt(Math.max(0,state.local-(data.scenes[9].cue_events.find(e=>e.event==='wordmark').picture_at_scene_s))),robot=stamp.querySelector('.stamp-robot');
   robot.dataset.pose=motion.pose;robot.style.transform=`translateY(${motion.dip}px) rotate(${motion.lean}deg)`;
   robot.querySelectorAll('img').forEach(img=>{img.style.opacity=Number(img.dataset.pose===motion.pose);});
   const ink=stamp.querySelector('.stamp-imprint');ink.style.opacity=motion.ink;ink.style.transform=`scale(${.9+.1*motion.ink}) rotate(-8deg)`;

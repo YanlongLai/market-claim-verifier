@@ -5,12 +5,12 @@ import argparse,copy,json,math,re
 from pathlib import Path
 import xml.etree.ElementTree as ET
 import yaml
-from motion_cues import map_sentences,sentence_subtitles
+from motion_cues import sentence_subtitles,split_phrases
 from pipeline import BuildError,file_hash,read_json,to_srt,subtitle_chunks
 ROOT=Path(__file__).resolve().parents[1]
 OUT='demo/motion/v5'
 BOUNDARIES=[0.,8.,20.,32.,46.,58.,116.,138.,154.,170.,178.]
-LIVE_PHASES=('use_apple_example','check_against_sec','verdict_reveal','draft_reveal','evidence_reveal','agent_trace_expand','hover_receipt')
+LIVE_PHASES=('live_workspace_reveal','use_apple_example','check_against_sec','verdict_reveal','draft_reveal','evidence_reveal','tool_call_2_reveal','tool_call_4_reveal','program_verdict_reveal','hover_receipt')
 CJK=re.compile('[\u2e80-\u9fff\uac00-\ud7af\uf900-\ufaff\U00020000-\U000323af]')
 
 def english_only(text,label):
@@ -25,9 +25,11 @@ def validate(story):
         if ' '.join(s['narration'].split())!=' '.join(' '.join(s['subtitle_cues']).split()):raise BuildError('Captions differ from locked narration')
         if any(len(c.splitlines())>2 or any(len(line)>42 for line in c.splitlines()) for c in s['subtitle_cues']):raise BuildError('Captions exceed 2 x 42')
         if s['cue_events'] and s['narration']!=' '.join(e['narration'] for e in s['cue_events']):raise BuildError('Cue words differ from locked narration')
+        if not s['cue_events'] or s.get('voice_cache_scene') or any(len(split_phrases(e['narration']))!=1 or len(subtitle_chunks(e['narration']))!=1 for e in s['cue_events']):
+            raise BuildError('Every v5 sentence/phrase requires its own voice unit; multi-sentence cache aliases are forbidden')
         if i in (5,8) and bool(s.get('placeholder'))==bool(s.get('recording')):raise BuildError('Live scene must be pending or recorded')
         if i not in (5,8) and (s.get('placeholder') or s.get('recording')):raise BuildError('Only live scenes accept recordings')
-    if tuple(e.get('receipt_phase') for e in scenes[5]['cue_events'])!=LIVE_PHASES or any(e.get('offset_s',0)!=0 for e in scenes[5]['cue_events']):raise BuildError('Live cues must cover all seven receipt phases, in order')
+    if tuple(e.get('receipt_phase') for e in scenes[5]['cue_events'])!=LIVE_PHASES or any(e.get('offset_s',0)!=0 for e in scenes[5]['cue_events']):raise BuildError('Live sentence cues must cover the recorded picture phases, in order')
     chapter=story['chapter_bar'];segments=chapter['segments']
     if len(segments)!=10 or sum(s['duration_s'] for s in segments)!=178:raise BuildError('Chapter segments must total 178 seconds')
     for i,s in enumerate(segments):
@@ -54,13 +56,32 @@ def cue_spans(scene,voice=None):
     if voice:
         spans=voice.get('cue_spans',[])
         if [s['event'] for s in spans]!=[s['event'] for s in events]:raise BuildError(f"{scene['id']}: measured cue sources missing or stale")
+    previous_end=0.;previous_speech_end=-1.
     for i,event in enumerate(events):
-        a=event['at_scene_s'];limit=events[i+1]['at_scene_s'] if i+1<len(events) else scene['target_s']-.15
-        if not math.isfinite(a) or a<0 or limit<=a:raise BuildError('Cue onsets must increase inside the scene')
-        duration=(spans[i]['source_end_s']-spans[i]['source_start_s']) if voice else min(len(event['narration'])/14,limit-a-.05)
-        if duration<=0 or a+duration>limit+1e-8:
+        floor=event['at_scene_s'];live=bool(event.get('receipt_phase'))
+        limit=events[i+1]['at_scene_s'] if live and i+1<len(events) else scene['target_s']-.15
+        if not math.isfinite(floor) or floor<0 or limit<=floor:raise BuildError('Cue onsets must increase inside the scene')
+        source=spans[i] if voice else None
+        if source:
+            if (source.get('narration')!=event['narration'] or source.get('measurement',{}).get('method')!='measured PCM speech bounds'
+                or not source.get('audio_sha256') or source['measurement'].get('audio_sha256')!=source['audio_sha256']):
+                raise BuildError(f"{scene['id']} / {event['event']}: measured sentence onset missing or stale; run voice on the host")
+            leading=source['speech_start_s'];duration=source['source_end_s']-source['source_start_s']
+            if not 0<=leading<source['speech_end_s']<=duration:raise BuildError('Invalid measured speech bounds')
+        else:
+            leading=0.;duration=min(len(event['narration'])/16,max(.1,limit-floor-.35))
+        # Web states follow the measured speech clock. Live phases are fixed by
+        # the continuous take; other sentences may move later to retain every sample.
+        onset=max(.2,floor+(.2 if live else 0),leading)
+        if voice and not i and not live and onset>.3:
+            raise BuildError(f"{scene['id']}: leading silence would expose the first picture more than 0.3 s before speech")
+        a=onset-leading
+        if not live:a=max(a,previous_end+(.06 if i else 0),previous_speech_end+.2-leading)
+        if duration<=0 or a+duration>limit+1e-8 or (live and a<previous_end-1e-8):
             raise BuildError(f"{scene['id']} / {event['event']}: measured voice {duration:.3f} s exceeds {limit-a:.3f} s visual budget. Retain the take; no speech is cut or accelerated.")
-        yield event,a,duration,spans[i] if voice else None
+        previous_end=a+duration
+        previous_speech_end=a+(source['speech_end_s'] if source else duration)
+        yield event,a,duration,source
 
 def voice_input(story):
     return dict(voice=story['voice'],scenes=[dict(id=s['id'],narration=s['narration'],cue_events=[
@@ -69,7 +90,7 @@ def voice_input(story):
 def measured_metadata(voices):
     if not voices:return None
     return [dict(voice_s=v['voice_s'],key=v['key'],artifacts={'audio':{'sha256':v['artifacts']['audio']['sha256']}},
-        **({'cue_spans':[{k:s[k] for k in ('event','source_start_s','source_end_s')} for s in v['cue_spans']]} if v.get('cue_spans') else {})) for v in voices]
+        **({'cue_spans':copy.deepcopy(v['cue_spans'])} if v.get('cue_spans') else {})) for v in voices]
 
 def architecture(root,on_screen):
     """Reuse the diagram, with its rendered headline bound to the storyboard."""
@@ -83,10 +104,10 @@ def architecture(root,on_screen):
     next(el for el in svg.findall('.//s:text',ns) if el.get('y')=='780').set('y','750')
     return ET.tostring(svg,encoding='unicode')
 
-def compile_data(root=ROOT,story=None,voices=None):
+def compile_data(root=ROOT,story=None,voices=None,*,preview=False):
     story=copy.deepcopy(story or yaml.safe_load((root/'demo/storyboard-v5.yaml').read_text()));validate(story)
     saved=read_json(root/OUT/'inputs.json') if (root/OUT/'inputs.json').is_file() else {}
-    if voices is None and saved.get('voices'):
+    if not preview and voices is None and saved.get('voices'):
         if saved.get('voice_input')!=voice_input(story):raise BuildError('Measured voice metadata is stale for the narration; host voice/measured step required')
         voices=saved['voices']
     portable=dict(version=1,voice_input=voice_input(story),voices=measured_metadata(voices),recordings={})
@@ -123,7 +144,7 @@ def compile_data(root=ROOT,story=None,voices=None):
             retained=saved.get('recordings',{}).get(scene['id'],{})
             if retained.get('recording')!=recording:raise BuildError('Live preview metadata differs from storyboard wiring')
             portable['recordings'][scene['id']]=retained
-    shots=[];cues={'_version':1,'_methods':{},'_analysis':{},'_events':{}}
+    shots=[];cues={'_version':2,'_methods':{},'_analysis':{},'_events':{}}
     for i,scene in enumerate(story['scenes']):
         voice=voices[i] if voices else None
         duration=voice['voice_s'] if voice else scene['target_s']-.3
@@ -132,16 +153,20 @@ def compile_data(root=ROOT,story=None,voices=None):
         local=[];events=[];segments=[]
         if scene['cue_events']:
             for event,at,length,source in cue_spans(scene,voice):
-                group,_=map_sentences(event['narration'],length,[],offset=at);local.extend(group)
-                events.append(dict(event=event['event'],cue=subtitle_chunks(event['narration'])[0].splitlines()[0],narration=event['narration'],t=shot['start']+at,cue_start=shot['start']+at,cue_end=shot['start']+at+length,receipt_phase=event.get('receipt_phase'),terminal_block=event.get('terminal_block'),alignment='measured cue source' if voice else 'target preview',review_at_start=True))
+                onset=at+(source['speech_start_s'] if source else 0)
+                end=at+(source['speech_end_s'] if source else length)
+                picture=max(0,onset-.2)
+                event['picture_at_scene_s']=picture
+                native=next((c for c in (live_receipt or {}).get('named_element_checks',[]) if c['phase']==event.get('receipt_phase')),None)
+                if voice and native and (onset<native['at_s'] or end>native.get('visible_until_s',-1)):
+                    raise BuildError(f"{scene['id']} / {event['event']}: named native element is not held through the measured last word; retain and repair the take")
+                local.append(dict(text=event['narration'],start=onset,end=end,event=event['event'],measured=bool(source),measurement=source['measurement'] if source else None))
+                events.append(dict(event=event['event'],cue=subtitle_chunks(event['narration'])[0].splitlines()[0],narration=event['narration'],t=shot['start']+picture,picture_start=shot['start']+picture,cue_start=shot['start']+onset,cue_end=shot['start']+end,receipt_phase=event.get('receipt_phase'),terminal_block=event.get('terminal_block'),alignment='measured PCM speech bounds' if voice else 'target preview',measured=bool(source),measurement=source['measurement'] if source else None,native_check=native,review_at_start=True))
                 if source:segments.append(dict(source_start_s=source['source_start_s'],source_end_s=source['source_end_s'],at_s=shot['start']+at,event=event['event']))
             shot['voice_end']=shot['start']+local[-1]['end']
             if voice:shot['voice_segments']=segments
-        else:
-            if duration+.15>scene['target_s']:raise BuildError(f"{scene['id']}: voice exceeds the binding cut")
-            local,_=map_sentences(scene['narration'],duration,[])
         cues[scene['id']]=[{**c,'start':shot['start']+c['start'],'end':shot['start']+c['end']} for c in local]
-        cues['_events'][scene['id']]=events;cues['_methods'][scene['id']]='measured cue sources / proportional subtitles' if voice else 'target preview; unmeasured'
+        cues['_events'][scene['id']]=events;cues['_methods'][scene['id']]='measured PCM speech bounds per sentence/phrase' if voice else 'target preview; unmeasured'
         cues['_analysis'][scene['id']]={'voice_key':voice['key'],'audio_sha256':voice['artifacts']['audio']['sha256']} if voice else {'source':'target preview; not synthesized'}
         shots.append(shot)
     timing=dict(version=2,source='measured cue sources / binding cuts' if voices else 'director targets; voice and new live capture pending',duration=178.,shots=shots,music_offset_s=story['music']['music_offset_s'],cut_rule='Fixed section 10 cuts; receipt-bound narration and overlays; no speech acceleration or truncation',placeholders=[s['id'] for s in story['scenes'] if s.get('placeholder')])
@@ -157,8 +182,9 @@ def compile_data(root=ROOT,story=None,voices=None):
     sources=set(metric_sources+['demo/storyboard-v5.yaml','demo/storyboard-v4.yaml','demo/assets/architecture-v4.svg','demo/assets/examples-v5/receipt.json','demo/assets/examples-v5/a.txt','demo/data/scale-v4.json',story['music']['beats']])
     for s in story['scenes']:sources.update(s['evidence'])
     for item in asset_receipt['inputs']+asset_receipt['derived']:sources.add(item['path'])
-    from terminal_v5 import compile_replays
+    from terminal_v5 import compile_replays,bind_replays
     terminal,terminal_sources=compile_replays(root);sources.update(terminal_sources)
+    terminal=bind_replays(terminal,story['scenes'],cues)
     sources.update(story['brand_motion']['poses'].values());sources.add(story['brand_motion']['source_script'])
     provenance={p:file_hash(root/p) for p in sorted(sources)}
     for retained in portable['recordings'].values():
@@ -174,6 +200,10 @@ def compile_data(root=ROOT,story=None,voices=None):
         for n,cue in enumerate(cues[shot['id']]):
             keyframes.append(dict(t=cue['start'],shot=shot['id'],cue=f'sentence {n+1} start'))
             keyframes.append(dict(t=max(cue['start'],cue['end']-1/30),shot=shot['id'],cue=f'sentence {n+1} end'))
+            keyframes.append(dict(t=cues['_events'][shot['id']][n]['picture_start'],shot=shot['id'],cue=f'sentence {n+1} picture ready'))
+    stamp_at=next(e['picture_start'] for e in cues['_events']['v509'] if e['event']=='wordmark')
+    if stamp_at+story['brand_motion']['duration_s']>176.8:raise BuildError('Robot stamp must complete before the sign-off fade')
+    keyframes.extend(dict(t=stamp_at+t,shot='v509',cue='sentence-bound completed stamp') for t in (0,.3,.6,1.1,1.6))
     keyframes.append(dict(t=178-1/30,shot='v509',cue='last encoded frame'))
     for index in (0,2,5,7,9):keyframes.append(dict(t=BOUNDARIES[index]+1,shot=f'v50{index}',cue='chapter sample'))
     data=dict(timing=timing,cues=cues,beats={'beats_s':[t-story['music']['music_offset_s'] for t in read_json(root/story['music']['beats'])['beats_s'] if t>=story['music']['music_offset_s']]},scenes=story['scenes'],chapter_bar=story['chapter_bar'],brand=story['brand'],brand_motion=story['brand_motion'],keyframes=sorted(keyframes,key=lambda f:f['t']),subtitles=[dict(start=c.start,end=c.end,text=c.text) for c in captions],metrics=values,post_text=(root/'demo/assets/examples-v5/a.txt').read_text().strip(),inputs=inputs,waveform=waveform,architecture_svg=architecture(root,story['scenes'][4]['on_screen']),live_receipt=dict(cost_usd=live_receipt['result']['cost_usd'],latency_ms=live_receipt['result']['latency_ms'],model=live_receipt['result']['model'],tool_calls=len([e for e in live_receipt['result']['events'] if e['kind']=='tool_call'])) if live_receipt else None,terminal_replays=terminal,batch_labels=story['terminal_captions'],live_named_elements=live_receipt.get('named_element_checks',[]) if live_receipt else [],ending_named_elements=portable['recordings'].get('v508',{}).get('receipt',{}).get('ending_frame',{}).get('named_elements',[]),portable_inputs=portable,provenance=provenance,asset_status={'live':('new v7 capture wired' if live_receipt.get('capture_version')==7 else 'host re-record required: legacy take has no audited startup cover') if live_receipt else 'host capture pending','voice':'measured' if voices else 'unmeasured layout preview','terminal':'literal saved PTY ranges; no new OCR/ASR','broll':'none'})
@@ -210,15 +240,15 @@ def prepare(builder,*,require_voice=False):
     return data['timing']
 
 def main():
-    parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('--check',action='store_true');parser.add_argument('--measured',action='store_true');args=parser.parse_args()
+    parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('--check',action='store_true');mode=parser.add_mutually_exclusive_group();mode.add_argument('--measured',action='store_true');mode.add_argument('--preview',action='store_true',help='Discard obsolete measured metadata for layout only; sync/export refuse previews');args=parser.parse_args()
     if args.measured:
         from build import Builder,parser as build_parser
         builder=Builder(build_parser().parse_args(['keyframes','--storyboard',str(ROOT/'demo/storyboard-v5.yaml')]))
         data=compile_data(ROOT,builder.story,[builder.require_voice(s) for s in builder.scenes])
-    else:data=compile_data()
+    else:data=compile_data(preview=args.preview)
     for name,content in artifacts(data).items():
         if args.check:
             if (ROOT/name).read_text()!=content:raise SystemExit(f'{name} stale; compile with the same timing mode')
         else:(ROOT/name).write_text(content)
-    print(f"PASS v5: 10 cuts / 178 s; seven receipt-bound overlays; English captions <=2 x 42; {data['asset_status']['voice']}")
+    print(f"PASS v5: 10 cuts / 178 s; one source per sentence/phrase; English captions <=2 x 42; {data['asset_status']['voice']}")
 if __name__=='__main__':main()

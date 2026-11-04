@@ -4,6 +4,7 @@ import {readFileSync} from 'node:fs';
 import vm from 'node:vm';
 import {stateAt,boundaries,chapterState,repostCascade,overlayAt,terminalAt,outroStampAt} from '../motion/v5/plan.js';
 import {labelPositions} from '../motion/v5/chapters.js';
+import {targets} from '../motion/v5/sentence-targets.mjs';
 import {assertNamedClearance,checkV5Layout} from '../motion/v5/layout-checks.mjs';
 import {installCaptureDOM,validateGeometry,hasCJK,presentation,showTraceAndFiling,validateLiveResult,redact,endingExpectedLinks,coverDocument,captureCoverCSS,revealCaptureDOM,namedSelectors} from '../record_v5.mjs';
 import {parseArgs} from '../motion/render.mjs';
@@ -18,15 +19,18 @@ test('ten binding cuts, full-frame live playback, 178-second film',()=>{
  for(const t of [58,89,115.99,154,169.99])assert.deepEqual(state(t).liveTake,{scale:1,x:0,y:0});
  assert.equal(parseArgs(['--entry','v5/index.html','--t','100','--out','/tmp/v5']).entry,'v5/index.html');
 });
-test('seven live overlays change exactly at their receipt phase, never early',()=>{
- const events=scenes[5].cue_events;assert.equal(events.length,7);
- assert.equal(overlayAt(0,events),null);
+test('live cards arrive 0.2 s before their sentence and trace starts on the first tool row',()=>{
+ const events=scenes[5].cue_events;assert.equal(events.length,10);
  for(const [i,e] of events.entries()){
-  assert.equal(state(58+e.at_scene_s).overlay.event,e.event);
-  assert.equal(state(58+e.at_scene_s-1/300).overlay?.event,i?events[i-1].event:undefined);
-  const cue=data.cues._events.v505.find(c=>c.event===e.event);assert.equal(cue.t,58+e.at_scene_s);assert.equal(cue.cue_start,cue.t);
+  const at=e.picture_at_scene_s;
+  assert.equal(state(58+at).overlay.event,e.event);
+  if(at>0)assert.equal(state(58+at-1/300).overlay?.event,i?events[i-1].event:undefined);
+  const cue=data.cues._events.v505.find(c=>c.event===e.event);
+  assert(Math.abs(cue.cue_start-cue.t-.2)<1e-7);
  }
- assert.deepEqual(events.map(e=>e.receipt_phase),['use_apple_example','check_against_sec','verdict_reveal','draft_reveal','evidence_reveal','agent_trace_expand','hover_receipt']);
+ assert.equal(events.find(e=>e.event==='trace').receipt_phase,'tool_call_2_reveal');
+ assert.equal(events.find(e=>e.event==='each').receipt_phase,'tool_call_4_reveal');
+ assert.equal(events.find(e=>e.event==='program').receipt_phase,'program_verdict_reveal');
 });
 test('duration-weighted chapter fill is exact on every film frame',()=>{
  for(let frame=0;frame<=178*30;frame++){
@@ -38,7 +42,7 @@ test('duration-weighted chapter fill is exact on every film frame',()=>{
 });
 test('cascade duplicates seven real HTML cards and settles without counters',()=>{
  assert.equal(repostCascade(0).length,7);
- assert(repostCascade(2)[6].x<repostCascade(8)[6].x);
+ assert(repostCascade(.5)[6].x<repostCascade(8)[6].x);
  assert.deepEqual(repostCascade(9),repostCascade(11.9));
  assert(state(8).cascade.every(c=>c.opacity===0));
  const app=readFileSync(new URL('../motion/v5/app.js',import.meta.url),'utf8');
@@ -46,7 +50,7 @@ test('cascade duplicates seven real HTML cards and settles without counters',()=
  assert(!app.includes('.png\'')&&!app.includes('broll'));
 });
 test('all four real input tiles are present together after the entrance',()=>{
- assert.equal(data.inputs.length,4);assert.deepEqual(state(31).inputs,[1,1,1,1]);
+ assert.equal(data.inputs.length,4);assert.deepEqual(state(31).inputs,[true,true,true,true]);
  assert.equal(data.inputs[1].preview,'demo/assets/examples-v5/a-pdf-page1.png');
  assert.equal(data.inputs[2].source,'a.mp3');assert.equal(data.inputs[3].preview,'demo/assets/examples-v5/a-video-frame.png');
 });
@@ -109,10 +113,14 @@ test('first document bytes hide the page until an audited zoomed layout is insta
  const html=coverDocument('<html><head><script>site()</script></head><body>Product page</body></html>');
  assert(html.indexOf('capture-boot-cover')<html.indexOf('<script>'));
  assert(html.includes(`>${captureCoverCSS}</style>`));assert.throws(()=>coverDocument('<body>page</body>'));
- const document={documentElement:{style:{zoom:'1.95'},dataset:{}},body:{},querySelector:()=>({})};
+ const document={documentElement:{style:{zoom:'1.95'},dataset:{}},body:{},querySelector:()=>({getBoundingClientRect:()=>({left:180,right:1740,top:180,bottom:480,width:1560,height:300})})};
  const fixture={document,getComputedStyle:(_el,pseudo)=>pseudo?{backgroundColor:'rgb(247, 245, 239)',visibility:'visible',display:'block'}:{visibility:'hidden'}};
  vm.runInNewContext(`(${revealCaptureDOM.toString()})()`,fixture);
  assert.equal(document.documentElement.dataset.captureReady,'true');
+ delete document.documentElement.dataset.captureReady;
+ document.querySelector=()=>({getBoundingClientRect:()=>({left:180,right:1740,top:900,bottom:1200,width:1560,height:300})});
+ assert.throws(()=>vm.runInNewContext(`(${revealCaptureDOM.toString()})()`,fixture),/not_framed/);
+ assert.equal(document.documentElement.dataset.captureReady,undefined);
  document.documentElement.style.zoom='1';delete document.documentElement.dataset.captureReady;
  assert.throws(()=>vm.runInNewContext(`(${revealCaptureDOM.toString()})()`,fixture));
  assert.equal(document.documentElement.dataset.captureReady,undefined);
@@ -131,9 +139,9 @@ test('all chapter labels keep 24 px on either side, including Results / Fix / Da
 });
 
 test('rendered on_screen nodes equal their storyboard strings, including changed copy',()=>{
- const stage={innerHTML:'',querySelector:()=>null,querySelectorAll:()=>[]};
+ const stage={innerHTML:'',dataset:{},querySelector:()=>null,querySelectorAll:()=>[]};
  const element=()=>({style:{},getBoundingClientRect:()=>({width:100}),classList:{toggle(){}},querySelector:()=>({style:{}})});
- const context={window:{MOTION_DATA:structuredClone(data)},document:{querySelector:s=>s==='#stage'?stage:s==='#chapter-layer'?{}:s.startsWith('[data-')||s.startsWith('#node-')||s.startsWith('#link-')?element():null}};
+ const context={window:{MOTION_DATA:structuredClone(data)},document:{querySelector:s=>s==='#stage'?stage:s==='#chapter-layer'?{}:s==='#chapters'||s.startsWith('[data-')||s.startsWith('#node-')||s.startsWith('#link-')?element():null}};
  vm.runInNewContext(readFileSync(new URL('../motion/v5/bundle.js',import.meta.url),'utf8')+'\nglobalThis.sceneBody=body;',context);
  const decode=s=>s.replaceAll('&lt;','<').replaceAll('&gt;','>').replaceAll('&quot;','"').replaceAll('&amp;','&');
  let count=0;
@@ -150,13 +158,14 @@ test('rendered on_screen nodes equal their storyboard strings, including changed
 });
 
 test('every frame of the batch run shows saved CoreWeave verdicts and no failure panel',()=>{
- for(let f=0;f<5*30;f++){
+ const end=data.terminal_replays.beat6.blocks[0].end_s;
+ for(let f=0;f/30<end;f++){
   const picture=terminalAt(f/30,data.terminal_replays.beat6),text=picture.rows.map(r=>r.text).join('\n');
   assert.equal(picture.block,'run');assert(text.includes('FY2024 · SUPPORTED'));assert(text.includes('$51.31B → $5.131B'));assert(text.includes('FY2023 · CONTRADICTED'));
   assert(!/FAILED|INSUFFICIENT|UNCHECKED/.test(text));assert(picture.rows.every(r=>r.row!==12));
  }
- assert(terminalAt(4.99,data.terminal_replays.beat6).rows.some(r=>r.text==='$2.29B → $229M'));
- assert.equal(terminalAt(5,data.terminal_replays.beat6).block,'ocr');
+ assert(terminalAt(end-.001,data.terminal_replays.beat6).rows.some(r=>r.text==='$2.29B → $229M'));
+ assert.equal(terminalAt(end,data.terminal_replays.beat6).block,'ocr');
 });
 
 test('overlay audit rejects any intersection with named evidence, verdict, correction, trace or receipt',()=>{
@@ -179,13 +188,37 @@ test('outro uses the site stamp / stamp-down / approve poses and settles within 
 
 test('actual-frame audit rejects a translucent band, cramped labels and scene text in the rail lane',async()=>{
  const current=state(116),widths=Array(10).fill(90),centres=labelPositions(segments,widths);
- const actual={cjk:false,inserts:0,bar:{height:12,width:1920,top:844},band:{left:0,right:1920,top:790,bottom:1080,colour:'rgb(17, 26, 32)',opacity:'1'},
+ const actual={sentenceChecks:[],cjk:false,inserts:0,bar:{height:12,width:1920,top:844},band:{left:0,right:1920,top:790,bottom:1080,colour:'rgb(17, 26, 32)',opacity:'1'},
   labels:centres.map((c,i)=>({font:32,left:c-45,right:c+45,bottom:834,current:i===6})),
   segments:current.chapters.map(s=>({width:1920*s.duration_s/178,fill:s.fill})),onScreen:[],
   textBoxes:[{text:'Saved replay',bottom:748}],terminalCaption:{font:56,bottom:748},namedChecks:[],overlay:null,video:null};
  await checkV5Layout({evaluate:async()=>actual},current);
- await assert.rejects(()=>checkV5Layout({evaluate:async()=>({...actual,captureVersion:6})},state(58)),/v7 take/);
+ await assert.rejects(()=>checkV5Layout({evaluate:async()=>({...actual,captureVersion:6})},state(58)),/v8 take/);
  for(const mutate of [a=>a.band.colour='rgba(17, 26, 32, 0.96)',a=>a.labels[9].left=a.labels[8].right+12,a=>a.terminalCaption.bottom=800,a=>a.textBoxes[0].bottom=844]){
   const changed=structuredClone(actual);mutate(changed);await assert.rejects(()=>checkV5Layout({evaluate:async()=>changed},current));
  }
+});
+
+test('every voice row has named frame targets and later referents wait for their sentence',()=>{
+ let count=0;
+ for(const scene of scenes)for(const e of scene.cue_events){assert(targets[scene.id][e.event]?.length);count++;}
+ assert.equal(count,43);
+ const when=(i,name)=>boundaries[i]+scenes[i].cue_events.find(e=>e.event===name).picture_at_scene_s;
+ assert(state(when(1,'reposts')-.01).cascade.every(c=>c.opacity===0));
+ assert(state(when(1,'reposts')+.2).cascade.some(c=>c.opacity>0));
+ assert.deepEqual(state(when(2,'formats')+.1).inputs,[false,false,false,false]);
+ for(const [i,name] of ['screenshot','pdf','podcast','video'].entries()){
+  const lights=state(when(2,name)+.001).inputs;assert(lights[i]);assert.equal(lights.filter(Boolean).length,i+1);
+ }
+ assert.equal(state(when(2,'question')-.01).question,false);assert(state(when(2,'question')).question);
+ assert.equal(state(when(4,'program')-.01).architecture.nodes[3],.15);
+ assert.equal(state(when(4,'program')+.01).architecture.nodes[3],1);
+ assert.equal(state(when(4,'principle')-.01).architecture.headline,false);assert(state(when(4,'principle')).architecture.headline);
+ for(const name of ['false_support','cost_time','coverage']){assert.equal(state(when(7,name)-.01).results[name],false);assert(state(when(7,name)).results[name]);}
+ assert.equal(state(when(8,'url')-.01).url,false);assert(state(when(8,'url')).url);
+ assert.equal(state(when(9,'wordmark')-.01).wordmark,false);assert(state(when(9,'wordmark')).wordmark);
+ const terminal=name=>terminalAt(scenes[3].cue_events.find(e=>e.event===name).picture_at_scene_s+.001,data.terminal_replays.beat3).rows.map(r=>r.text).join('\n');
+ assert(!terminal('agent').includes('90.5%'));assert(terminal('nine').includes('90.5%'));
+ const median=terminalAt(scenes[6].cue_events.find(e=>e.event==='median').picture_at_scene_s+.001,data.terminal_replays.beat6);
+ assert(!median.rows.some(r=>r.text.includes('1,000')));
 });

@@ -179,7 +179,8 @@ def review_frames(builder) -> None:
         captioned='captioned/'+actual['file']
         subtitle=motion_media.caption_review_frame(output/actual['file'],output/captioned,subtitles,actual['t'],
                                                   font_size=56 if builder.story.get('motion_variant') in ('v3','v5') else 50)
-        index.append({**expected,'file':actual['file'],'captioned_file':captioned,'subtitle':subtitle})
+        index.append({**expected,'file':actual['file'],'captioned_file':captioned,'subtitle':subtitle,
+                      **({'frame_audit':actual['layout']['v5']['sentenceChecks']} if builder.story.get('motion_variant')=='v5' else {})})
     write_json(output/'index.json',index)
     write_json(output/'evidence.json',dict(status='rendered',duration=timing['duration'],
                subtitles=dict(file=srt.name,sha256=file_hash(srt)),

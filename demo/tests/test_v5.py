@@ -28,19 +28,38 @@ def test_chapter_durations_and_safe_lane(story):
 def test_phase_coverage_and_real_receipt_clock(story):
     scene=story['scenes'][5]
     assert tuple(e['receipt_phase'] for e in scene['cue_events'])==LIVE_PHASES
-    receipt={'timings':[{'phase':phase,'at_s':t} for phase,t in zip(LIVE_PHASES,[1,5,23,26,30,37,51])]}
+    times=[e['preview_at_scene_s'] for e in scene['cue_events']]
+    receipt={'timings':[dict(phase=p,at_s=t) for p,t in zip(LIVE_PHASES,times)]}
     events=recorder.live_cue_events(scene,receipt)
-    assert [e['at_scene_s'] for e in events]==[1,5,23,26,30,37,51]
-    assert all(e.get('offset_s',0)==0 for e in events)
+    assert [e['at_scene_s'] for e in events]==times
+    assert events[6]['receipt_phase']=='tool_call_2_reveal'
+    assert events[7]['receipt_phase']=='tool_call_4_reveal'
+    assert events[8]['receipt_phase']=='program_verdict_reveal'
     receipt['timings'].pop()
-    with pytest.raises((KeyError,recorder.RecordingError)):recorder.live_cue_events(scene,receipt)
+    with pytest.raises(recorder.RecordingError):recorder.live_cue_events(scene,receipt)
 
-def test_overlay_and_narration_have_identical_onsets(data):
-    for scene in data['scenes']:
-        for event in data['cues']['_events'][scene['id']]:
-            assert event['t']==event['cue_start']
-            assert event['cue_start']>=scene['target_start_s']
-    assert len(data['cues']['_events']['v505'])==7
+def synthetic_voices(story):
+    voices=[]
+    for scene in story['scenes']:
+        spans=[]
+        for i,event in enumerate(scene['cue_events']):
+            m=dict(method='measured PCM speech bounds',audio_sha256='f'*64,sample_rate=24000,window_frames=120,threshold_dbfs=-50,onset_frame=2400,end_frame=19200,speech_start_s=.1,speech_end_s=.8)
+            spans.append(dict(event=event['event'],narration=event['narration'],source_start_s=i,source_end_s=i+1,speech_start_s=.1,speech_end_s=.8,audio_sha256='f'*64,voice_key=event['event'],measurement=m))
+        voices.append(dict(voice_s=len(spans),key=scene['id'],artifacts={'audio':{'sha256':'f'*64}},cue_spans=spans))
+    return voices
+
+@pytest.fixture(scope='module')
+def measured_data(story):return compile_data(story=story,voices=synthetic_voices(story))
+
+def test_picture_leads_every_measured_unit_without_hiding_previous_speech(measured_data):
+    for scene in measured_data['scenes']:
+        previous_end=-1
+        for event in measured_data['cues']['_events'][scene['id']]:
+            assert event['cue_start']-event['picture_start']==pytest.approx(.2)
+            assert event['picture_start']>=previous_end-1e-7
+            assert event['alignment']=='measured PCM speech bounds'
+            previous_end=event['cue_end']
+    assert len(measured_data['cues']['_events']['v505'])==10
 
 def test_every_boundary_and_phase_has_keyframe(data):
     frames=data['keyframes']
@@ -48,15 +67,21 @@ def test_every_boundary_and_phase_has_keyframe(data):
     for e in data['cues']['_events']['v505']:assert any(f['shot']=='v505' and f['t']==e['t']+.15 for f in frames)
     assert sum(f['cue']=='chapter sample' for f in frames)==5
 
-def test_sentence_ledger_covers_every_phrase_with_start_and_end_evidence(data):
+def test_sentence_ledger_covers_every_phrase_with_start_and_end_evidence(measured_data):
+    data=measured_data
     from sync_v5 import ledger_rows
     index=[dict(shot=f['shot'],t=f['t'],captioned_file=f"captioned/{i:04}.png") for i,f in enumerate(data['keyframes'])]
+    for frame in index:
+        events=[e for e in data['cues']['_events'][frame['shot']] if e['cue_start']-1e-7<=frame['t']<=e['cue_end']+1e-7]
+        frame['frame_audit']=[dict(scene=frame['shot'],event=e['event'],at_s=frame['t'],status='pass',measured=True,elements=[{'name':'synthetic native proof'}]) for e in events]
     rows=ledger_rows(data['timing'],data['cues'],index)
     expected=sum(len(data['cues'][s['id']]) for s in data['scenes'])
     assert len(rows)==expected
     assert all(r['status']=='pending' and r['verified_frame'] is None for r in rows)
-    assert {r['cue_unit'] for r in rows if r['scene']=='v505'}=={'paste','tools','verdict','draft','evidence','trace','receipt'}
-    assert all(r['cue_start_s']<r['cue_end_s'] and r['required_visual'] for r in rows)
+    assert {r['cue_unit'] for r in rows if r['scene']=='v505'}=={'live','paste','tools','verdict','draft','evidence','trace','each','program','receipt'}
+    assert all(r['measured_onset'] and r['actual_sentence_start_s']==r['cue_start_s'] and r['cue_start_s']<r['cue_end_s'] and r['required_visual'] for r in rows)
+    bad=copy.deepcopy(index);[f.pop('frame_audit') for f in bad]
+    with pytest.raises(BuildError,match='actual-frame'):ledger_rows(data['timing'],data['cues'],bad)
     with pytest.raises(BuildError):ledger_rows(data['timing'],data['cues'],[])
 
 def test_english_only_templates_data_and_captions(data):
@@ -83,31 +108,37 @@ def test_terminal_blocks_match_narrated_clauses(story,data):
     receipt=data['terminal_replays']['beat6']
     assert receipt['duration_s']==22
     blocks={b['block']:b['at_s'] for b in receipt['blocks']}
-    for e in story['scenes'][6]['cue_events']:
-        assert blocks[e['event']]==e['at_scene_s']
+    for e in data['scenes'][6]['cue_events']:
+        assert blocks[e['event']]==pytest.approx(e['picture_at_scene_s'])
     assert [b['block'] for b in receipt['blocks']]==['run','ocr','asr','median','projection']
     comparison=data['terminal_replays']['beat3'];assert comparison['duration_s']==14
     starts={b['block']:b['at_s'] for b in comparison['blocks']}
-    for e in story['scenes'][3]['cue_events']:
-        assert starts[e['terminal_block']]==e['at_scene_s']
+    for e in data['scenes'][3]['cue_events']:
+        assert starts[e['terminal_block']]==pytest.approx(e['picture_at_scene_s'])
 
 def test_legacy_take_preserved_but_cannot_enter_final_film(story,data):
-    if data['portable_inputs']['recordings']['v505']['receipt']['capture_version']<recorder.CAPTURE_VERSION:
-        with pytest.raises(recorder.RecordingError,match='startup cover|does not exist'):recorder.check_recordings(story)
+    retained=read_json(ROOT/'demo/prep/v5/r3/inputs-before.json')
+    assert retained['recordings']['v505']['receipt']['capture_version']==7
+    assert recorder.CAPTURE_VERSION==8
+    pending=copy.deepcopy(story)
+    for scene in pending['scenes']:
+        if scene['id'] in recorder.BEATS:scene.pop('recording',None);scene['placeholder']=True
+    with pytest.raises(recorder.RecordingError,match='live take missing'):recorder.check_recordings(pending)
     assert recorder.BEATS=={'v505':('beat6',58.),'v508':('beat9',16.)}
-    assert {s['id'] for s in story['scenes'] if s.get('recording')}=={'v505','v508'}
+    for scene in story['scenes']:
+        if scene['id'] in recorder.BEATS:assert bool(scene.get('placeholder'))!=bool(scene.get('recording'))
 
 def proof():
-    events=[{'kind':'tool_call'} for _ in range(4)]+[{'kind':'verdict'}]
-    phases=[*LIVE_PHASES,*[f'tool_call_{i+1}_reveal' for i in range(4)],'program_verdict_reveal']
-    timings=[{'phase':phase,'at_s':i+1} for i,phase in enumerate(phases)]
+    events=[{'kind':'model'}]+[e for _ in range(4) for e in ({'kind':'tool_call'},{'kind':'tool_result'})]+[{'kind':'verdict'}]
+    phases=list(dict.fromkeys([*LIVE_PHASES,'agent_trace_expand','tool_call_6_reveal','tool_call_8_reveal']))
+    timings=[dict(phase=phase,at_s=i+1) for i,phase in enumerate(phases)]
     rect=dict(name='native referent',left=180,right=800,top=180,bottom=400)
     return dict(capture_version=recorder.CAPTURE_VERSION,zoom=1.95,live_checks=1,result={'events':events},timings=timings,
-        startup_cover=dict(injected_before_content=True,colour='#f7f5ef',cover_present=True,cover_opaque=True,layout_installed=True,zoom=1.95,release_geometry_index=0,released_at_s=.6),
-        named_element_checks=[dict(t,elements=[dict(rect)]) for t in timings],
-        ending_frame={'both_links':2,'visible_together':True,'named_elements':[dict(rect),dict(rect)]},
-        geometry_checks=[{'at_s':.5,'zoom':1.95,'source_width':1560,'left_margin':180,'right_margin':180,'horizontal_overflow':0}],
-        language_checks=[{'text_nodes':0,'attributes':0,'language_switches':0}],choreography={'trace_details_open':True,'apple_inspect_open':True,'program_verdict_shown':True,'after_click_s':50,'beat6_actions_end_s':55,'trace_steps_shown':[{'index':i,'kind':e['kind'],'visible':True,'hold_ms':700} for i,e in enumerate(events)],'apple_derivation':{'annual':416161000000,'nine_months':313695000000,'quarter':102466000000,'hold_ms':2000}})
+        startup_cover=dict(injected_before_content=True,colour='#f7f5ef',cover_present=True,cover_opaque=True,layout_installed=True,zoom=1.95,release_geometry_index=0,released_at_s=-.1,workspace_framed_before_release=True,decoded_workspace_start=True,workspace_rect=dict(left=180,right=1740,top=180,bottom=480),source_start_s=1.1,first_native_frame_s=1.,source_cover_release_s=.95,video_clock_offset_s=.05),
+        named_element_checks=[dict(t,elements=[dict(rect)],visible_until_s=t['at_s']+1,overlay_band='bottom') for t in timings],
+        ending_frame={'both_links':2,'visible_together':True,'named_elements':[dict(rect),dict(rect),dict(rect)]},
+        geometry_checks=[{'at_s':-.2,'zoom':1.95,'source_width':1560,'left_margin':180,'right_margin':180,'horizontal_overflow':0}],
+        language_checks=[{'text_nodes':0,'attributes':0,'language_switches':0}],choreography={'trace_details_open':True,'apple_inspect_open':True,'program_verdict_shown':True,'after_click_s':50,'beat6_actions_end_s':55,'trace_steps_shown':[{'index':i,'kind':e['kind'],'visible':True,'hold_ms':700} for i,e in enumerate(events) if e['kind'] in ('tool_call','verdict')],'apple_derivation':{'annual':416161000000,'nine_months':313695000000,'quarter':102466000000,'hold_ms':2000}})
 
 def test_recorder_validates_actual_raw_apple_values():recorder.check_choreography(proof())
 @pytest.mark.parametrize('mutation',[
@@ -124,7 +155,7 @@ def test_recorder_validates_actual_raw_apple_values():recorder.check_choreograph
  lambda p:p.update(capture_version=6),
  lambda p:p.pop('startup_cover'),
  lambda p:p['startup_cover'].update(injected_before_content=False),
- lambda p:p['startup_cover'].update(released_at_s=.4),
+ lambda p:p['startup_cover'].update(released_at_s=.8),
  lambda p:p['startup_cover'].update(release_geometry_index=1),
  lambda p:p['geometry_checks'][0].update(zoom=1),
  lambda p:p['named_element_checks'].pop(),
@@ -135,12 +166,13 @@ def test_capture_failures_are_rejected(mutation):
     receipt=proof();mutation(receipt)
     with pytest.raises(recorder.RecordingError):recorder.check_choreography(receipt)
 
-def test_no_early_or_overrunning_voice(data):
-    scene=copy.deepcopy(data['scenes'][5]);spans=[]
-    for event in scene['cue_events']:spans.append({'event':event['event'],'source_start_s':0,'source_end_s':1})
-    placed=list(cue_spans(scene,{'cue_spans':spans}));assert placed[0][1]==scene['cue_events'][0]['at_scene_s']
-    spans[0]['source_end_s']=scene['target_s']
-    with pytest.raises(BuildError,match='no speech is cut or accelerated'):list(cue_spans(scene,{'cue_spans':spans}))
+def test_no_early_or_overrunning_voice(story):
+    scene=copy.deepcopy(story['scenes'][5]);voice=synthetic_voices(story)[5]
+    placed=list(cue_spans(scene,voice));assert placed[0][1]==pytest.approx(.1)
+    bad=copy.deepcopy(voice);bad['cue_spans'][0].pop('measurement')
+    with pytest.raises(BuildError,match='measured sentence onset'):list(cue_spans(scene,bad))
+    voice['cue_spans'][0]['source_end_s']=scene['target_s']
+    with pytest.raises(BuildError,match='no speech is cut or accelerated'):list(cue_spans(scene,voice))
 
 def test_unchanged_voice_cache_aliases_and_renderer(tmp_path,story):
     # The disposable verifier does not need the private narrator reference.
@@ -167,7 +199,11 @@ def test_rendered_on_screen_is_the_storyboard_copy(story,data):
     assert ET.fromstring(architecture(ROOT,changed)).find('.//*[@data-on-screen="v504"]').text==changed
     assert 'disclosure' not in data['brand']  # One source: v500.on_screen, exercised in the JS renderer test.
 
-def test_portable_measured_metadata_rebuilds_without_private_media(data,monkeypatch):
+def test_portable_measured_metadata_rebuilds_without_private_media(measured_data,monkeypatch):
+    import motion_v5
+    data=measured_data
+    read=motion_v5.read_json
+    monkeypatch.setattr(motion_v5,'read_json',lambda p:data['portable_inputs'] if p==ROOT/'demo/motion/v5/inputs.json' else read(p))
     original=Path.is_file
     monkeypatch.setattr(Path,'is_file',lambda p:False if 'cache/live-takes/' in p.as_posix() else original(p))
     assert compile_data()==data
@@ -175,7 +211,7 @@ def test_portable_measured_metadata_rebuilds_without_private_media(data,monkeypa
 
 def test_batch_run_uses_exact_saved_three_verdict_rows(data):
     run=data['terminal_replays']['beat6']['blocks'][0]
-    assert run['block']=='run' and run['at_s']==0 and run['end_s']==5
+    assert run['block']=='run' and run['at_s']==0 and run['end_s']==pytest.approx(data['scenes'][6]['cue_events'][1]['picture_at_scene_s'])
     assert 4.01<run['source_start_s']<run['source_end_s']<6
     for frame in run['frames']:
         text='\n'.join(r['text'] for r in frame['rows'])
@@ -243,3 +279,83 @@ def test_cue_audio_assembly_retains_every_sample_and_receipts(tmp_path):
     assert [s['source_start_s'] for s in voice['cue_spans']]==[0,.1]
     assert [s['source_end_s'] for s in voice['cue_spans']]==[.1,.2]
     assert require(builder,scene)==voice
+
+def test_every_sentence_has_a_private_unit_and_no_multi_sentence_alias(story):
+    from voice_v5 import units
+    assert sum(len(s['cue_events']) for s in story['scenes'])==43
+    for scene in story['scenes']:
+        assert not scene.get('voice_cache_scene')
+        assert [u['narration'] for u in units(scene)]==[e['narration'] for e in scene['cue_events']]
+        for unit in units(scene):assert unit['id'].startswith(scene['id']+'-')
+    for mutation in ('remove','merge','alias'):
+        changed=copy.deepcopy(story);scene=changed['scenes'][1]
+        if mutation=='remove':scene['cue_events']=[]
+        elif mutation=='merge':scene['cue_events'][0]['narration']+=' Another sentence.'
+        else:scene['voice_cache_scene']='v402'
+        with pytest.raises(BuildError):validate(changed)
+
+
+def test_pcm_bounds_measure_leading_trailing_silence_and_keep_internal_pause(tmp_path):
+    import struct
+    from voice_v5 import measure_unit
+    path=tmp_path/'sentence.wav';rate=24000
+    # 0.20 s silence / 0.30 s speech / 0.25 s internal pause /
+    # 0.40 s speech / 0.15 s silence. A single click is not speech.
+    samples=[0]*4800+[1000]*7200+[0]*6000+[1500]*9600+[0]*3600
+    samples[300]=30000
+    with wave.open(str(path),'wb') as wav:
+        wav.setnchannels(1);wav.setsampwidth(2);wav.setframerate(rate)
+        wav.writeframes(struct.pack('<'+'h'*len(samples),*samples))
+    m=measure_unit(path)
+    assert m['speech_start_s']==pytest.approx(.2)
+    assert m['speech_end_s']==pytest.approx(1.15)
+    assert m['audio_sha256']==file_hash(path)
+    assert m['onset_frame']==4800 and m['end_frame']==27600
+
+
+def test_sync_refuses_any_unmeasured_row_even_with_real_frame_names(data):
+    from sync_v5 import ledger_rows
+    index=[dict(shot=f['shot'],t=f['t'],captioned_file=f'{i}.png') for i,f in enumerate(data['keyframes'])]
+    with pytest.raises(BuildError,match='measured sentence onset'):ledger_rows(data['timing'],data['cues'],index)
+
+
+def test_compiler_does_not_abandon_native_evidence_mid_sentence(story):
+    import record_v5
+    from unittest.mock import patch
+    changed=copy.deepcopy(story)
+    changed['scenes'][5].pop('placeholder');changed['scenes'][5]['recording']={'asset':'absent.mp4','receipt':'absent.json','receipt_sha256':'a'*64,'offset_s':0}
+    receipt={'timings':[dict(phase=e['receipt_phase'],at_s=e['at_scene_s']) for e in changed['scenes'][5]['cue_events']],
+             'named_element_checks':[dict(phase=e['receipt_phase'],at_s=e['at_scene_s'],visible_until_s=e['at_scene_s']+.3,elements=[{}]) for e in changed['scenes'][5]['cue_events']]}
+    # Inject a retained capture summary, never an accepted take. The compiler must
+    # reject its inadequate hold even though the audio and reveal clocks are valid.
+    import motion_v5
+    saved={'recordings':{'v505':{'recording':changed['scenes'][5]['recording'],'receipt':receipt}}}
+    read=motion_v5.read_json
+    with patch.object(motion_v5,'read_json',side_effect=lambda p:saved if p==ROOT/'demo/motion/v5/inputs.json' else read(p)):
+        with pytest.raises(BuildError,match='not held through'):compile_data(story=changed,voices=synthetic_voices(changed))
+
+
+def test_decoded_workspace_start_rejects_paper_black_and_premature_content():
+    size=96*54
+    paper=bytes([247])*size;black=bytes(size)
+    workspace=(bytes([250,30])*((size+1)//2))[:size]
+    frames=black*3+paper*27+workspace*8
+    assert recorder.workspace_start(frames,1)==pytest.approx(1.1)
+    for raw,released in ((paper*40,1),(black*40,1),(workspace*8,2)):
+        with pytest.raises(recorder.RecordingError):recorder.workspace_start(raw,released)
+
+
+def test_cover_edge_calibrates_every_phase_against_the_video_clock():
+    # Page release at 0.95 s; first native video frame at 1.00 s. Selection starts
+    # at 1.10 s. The 50 ms encoder offset must be applied to all later phases.
+    session=dict(startup_cover={'released_at_s':.95},beat6_actions_end_s=55,
+        timings=[dict(phase='live_workspace_reveal',at_s=.951),dict(phase='evidence_reveal',at_s=30)],
+        geometry_checks=[dict(at_s=.9)],language_checks=[dict(at_s=.9)],
+        named_element_checks=[dict(phase='evidence_reveal',at_s=30,visible_until_s=38)])
+    selected=recorder.workspace_clock(session,1.1)
+    assert selected['timings'][0]['at_s']==0
+    assert selected['timings'][1]['at_s']==pytest.approx(28.95)
+    assert selected['named_element_checks'][0]['visible_until_s']==pytest.approx(36.95)
+    assert selected['startup_cover']['video_clock_offset_s']==pytest.approx(.05)
+    assert selected['startup_cover']['released_at_s']==pytest.approx(-.1)
+    assert session['timings'][1]['at_s']==30  # Raw audit is retained verbatim.

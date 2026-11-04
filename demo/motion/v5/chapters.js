@@ -11,6 +11,7 @@ export function labelPositions(segments,widths,width=1920,padding=25){
  return centres;
 }
 export function updateChapters(state){
+ document.querySelector('#chapters').style.opacity=state.fade;
  const labels=state.chapters.map(s=>{
   const segment=document.querySelector(`[data-segment="${s.scene}"]`),label=document.querySelector(`[data-chapter="${s.scene}"]`);
   segment.querySelector('b').style.transform=`scaleX(${s.fill})`;

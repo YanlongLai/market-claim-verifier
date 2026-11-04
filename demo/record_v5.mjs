@@ -6,7 +6,7 @@ import {fileURLToPath} from 'node:url';
 
 export const presentation={viewport:[1920,1080],deviceScaleFactor:1,css_zoom:1.95,
   body_font_px:30,column_css_px:800,cursor:'hidden except click indicator',playback_scale:1};
-export const captureVersion=7;
+export const captureVersion=8;
 // Delivered in the document's first head bytes, before site CSS or scripts can paint.
 // Hiding the body preserves layout, so geometry can be audited under the cover.
 export const captureCoverCSS='html{background:#f7f5ef!important}body{visibility:hidden!important}html::after{content:"";position:fixed;inset:0;background:#f7f5ef!important;z-index:2147483647;visibility:visible!important}html[data-capture-ready="true"] body{visibility:visible!important}html[data-capture-ready="true"]::after{display:none!important}';
@@ -76,17 +76,22 @@ export function revealCaptureDOM(){
       Number(document.documentElement.style.zoom)!==1.95||getComputedStyle(document.body).visibility!=='hidden'||
       cover.backgroundColor!=='rgb(247, 245, 239)'||cover.visibility!=='visible'||cover.display==='none')
     throw new Error('capture_cover_or_layout_missing');
+  const input=document.querySelector('#live-input'),r=input?.getBoundingClientRect();
+  if(!r||r.left<60||r.right>1860||r.top<80||r.bottom>548||r.width<=0||r.height<=0)
+    throw new Error('try_workspace_not_framed_under_cover');
   document.documentElement.dataset.captureReady='true';
-  return {cover_present:true,cover_opaque:true,layout_installed:true,zoom:Number(document.documentElement.style.zoom)};
+  return {cover_present:true,cover_opaque:true,layout_installed:true,zoom:Number(document.documentElement.style.zoom),
+    workspace_framed_before_release:true,workspace_rect:{left:r.left,right:r.right,top:r.top,bottom:r.bottom}};
 }
 
 export function namedSelectors(phase,result){
   const primary='#live-result ';
   const fixed={
+    live_workspace_reveal:[['centred Try workspace','#live-input']],
     use_apple_example:[['post','#live-input']],
-    check_against_sec:[['Run check','#live-submit']],
+    check_against_sec:[['native in-progress SEC status','#live-status']],
     verdict_reveal:[['verdict',primary+'.trace-verdict']],
-    draft_reveal:[['corrected number',primary+'.corrected-draft-text strong']],
+    draft_reveal:[['Cited changes',primary+'.live-corrections h6'],['corrected edit',primary+'.correction-changes > li > strong']],
     agent_trace_expand:[['trace model and receipt',primary+'.live-receipt']],
     hover_receipt:[['receipt',primary+'.live-receipt']],
   };
@@ -107,11 +112,16 @@ export async function captureNamedElements(page,phase,result,at_s){
     const el=document.querySelectorAll(selector)[index];
     if(!el)throw new Error('named_element_missing');
     const r=el.getBoundingClientRect();
-    if(r.width<=0||r.height<=0||r.left<60||r.right>1860||r.top<0||r.bottom>558)
+    if(r.width<=0||r.height<=0||r.left<60||r.right>1860||r.top<0||r.bottom>766)
       throw new Error('named_element_outside_picture');
-    return {name,selector,index,left:r.left,right:r.right,top:r.top,bottom:r.bottom};
+    if(!el.textContent.trim()&&el.tagName!=='TEXTAREA')throw new Error('named_element_empty');
+    return {name,selector,index,left:r.left,right:r.right,top:r.top,bottom:r.bottom,text:el.textContent};
   }),specs);
-  return {phase,at_s,elements};
+  if(phase==='check_against_sec'&&!elements.some(e=>e.text.includes('Muse Spark is choosing tools and checking SEC facts')))
+    throw new Error('native_in_progress_status_missing');
+  const overlay_band=elements.every(r=>r.bottom<=548)?'bottom':elements.every(r=>r.top>=270)?'top':null;
+  if(!overlay_band)throw new Error('no_clear_overlay_band');
+  return {phase,at_s,elements,overlay_band};
 }
 export function validateGeometry(g){
   if(!['source_width','left_margin','right_margin','horizontal_overflow'].every(k=>Number.isFinite(g[k]))||g.source_width<1500||g.left_margin<60||g.right_margin<60||Math.abs(g.left_margin-g.right_margin)>4||g.horizontal_overflow>1)throw new Error('workspace_must_be_full_width_and_centred');
@@ -123,8 +133,8 @@ export async function showTraceAndFiling({page,result,report,mark,frame,click,ho
   report.trace_details_open=await trace.evaluate(el=>el.open);
   if(!report.trace_details_open)throw new Error('trace_details_not_open');
   await frame('#live-result .live-receipt');
-  mark('agent_trace_expand');await hold(700);
-  mark('trace_model_id_reveal');await hold(700);
+  mark('agent_trace_expand');await hold(200);
+  mark('trace_model_id_reveal');await hold(200);
   const steps=page.locator('#live-result .trace-step');
   const shown=[];
   for(let i=0;i<result.events.length;i++){
@@ -138,8 +148,10 @@ export async function showTraceAndFiling({page,result,report,mark,frame,click,ho
       throw new Error('trace_step_hidden_or_cropped');
     }
     mark(event.kind==='tool_call'?`tool_call_${i+1}_reveal`:'program_verdict_reveal');
-    shown.push({index:i,kind:event.kind,name:event.name||null,visible:true,hold_ms:700});
-    await hold(700);
+    const first=event.kind==='tool_call'&&shown.length===0;
+    const hold_ms=first?2800:event.kind==='verdict'?1800:shown.filter(e=>e.kind==='tool_call').length===1?2000:700;
+    shown.push({index:i,kind:event.kind,name:event.name||null,visible:true,hold_ms});
+    await hold(hold_ms);
   }
   report.trace_steps_shown=shown;
   report.tool_calls_shown=shown.filter(e=>e.kind==='tool_call').length;
@@ -175,7 +187,7 @@ export async function showTraceAndFiling({page,result,report,mark,frame,click,ho
     const range=document.createRange();range.setStart(el.firstChild,index);range.setEnd(el.firstChild,index+12);
     return scrollY+range.getBoundingClientRect().top-140;
   },raw.components[1].value);
-  await frame(pre,nineMonthsTarget);mark('apple_nine_months_reveal');await hold(1500);
+  await frame(pre,nineMonthsTarget);mark('apple_nine_months_reveal');await hold(500);
   report.apple_derivation={evidence_id:fact.evidence_id,derivation:raw.derivation,
     annual:raw.components[0].value,nine_months:raw.components[1].value,quarter:raw.value,hold_ms:2000};
 }
@@ -218,7 +230,7 @@ function playwright() {
 
 export async function record(config) {
   const report={status:'started',page_url:config.page_url,timings:[],live_check_limit:1,
-    recording:'Playwright recordVideo, one continuous page; beat9 is its continuous final segment',
+    recording:'Playwright recordVideo; continuous workspace take after the startup cover; raw source retained',
     capture_version:captureVersion,presentation,geometry_checks:[],language_checks:[],named_element_checks:[],
     privacy:'No screenshot, request-body log, HAR, browser trace or storage export'};
   let browser,context,page,video,secret='',stage='password_file';
@@ -268,6 +280,8 @@ export async function record(config) {
     };
     const hold=async ms=>{await page.waitForTimeout(ms);await audit();};
     const wheelTo=async target=>{
+      const until=(performance.now()-began)/1000;
+      for(const check of report.named_element_checks)if(check.visible_until_s===undefined)check.visible_until_s=until;
       const from=await page.evaluate(()=>scrollY);
       // Long traversals remain visible but take at most 450 ms, at the capture zoom.
       const steps=Math.max(1,Math.min(9,Math.ceil(Math.abs(target-from)/120)));
@@ -302,16 +316,18 @@ export async function record(config) {
     mark('open_page');
     await page.goto(config.page_url,{waitUntil:'load',timeout:20000});
     await page.evaluate(()=>document.fonts.ready);
+    // Keep the cover through the scroll to Try. Never expose the hero or stamp.
+    await frame('#live-input');
     await audit();
     const release=await page.evaluate(revealCaptureDOM);
-    report.startup_cover={...report.startup_cover,...release,release_geometry_index:report.geometry_checks.length-1,released_at_s:(performance.now()-began)/1000};
+    report.startup_cover={...report.startup_cover,...release,workspace_framed_before_release:true,release_geometry_index:report.geometry_checks.length-1,released_at_s:(performance.now()-began)/1000};
     report.readability={...report.geometry_checks.at(-1),playback_body_px:presentation.body_font_px*presentation.css_zoom/4};
-    await hold(500);
+    mark('live_workspace_reveal');await hold(1800);
     await page.waitForFunction(()=>!document.querySelector('#live-input')?.disabled &&
       !document.querySelector('#live-submit')?.disabled,null,{timeout:12000});
     await click('#live-example');
     await frame('#live-input');
-    mark('use_apple_example');await hold(3200);
+    mark('use_apple_example');await hold(1600);
     const input=await page.locator('#live-input').inputValue();
     if(!input.includes('Apple pulled in $416.2 billion') || !input.includes('Amazon') || !input.includes('NVIDIA'))
       throw new Error('wrong_default_example');
@@ -324,7 +340,7 @@ export async function record(config) {
     const clickedAt=performance.now();
     const [response]=await Promise.all([
       page.waitForResponse(r=>/\/api\/check(-example)?$/.test(r.url()) && r.url().startsWith(origin) && r.request().method()==='POST',{timeout:90000}),
-      click('#live-submit').then(()=>mark('check_against_sec')),
+      click('#live-submit').then(async()=>{await frame('#live-status');mark('check_against_sec');}),
     ]);
     const result=await response.json();
     report.result=redact(result,secret);report.http_status=response.status();
@@ -332,31 +348,33 @@ export async function record(config) {
     if(!response.ok())throw new Error('http_result_not_successful');
     validateLiveResult(result);
     await page.locator('#live-result .trace-verdict').first().waitFor({state:'visible'});
-    await frame('#live-result .trace-verdict');mark('verdict_reveal');await hold(2500);
+    await frame('#live-result .trace-verdict');mark('verdict_reveal');await hold(2200);
     const model=(await page.locator('#live-result .live-receipt, #live-result .trace-head').allInnerTexts()).join(' ');
     if(!model.includes(result.model))throw new Error('native_model_line_missing');
     report.native_ui={model_line:result.model,provider:result.provider,
       provider_display:'Native form says Baseten; native result heading shows the model ID separately. Model/provider also named by the receipt-bound motion card.'};
-    await frame('#live-result .corrected-draft-text strong');mark('draft_reveal');await hold(3300);
+    // Native correction + Cited changes live in the lower band; card goes on top.
+    const editTop=await page.locator('#live-result .live-corrections h6').first().evaluate(el=>scrollY+el.getBoundingClientRect().top-300);
+    await frame('#live-result .live-corrections h6',editTop);mark('draft_reveal');await hold(2100);
     const deleted=await page.locator('#live-result .corrected-draft-text del').allTextContents();
     const corrected=await page.locator('#live-result .corrected-draft-text strong').allTextContents();
     if(!deleted.includes('$416.2 billion') || !corrected.includes('$102.5 billion'))throw new Error('native_correction_missing');
     const appleIndex=result.evidence.filter(e=>!e.error).findIndex(e=>e.ticker==='AAPL'&&e.derived);
     await frame(`#live-result .live-evidence-row:nth-child(${appleIndex+1}) .evidence-primary`);
-    mark('evidence_reveal');await hold(6200);
-    // Show the actual link without navigating away to SEC or making an SEC request.
-    await page.locator('#live-result .live-evidence a').first().hover();await hold(400);
+    mark('evidence_reveal');await hold(7600);
+    // Hold the native derived Apple row; its component filing links appear in the ending.
+    await page.locator(`#live-result .live-evidence-row:nth-child(${appleIndex+1}) .evidence-primary`).first().hover();await hold(400);
     await showTraceAndFiling({page,result,report,mark,frame,click,hold});
     await frame('#live-result .live-receipt');
-    await page.locator('#live-result .live-receipt').first().hover();mark('hover_receipt');await hold(800);
+    await page.locator('#live-result .live-receipt').first().hover();mark('hover_receipt');await hold(2400);
     report.beat6_actions_end_s=(performance.now()-began)/1000;
     report.after_click_s=(performance.now()-clickedAt)/1000;
     mark('beat6_choreography_gate');
     // Leave two seconds for the recorder's initial frame / encoder start variance.
-    if(report.after_click_s>56||report.beat6_actions_end_s>56)throw new Error('beat6_actions_exceed_first_58_seconds');
-    await hold(Math.max(0,60000-(performance.now()-began)));
+    if(report.after_click_s>56||report.beat6_actions_end_s-report.startup_cover.released_at_s>57.5)throw new Error('beat6_actions_exceed_first_58_seconds');
+    await hold(Math.max(0,60000+report.startup_cover.released_at_s*1000-(performance.now()-began)));
     mark('beat9_frame_corrected_draft_and_filing');
-    let draft='#live-result .corrected-draft-text strong';
+    let draft='#live-result .live-corrections h6';
     const citation='#live-result .correction-citations';
     // Prefer the draft itself. At the full-frame capture size the whole post and its
     // intervening scope text may not fit with both citations; then hold the native
@@ -364,7 +382,10 @@ export async function record(config) {
     const span=await page.evaluate(({draft,citation})=>
       document.querySelector(citation).getBoundingClientRect().bottom-
       document.querySelector(draft).getBoundingClientRect().top,{draft,citation});
-    if(span>480)draft='#live-result .correction-changes > li > strong';
+    if(span>480)throw new Error('native_cited_changes_and_links_do_not_fit');
+    // Push the complete unrelated section below the composed viewport. No
+    // correction, cited change or filing content is hidden or reconstructed.
+    await page.addStyleTag({content:'#live-result .live-corrections h6:first-of-type{margin-top:400px!important}#live-result .correction-changes{margin-bottom:600px!important}#live-result .correction-changes .trace-data{margin-top:600px!important}'});
     report.ending_frame={draft_selector:draft,citation_selector:citation,
       description:'Native corrected draft/edit and both component filing links; held through final frame'};
     const target=await page.evaluate(({draft,citation})=>{
@@ -390,7 +411,7 @@ export async function record(config) {
     const expected=endingExpectedLinks(result);
     if(expected.some(url=>!links.some(l=>l.href===url&&l.left>=60&&l.right<=1860&&l.top>=80&&l.bottom<=586)))throw new Error('both_component_filing_links_required');
     report.ending_frame.both_links=expected.length;report.ending_frame.links=links;
-    report.ending_frame.named_elements=await page.evaluate(({draft,citation})=>[draft,citation].map(selector=>{
+    report.ending_frame.named_elements=await page.evaluate(({draft,citation})=>[draft,'#live-result .correction-changes > li > strong',citation].map(selector=>{
       const r=document.querySelector(selector).getBoundingClientRect();
       return {name:selector,selector,left:r.left,right:r.right,top:r.top,bottom:r.bottom};
     }),{draft,citation});
@@ -401,6 +422,7 @@ export async function record(config) {
     report.live_checks=checks;
     if(checks!==1)throw new Error('exactly_one_live_check');
     await Promise.all(namedPending);
+    for(const check of report.named_element_checks)if(check.visible_until_s===undefined)check.visible_until_s=(performance.now()-began)/1000;
     if(report.named_element_failure)throw new Error('named_element_audit_failed');
     report.named_element_checks.sort((a,b)=>a.at_s-b.at_s);
     report.status='captured';

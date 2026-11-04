@@ -2,6 +2,7 @@
 """Replay exact retained PTY rows on the v5 clock. No new PTY/model/media run."""
 from pathlib import Path
 import argparse, hashlib, json
+import copy
 ROOT=Path(__file__).resolve().parents[1]
 OUT=ROOT/'demo/assets/terminal-v5'
 def sha(path):return hashlib.sha256(path.read_bytes()).hexdigest()
@@ -39,6 +40,29 @@ def compile_replays(root=ROOT):
         note='Literal saved PTY text and typing times, reflowed above the rail. Source ranges are editorial playback; no new execution or OCR/ASR.')
     sources.extend([f'{base}.cast',f'{base}.json'])
  return outputs,sources
+
+def bind_replays(replays,scenes,cues):
+ """Hold completed, literal saved rows at each sentence's picture onset.
+
+ Partial typewriter numbers cannot prove a spoken number. The agent setup and
+ median states deliberately omit the later nine-in-ten / projection rows.
+ """
+ outputs=copy.deepcopy(replays)
+ for sid,name in (('v503','beat3'),('v506','beat6')):
+    source={b['block']:b for b in replays[name]['blocks']};blocks=[]
+    scene=next(s for s in scenes if s['id']==sid)
+    events=cues['_events'][sid]
+    for i,event in enumerate(events):
+        label=event['terminal_block'];original=source['agent' if label=='nine' else label]
+        rows=copy.deepcopy(original['frames'][-1]['rows'])
+        if label=='agent':rows=[r for r in rows if not r['principal']]
+        if label=='median':rows=[r for r in rows if r['row'] not in (5,10)]
+        at=event['picture_start']-scene['target_start_s']
+        end=events[i+1]['picture_start']-scene['target_start_s'] if i+1<len(events) else scene['target_s']
+        blocks.append({**original,'block':label,'at_s':at,'end_s':end,'frames':[dict(at_s=at,rows=rows)]})
+    outputs[name]['blocks']=blocks
+    outputs[name]['note']='Completed literal saved PTY rows, sentence-bound holds. Later result rows are withheld until their own cue. No new execution or OCR/ASR.'
+ return outputs
 def main():
  parser=argparse.ArgumentParser(description=__doc__)
  parser.add_argument('--check',action='store_true',help='Validate retained source hashes/ranges without rendering')
