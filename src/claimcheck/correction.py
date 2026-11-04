@@ -192,9 +192,17 @@ def _amount(match: re.Match, unit: str) -> tuple[Decimal, Decimal] | None:
 
 
 def _replacement(match: re.Match, actual: Decimal, scale: Decimal) -> str:
-    """Only actual_value supplies digits; preserve the literal scale and precision."""
+    """Only actual_value supplies digits; preserve the literal scale."""
     raw = match["number"].lstrip("+−-")
     places = len(raw.partition(".")[2])
+    # A million/billion mix-up often copies an integer coefficient in the
+    # wrong scale. Keep that scale, but do not round the corrected fraction
+    # to a whole billion ($164,501 billion -> $164.5 billion). Only an exact
+    # thousandfold error enables this extra precision; ordinary edits keep
+    # the source's decimal places. Retain at least four significant digits.
+    stated = Decimal(raw.replace(",", "")) * scale
+    if scale > 1 and actual and stated == abs(actual) * 1000:
+        places = max(places, 1, 3 - (abs(actual) / scale).adjusted())
     with localcontext() as ctx:
         ctx.prec = max(28, len(actual.as_tuple().digits) + abs(actual.adjusted()) + places + 16)
         value = (actual / scale).quantize(Decimal(1).scaleb(-places), rounding=ROUND_HALF_UP)

@@ -5,6 +5,62 @@ from urllib.parse import urlsplit
 from .period_context import period_mentions, missing_period_reason
 
 
+def bind_claim_source(post: str, claim: str) -> dict | None:
+    """Find a literal, period-bearing assertion's complete source sentence.
+
+    Accept whitespace, a colon in place of a copula, and final punctuation;
+    do not fuzzy-match paraphrases or remove financial/timing qualifiers. Keep
+    the *whole* source sentence (including any heading/prefix), so a rewrite
+    cannot hide guidance/non-GAAP wording. Different possible contexts fail
+    closed; identical repeated sentences retain all their source spans.
+    An unattached release qualifier/header also prevents narrowing.
+    """
+    periods = {(m['period'], m['basis']) for m in period_mentions(claim)}
+    if not periods:
+        return None
+
+    def key(text: str) -> str:
+        text = re.sub(r'\b(?:was|were|is|are)\b', ' ', text, flags=re.I)
+        return re.sub(r'[\s:]+', ' ', text).strip(' .!?。！？').casefold()
+
+    target = key(claim)
+    if not target:
+        return None
+    # A newline may separate a heading from its value; preserve that heading.
+    # Decimal points are part of numbers, never sentence boundaries.
+    edges = {0, *(m.end() for m in re.finditer(r'\.(?!\d)|[!?。！？]', post)), len(post)}
+    # The live video adapter joins separately read channels with these labels.
+    # They delimit sources, rather than qualifying the next frame's sentence.
+    for marker in re.finditer(r'^\[(?:audio|frame-\d+)\]\r?\n', post, re.M):
+        edges.update(marker.span())
+    edges = sorted(edges)
+    from .release import requires_release
+    amount = re.compile(r'[$€£]\s*\d|\d[\d,.]*\s*(?:%|trillions?|billions?|millions?|thousands?|[tbmk]\b|億|萬|兆)', re.I)
+    # A separate numeric forecast is an assertion with its own scope. A bare
+    # "Guidance."/"Non-GAAP figures." heading may qualify subsequent rows;
+    # do not discard it when the scope cannot be established from the source.
+    if any(requires_release(post[left:right]) and not amount.search(post[left:right])
+           for left, right in zip(edges, edges[1:])):
+        return None
+    matches = []
+    for left, right in zip(edges, edges[1:]):
+        raw = post[left:right]
+        source = raw.strip()
+        if not source or not re.search(r'(?<!\S)' + re.escape(target) + r'(?!\S)', key(source)):
+            continue
+        if {(m['period'], m['basis']) for m in period_mentions(source)} != periods:
+            continue
+        start = left + len(raw) - len(raw.lstrip())
+        matches.append((source, [start, start + len(source)]))
+    if not matches or len({key(source) for source, _ in matches}) != 1:
+        return None
+    source = matches[0][0]
+    if source == post.strip():
+        return None
+    return {'quote': source, 'spans': [span for _, span in matches],
+            'method': 'literal_statement_in_complete_source_sentence'}
+
+
 def validate_event_context(value: dict, ticker: str | None = None) -> dict:
     if not isinstance(value, dict):
         raise ValueError('event context must be an object')
