@@ -1669,6 +1669,31 @@ def evaluate_sub_claim(
 ) -> dict[str, Any]:
     """Evaluate one normalized model sub-claim against cited evidence."""
 
+    from .event_context import bind_claim_source
+    original = _original_claim_text(sub_claim)
+    if context := bind_claim_source(original, str(sub_claim.get("text") or "")):
+        scoped = {**sub_claim, "original_claim": context["quote"]}
+        if sub_claim.get("claim_type") == "value" and not requires_release(context["quote"]):
+            # The matched assertion preserves the source's amount and scale;
+            # a separate model number phrase must not silently correct them.
+            atomic = str(sub_claim.get("text") or "")
+            metric = infer_metric(atomic)
+            number = claim_number(atomic, metric) if metric else None
+            literal = str(number.get("literal") or "") if number else ""
+            parsed = parse_stated_number(literal)
+            if (number and number["low"] == number["high"] and literal in context["quote"]
+                    and parsed and parsed.value == number["low"]
+                    and parsed != parse_stated_number(str(sub_claim.get("stated_text") or ""))):
+                scoped["stated_text"] = literal
+                context = {**context, "stated_text": literal}
+        check = evaluate_sub_claim(
+            scoped, runner, related_sub_claims,
+            _allow_interpretations=_allow_interpretations,
+        )
+        if "stated_text" in context:
+            check["flags"] = [*check.get("flags", []), "stated_text_corrected_from_source"]
+        return {**check, "claim_source_context": context}
+
     if fallback := _program_release_fallback(sub_claim, runner):
         return fallback
     original = str(sub_claim.get("original_claim") or sub_claim.get("text") or "")
@@ -1712,9 +1737,11 @@ def evaluate_sub_claim(
             result["reported_release_xbrl_fallback"] = True
             return result
 
-    if requires_release(str(sub_claim.get("original_claim") or sub_claim.get("text") or "")) or sub_claim.get("claim_type") in RELEASE_KINDS or any(
-        getattr(runner, "evidence_kind", {}).get(str(eid)) in {"find_earnings_release", "quote_release"}
-        for eid in sub_claim.get("evidence_ids", [])
+    if sub_claim.get("claim_type") != "other" and (
+        requires_release(original) or sub_claim.get("claim_type") in RELEASE_KINDS or any(
+            getattr(runner, "evidence_kind", {}).get(str(eid)) in {"find_earnings_release", "quote_release"}
+            for eid in sub_claim.get("evidence_ids", [])
+        )
     ):
         from .release_checks import evaluate_release_claim
         return evaluate_release_claim(sub_claim, runner)
@@ -2127,11 +2154,19 @@ def evaluate_verdict(
 ) -> tuple[list[dict[str, Any]], str]:
     """Evaluate all sub-claims and return checks plus the program verdict."""
 
-    checks = [
-        _bind_unchecked_value(sub_claim, evaluate_sub_claim(sub_claim, runner, sub_claims),
-                              runner, sub_claims)
-        for sub_claim in sub_claims
-    ]
+    checks = []
+    for sub_claim in sub_claims:
+        check = evaluate_sub_claim(sub_claim, runner, sub_claims)
+        context = check.get("claim_source_context")
+        scoped = {**sub_claim, "original_claim": context["quote"]} if context else sub_claim
+        if context and "stated_text" in context:
+            scoped["stated_text"] = context["stated_text"]
+        check = _bind_unchecked_value(scoped, check, runner, sub_claims)
+        if context:
+            check["claim_source_context"] = context
+            if "stated_text" in context:
+                check["flags"] = list(dict.fromkeys([*check.get("flags", []), "stated_text_corrected_from_source"]))
+        checks.append(check)
     for sub, check in zip(sub_claims, checks):
         # Unit diagnostics never change the numeric verdict or repair the input.
         if check.get("program_verdict") != "contradicted":
