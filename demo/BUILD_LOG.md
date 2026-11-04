@@ -353,3 +353,13 @@ Changed scene cache keys: v500: render; v501: render; v502: render; v503: render
 Changed global cache keys: assembly_cache_key.
 
 Output: `/Users/yan/git/market-claim-verifier-video/demo/out/demo-v021.mp4`; SHA-256 `163972485d8157083948833b35e833d259368a26fef9f36114c78c6a224eec81`.
+
+## v022 — 2026-11-04T17:49:36.920531+00:00
+
+Length: 178.000 s. Scenes >25% over budget: none.
+
+Changed scene cache keys: v500: render; v501: render; v502: render; v503: render; v504: render; v505: render; v506: render, voice; v507: render; v508: render; v509: render.
+
+Changed global cache keys: assembly_cache_key, audio_master_cache_key.
+
+Output: `/Users/yan/git/market-claim-verifier-video/demo/out/demo-v022.mp4`; SHA-256 `1dc5a48a33704eeb48f339f3436b9e7a0676ca33bda5b5edfe3a86e6bcc1fba8`.

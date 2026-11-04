@@ -77,10 +77,9 @@ B2: `v503-02.required_visual` now reads **“SEC tools + Python verdict heading;
 “Illustrative post” uses the card's 30 px byline/body scale.
 
 <!-- actual-encode:start -->
-Actual existing encode: **v021**, 178.000 s; **−14.20 LUFS integrated**, **−1.23 dBTP**.
-These are fresh FFmpeg measurements of `demo/out/demo-v021.mp4`, not r6 estimates.
-[Measurement receipt](prep/v5/r6/v021-actual-loudness.json) ·
-[raw measurement](prep/v5/r6/v021-actual-loudness.log). **R6 encode pending.**
+Actual r6 encode: **demo-v022**, 178.000 s; **-14.18 LUFS integrated**, **-1.23 dBTP**.
+Measured from `demo-v022.mp4`; SHA-256 `1dc5a48a33704eeb48f339f3436b9e7a0676ca33bda5b5edfe3a86e6bcc1fba8`.
+[Export and measurement receipt](runs/20261104T174936925302Z-v022.json).
 <!-- actual-encode:end -->
 
 ## Host sequence
