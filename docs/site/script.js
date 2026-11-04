@@ -643,7 +643,11 @@
     story: "1 · Choose a story", kind: "2 · Choose an input", provider: "3 · Choose a provider", inputType: "Input type",
     storyA: "A · Wrong period", storyB: "B · All correct", storyC: "C · Mixed",
     expected: "Expected outcome", expectedA: "Contradicted · $416.2B → $102.5B", expectedB: "Supported · nothing to correct",
-    expectedC: "Unit error · not judged · insufficient", reset: "Reset example", openInput: "Open input file",
+    expectedC: "Contradicted · $164,501B → $164.5B · forecast and opinion not judged", reset: "Reset example", openInput: "Open input file",
+    fireworksNote: "Fireworks responses are slow today (provider-side); Baseten is fastest.",
+    historyErrors: { provider_error: "Provider error", timeout: "Timeout", budget_exhausted: "Budget", total_budget_exhausted: "Budget",
+      credit_exhausted: "Credit limit", rate_limited: "Rate limit", sec_unavailable: "SEC unavailable", preprocessing_failed: "Input error",
+      invalid_model_output: "Invalid response", incomplete_model: "Incomplete", tool_limit: "Tool limit", unavailable: "Unavailable", unknown: "Failed" },
     compareAll: "Compare on all", compareNote: "Sequential runs · separate provider budgets", run: "Run check", runCompare: "Compare providers",
     privacy: "Authenticated runs and their input text are public in history for 14 days. OCR/ASR uses the Meta Model API; SEC checks use your chosen provider. 5 checks / 10 min per IP; a shared office IP shares this limit. A rate-limited request shows the reset time.",
     history: "Recent checks", historyNote: "Last 50 runs · public · retained for 14 days", refresh: "Refresh", historyLoading: "Loading history…",
@@ -661,7 +665,11 @@
     story: "1 · 選擇故事", kind: "2 · 選擇輸入", provider: "3 · 選擇供應商", inputType: "輸入格式",
     storyA: "A · 期間錯誤", storyB: "B · 全部正確", storyC: "C · 混合主張",
     expected: "預期結果", expectedA: "證據矛盾 · $416.2B → $102.5B", expectedB: "證據支持 · 無需修正",
-    expectedC: "單位錯誤 · 不予判定 · 證據不足", reset: "重設範例", openInput: "開啟輸入檔案",
+    expectedC: "證據矛盾 · $164,501B → $164.5B · 預測與意見不予判定", reset: "重設範例", openInput: "開啟輸入檔案",
+    fireworksNote: "Fireworks 今日回應較慢（供應商端）；Baseten 最快。",
+    historyErrors: { provider_error: "供應商錯誤", timeout: "逾時", budget_exhausted: "預算上限", total_budget_exhausted: "預算上限",
+      credit_exhausted: "額度上限", rate_limited: "頻率上限", sec_unavailable: "SEC 暫不可用", preprocessing_failed: "輸入錯誤",
+      invalid_model_output: "回應無效", incomplete_model: "回應不完整", tool_limit: "工具次數上限", unavailable: "暫不可用", unknown: "失敗" },
     compareAll: "比較全部供應商", compareNote: "依序執行 · 各供應商獨立預算", run: "執行查核", runCompare: "比較供應商",
     privacy: "通過密碼驗證的查核與輸入文字會公開於歷史紀錄，保留 14 天。OCR／ASR 使用 Meta Model API；SEC 查核使用所選供應商。每個 IP 每 10 分鐘限 5 次；共用辦公室 IP 也共用此額度。達到限制時會顯示重設時間。",
     history: "最近查核", historyNote: "最近 50 次 · 公開 · 保留 14 天", refresh: "重新整理", historyLoading: "正在讀取歷史紀錄…",
@@ -1426,6 +1434,7 @@
     const pending = preview.querySelector(".asset-pending");
     if (pending) pending.textContent = matrixCopy("assetPending");
     $$('#live-form input[name="provider"]').forEach(radio => { radio.checked = radio.value === selectedProvider; radio.disabled = liveBusy; });
+    $("#fireworks-note").hidden = selectedProvider !== "fireworks";
     $("#compare-all").disabled = liveBusy;
     $("#live-submit").textContent = matrixCopy($("#compare-all").checked ? "runCompare" : "run");
     $("#live-count").textContent = `${Array.from($("#live-input").value || "").length} / 600`;
@@ -1556,6 +1565,15 @@
       if (!Array.isArray(rows)) throw Error("invalid history");
       if (request !== historyRequest) return;
       historyRows = rows.filter(row => row && validId(String(row.id))).slice(0, 50);
+      await Promise.all(historyRows.filter(row => !row.verdict && !row.error).map(async row => {
+        try {
+          const detail = await fetch(`/api/history/${encodeURIComponent(row.id)}`, { cache: "no-store", signal: controller.signal });
+          if (!detail.ok) return;
+          const saved = await detail.json();
+          row.error = (saved.envelope || saved).error;
+        } catch { /* Keep the row and its recorded cost when the detail is unavailable. */ }
+      }));
+      if (request !== historyRequest) return;
       historyState = historyRows.length ? "" : "historyEmpty";
     } catch { if (request === historyRequest) historyState = "historyUnavailable"; }
     finally { clearTimeout(timer); }
@@ -1581,7 +1599,9 @@
       const input = liveNode("td");
       input.append(liveNode("span", record.story || matrixCopy("custom")), liveNode("small", COPY[pageLanguage].examples[`${record.kind}Title`] || record.kind || "—"));
       const provider = liveNode("td");
-      provider.append(liveNode("span", providerLabel(record.provider)), liveNode("small", record.verdict ? liveVerdict(record.verdict) : "—", `history-verdict is-${record.verdict || "unchecked"}`));
+      const errors = COPY[pageLanguage].matrix.historyErrors;
+      const status = record.verdict ? liveVerdict(record.verdict) : errors[record.error] || errors.unknown;
+      provider.append(liveNode("span", providerLabel(record.provider)), liveNode("small", status, `history-verdict is-${record.verdict || "unchecked"}`));
       const metrics = liveNode("td");
       metrics.append(liveNode("span", duration(record.latency_ms)), liveNode("small", money(record.cost_usd, 2)));
       if (Number.isFinite(record.preprocessing_cost_usd) && record.preprocessing_cost_usd > 0)
