@@ -9,7 +9,7 @@ export function repostCascade(local){
  return Array.from({length:7},(_,i)=>{
   const p=clamp((local-i*.12)/1.2),ease=1-(1-p)**3;
   return {x:(30+i*30)*ease,y:([-44,44,-68,68,-24,24,0][i])*ease,
-   rotation:(i-3)*2.4*ease,scale:1-.035*(i+1)*ease,opacity:p===0?0:.12+.055*(7-i)};
+   rotation:(i-3)*2.4*ease,scale:1-.035*(i+1)*ease,opacity:p===0?0:1};
  });
 }
 export function overlayAt(local,events){

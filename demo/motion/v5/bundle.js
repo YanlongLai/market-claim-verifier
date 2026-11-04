@@ -10,7 +10,7 @@ function repostCascade(local){
  return Array.from({length:7},(_,i)=>{
   const p=clamp((local-i*.12)/1.2),ease=1-(1-p)**3;
   return {x:(30+i*30)*ease,y:([-44,44,-68,68,-24,24,0][i])*ease,
-   rotation:(i-3)*2.4*ease,scale:1-.035*(i+1)*ease,opacity:p===0?0:.12+.055*(7-i)};
+   rotation:(i-3)*2.4*ease,scale:1-.035*(i+1)*ease,opacity:p===0?0:1};
  });
 }
 function overlayAt(local,events){
@@ -147,14 +147,14 @@ function liveOverlay(event,local){
  const titles={draft:'4 · Corrected draft',evidence:'5 · SEC evidence',trace:'6 · Agent trace',each:'6 · Each tool call',program:'6 · Program verdict',receipt:'7 · Live take'};
  if(event.event==='verdict')titles.verdict='3 · Contradicted · Apple SEC · E3';
  const evidenceHandoff=event.event==='evidence'&&local>=(data.scenes[5].recording?.timings.find(t=>t.phase==='agent_trace_expand')?.at_s??Infinity);
- const items=event.event==='draft'?'<p class="principal"><strong>$416.2B → $102.5B</strong></p>':event.event==='evidence'&&!evidenceHandoff?'<div class="equation"><p><span>10-K annual</span><strong>$416.2B</strong></p><b>−</b><p><span>10-Q nine months</span><strong>$313.7B</strong></p><b>=</b><p><span>Fiscal Q4</span><strong>$102.5B</strong></p></div>':event.event==='trace'?`<p class="principal"><strong>${data.live_receipt?data.live_receipt.tool_calls:4}</strong> tool calls · on the record</p>`:event.event==='receipt'?`<p class="principal">${data.live_receipt?`<strong>$${data.live_receipt.cost_usd.toFixed(4)}</strong> · <strong>${(data.live_receipt.latency_ms/1000).toFixed(1)} s</strong>`:'Measured cost · elapsed time · capture pending'}</p>`:'';
+ const items=event.event==='draft'?'<p class="principal"><strong>$416.2B → $102.5B</strong></p>':event.event==='evidence'&&!evidenceHandoff?'<div class="equation"><div class="equation-term"><span>10-K annual</span><strong>$416.2B</strong></div><b>−</b><div class="equation-term"><span>10-Q nine months</span><strong>$313.7B</strong></div><b>=</b><div class="equation-term"><span>Fiscal Q4</span><strong>$102.5B</strong></div></div>':event.event==='trace'?`<p class="principal"><strong>${data.live_receipt?data.live_receipt.tool_calls:4}</strong> tool calls · on the record</p>`:event.event==='receipt'?`<p class="principal">${data.live_receipt?`<strong>$${data.live_receipt.cost_usd.toFixed(4)}</strong> · <strong>${(data.live_receipt.latency_ms/1000).toFixed(1)} s</strong>`:'Measured cost · elapsed time · capture pending'}</p>`:'';
  const binding=data.cues._events.v505.find(e=>e.event===event.event);
  const native=binding?.native_check;
  // The recorder reserves one of two full bands. Audit both speech boundaries
  // against its rectangles; never infer clearance from overlay opacity.
  const top=native?.overlay_band==='top';
  const filings=event.event==='verdict'?(data.live_filing_citations||[]).map(c=>`<a class="filing-citation" data-evidence-id="${esc(c.evidence_id)}" data-form="${esc(c.form)}" href="${esc(c.url)}">${esc(c.form)} · ${esc(c.period_label)}</a>`).join(''):'';
- return `<aside class="live-overlay${top?' top-band':''}" data-phase="${event.receipt_phase}" aria-label="${esc(event.overlay)}">${event.event==='evidence'?'':`<h2>${esc(titles[event.event]||event.overlay)}</h2>`}${items}${filings}</aside>`;
+ return `<aside class="live-overlay${items.includes('class="principal"')?' number-card':''}${top?' top-band':''}" data-phase="${event.receipt_phase}" aria-label="${esc(event.overlay)}">${event.event==='evidence'?'':`<h2>${esc(titles[event.event]||event.overlay)}</h2>`}${items}${filings}</aside>`;
 }
 function body(state){
  const scene=data.scenes[state.index];
@@ -195,7 +195,7 @@ window.seek=t=>{
   rows.innerHTML=terminal.rows.map(row=>`<p data-row="${row.row}" class="terminal-row${row.principal?' principal':''}">${esc(row.text)}</p>`).join('');
   const block=document.querySelector('#batch-block');block.textContent=data.batch_labels[state.index===3?'comparison':terminal.block];block.dataset.block=terminal.block;
  }
- if(state.cascade)stage.querySelectorAll('.post-copy').forEach((el,i)=>{const s=state.cascade[i];el.style.cssText=`transform:translate(${s.x}px,${s.y}px) rotate(${s.rotation}deg) scale(${s.scale});opacity:${s.opacity}`;});
+ if(state.cascade)stage.querySelectorAll('.post-copy').forEach((el,i)=>{const s=state.cascade[i];el.style.cssText=`transform:translate(${s.x}px,${s.y}px) rotate(${s.rotation}deg) scale(${s.scale});opacity:${s.opacity};z-index:${state.cascade.length-i}`;});
  if(state.inputs)stage.querySelectorAll('.input-tile').forEach((el,i)=>{el.style.transform='none';el.style.opacity=1;});
  if(state.architecture){state.architecture.nodes.forEach((v,i)=>document.querySelector(`#node-${i}`).style.opacity=v);state.architecture.links.forEach((v,i)=>document.querySelector(`#link-${i}`).style.opacity=v);}
  stage.dataset.active=state.active||'';

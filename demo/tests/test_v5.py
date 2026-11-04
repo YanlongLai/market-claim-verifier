@@ -25,6 +25,17 @@ def test_chapter_durations_and_safe_lane(story):
     assert bar['height_px']==12 and bar['label_font_px']>=32
     assert bar['top_px']+bar['height_px']<=bar['caption_zone_top_px']==880
 
+def test_provider_list_is_one_measured_sentence_but_two_sentences_are_rejected(story):
+    validate(story)
+    changed=copy.deepcopy(story)
+    scene=changed['scenes'][9]
+    text='Built with Muse Spark. Baseten and Fireworks.'
+    scene['cue_events'][0]['narration']=text
+    scene['narration']=text+' DappGo.'
+    scene['subtitle_cues']=[text.replace('. Baseten','.\nBaseten'),'DappGo.']
+    with pytest.raises(BuildError,match='own voice unit'):
+        validate(changed)
+
 def test_phase_coverage_and_real_receipt_clock(story):
     scene=story['scenes'][5]
     assert tuple(dict.fromkeys(e['receipt_phase'] for e in scene['cue_events']))==LIVE_PHASES

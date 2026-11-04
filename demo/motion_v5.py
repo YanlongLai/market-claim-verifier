@@ -25,7 +25,8 @@ def validate(story):
         if ' '.join(s['narration'].split())!=' '.join(' '.join(s['subtitle_cues']).split()):raise BuildError('Captions differ from locked narration')
         if any(len(c.splitlines())>2 or any(len(line)>42 for line in c.splitlines()) for c in s['subtitle_cues']):raise BuildError('Captions exceed 2 x 42')
         if s['cue_events'] and s['narration']!=' '.join(e['narration'] for e in s['cue_events']):raise BuildError('Cue words differ from locked narration')
-        if not s['cue_events'] or s.get('voice_cache_scene') or any(len(split_phrases(e['narration']))!=1 or len(subtitle_chunks(e['narration']))!=1 for e in s['cue_events']):
+        # A provider list stays inside its one independently measured sentence WAV.
+        if not s['cue_events'] or s.get('voice_cache_scene') or any(len(split_phrases(e['narration'],split_names=False))!=1 or len(subtitle_chunks(e['narration']))!=1 for e in s['cue_events']):
             raise BuildError('Every v5 sentence/phrase requires its own voice unit; multi-sentence cache aliases are forbidden')
         if i in (5,8) and bool(s.get('placeholder'))==bool(s.get('recording')):raise BuildError('Live scene must be pending or recorded')
         if i not in (5,8) and (s.get('placeholder') or s.get('recording')):raise BuildError('Only live scenes accept recordings')

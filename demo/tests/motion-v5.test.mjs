@@ -134,6 +134,7 @@ test('duration-weighted chapter fill is exact on every film frame',()=>{
 });
 test('cascade duplicates seven real HTML cards and settles without counters',()=>{
  assert.equal(repostCascade(0).length,7);
+ for(let frame=0;frame<360;frame++)assert(repostCascade(frame/30).every(c=>c.opacity===0||c.opacity===1),'Visible paper cards must stay opaque throughout their entrance and hold');
  assert(repostCascade(.5)[6].x<repostCascade(8)[6].x);
  assert.deepEqual(repostCascade(9),repostCascade(11.9));
  assert(state(8).cascade.every(c=>c.opacity===0));

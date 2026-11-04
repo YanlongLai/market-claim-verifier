@@ -13,12 +13,12 @@ NOISE_DB = -35
 MIN_SILENCE_S = .12
 
 
-def split_phrases(text: str) -> list[str]:
-    """Split sentences/colons and comma + capitalised names; keep decimals intact."""
+def split_phrases(text: str, *, split_names: bool = True) -> list[str]:
+    """Split sentences/colons and optional proper-name lists; keep decimals intact."""
     boundaries = [0]
     for i, char in enumerate(text):
         decimal = char == '.' and i > 0 and i + 1 < len(text) and text[i-1].isdigit() and text[i+1].isdigit()
-        if (char in '.:?!' and not decimal) or (char == ',' and re.match(r',\s+[A-Z]', text[i:])):
+        if (char in '.:?!' and not decimal) or (split_names and char == ',' and re.match(r',\s+[A-Z]', text[i:])):
             boundaries.append(i + 1)
     boundaries.append(len(text))
     phrases = [text[a:b].strip() for a, b in zip(boundaries, boundaries[1:]) if text[a:b].strip()]
