@@ -121,6 +121,7 @@ Copy each answer into the matching field. Character limits are the form's.
 | --- | --- |
 | Team Name | DappGo |
 | Team Members | Yanlong (solo) |
+| Live-check password (for judges; also in README/JUDGES) | Password: the team name (dappgo) |
 | Which track are you submitting to? | **Indie Developer Track** |
 | Which problem statement did you build towards? | **Build for Your World** (DappGo publishes US-market commentary; this addresses a fact-checking problem found in that product.) |
 | Most Viral Track — X post link | `<X post URL>` (post the X cut first, then paste the link) |
