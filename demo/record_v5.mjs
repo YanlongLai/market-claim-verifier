@@ -164,32 +164,14 @@ export async function showTraceAndFiling({page,result,report,mark,frame,click,ho
   const index=evidence.findIndex(e=>e.ticker==='AAPL'&&e.derived&&e.components?.length===2);
   if(index<0)throw new Error('apple_derivation_missing');
   const fact=evidence[index];
-  await click(`#live-result .live-evidence-row:nth-child(${index+1}) .evidence-data > summary`);
-  const details=page.locator('#live-result .live-evidence-row').nth(index).locator('details');
-  report.apple_inspect_open=await details.evaluate(el=>el.open);
-  if(!report.apple_inspect_open)throw new Error('apple_inspect_closed');
-  const pre=details.locator('pre');
-  const raw=JSON.parse(await pre.innerText());
-  if(raw.derivation!==fact.derivation||raw.components[0].value-raw.components[1].value!==raw.value)
-    throw new Error('apple_annual_minus_nine_months');
-  // Scroll to the actual derivation line inside the unmodified native <pre>.
-  const target=await pre.evaluate(el=>{
-    const index=el.firstChild.textContent.indexOf('"derivation"');
-    if(index<0)throw new Error('derivation_line_missing');
-    const range=document.createRange();range.setStart(el.firstChild,index);range.setEnd(el.firstChild,index+12);
-    return scrollY+range.getBoundingClientRect().top-140;
-  });
-  await frame(pre, target);
-  mark('apple_derivation_reveal');await hold(2000);
-  const nineMonthsTarget=await pre.evaluate((el,value)=>{
-    const index=el.firstChild.textContent.indexOf(`"value": ${value}`);
-    if(index<0)throw new Error('nine_month_component_missing');
-    const range=document.createRange();range.setStart(el.firstChild,index);range.setEnd(el.firstChild,index+12);
-    return scrollY+range.getBoundingClientRect().top-140;
-  },raw.components[1].value);
-  await frame(pre,nineMonthsTarget);mark('apple_nine_months_reveal');await hold(500);
-  report.apple_derivation={evidence_id:fact.evidence_id,derivation:raw.derivation,
-    annual:raw.components[0].value,nine_months:raw.components[1].value,quarter:raw.value,hold_ms:2000};
+  // Director cut (r3 host): the native derivation inspector is not narrated and its
+  // ~6 s pushed the choreography past the 58-s scene on slow checks. The derivation is
+  // verified from the same result JSON the page rendered; the native evidence row and
+  // the ending's two component filing links remain the on-screen proof.
+  if(fact.components[0].value-fact.components[1].value!==fact.value)throw new Error('apple_annual_minus_nine_months');
+  report.apple_inspect_open=false;
+  report.apple_derivation={evidence_id:fact.evidence_id,derivation:fact.derivation,
+    annual:fact.components[0].value,nine_months:fact.components[1].value,quarter:fact.value,source:'result_json',hold_ms:0};
 }
 
 export function redact(value, secret='') {
@@ -322,12 +304,12 @@ export async function record(config) {
     const release=await page.evaluate(revealCaptureDOM);
     report.startup_cover={...report.startup_cover,...release,workspace_framed_before_release:true,release_geometry_index:report.geometry_checks.length-1,released_at_s:(performance.now()-began)/1000};
     report.readability={...report.geometry_checks.at(-1),playback_body_px:presentation.body_font_px*presentation.css_zoom/4};
-    mark('live_workspace_reveal');await hold(1800);
+    mark('live_workspace_reveal');await hold(1900);
     await page.waitForFunction(()=>!document.querySelector('#live-input')?.disabled &&
       !document.querySelector('#live-submit')?.disabled,null,{timeout:12000});
     await click('#live-example');
     await frame('#live-input');
-    mark('use_apple_example');await hold(1600);
+    mark('use_apple_example');await hold(1700);
     const input=await page.locator('#live-input').inputValue();
     if(!input.includes('Apple pulled in $416.2 billion') || !input.includes('Amazon') || !input.includes('NVIDIA'))
       throw new Error('wrong_default_example');
@@ -366,7 +348,7 @@ export async function record(config) {
     await page.locator(`#live-result .live-evidence-row:nth-child(${appleIndex+1}) .evidence-primary`).first().hover();await hold(400);
     await showTraceAndFiling({page,result,report,mark,frame,click,hold});
     await frame('#live-result .live-receipt');
-    await page.locator('#live-result .live-receipt').first().hover();mark('hover_receipt');await hold(2400);
+    await page.locator('#live-result .live-receipt').first().hover();mark('hover_receipt');await hold(2000);
     report.beat6_actions_end_s=(performance.now()-began)/1000;
     report.after_click_s=(performance.now()-clickedAt)/1000;
     mark('beat6_choreography_gate');
@@ -382,7 +364,13 @@ export async function record(config) {
     const span=await page.evaluate(({draft,citation})=>
       document.querySelector(citation).getBoundingClientRect().bottom-
       document.querySelector(draft).getBoundingClientRect().top,{draft,citation});
-    if(span>480)throw new Error('native_cited_changes_and_links_do_not_fit');
+    // The whole draft section does not always fit; then hold the native corrected edit
+    // (the struck/inserted value under "Cited changes") with both filing links.
+    if(span>480)draft='#live-result .correction-changes > li > strong';
+    const editSpan=await page.evaluate(({draft,citation})=>
+      document.querySelector(citation).getBoundingClientRect().bottom-
+      document.querySelector(draft).getBoundingClientRect().top,{draft,citation});
+    if(editSpan>480)throw new Error('native_cited_changes_and_links_do_not_fit');
     // Push the complete unrelated section below the composed viewport. No
     // correction, cited change or filing content is hidden or reconstructed.
     await page.addStyleTag({content:'#live-result .live-corrections h6:first-of-type{margin-top:400px!important}#live-result .correction-changes{margin-bottom:600px!important}#live-result .correction-changes .trace-data{margin-top:600px!important}'});

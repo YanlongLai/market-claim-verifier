@@ -32,7 +32,7 @@ def main():
     audit=args.frames/'named-element-audit.json'
     if audit.exists():raise BuildError('Retain the prior named-element audit before regenerating')
     audit.write_text(json.dumps(dict(status='pass',scope='Named element visible and clear at every measured sentence onset and end; final listening remains separate',
-        index_sha256=file_hash(args.frames/'index.json'),rows=[dict(id=r['id'],onset=r['onset_frame'],end=r['end_frame'],**r['automated_frame_audit']) for r in measured]),indent=2)+'\n')
+        index_sha256=file_hash(args.frames/'index.json'),rows=[dict(id=r['id'],onset_frame=r['onset_frame'],end_frame=r['end_frame'],audit=r['automated_frame_audit']) for r in measured]),indent=2)+'\n')
     paths=[args.frames/f['captioned_file'] for f in selected]
     command=['swift',str(ROOT/'demo/ocr_v5.swift'),*[str(p) for p in paths]]
     result=subprocess.run(command,check=True,capture_output=True,text=True)
