@@ -137,7 +137,7 @@ def compile_data(root=ROOT,story=None,voices=None,*,preview=False):
     baseline=yaml.safe_load((root/'demo/storyboard-v4.yaml').read_text())
     if story['voice']!=baseline['voice'] or story['music']!=baseline['music']:raise BuildError('Locked voice/music changed')
     live=story['scenes'][5];live_receipt=None
-    from record_v5 import live_cue_events,RecordingError,check_recordings,apple_filing_citations
+    from record_v5 import live_cue_events,RecordingError,check_recordings,apple_filing_citations,with_phase_aliases
     try:check_recordings(story,root,required=False)
     except RecordingError as e:raise BuildError(str(e)) from e
     if live.get('recording'):
@@ -145,8 +145,8 @@ def compile_data(root=ROOT,story=None,voices=None,*,preview=False):
         retained=saved.get('recordings',{}).get(live['id'],{})
         if path.is_file():
             if file_hash(path)!=recording['receipt_sha256']:raise BuildError('Wired live receipt changed')
-            live_receipt=read_json(path)
-        elif retained.get('recording')==recording:live_receipt=retained['receipt']
+            live_receipt=with_phase_aliases(read_json(path))
+        elif retained.get('recording')==recording:live_receipt=with_phase_aliases(retained['receipt'])
         else:raise BuildError('Wired live receipt missing; no matching portable metadata')
         resolved=live_cue_events(live,live_receipt)
         if resolved!=live['cue_events']:raise BuildError('Live cues are stale for their receipt; rewire on host')

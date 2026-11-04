@@ -30,9 +30,11 @@ def check_composite(video,data,out):
     start=data['live_terminal']['start_scene_s']
     checks=[]
     # Ignore two boundary pixels to allow chroma filtering at the inset border.
-    regions=[('left gutter',58.,58.,(76,228,0,560)),
-             ('right gutter',58.,58.,(76,228,1844,560)),
-             ('password extension',58.,start,(1920,24,0,532))]
+    # Keep clear of the inset card's 1 px border row (chroma smear) and of the
+    # backplate's password->normal switch frame (seek rounding): 4 px / 0.4 s.
+    regions=[('left gutter',58.,58.,(72,220,0,566)),
+             ('right gutter',58.,58.,(72,220,1848,566)),
+             ('password extension',58.,max(0.,start-.4),(1920,20,0,534))]
     for name,at,duration,(width,height,x,y) in regions:
         command=['/opt/homebrew/bin/ffmpeg','-nostdin','-v','error','-ss',str(at),'-i',str(video),
             '-t',str(duration),'-vf',f'fps=30,crop={width}:{height}:{x}:{y}',
