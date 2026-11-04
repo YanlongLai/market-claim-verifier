@@ -22,16 +22,19 @@ def require_v2(builder) -> None:
 
 def motion_folder(builder) -> Path:
     variant=builder.story.get('motion_variant')
-    return builder.demo / (f'motion/{variant}' if variant in ('v3','v4') else 'motion')
+    return builder.demo / (f'motion/{variant}' if variant in ('v3','v4','v5') else 'motion')
 
 
 def renderer_args(builder) -> list:
     variant=builder.story.get('motion_variant')
-    return (['--entry', f'{variant}/index.html'] if variant in ('v3','v4') else [])
+    return (['--entry', f'{variant}/index.html'] if variant in ('v3','v4','v5') else [])
 
 
 def prepare(builder, *, require_voice: bool = False) -> dict:
     require_v2(builder)
+    if builder.story.get('motion_variant') == 'v5':
+        from motion_v5 import prepare as prepare_v5
+        return prepare_v5(builder, require_voice=require_voice)
     if builder.story.get('motion_variant') == 'v4':
         from motion_v4 import prepare as prepare_v4
         return prepare_v4(builder, require_voice=require_voice)
@@ -116,14 +119,14 @@ def output_path(builder, default: Path) -> Path:
 
 def keyframes(builder) -> None:
     timing=prepare(builder,require_voice=True)
-    if builder.story.get('motion_variant') in ('v3','v4'):
+    if builder.story.get('motion_variant') in ('v3','v4','v5'):
         times=builder.args.t or [f['t'] for f in read_json(motion_folder(builder)/'keyframes.json')]
     else:
         times=builder.args.t or keyframe_times(timing,builder.scenes)
     if any(not math.isfinite(t) or t<0 or t>timing['duration'] for t in times):
         raise BuildError('Keyframe time must be finite and within the timeline.')
     variant=builder.story.get('motion_variant')
-    output=output_path(builder,builder.demo/('out/keyframes-v4' if variant=='v4' else 'out/keyframes-v007' if variant=='v3' else 'out/keyframes-v2'))
+    output=output_path(builder,builder.demo/('out/keyframes-v5' if variant=='v5' else 'out/keyframes-v4' if variant=='v4' else 'out/keyframes-v007' if variant=='v3' else 'out/keyframes-v2'))
     args=['node',builder.demo/'motion/render.mjs',*renderer_args(builder)]
     for t in times:
         args += ['--t',f'{t:.9f}']
@@ -143,13 +146,16 @@ def narration_subtitles(scenes: list[dict], timing: dict, cues: dict):
 def review_frames(builder) -> None:
     timing=prepare(builder,require_voice=True)
     cues=read_json(motion_folder(builder)/'cues.json')
-    output=output_path(builder,builder.demo/('out/review-v007' if builder.story.get('motion_variant')=='v3' else 'out/review-v4'))
+    output=output_path(builder,builder.demo/('out/review-v5' if builder.story.get('motion_variant')=='v5' else 'out/review-v007' if builder.story.get('motion_variant')=='v3' else 'out/review-v4'))
     output.mkdir(parents=True,exist_ok=True)
     # An old completed index must not make a new plan or failed render look reviewed.
     (output/'index.json').unlink(missing_ok=True)
     (output/'evidence.json').unlink(missing_ok=True)
     plan=review_frame_plan(timing,cues['_events'],
-                           include_boundaries=builder.story.get('motion_variant')=='v3')
+                           include_boundaries=builder.story.get('motion_variant') in ('v3','v5'))
+    if builder.story.get('motion_variant')=='v5':
+        plan.extend(dict(shot=f['shot'],t=f['t'],cue=f['cue']) for f in read_json(motion_folder(builder)/'keyframes.json'))
+        plan=sorted({(f['shot'],f['t']):f for f in plan}.values(),key=lambda f:f['t'])
     write_json(output/'plan.json',plan)
     subtitles=narration_subtitles(builder.scenes,timing,cues)
     srt=output/'subtitles.srt'
@@ -171,7 +177,7 @@ def review_frames(builder) -> None:
             raise BuildError('Review frame time, shot or PNG differs from its plan.')
         captioned='captioned/'+actual['file']
         subtitle=motion_media.caption_review_frame(output/actual['file'],output/captioned,subtitles,actual['t'],
-                                                  font_size=56 if builder.story.get('motion_variant')=='v3' else 50)
+                                                  font_size=56 if builder.story.get('motion_variant') in ('v3','v5') else 50)
         index.append({**expected,'file':actual['file'],'captioned_file':captioned,'subtitle':subtitle})
     write_json(output/'index.json',index)
     write_json(output/'evidence.json',dict(status='rendered',duration=timing['duration'],
@@ -230,6 +236,11 @@ def render(builder, *, test: bool = False) -> dict:
         from motion_v3 import evidence_data
         implementation['motion_v3.py']=file_hash(builder.demo/'motion_v3.py')
         evidence=evidence_data(builder.repo)['provenance']
+    elif builder.story.get('motion_variant') == 'v5':
+        from motion_v5 import compile_data
+        implementation['motion_v5.py']=file_hash(builder.demo/'motion_v5.py')
+        implementation['voice_v5.py']=file_hash(builder.demo/'voice_v5.py')
+        evidence=compile_data(builder.repo,builder.story)['provenance']
     elif builder.story.get('motion_variant') == 'v4':
         from motion_v4 import compile_data
         implementation['motion_v4.py']=file_hash(builder.demo/'motion_v4.py')
@@ -248,10 +259,12 @@ def render(builder, *, test: bool = False) -> dict:
     cues=narration_subtitles(builder.scenes,timing,read_json(motion_folder(builder)/'cues.json'))
     local=motion_media.window_subtitles(cues,start,length)
     motion_media.burn_captions(folder/'picture.mp4',local,folder/'captioned.mp4',length,
-                              font_size=56 if builder.story.get('motion_variant')=='v3' else 50)
+                              font_size=56 if builder.story.get('motion_variant') in ('v3','v5') else 50)
     loudness=media.master(folder/'captioned.mp4',audio,folder/'master.mp4',length,
                           start_s=start,preview=test,reference=reference)
     validation=media.validate_export(folder/'master.mp4',length)
+    if builder.story.get('motion_variant')=='v5' and not test and validation['duration_s']>178.001:
+        raise BuildError('V5 export exceeds the binding 178-second duration')
     if test:
         builder.alias(folder/'master.mp4',output)
         output.with_suffix('.srt').write_text(to_srt(local))

@@ -1,0 +1,172 @@
+#!/usr/bin/env python3
+"""Compile the binding 178-second v5 timeline; default is an explicitly unmeasured preview."""
+from __future__ import annotations
+import argparse,copy,json,math,re
+from pathlib import Path
+import yaml
+from motion_cues import map_sentences,sentence_subtitles
+from pipeline import BuildError,file_hash,read_json,to_srt,subtitle_chunks
+ROOT=Path(__file__).resolve().parents[1]
+OUT='demo/motion/v5'
+BOUNDARIES=[0.,8.,20.,32.,46.,58.,116.,138.,154.,170.,178.]
+LIVE_PHASES=('use_apple_example','check_against_sec','verdict_reveal','draft_reveal','evidence_reveal','agent_trace_expand','hover_receipt')
+CJK=re.compile('[\u2e80-\u9fff\uac00-\ud7af\uf900-\ufaff\U00020000-\U000323af]')
+
+def english_only(text,label):
+    if CJK.search(text):raise BuildError(f'{label}: non-English glyph in film source')
+
+def validate(story):
+    scenes=story['scenes']
+    if story.get('version')!=2 or story.get('motion_variant')!='v5' or [s['id'] for s in scenes]!=[f'v50{i}' for i in range(10)]:
+        raise BuildError('v5 requires scenes v500 through v509 in order')
+    for i,s in enumerate(scenes):
+        if [s['target_start_s'],s['target_end_s'],s['target_s']]!=[BOUNDARIES[i],BOUNDARIES[i+1],BOUNDARIES[i+1]-BOUNDARIES[i]]:raise BuildError('Binding scene table changed')
+        if ' '.join(s['narration'].split())!=' '.join(' '.join(s['subtitle_cues']).split()):raise BuildError('Captions differ from locked narration')
+        if any(len(c.splitlines())>2 or any(len(line)>42 for line in c.splitlines()) for c in s['subtitle_cues']):raise BuildError('Captions exceed 2 x 42')
+        if s['cue_events'] and s['narration']!=' '.join(e['narration'] for e in s['cue_events']):raise BuildError('Cue words differ from locked narration')
+        if i in (5,8) and bool(s.get('placeholder'))==bool(s.get('recording')):raise BuildError('Live scene must be pending or recorded')
+        if i not in (5,8) and (s.get('placeholder') or s.get('recording')):raise BuildError('Only live scenes accept recordings')
+    if tuple(e.get('receipt_phase') for e in scenes[5]['cue_events'])!=LIVE_PHASES or any(e.get('offset_s',0)!=0 for e in scenes[5]['cue_events']):raise BuildError('Live cues must cover all seven receipt phases, in order')
+    chapter=story['chapter_bar'];segments=chapter['segments']
+    if len(segments)!=10 or sum(s['duration_s'] for s in segments)!=178:raise BuildError('Chapter segments must total 178 seconds')
+    for i,s in enumerate(segments):
+        if s['scene']!=scenes[i]['id'] or [s['start_s'],s['end_s'],s['duration_s']]!=[BOUNDARIES[i],BOUNDARIES[i+1],scenes[i]['target_s']]:raise BuildError('Chapter segments differ from cuts')
+    if (chapter['height_px']!=12 or chapter['label_font_px']<32 or chapter['top_px']+12>chapter['caption_zone_top_px'] or chapter['caption_zone_top_px']<880):raise BuildError('Chapter bar overlaps caption lane')
+    if story['max_total_s']!=178 or story['target_total_s']!=178:raise BuildError('Binding duration is 178 seconds')
+    english_only(json.dumps(story,ensure_ascii=False),'storyboard')
+
+def metrics(root):
+    folder='docs/evidence/eval-v2-2026-10-27'
+    rows=[read_json(p) for p in sorted((root/folder).glob('*--agent@baseten.json'))]
+    gold_path='eval/v2/claims-v2-corrected.jsonl'
+    gold={r['id']:r['gold_verdict'] for r in map(json.loads,(root/gold_path).read_text().splitlines())}
+    test=[r for r in rows if r['split']=='test'];neg=[r for r in test if gold[r['id']]!='supported']
+    completed=[r for r in test if r['status']=='completed']
+    from scale_v4 import compile_scale
+    scale=compile_scale(root)
+    return dict(heldout_correct=sum(r['status']=='completed' and r['verdict']==gold[r['id']] for r in test),heldout_n=len(test),false_support=sum(r['status']=='completed' and r['verdict']=='supported' for r in neg),negative_n=len(neg),mean_cost_usd=sum(r['cost_usd'] for r in completed)/len(completed),median_claim_seconds=scale['eval_v2']['median_completed_latency_seconds']),[gold_path,*[p.relative_to(root).as_posix() for p in sorted((root/folder).glob('*--agent@baseten.json'))]]
+
+def cue_spans(scene,voice=None):
+    events=scene['cue_events']
+    if not events:return []
+    spans=[]
+    if voice:
+        spans=voice.get('cue_spans',[])
+        if [s['event'] for s in spans]!=[s['event'] for s in events]:raise BuildError(f"{scene['id']}: measured cue sources missing or stale")
+    for i,event in enumerate(events):
+        a=event['at_scene_s'];limit=events[i+1]['at_scene_s'] if i+1<len(events) else scene['target_s']-.15
+        if not math.isfinite(a) or a<0 or limit<=a:raise BuildError('Cue onsets must increase inside the scene')
+        duration=(spans[i]['source_end_s']-spans[i]['source_start_s']) if voice else min(len(event['narration'])/14,limit-a-.05)
+        if duration<=0 or a+duration>limit+1e-8:
+            raise BuildError(f"{scene['id']} / {event['event']}: measured voice {duration:.3f} s exceeds {limit-a:.3f} s visual budget. Retain the take; no speech is cut or accelerated.")
+        yield event,a,duration,spans[i] if voice else None
+
+def compile_data(root=ROOT,story=None,voices=None):
+    story=copy.deepcopy(story or yaml.safe_load((root/'demo/storyboard-v5.yaml').read_text()));validate(story)
+    baseline=yaml.safe_load((root/'demo/storyboard-v4.yaml').read_text())
+    if story['voice']!=baseline['voice'] or story['music']!=baseline['music']:raise BuildError('Locked voice/music changed')
+    live=story['scenes'][5];live_receipt=None
+    from record_v5 import live_cue_events,RecordingError,check_recordings
+    try:check_recordings(story,root,required=False)
+    except RecordingError as e:raise BuildError(str(e)) from e
+    if live.get('recording'):
+        recording=live['recording'];path=root/recording['receipt']
+        if not path.is_file() or file_hash(path)!=recording['receipt_sha256']:raise BuildError('Wired live receipt missing or changed')
+        live_receipt=read_json(path)
+        resolved=live_cue_events(live,live_receipt)
+        if resolved!=live['cue_events']:raise BuildError('Live cues are stale for their receipt; rewire on host')
+    else:
+        for event in live['cue_events']:event['at_scene_s']=event['preview_at_scene_s']
+    shots=[];cues={'_version':1,'_methods':{},'_analysis':{},'_events':{}}
+    for i,scene in enumerate(story['scenes']):
+        voice=voices[i] if voices else None
+        duration=voice['voice_s'] if voice else scene['target_s']-.3
+        if not math.isfinite(duration) or duration<=0:raise BuildError('Invalid voice duration')
+        shot=dict(id=scene['id'],start=scene['target_start_s'],end=scene['target_end_s'],voice_start=scene['target_start_s'],voice_end=scene['target_start_s']+duration,voice_s=duration)
+        local=[];events=[];segments=[]
+        if scene['cue_events']:
+            for event,at,length,source in cue_spans(scene,voice):
+                group,_=map_sentences(event['narration'],length,[],offset=at);local.extend(group)
+                events.append(dict(event=event['event'],cue=subtitle_chunks(event['narration'])[0].splitlines()[0],narration=event['narration'],t=shot['start']+at,cue_start=shot['start']+at,cue_end=shot['start']+at+length,receipt_phase=event.get('receipt_phase'),terminal_block=event.get('terminal_block'),alignment='measured cue source' if voice else 'target preview',review_at_start=True))
+                if source:segments.append(dict(source_start_s=source['source_start_s'],source_end_s=source['source_end_s'],at_s=shot['start']+at,event=event['event']))
+            shot['voice_end']=shot['start']+local[-1]['end']
+            if voice:shot['voice_segments']=segments
+        else:
+            if duration+.15>scene['target_s']:raise BuildError(f"{scene['id']}: voice exceeds the binding cut")
+            local,_=map_sentences(scene['narration'],duration,[])
+        cues[scene['id']]=[{**c,'start':shot['start']+c['start'],'end':shot['start']+c['end']} for c in local]
+        cues['_events'][scene['id']]=events;cues['_methods'][scene['id']]='measured cue sources / proportional subtitles' if voice else 'target preview; unmeasured'
+        cues['_analysis'][scene['id']]={'voice_key':voice['key'],'audio_sha256':voice['artifacts']['audio']['sha256']} if voice else {'source':'target preview; not synthesized'}
+        shots.append(shot)
+    timing=dict(version=2,source='measured cue sources / binding cuts' if voices else 'director targets; voice and new live capture pending',duration=178.,shots=shots,music_offset_s=story['music']['music_offset_s'],cut_rule='Fixed section 10 cuts; receipt-bound narration and overlays; no speech acceleration or truncation',placeholders=[s['id'] for s in story['scenes'] if s.get('placeholder')])
+    captions=sentence_subtitles(story['scenes'],timing,cues)
+    if any(len(c.text.splitlines())>2 or any(len(line)>42 for line in c.text.splitlines()) for c in captions):raise BuildError('Compiled captions exceed 2 x 42')
+    values,metric_sources=metrics(root)
+    asset_receipt=read_json(root/'demo/assets/examples-v5/receipt.json')
+    for item in asset_receipt['inputs']+asset_receipt['derived']:
+        if file_hash(root/item['path'])!=item['sha256']:raise BuildError('Copied example/preview changed since receipt')
+    waveform=read_json(root/'demo/assets/examples-v5/a-waveform.json')['bins']
+    inputs=[dict(type=ext,label=label,source=f'a.{ext}',preview=f'demo/assets/examples-v5/{preview}') for ext,label,preview in [('png','Screenshot','a.png'),('pdf','PDF','a-pdf-page1.png'),('audio','Audio','a-waveform.json'),('mp4','Video','a-video-frame.png')]]
+    inputs[2]['source']='a.mp3'
+    sources=set(metric_sources+['demo/storyboard-v5.yaml','demo/storyboard-v4.yaml','demo/assets/architecture-v4.svg','demo/assets/examples-v5/receipt.json','demo/assets/examples-v5/a.txt','demo/data/scale-v4.json',story['music']['beats']])
+    for s in story['scenes']:sources.update(s['evidence'])
+    for item in asset_receipt['inputs']+asset_receipt['derived']:sources.add(item['path'])
+    for name in ('beat3','beat6'):
+        path=f'demo/assets/terminal-v5/{name}.json';record=read_json(root/path)
+        if file_hash(root/record['path'])!=record['sha256'] or file_hash(root/record['source'])!=record['source_sha256']:raise BuildError('Terminal source or re-cut changed since receipt')
+        sources.update([path,record['path'],record['source']])
+    if live_receipt:sources.add(live['recording']['receipt']);sources.add(live['recording']['asset'])
+    keyframes=[dict(t=t,shot=f'v50{i}',cue='beat boundary') for i,t in enumerate(BOUNDARIES[:-1])]
+    keyframes.extend(dict(t=s['start']+(s['end']-s['start'])/2,shot=s['id'],cue='midpoint') for s in shots)
+    keyframes.extend(dict(t=e['t']+.15,shot=s['id'],cue=e['event']) for s in shots for e in cues['_events'][s['id']])
+    for shot in shots:
+        for n,cue in enumerate(cues[shot['id']]):
+            keyframes.append(dict(t=cue['start'],shot=shot['id'],cue=f'sentence {n+1} start'))
+            keyframes.append(dict(t=max(cue['start'],cue['end']-1/30),shot=shot['id'],cue=f'sentence {n+1} end'))
+    keyframes.append(dict(t=178-1/30,shot='v509',cue='last encoded frame'))
+    for index in (0,2,5,7,9):keyframes.append(dict(t=BOUNDARIES[index]+1,shot=f'v50{index}',cue='chapter sample'))
+    data=dict(timing=timing,cues=cues,beats={'beats_s':[t-story['music']['music_offset_s'] for t in read_json(root/story['music']['beats'])['beats_s'] if t>=story['music']['music_offset_s']]},scenes=story['scenes'],chapter_bar=story['chapter_bar'],brand=story['brand'],keyframes=sorted(keyframes,key=lambda f:f['t']),subtitles=[dict(start=c.start,end=c.end,text=c.text) for c in captions],metrics=values,post_text=(root/'demo/assets/examples-v5/a.txt').read_text().strip(),inputs=inputs,waveform=waveform,architecture_svg=(root/'demo/assets/architecture-v4.svg').read_text().replace('fourteen seconds','twelve seconds').replace('y="780"','y="750"'),live_receipt=dict(cost_usd=live_receipt['result']['cost_usd'],latency_ms=live_receipt['result']['latency_ms'],model=live_receipt['result']['model'],tool_calls=len([e for e in live_receipt['result']['events'] if e['kind']=='tool_call'])) if live_receipt else None,batch_labels={'run':'Saved replay · Post → Claims → Calls → Verdicts','ocr':'Saved replay · Screenshot → Muse OCR','asr':'Saved replay · Audio → Muse Voice Transcribe','median':'Saved Threads posts · measured median','projection':'Sequential projection · one worker'},provenance={p:file_hash(root/p) for p in sorted(sources)},asset_status={'live':'new v5 capture wired' if live_receipt else 'host capture pending','voice':'measured' if voices else 'unmeasured layout preview','terminal':'retained r5 terminal re-cut; no new OCR/ASR','broll':'none'})
+    english_only(json.dumps(data,ensure_ascii=False),'compiled motion data')
+    return data
+
+def artifacts(data,root=ROOT):
+    outputs={f'{OUT}/{k}.json':json.dumps(data[k],indent=2,ensure_ascii=False)+'\n' for k in ('timing','cues','beats','keyframes')}
+    outputs[f'{OUT}/data.js']='window.MOTION_DATA = '+json.dumps(data,ensure_ascii=False,sort_keys=True).replace('</','<\\/')+';\n'
+    from pipeline import Subtitle
+    outputs[f'{OUT}/subtitles.srt']=to_srt([Subtitle(**c) for c in data['subtitles']])
+    scripts=[]
+    for name in ('plan.js','chapters.js','app.js'):
+        text='\n'.join(line for line in (root/OUT/name).read_text().splitlines() if not line.startswith('import ')).replace('export ','')
+        scripts.append(text)
+    outputs[f'{OUT}/bundle.js']='// Generated by motion_v5.py for offline file rendering.\n'+'\n'.join(scripts)+'\n'
+    for name,text in outputs.items():english_only(text,name)
+    for p in (root/OUT).iterdir():
+        if p.suffix in ('.js','.mjs','.html','.css'):english_only(p.read_text(),str(p))
+    return outputs
+
+def prepare(builder,*,require_voice=False):
+    if require_voice:
+        from record_v5 import check_recordings,RecordingError
+        try:check_recordings(builder.story,builder.repo)
+        except RecordingError as e:raise BuildError(str(e)) from e
+    voices=None
+    try:voices=[builder.require_voice(s) for s in builder.scenes]
+    except BuildError:
+        if require_voice:raise
+    data=compile_data(builder.repo,builder.story,voices)
+    for name,content in artifacts(data,builder.repo).items():(builder.repo/name).write_text(content)
+    return data['timing']
+
+def main():
+    parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('--check',action='store_true');parser.add_argument('--measured',action='store_true');args=parser.parse_args()
+    if args.measured:
+        from build import Builder,parser as build_parser
+        builder=Builder(build_parser().parse_args(['keyframes','--storyboard',str(ROOT/'demo/storyboard-v5.yaml')]))
+        data=compile_data(ROOT,builder.story,[builder.require_voice(s) for s in builder.scenes])
+    else:data=compile_data()
+    for name,content in artifacts(data).items():
+        if args.check:
+            if (ROOT/name).read_text()!=content:raise SystemExit(f'{name} stale; compile with the same timing mode')
+        else:(ROOT/name).write_text(content)
+    print(f"PASS v5: 10 cuts / 178 s; seven receipt-bound overlays; English captions <=2 x 42; {data['asset_status']['voice']}")
+if __name__=='__main__':main()

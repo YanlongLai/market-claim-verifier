@@ -58,8 +58,8 @@ def test_scale_is_rebuildable_with_all_sources_retained_and_no_parallel_projecti
     assert motion_v4.scale_narration(saved) in STORY['scenes'][6]['narration']
     assert STORY['scenes'][6]['narration'].endswith('At that median, a thousand posts take about two hours on one worker.')
     assert STORY['scenes'][5]['narration']==('Live, on the site. Paste the post and run it. '
-        'Muse Spark calls the SEC tools — every call is on the record. Contradicted, with the filing. '
-        'Here is the corrected draft; cost and time are on the receipt.')
+        'Contradicted, with the filing. Here is the corrected draft; cost and time are on the receipt. '
+        'Every SEC call is on the record.')
     assert saved['cohorts']['news/baseten/post']['items']==80
     assert saved['recorded_parallel_batches']['threads']['workers']==3
     assert saved['eval_v2']['median_completed_latency_seconds']==pytest.approx(10.012793354457244)

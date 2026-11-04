@@ -181,9 +181,18 @@ class Builder:
                         mode=config.get("mode", "design"),
                         ref_audio_sha256=file_hash(self.repo / config["ref_audio"]) if clone else None,
                         ref_text=config.get("ref_text") if clone else None)
-        return engine, key, self.stage_dir("voice", scene["id"], key)
+        cache_scene=scene.get('voice_cache_scene',scene['id'])
+        if cache_scene!=scene['id']:
+            baseline=yaml.safe_load((self.demo/'storyboard-v4.yaml').read_text())
+            prior=next((s for s in baseline['scenes'] if s['id']==cache_scene),None)
+            if self.story.get('motion_variant')!='v5' or not prior or prior['narration']!=scene['narration'] or baseline['voice']!=self.story['voice']:
+                raise BuildError('Only exact unchanged v4 narration may reuse its cache')
+        return engine, key, self.stage_dir("voice", cache_scene, key)
 
     def require_voice(self, scene: dict) -> dict:
+        if self.story.get('motion_variant')=='v5' and scene.get('cue_events'):
+            from voice_v5 import require
+            return require(self,scene)
         _, key, folder = self.voice_spec(scene)
         files = {"audio": folder / "clip.wav", "engine_receipt": folder / "source.wav.json"}
         result = cached(folder / "receipt.json", key, files)
@@ -195,7 +204,10 @@ class Builder:
                              "--voice-fallback option), or run all without --only.")
         return result
 
-    def voice(self) -> None:
+    def voice(self, *, _v5_units=False) -> None:
+        if self.story.get('motion_variant')=='v5' and not _v5_units:
+            from voice_v5 import synthesize
+            return synthesize(self)
         pending = []
         for scene in self.selected():
             engine, key, folder = self.voice_spec(scene)

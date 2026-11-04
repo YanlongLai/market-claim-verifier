@@ -108,7 +108,8 @@ def make_takes(tmp_path, monkeypatch):
                    "capture_version":5,"zoom":1.6,
                    "readability":{"playback_body_px":20.16,"column_center_x":960},
                    "timings":[{"phase":"verdict_reveal","at_s":22.08978275},
-                              {"phase":"draft_reveal","at_s":25.017312916}],
+                              {"phase":"draft_reveal","at_s":25.017312916},
+                              {"phase":"agent_trace_expand","at_s":29.325230958}],
                    "choreography":{"trace_details_open":True,"apple_inspect_open":True,
                        "program_verdict_shown":True,"after_click_s":45,"beat6_actions_end_s":50,
                        "apple_derivation":{"annual":416161000000,"nine_months":313695000000,
@@ -125,7 +126,7 @@ def make_takes(tmp_path, monkeypatch):
         receipt_path = tmp_path / f"{beat}.json"
         recorder.save(receipt_path, receipt)
         original=next(s for s in yaml.safe_load(recorder.STORYBOARD.read_text())['scenes'] if s['id']==scene_id)
-        story["scenes"].append({"id": scene_id, "target_s": seconds,"cue_events":original['cue_events'],
+        story["scenes"].append({"id": scene_id, "target_s": seconds,"cue_events":recorder.live_cue_events(original,receipt),
                                 "recording": {"asset": f"{beat}.mp4", "receipt": receipt_path.name, "offset_s": 0}})
     monkeypatch.setattr(recorder, "probe", lambda path: {"duration_s": lengths['v406' if 'beat6' in str(path) else 'v409'],
                                                        "width": 1920, "height": 1080, "fps": "30/1"})
@@ -200,8 +201,8 @@ def test_closed_or_incomplete_trace_and_overlong_choreography_are_rejected(tmp_p
 
 def test_cue_positions_follow_receipt_reveals_instead_of_model_latency():
     scene=yaml.safe_load(recorder.STORYBOARD.read_text())['scenes'][5]
-    receipt={'timings':[{'phase':'verdict_reveal','at_s':19},{'phase':'draft_reveal','at_s':24}]}
-    assert [e['at_scene_s'] for e in recorder.live_cue_events(scene,receipt)]==[0,18,21,24]
+    receipt={'timings':[{'phase':'verdict_reveal','at_s':19},{'phase':'draft_reveal','at_s':24},{'phase':'agent_trace_expand','at_s':30}]}
+    assert [e['at_scene_s'] for e in recorder.live_cue_events(scene,receipt)]==[0,19.2,24,30]
 
 
 def test_wiring_uses_timestamped_assets_and_preserves_all_narration_and_cuts(tmp_path, monkeypatch):

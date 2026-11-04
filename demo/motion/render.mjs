@@ -7,6 +7,7 @@ import {launch, restrictNetwork} from '../capture/browser.mjs';
 import {checkLayout} from './layout-checks.mjs';
 import {checkV3Layout} from './v3/layout-checks.mjs';
 import {checkV4Layout} from './v4/layout-checks.mjs';
+import {checkV5Layout} from './v5/layout-checks.mjs';
 
 export function parseArgs(args) {
   const out={times:[],fps:30};
@@ -15,7 +16,7 @@ export function parseArgs(args) {
     if(!['--t','--from','--to','--fps','--out','--entry'].includes(flag)||value===undefined) throw new Error('Usage: node render.mjs [--entry v3/index.html] --t 3 --out dir | --from A --to B --fps 30 --out dir');
     if(flag==='--out') out.out=path.resolve(value);
     else if(flag==='--entry') {
-      if(!['index.html','v3/index.html','v4/index.html'].includes(value)) throw new Error('Choose index.html, v3/index.html or v4/index.html.');
+      if(!['index.html','v3/index.html','v4/index.html','v5/index.html'].includes(value)) throw new Error('Choose index.html, v3/index.html v4/index.html or v5/index.html.');
       out.entry=value;
     }
     else {
@@ -59,6 +60,7 @@ export async function renderFrames(options) {
       const layout=await checkLayout(page);
       if(options.entry==='v3/index.html') layout.v3=await checkV3Layout(page);
       if(options.entry==='v4/index.html') layout.v4=await checkV4Layout(page,state);
+      if(options.entry==='v5/index.html') layout.v5=await checkV5Layout(page,state);
       const name=frameName(i,t,options.sequence);
       await page.screenshot({path:path.join(options.out,name),type:'png',animations:'disabled',fullPage:false});
       frames.push({file:name,t,shot:state.shot,layout});
