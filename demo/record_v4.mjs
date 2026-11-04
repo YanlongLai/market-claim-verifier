@@ -185,11 +185,11 @@ export async function record(config) {
     }),{draft,citation});
     if(!together)throw new Error('draft_and_filing_not_in_view');
     const beat9Start=performance.now();
-    mark('beat9_corrected_draft_and_filing_hold');await hold(5000);
-    mark('beat9_native_footer');await frame('.site-footer');
-    report.beat9_footer_at_s=(performance.now()-beat9Start)/1000;
-    if(report.beat9_footer_at_s>11.5)throw new Error('footer_exceeds_first_16_seconds');
-    await hold(Math.max(4500,17000-(performance.now()-beat9Start)));
+    // Director D5: the film ends on the working result. Hold the corrected draft and its
+    // filing link for the whole scene; the URL is overlaid by the motion system, not the footer.
+    mark('beat9_corrected_draft_and_filing_hold');
+    await hold(Math.max(15000,17000-(performance.now()-beat9Start)));
+    report.beat9_footer_at_s=null;
     report.beat9_span_s=(performance.now()-beat9Start)/1000;
     report.status='captured';
   } catch {
