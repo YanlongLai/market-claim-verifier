@@ -121,7 +121,7 @@ function publicEnvelope(value, required = false) {
       "history_truncated" in value && typeof value.history_truncated !== "boolean" ||
       "cost_is_bound" in value && typeof value.cost_is_bound !== "boolean") return null;
   const result = pick(value, ["mode", "model", "provider", "events", "evidence", "cost_usd", "cost_is_bound", "latency_ms",
-    "verdict", "model_verdict", "summary", "claims", "corrections", "scope", "error", "demo", "history_truncated"]);
+    "verdict", "model_verdict", "summary", "claims", "corrections", "scope", "error", "demo", "history_truncated", "request_id"]);
   if ("budget" in value) result.budget = pick(value.budget ?? {},
     ["day", "daily_limit_usd", "daily_spent_usd", "daily_remaining_usd", "resets_at", "status"]);
   if (required || "receipt" in value) {
