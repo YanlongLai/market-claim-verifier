@@ -124,7 +124,7 @@ Copy each answer into the matching field. Character limits are the form's.
 | Live-check password (for judges; also in README/JUDGES) | Password: the team name (dappgo) |
 | Which track are you submitting to? | **Indie Developer Track** |
 | Which problem statement did you build towards? | **Build for Your World** (DappGo publishes US-market commentary; this addresses a fact-checking problem found in that product.) |
-| Most Viral Track — X post link | `<X post URL>` (post the X cut first, then paste the link) |
+| Most Viral Track — X post link | https://x.com/dappgoDev/status/2118090023325294888 |
 | Public GitHub Repository | https://github.com/YanlongLai/market-claim-verifier |
 | 3-Minute Demo Video | https://youtu.be/qIZTElkqpZc |
 | Partner technologies feedback (≤150) | Baseten: fast Muse Spark Open and reliable tool calling. Fireworks: integrated, but held-out agent p95 was 226 s. Credits and docs were sufficient. |
@@ -180,7 +180,7 @@ The 60-second cut of the demo is posted on X first (its URL goes into the form),
 
 | Channel | URL |
 | --- | --- |
-| X | `<X post URL>` |
+| X | https://x.com/dappgoDev/status/2118090023325294888 |
 | Threads | `<URL>` |
 | Facebook Page | `<URL>` |
 | Instagram Reels | `<URL>` |

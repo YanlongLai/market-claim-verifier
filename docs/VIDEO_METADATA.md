@@ -1,6 +1,6 @@
 # Video metadata
 
-Replace `<URL>` and `<X post URL>` with the public links before publication. Keep the disclosure in the uploaded video, not only in its description.
+Replace `<URL>` and `https://x.com/dappgoDev/status/2118090023325294888` with the public links before publication. Keep the disclosure in the uploaded video, not only in its description.
 
 ## YouTube title
 
