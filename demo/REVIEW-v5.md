@@ -70,7 +70,7 @@ figure/data rebuilds and links green.
 The following receipt describes the previous host export and does not certify r8.
 
 <!-- actual-encode:start -->
-Actual r6 encode: **demo-v024**, 178.000 s; **-14.16 LUFS integrated**, **-1.08 dBTP**.
-Measured from `demo-v024.mp4`; SHA-256 `a6d91a5d7d3394f2f53b736708c76bb416cad029a6cd384baea7ec80223ed045`.
-[Export and measurement receipt](runs/20261104T193434706232Z-v024.json).
+Actual r6 encode: **demo-v025**, 178.000 s; **-14.16 LUFS integrated**, **-1.08 dBTP**.
+Measured from `demo-v025.mp4`; SHA-256 `e8119e30520edb5d6983e417f8bbfdce1eb179e657090bc3d9bc3a13a579c3cc`.
+[Export and measurement receipt](runs/20261104T200959961609Z-v025.json).
 <!-- actual-encode:end -->
