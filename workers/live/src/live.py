@@ -27,6 +27,7 @@ MODEL = BASETEN_DEFAULT_MODEL
 MAX_CALLS = 8  # a four-assertion post needs more model turns than a single claim
 MAX_OUTPUT = 2000
 MAX_TOOLS = 14
+MAX_ISSUERS = 4
 SCOPE = "US equities with SEC companyfacts only; no prices, forecasts, crypto, non-GAAP or investment advice."
 SEC_AGENT = "DappGo market-claim-verifier admin@dappgo.com"
 TOOL_NAMES = {"lookup_fact", "list_periods", "compute_change", "history_rank"}
@@ -133,7 +134,8 @@ class MemoryEdgar(EdgarClient):
         if "error" in resolved:
             raise LiveError("out_of_scope", 422)
         cik = resolved["cik"]
-        if cik not in self.issuers and len(self.issuers) >= 2:
+        # A short post may name several companies (the saved example names three).
+        if cik not in self.issuers and len(self.issuers) >= MAX_ISSUERS:
             raise LiveError("tool_limit", 422)
         self.issuers.add(cik)
         filename = f"companyfacts-CIK{cik}.json"
