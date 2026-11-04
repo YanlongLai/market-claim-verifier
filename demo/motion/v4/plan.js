@@ -1,4 +1,4 @@
-export const boundaries=[0,9,26,40,56,72,122,146,162,178];
+export const boundaries=[0,9,22,34,50,66,124,148,164,178];
 export const architectureReveal=local=>({
   nodes:Array.from({length:5},(_,i)=>Math.max(0,Math.min(1,(local-i*2.8)/.6))),
   links:Array.from({length:4},(_,i)=>Math.max(0,Math.min(1,(local-(i*2.8+1.8))/.5))),

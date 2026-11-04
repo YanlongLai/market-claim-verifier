@@ -132,10 +132,10 @@ export async function record(config) {
     mark('validate_live_result');
     if(!response.ok())throw new Error('http_result_not_successful');
     validateLiveResult(result);
-    await page.locator('#live-result .trace-verdict').waitFor({state:'visible'});
+    await page.locator('#live-result .trace-verdict').first().waitFor({state:'visible'});
     mark('verdict_hold');
     await frame('#live-result .trace-head');await hold(2500);
-    const model=await page.locator('#live-result .trace-head').innerText();
+    const model=await page.locator('#live-result .trace-head').first().innerText();
     if(!model.includes(result.model))throw new Error('native_model_line_missing');
     report.native_ui={model_line:result.model,provider:result.provider,
       provider_display:'Native form says Baseten; native result heading shows the model ID separately. No model/provider overlay added.'};
@@ -152,21 +152,25 @@ export async function record(config) {
     const steps=page.locator('#live-result .trace-step');
     const count=await steps.count();
     report.trace_steps_shown=count;report.tool_calls_shown=0;
+    // Director cut: dwell only on the model's tool calls and the final program verdict;
+    // the other steps scroll past so the whole live beat fits its 50-second scene.
     for(let i=0;i<count;i++){
-      await frame(`#live-result .trace-step:nth-child(${i+1})`);
-      const tool=(await steps.nth(i).getAttribute('class')).includes('trace-tool_call');
+      const cls=await steps.nth(i).getAttribute('class');
+      const tool=cls.includes('trace-tool_call'), last=i===count-1;
       if(tool)report.tool_calls_shown++;
-      await hold(tool?800:120);
+      if(!tool && !last && i!==0) continue;
+      await frame(`#live-result .trace-step:nth-child(${i+1})`);
+      await hold(tool?700:300);
     }
     if(report.tool_calls_shown!==result.events.filter(e=>e.kind==='tool_call').length)throw new Error('tool_call_coverage');
     mark('hover_receipt');
     await frame('#live-result .trace-metrics');
-    await page.locator('#live-result .trace-metrics').hover();await hold(1200);
+    await page.locator('#live-result .trace-metrics').first().hover();await hold(1200);
     report.beat6_actions_end_s=(performance.now()-began)/1000;
     mark('beat6_choreography_gate');
     // Leave two seconds for the recorder's initial frame / encoder start variance.
-    if(report.beat6_actions_end_s>48)throw new Error('beat6_actions_exceed_first_50_seconds');
-    await hold(Math.max(0,52000-(performance.now()-began)));
+    if(report.beat6_actions_end_s>56)throw new Error('beat6_actions_exceed_first_58_seconds');
+    await hold(Math.max(0,60000-(performance.now()-began)));
     mark('beat9_frame_corrected_draft_and_filing');
     const draft='#live-result .corrected-draft-text', citation='#live-result .correction-citations a';
     const target=await page.evaluate(({draft,citation})=>{

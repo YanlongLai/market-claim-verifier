@@ -46,10 +46,10 @@ def save(path, value):
 
 
 def live_copy_supported(result):
-    """Do not silently publish the locked 'about a cent, under ten seconds' copy."""
+    """Do not silently publish the locked 'about two cents and twenty seconds' copy."""
     cost, latency = result.get("cost_usd"), result.get("latency_ms")
-    return (isinstance(cost, (float, int)) and math.isfinite(cost) and .005 <= cost < .015
-            and isinstance(latency, (float, int)) and math.isfinite(latency) and 0 <= latency < 10000
+    return (isinstance(cost, (float, int)) and math.isfinite(cost) and .01 <= cost < .03
+            and isinstance(latency, (float, int)) and math.isfinite(latency) and 8000 <= latency < 25000
             and not result.get("cost_is_bound"))
 
 
@@ -227,7 +227,7 @@ def main():
            "retry_policy": "one request; no automatic retries; failed/partial runs retained",
            "storyboard_sha256_before": digest(STORYBOARD),
            "implementation": {p.relative_to(ROOT).as_posix(): digest(p)
-                              for p in (Path(__file__), worker, ROOT / "scripts/serve_site.py")}}
+                              for p in (Path(__file__).resolve(), worker, ROOT / "scripts/serve_site.py")}}
     save(run_path, run)
     try:
         with site_snapshot(args.site_ref) as (docs, source), serve(docs, args.port) as url:

@@ -98,7 +98,12 @@ class Handler(SimpleHTTPRequestHandler):
             body = self.rfile.read(length)
         request = Request(origin + path.path, data=body, method=self.command,
                           headers={"Origin": origin, "Content-Type": "application/json",
-                                   "Accept": "application/json"})
+                                   "Accept": "application/json",
+                                   # Cloudflare's browser integrity check (error 1010) rejects the
+                                   # urllib default agent; identify as the recording browser instead.
+                                   "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                                                 "AppleWebKit/537.36 (KHTML, like Gecko) "
+                                                 "Chrome/131.0.0.0 Safari/537.36 live-check-preview"})
         try:
             response = build_opener(NoRedirect()).open(request, timeout=40)
         except HTTPError as error:

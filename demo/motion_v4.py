@@ -16,7 +16,7 @@ from scale_v4 import compile_scale
 
 ROOT=Path(__file__).resolve().parent.parent
 OUT='demo/motion/v4'
-BOUNDARIES=[0.,9.,26.,40.,56.,72.,122.,146.,162.,178.]
+BOUNDARIES=[0.0,9.0,22.0,34.0,50.0,66.0,124.0,148.0,164.0,178.0]
 
 
 def scale_narration(scale):
