@@ -37,7 +37,7 @@ round 2 style govern this bounded change. No new design direction was drawn.
   disposable copy; [the final Markdown check](links-final.log) also includes
   this subsequently added receipt.
 - [Focused final run](targeted-final.log): **372 passed**; includes saved-post
-  rendering in EN/繁中 at 390/768/1280 px, exact default text, selector/hero behavior,
+  rendering in English/Traditional Chinese at 390/768/1280 px, exact default text, selector/hero behavior,
   one cited edit, all retained reasons, result section order and stamp runtime tests.
 - [Initial focused run](targeted-attempt1.log.gz): 14 failed, 27 passed. New checks
   used an abbreviated Chinese verdict and lacked a focus stub; existing fetch

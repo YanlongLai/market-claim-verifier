@@ -13,13 +13,13 @@ Measured from navigation start to visible, nonempty panel text, checking ancesto
 | Viewport / language | Before: post | Before: filing | After: post | After: filing |
 | --- | ---: | ---: | ---: | ---: |
 | 1440×900 EN | 399 ms | 2643 ms | 134 ms | 134 ms |
-| 1440×900 中文 | 459 ms | 2646 ms | 133 ms | 133 ms |
+| 1440×900 Traditional Chinese | 459 ms | 2646 ms | 133 ms | 133 ms |
 | 375×812 EN | 350 ms | 2640 ms | 117 ms | 117 ms |
-| 375×812 中文 | 310 ms | 2507 ms | 130 ms | 130 ms |
+| 375×812 Traditional Chinese | 310 ms | 2507 ms | 130 ms | 130 ms |
 
 Each after-run records both panels populated on the first painted scene frame. These are unthrottled local samples, not a production performance benchmark. [Clean baseline measurements](hero-before.json) use the original HTML/CSS/JS served from `origin/main` with the same viewport and language setup. An [earlier baseline](hero-before-initial.json) is retained: its small HTTP server backlog produced connection resets under four simultaneous asset-heavy pages, and the original missing favicon returned 404. The preview server now uses HTTP/1.1 and a 128-connection backlog; the subsequent baseline and final runs have zero request failures.
 
-The [final browser log](browser-final.log) and [structured results](browser-final.json) cover `/` and `/explorer/`, EN/中文, 1440×900 and 375×812: **zero CSP violations, console errors, failed requests, or horizontal overflow**. Additional checks exercise the filing dialog, all four step buttons, pause/resume, seek times 0 / 12.94 / 25.5 / 33.5 / 49.5, reduced motion, dark mode, language titles, and explorer search (1/357 then 357/357). First-frame and eight-second screenshots, full pages, and supplemental dark/no-JS images are retained at:
+The [final browser log](browser-final.log) and [structured results](browser-final.json) cover `/` and `/explorer/`, English/Traditional Chinese, 1440×900 and 375×812: **zero CSP violations, console errors, failed requests, or horizontal overflow**. Additional checks exercise the filing dialog, all four step buttons, pause/resume, seek times 0 / 12.94 / 25.5 / 33.5 / 49.5, reduced motion, dark mode, language titles, and explorer search (1/357 then 357/357). First-frame and eight-second screenshots, full pages, and supplemental dark/no-JS images are retained at:
 
 ```text
 <local-scratch>/hk-polish-shots/final-reviewed/
@@ -27,7 +27,7 @@ The [final browser log](browser-final.log) and [structured results](browser-fina
 
 The CSP inventory is based on source inspection and the actual requests in `browser-final.json`. External hyperlink destinations are not subresource origins and were not fetched.
 
-| Resource | Home page | Explorer EN/中文 | CSP allowance |
+| Resource | Home page | Explorer English/Traditional Chinese | CSP allowance |
 | --- | --- | --- | --- |
 | Scripts | `/script.js` | `/explorer/script.js`, `/explorer/script.zh.js` | `'self'`; no inline scripts, event attributes, or eval |
 | Stylesheets | `/styles.css` | `/explorer/styles.css`; Google Fonts CSS | `'self'`, `https://fonts.googleapis.com` |

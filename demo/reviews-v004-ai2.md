@@ -23,7 +23,7 @@ Viewed all **143 PNGs**: 49 raw frames, 49 captioned frames and 45 subtitle pane
 | Amazon — `keyframe-13-32p367s.png`, `keyframe-18-48p203s.png`, `keyframe-26-83p940s.png` | PASS | **$143.1B** agrees with **143,083 USD millions** after rounding. **158,877** is separately labeled 2024, matching the revised shot list. |
 | NVIDIA — `keyframe-14-33p806s.png`, `keyframe-19-51p012s.png` | PASS | **FY2024 $60.9B** and **more than double** remain consistent. |
 | Evaluation — frames 08–11, 38–45 | PASS | **357 claims** throughout. Meta **44→83%**, Baseten **21→90.5%**, Fireworks **20→90.5%**. Maximum improvement: **70.5 points**. |
-| Chinese example — `keyframe-46-144p208s.png`, frame 48 | PASS | **500 億 = $50.0B**; filed **$47.1B** is below that threshold, matching FALSE and the shot list. |
+| Chinese example — `keyframe-46-144p208s.png`, frame 48 | PASS | **500 hundred-million units = $50.0B**; filed **$47.1B** is below that threshold, matching FALSE and the shot list. |
 
 | 5. Picture matches narration cues | Verdict | Evidence |
 |---|---|---|

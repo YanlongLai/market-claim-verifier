@@ -126,7 +126,7 @@ there is no equality badge. Cones point up to the post and down to the filing.
 The strip is one 36 px row: four numbers, only the active step's visible label,
 and an icon-only Pause/Play button with a localized aria-label. Next chips are
 hidden on phones. Repeated upcoming tickers on larger screens include their
-data-derived kind, e.g. “$NVDA opinion” / “$NVDA revenue” (also in 中文).
+data-derived kind, e.g. “$NVDA opinion” / “$NVDA revenue” (also in Traditional Chinese).
 
 Both phone panel heights use the ceiling of the maximum intrinsic content
 height across all cards, measured once per width/language/font completion.
@@ -145,7 +145,7 @@ lines, two lede lines and the scene within **768 px at 1024×768** and **900 px 
 geometry envelopes, pending Claude's browser review. Reduced motion shows the full, linked static list instead;
 its height is intentionally unconstrained so every claim and passage can be read.
 
-EN/中文 share the strip's first three headings with How it works, which now
+English/Traditional Chinese share the strip's first three headings with How it works, which now
 follows the hero directly, before A real post, checked. Post cards retain their
 theme-aware ink and severity colours; filings now keep light bond paper in both
 themes. Playback pauses while

@@ -42,7 +42,7 @@ Pixel checks found no content inside the left or right 64 px margins.
 | PASS | `m01-open`, `m04-extract`, `m05-verdicts` — frames 01, 15, 20 | Apple’s $416B is consistent with rounded $416.2B; the quarterly claim is marked FALSE. The required $102.5B correction is not demonstrated by these samples. |
 | PASS | `m04-extract`, `m05-verdicts` — frames 14, 19 | NVIDIA’s $60.9B and “more than double” agree with the later >2× verdict. |
 | PASS | `m03-baseline`, `m08-results` — frames 11, 34 | Meta: 44→83%; Baseten: 21→90.5%; Fireworks: 20→90.5%. Both shots use 357 claims. These agree with the shot list. |
-| PASS | `m09-chinese` — `keyframe-42-144p208s.png` | 623 億 converts to $62.3B. |
+| PASS | `m09-chinese` — `keyframe-42-144p208s.png` | 623 hundred-million units converts to $62.3B. |
 | FAIL | `m08-results` — `keyframe-34-128p662s.png` | The unqualified **“+70 points”** badge is imprecise: displayed gains are **39, 69.5 and 70.5 percentage points**. The shot list repeats this imprecise badge. |
 
 **5. Picture matches narration cue — FAIL**

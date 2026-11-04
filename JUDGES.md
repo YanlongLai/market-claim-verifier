@@ -2,39 +2,68 @@
 
 **Paste a finance post. Every number is checked against SEC filings, and you get a corrected draft with citations.**
 
-## 3-minute path
+[Live site](https://hackathon.dappgo.com/) · [README](README.md) · [Evidence index](docs/evidence/INDEX.md)
 
-1. **Watch:** [Demo video — publication pending](#demo-video-todo).
-2. **Follow:** [One number](https://hackathon.dappgo.com/#how), then [the saved viral check](https://hackathon.dappgo.com/#recorded-run); no password.
-3. **Try:** [3 stories × 5 inputs](https://hackathon.dappgo.com/#live-check), with provider choice, comparison and public history. Judges: password in the submission notes; saved examples need none.
-4. **Audit:** [Held-out benchmark](docs/evidence/eval-v2-2026-10-27/REPORT.md#metrics) · [Explorer](https://hackathon.dappgo.com/explorer/) · [Real-world coverage](https://hackathon.dappgo.com/wild/) · [Evidence index](docs/evidence/INDEX.md).
+## For judges — 3-minute path
+
+| Step | Open | Inspect |
+| --- | --- | --- |
+| Watch | [Demo video — publication pending](#demo-video-todo) | Post → evidence → program verdict → corrected draft. |
+| Try | [Live check](https://hackathon.dappgo.com/#live-check) | Choose a story, input and provider. Judges: password in the submission notes. |
+| Replay | [Saved check](https://hackathon.dappgo.com/#recorded-run) | No password; open the corrected draft, SEC citations and agent trace. |
+| Audit | [Original benchmark](docs/evidence/eval-v2-2026-10-27/REPORT.md#metrics) | Read held-out results, failures and the corrected-gold disclosure. |
+
+## The idea
+
+DappGo's internal fact checking found right numbers paired with wrong periods, units or comparisons.
+Muse Spark chooses SEC tools; Python binds evidence, calculates the verdict and builds cited corrections.
+**The model proposes; the program decides.** [Architecture and walkthrough](README.md#the-idea).
 
 ## Facts
 
-| Fact | Answer |
+| Fact | Answer and evidence |
 | --- | --- |
-| What it checks | [Checks financial claims against SEC filings; returns verdicts and cited corrections.](docs/evidence/REVIEW_GUIDE.md#facts-in-detail) |
-| Coverage | [US-GAAP SEC filers: ≈8,000 companies; 23 tested. SEC XBRL periods, generally 2009 onward, through the latest filing.](docs/evidence/REVIEW_GUIDE.md#facts-in-detail) |
-| Inputs | [Website: text ≤600 characters. CLI: text, images, PDFs, audio and video.](docs/evidence/TECHNICAL_GUIDE.md#run-it) |
-| Cost & speed | [$0.01 per live check; 6–20 s live (one claim → four-assertion post). $0.02 per claim; 10 s median in the benchmark. $10/day; $60 lifetime.](docs/evidence/REVIEW_GUIDE.md#facts-in-detail) |
-| Accuracy | [90.2% (240/266) held out; false support 1/139.](docs/evidence/eval-v2-2026-10-27/REPORT.md#metrics) |
-| Corrections | [Corrects disproved numbers and cites the filing. Never labels an article approved.](docs/evidence/posts-2026-10-28/demo-thread-baseten/report.json) |
+| What it does | Extracts assertions, checks SEC evidence and returns verdicts, a corrected draft, trace and receipt. [Correction report](docs/evidence/corrected-draft-2026-11-03/REPORT.md). |
+| Coverage | US-GAAP SEC filers: ≈8,000 companies; 23 tested. SEC XBRL periods, generally 2009 onward through the latest filing. Annual, quarterly and growth comparisons. [Scope report](docs/evidence/REVIEW_GUIDE.md#facts-in-detail). |
+| Inputs | Website: text ≤600 characters and 3 stories × 5 packaged inputs. CLI: text, images, PDFs, audio and video. [Site report](docs/evidence/try-v3-site-2026-11-03/REPORT.md), [format report](docs/evidence/input-formats-2026-10-30/REPORT.md). |
+| Providers | Baseten, Fireworks and Meta Model API, all Meta verifier models; media uses Meta OCR/ASR. [Recorded models](docs/evidence/eval-v2-2026-10-27/manifest.json). |
+| Cost & speed | Live headline: $0.01 / 6 s. Planning band: $0.01–0.04 / 6–25 s by input size, plus media preprocessing. Benchmark: $0.02 per claim, 10 s median, p95 21 s. [Receipts and scope](docs/evidence/readme-v3-2026-11-04/REPORT.md#cost-and-speed). |
+| Accuracy | 90.2% (240/266) held out; false support 1/139 reference contradicted/insufficient claims. Failures count as wrong. [Original report](docs/evidence/eval-v2-2026-10-27/REPORT.md#metrics). |
+| Corrections | Strike disproved numbers, insert program values and cite component filings. Only uniquely bound checked assertions change; never article approval. [Retained Apple example](docs/evidence/corrected-draft-2026-11-03/REPORT.md#retained-apple-example). |
+| Live limits | $10/day; $60 lifetime; 5 checks / 10 min per IP. Authenticated inputs/results are public for 14 days. [Current configuration report](docs/evidence/readme-v3-2026-11-04/REPORT.md#scope-and-limits). |
 
-## Limits
+## Accuracy & evidence
 
-- Two gold answers were corrected after the original run; registered-gold scores remain available.
-- The run manifest records a dirty working tree.
-- Post-hoc rechecks reuse seen inputs and are not a fresh held-out evaluation.
-- Frozen-transcript rechecks do not retest image reading or speech transcription (OCR/ASR). Extraction can miss assertions.
-- Live runs share $10/day and $60 lifetime; 5 checks / 10 min per IP. Authenticated runs are public for 14 days.
+The [README benchmark table](README.md#original-benchmark) compares agent and single-shot methods by provider,
+including the historical all-claim column separately from held-out results.
+[78 Threads / 80 news](docs/evidence/real-world-2026-11-02/REPORT.md) measure real-world coverage;
+coverage ≠ accuracy. [Explorer](https://hackathon.dappgo.com/explorer/) · [Real-world explorer](https://hackathon.dappgo.com/wild/).
 
-Failures count as wrong; false support uses 139 reference contradicted/insufficient claims. Extraction can miss assertions. [Full limits and model IDs](docs/evidence/REVIEW_GUIDE.md#limits) · [Production receipt](docs/evidence/live-prod-2026-11-03/REPORT.md) · [Current live configuration](docs/LIVE_CHECK.md#limits-and-failure-behavior).
+<a id="limits"></a>
 
-## Verify
+## Limits & honesty
 
-`bash scripts/verify.sh` runs offline suites and rebuilds saved data in a disposable copy. [Verification guide](AGENTS.md) · [README](README.md) · [Traditional Chinese](JUDGES.zh-TW.md).
+- Two gold answers were corrected after the original run; [registered-gold scores](docs/evidence/eval-v2-2026-10-27/REPORT-registered-gold.md) remain available.
+- The original [manifest](docs/evidence/eval-v2-2026-10-27/manifest.json) records a dirty working tree.
+- [Post-hoc rechecks](docs/evidence/real-world-2026-11-03-fixcheck/REPORT.md) reuse seen inputs; frozen transcripts do not retest OCR/ASR.
+- Extraction can miss assertions. Ambiguous periods, sampled frames and missing evidence limit coverage.
+- Compare spends sequentially from shared limits. The planning band is not an observed extreme or an SLA; saved receipts keep their historical values.
 
-DappGo existed before; the verifier, site and evidence were built from 27 Oct 2026. [Build disclosure](BUILD_LOG.md#build-log) · [MIT](LICENSE) · [Credits](CREDITS.md).
+[Full limits](docs/evidence/REVIEW_GUIDE.md#limits) · [Provider/input boundaries](docs/PROVIDERS.md) · [Test-record policy](docs/TEST_RECORDS.md).
+
+## Verify offline
+
+```sh
+bash scripts/verify.sh
+```
+
+Locked dependencies are installed first; verification then runs offline in a disposable copy.
+[Verification guide](AGENTS.md) · [Recorded verification](docs/VERIFICATION.md).
+
+## Licence & credits
+
+DappGo existed before the hackathon; the verifier, site and evidence were built during it.
+[Build disclosure](BUILD_LOG.md#build-log) · [MIT](LICENSE) · [Credits](CREDITS.md) · [Traditional Chinese](JUDGES.zh-TW.md).
 
 <a id="demo-video-todo"></a>
 Demo video publication is pending; the saved check and raw traces are available now.

@@ -120,7 +120,7 @@ not fetched merely to check cache validity.
 | s06-filing | Wider Amazon filing modal; larger table text; full table row and highlighted value, then original-filing links | 20 s |
 | s07-how | Existing image_gen diagram and 1.00→1.06 zoom; label moves to top-left | 24 s |
 | s08-results | English site's same chart; subtle boxes on green SEC lookup + checks bars (83% / 90% / 90%); hold for 68% of the scene, then ease to the post-hoc rerun block | 24 s |
-| s09-chinese | Dark, enlarged capture; click 中文, select Chinese example, show Chinese units | 9 s |
+| s09-chinese | Dark, enlarged capture; click Traditional Chinese, select Chinese example, show Chinese units | 9 s |
 | s10-close | Existing end-card HTML, cached PNG, and 1.00→1.06 zoom; label moves to top-left | 14 s |
 
 The seven capture scripts share `capture/common.mjs`. The storyboard is the only source for CSS viewport,
@@ -299,7 +299,7 @@ uses the first detected beat at or after cue start −0.10 s. `motion/cue-summar
 
 m02 shows coral $416B during “some are quietly wrong”. m05 changes to a fully populated Apple comparison
 at FALSE, retaining both TRUE cards in a separate left column throughout the restrained eight-second push.
-m08 reveals both 90.5% rows during “90.5 percent”. m09 converts 500 億 on “Chinese”, then shows the filed
+m08 reveals both 90.5% rows during “90.5 percent”. m09 converts 500 hundred-million units on “Chinese”, then shows the filed
 amount and FALSE on “too”. Review times include event +0.3 s and exact Apple correction cue starts.
 
 Open `motion/index.html` offline; `window.seek(t)` synchronously draws any second without a playback loop,
@@ -325,7 +325,7 @@ numeric highlighting. No source report is edited.
 | m05 | Apple fiscal Q4 2025 $102.466B → $102.5B; full FY2025 $416.161B → $416.2B. Bars use the exact ratio 102.466 / 416.161. Only FALSE and the filed-quarter bar/value are coral. Amazon $143.083B supports $143.1B. NVIDIA $60.922B vs $26.974B supports more than double. |
 | m06 | Three-month close-up: 2023 **143,083**, 2024 **158,877** USD millions, in fixed columns with 48 px gutters and 128 px right-aligned tabular values. Amber fills the complete 2023 cell. Nine-month values **404,824 / 450,167** remain in source data and the original `amzn-20240930.htm#f-212` filing link. |
 | m07 | ±0.05B is the English report's actual number precision. E9 is the deliberately fake illustrative evidence ID; its rejection is visible at “rejects”. |
-| m09 | Chinese report `docs/evidence/posts-2026-10-28/tw-social-post-meta/report.json`, claim **3**, KO: 「可口可樂 2024 年營收突破 500 億美元。」 500 億 = $50.0B; filed $47.061B = 470.6 億, displayed coral $47.1B. The filed amount is below the threshold, independently of rounding. |
+| m09 | Chinese report `docs/evidence/posts-2026-10-28/tw-social-post-meta/report.json`, claim **3**, KO: “Coca-Cola 2024 revenue exceeded $50.0B.” 500 hundred-million units = $50.0B; filed $47.061B = 470.6 hundred-million units, displayed coral $47.1B. The filed amount is below the threshold, independently of rounding. |
 | m10 | Visible live-demo URL and original QR both lead to `https://yanlonglai.github.io/market-claim-verifier/site/`. Explicit “Built during the Meta Global AI Developer Hackathon” line, Muse Spark / Meta open weights credits, and GitHub star CTA. |
 
 `motion_data.py` hashes the pinned sources. The unchanged local QR matrix has a four-module quiet zone;

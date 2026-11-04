@@ -27,7 +27,7 @@ Rule: nothing is merged, published or posted without Claude's review and the Own
 
 ## Website
 
-1. **Simple landing page** (Day 3): real post example first, three steps, one chart, EN/中文.
+1. **Simple landing page** (Day 3): real post example first, three steps, one chart, English/Traditional Chinese.
 2. **"See filing" pop-up**: the exact SEC table row with the number highlighted, links to the original filing.
    Review found wrong facts under a passage, duplicates and unreadable tables on phones; Codex fixed them.
 3. **Post-hoc rerun block**: the rerun numbers, clearly labelled as a regression check.
@@ -72,7 +72,7 @@ ffmpeg with subtitles and ducking. **Rejected:**
 | Music | Prompt asked for 92 BPM; ACE-Step produced ~129 BPM with drift up to 0.24 s, so motion snaps to each detected beat instead of a fixed grid |
 | Key frames | Approved after 3 tweaks. Owner asked for a more dramatic false example: Tesla (+3% vs −2.9%) replaced by Apple "$416.2B in one quarter" — really the full year; the quarter was $102.5B (4×). The new example post was run through the checker first ($0.06) so the video only shows real verdicts |
 | 2 s motion test | Cards hit the beat, but were too small and flipped before the narrator named each company → cues now follow the narration (silence detection per sentence, event on the next beat) |
-| v002 (2:40) | Rendered. **Failed** both reviews: `&#39;` shown in text, small labels on phones, a few reveals out of sync, a clipped table, an imprecise "+70 points", no explicit hackathon line, and a Chinese example (Meta 623 億) whose FALSE relied on strict rounding → replaced by Coca-Cola 500 億 vs $47.1B |
+| v002 (2:40) | Rendered. **Failed** both reviews: `&#39;` shown in text, small labels on phones, a few reveals out of sync, a clipped table, an imprecise "+70 points", no explicit hackathon line, and a Chinese example (Meta 623 hundred-million units) whose FALSE relied on strict rounding → replaced by Coca-Cola 500 hundred-million units vs $47.1B |
 | v003 | 7 of 10 fixed; new issues: SEC table numbers ran together, subtitles up to 0.6 s behind narration, missing spaces after periods in headlines |
 | v004 | All three fixed (two-column proof table, subtitles from the same sentence timing as motion cues, spacing). One left: two-line subtitles 45 px from the bottom edge |
 | v005 | Subtitle panel resized (2 lines = 136 px) and anchored 64 px above the bottom; measured 68–78 px on every sampled frame. 2:40, −14.5 LUFS, −1.1 dBTP. **Approved by the Owner as the final video** (rebuilt byte-identical as v006 after a media-loss incident) |

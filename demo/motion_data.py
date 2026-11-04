@@ -8,6 +8,7 @@ EN = 'demo/data/demo-thread.json'
 ZH = 'docs/evidence/posts-2026-10-28/tw-social-post-meta/report.json'
 SITE = 'docs/site/data/site.json'
 EVAL = 'docs/evidence/eval-v2-2026-10-27/summary.json'
+ZH_INPUT = 'examples/posts/tw-social-post.zh-TW.txt'
 
 
 def decode_text(value):
@@ -71,5 +72,5 @@ def product_data(repo: Path) -> dict:
                     section=excerpt['section_title'], form=claim['source']['form'],
                     filed=claim['source']['filed'],
                     url=claim['excerpts'][0]['primary_url']+'#'+excerpt['fact']['id'], unit='USD in millions'),
-        provenance={**{p:file_hash(repo / p) for p in (EN, ZH, SITE, EVAL, 'examples/posts/tw-social-post.txt')},
+        provenance={**{p:file_hash(repo / p) for p in (EN, ZH, SITE, EVAL, ZH_INPUT)},
                     **{s['path']:s['sha256'] for s in en['sources'].values()}})

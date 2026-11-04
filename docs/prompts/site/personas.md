@@ -199,7 +199,7 @@ Discarded owl edit: `exec-9ddc9ec8-3085-480e-9227-3b7072f84557.png` in the same 
 - Illustration and perimeter cleanup were performed only with the built-in image tool. Local processing was limited to color-mode conversion, resampling and file encoding.
 
 
-## Additional avatar: banana-news — 香蕉新聞快報 / Banana News Flash
+## Additional avatar: banana-news — Banana News Flash
 
 Generated with the built-in `image_gen.imagegen` tool on 2026-10-28, following `/Users/yan/note/dappgo/flow-atlas/hackathon-briefs/brief-stamp-banana-art.md`. This sixth fictional persona matches the existing avatars: polished rounded 3D-ish illustration, a pale mint-blue circular background, opaque warm off-white corners, mint and coral details, and a circle-safe composition. The cheerful banana reporter wears a completely blank press badge and holds a tiny unbranded microphone.
 
@@ -219,7 +219,7 @@ Exact call settings: `transparent_background: false`; both `referenced_image_pat
 
 ```text
 Use case: stylized-concept.
-Create one finished round profile avatar for the fictional newsroom Banana News Flash, also known as 香蕉新聞快報. These names describe the character only; do not render any writing. Requested output: one 512 x 512 pixel square image, a single avatar, not a sheet or a mockup.
+Create one finished round profile avatar for the fictional newsroom Banana News Flash, also known as Banana News Flash. These names describe the character only; do not render any writing. Requested output: one 512 x 512 pixel square image, a single avatar, not a sheet or a mockup.
 Visual style: cute, friendly, polished 3D-ish editorial illustration, matching an established family of rounded owl, raccoon, folded-newspaper, bird and cat avatars. Matte warm off-white surfaces, mint #3ddc97 accents, restrained coral accents, dark navy #111a20 eyes and details, soft controlled upper-left studio lighting, crisp clean silhouettes and edges, rounded sculpted forms, subtle ambient occlusion, no noisy texture, no photorealism.
 Subject: banana-news. One cheerful anthropomorphic golden-yellow banana with an unmistakable gently curved banana silhouette, a small natural dark stem, large expressive dark navy eyes, subtly raised eyebrows, soft coral cheeks and an excited open smile. Short rounded arms and small feet. The banana wears a mint lanyard with one small plain coral press badge, completely blank: no lettering, no symbols, no logo. It holds one tiny microphone with a rounded dark navy head and a simple mint-and-off-white handle, entirely unbranded and without a microphone flag. The microphone is beside the lower face and the badge remains visible. Its free hand is lifted in an eager reporting gesture; a slight forward lean gives lively breaking-news energy while remaining cheerful and welcoming. No other character or prop.
 Composition: center the whole banana reporter and microphone inside one plain very pale mint-blue pastel circular background disk, approximately 96% of the square canvas width. Keep the face, stem, hands, feet, badge and microphone comfortably within the inner 84% diameter of the image for circle-safe cropping and clear recognition at 128 px. Leave clean breathing room. The disk has a precise smooth borderless circular edge. All four corners outside the disk are flat opaque warm off-white #f7f5ef, with no exterior drop shadow, no rim, no brushy fringe and no transparency.

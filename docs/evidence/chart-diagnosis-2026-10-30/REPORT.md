@@ -1,46 +1,46 @@
-# Tesla 第 23 頁圖表診斷與改善 — 2026-10-30
+# Tesla page 23 chart diagnosis and improvements — 2026-10-30
 
-結論：**圖片清楚，主要缺口是從圖形轉成有來源座標、誤差範圍的結構化主張。** 此次沒有新增付費呼叫、沒有估造柱狀圖數值，也沒有修改原 benchmark 或兩次修正實驗。
+**The image is readable; the main gap is a structured representation of chart geometry with source coordinates and uncertainty.** No paid calls were added, bar values were not invented, and neither the original benchmark nor the two repair experiments was changed. [Traditional Chinese](REPORT.zh-TW.md).
 
-[原圖](../real-media-2026-10-30/images/tesla-q3-2026-23.png) · [原始 OCR](../fair-multimodal-v1/prepared/REAL-TSLA-23/prepared.json) · [原始抽取結果](../stock-context-posthoc-2026-10-30/attempt-2/REAL-TSLA-23/ingest.json) · [新版三文件摘要](summary/stock-review.html) · [來源雜湊與機器診斷](diagnosis.json)
+[Original image](../real-media-2026-10-30/images/tesla-q3-2026-23.png) · [Saved OCR](../fair-multimodal-v1/prepared/REAL-TSLA-23/prepared.json) · [Saved extraction](../stock-context-posthoc-2026-10-30/attempt-2/REAL-TSLA-23/ingest.json) · [Three-document summary](summary/stock-review.html) · [Source hashes and diagnosis](diagnosis.json)
 
-## 圖片具體有什麼問題？
+## What is missing from the image representation?
 
-本次直接檢視 1800 × 1013 的原圖並與保存的 OCR 比對；這是個案診斷，不是獨立人工標註集或新的準確率評測。
+The original 1800 × 1013 image was inspected against saved OCR. This is a case diagnosis, not an independently annotated dataset or a new accuracy evaluation.
 
-| 圖表 | 圖上能讀到 | 不能從 OCR 取得的關係 |
+| Chart | Readable content | Relationships absent from OCR |
 | --- | --- | --- |
-| 左：Vehicle Deliveries | 季度、0.0–0.5 刻度、單位 millions of units | 每根柱子對應的實際交付量；柱上沒有數字標籤 |
-| 中：Operating / Free Cash Flow | 季度、-3–7 刻度、兩種圖例、單位 $B | 顏色與序列、柱高／負柱、每季度各項數值 |
-| 右：Net Income / Adjusted EBITDA | 季度、0–8 刻度、圖例與 $B | 每根柱與序列的對應，精確值及 GAAP／non-GAAP 語意 |
+| Vehicle deliveries | Quarters, 0.0–0.5 scale, millions of units | Each bar's delivery count; bars have no exact labels |
+| Operating / free cash flow | Quarters, -3–7 scale, two legends, $B | Colors, series, bar heights/negative bars and values by quarter |
+| Net income / adjusted EBITDA | Quarters, 0–8 scale, legends, $B | Series-to-bar association, exact values and GAAP/non-GAAP basis |
 
-圖片不需要先歸因於模糊或解析度不足：可見的季度、圖例、刻度與三則註腳已進入 OCR。**座標上的 7、6、5 是刻度，不能當成某季現金流。** 原圖沒有逐柱精確數字；放大或裁切可以協助定位，但無法憑空增加不存在的標籤。
+Quarter labels, legends, scales and three footnotes reached OCR; blur is not established as the cause. **Axis ticks 7, 6 and 5 are not quarterly cash-flow values.** Enlarging or cropping cannot create labels that are absent.
 
-保存的文字沒有柱子的邊界座標、顏色或高度，所以後續文字模型失去圖形關係。股票提示模式的抽取規則也明確禁止從柱／線位置猜數字；零主張符合這個保守契約。這不是圖片內容已被驗證，也不能由此推論模型永遠不會讀圖。程式狀態 `completed` 只表示流程結束；查核階段實際未到達。
+Saved text has no bar coordinates, colors or heights. Stock-context extraction explicitly refuses to guess values from bar/line positions, so zero claims follows its conservative contract. This does not verify the chart or prove that a model can never read it. `completed` means the pipeline ended; financial verification was not reached.
 
-三則註腳還包含資本支出呈現調整、2024 年季度重列、Adjusted EBITDA 排除數位資產損益。即使能量出高度，也必須對齊這份簡報的重列版本與季度口徑；非 GAAP EBITDA 不能直接當成 SEC 淨利。
+Footnotes cover capital-expenditure presentation changes, restated 2024 quarters and adjusted EBITDA excluding digital-asset gains/losses. Any geometric estimate still needs the presentation's version, quarter and accounting basis; non-GAAP EBITDA is not SEC net income.
 
-## 此次已改善
+## Improvements made
 
-1. 每個 OCR channel 明確揭露：文字查核沒有驗證柱高、線條、顏色或序列與季度對應。即使同圖的文字主張查核成功，這項限制仍存在。
-2. 分別提示「沒有讀到文字」、「有文字但零主張」、「處理錯誤」。不會把所有零主張都自動診斷成圖表，也不把處理錯誤當成成功拒答。
-3. 單檔報告及股票彙整都附上可執行的補救：提供對應數值表、單位、期間和註腳；檢視原始 trace 後才考慮付費重跑。
-4. 用原來三份 Tesla 結果重新產生新版摘要，保留原始報告雜湊與連結。仍是三筆 supported、五筆 insufficient；圖表頁沒有新增已驗證主張。這是診斷呈現改善，**尚未完成自動圖形數值驗證**。
+1. Every OCR channel discloses that text verification does not validate bar heights, lines, colors or series/quarter association, even when text assertions succeed.
+2. Distinguish no text, text with zero claims and processing errors. Zero claims is not automatically diagnosed as a chart; an error is not successful abstention.
+3. Individual and stock-summary reports suggest an actionable remedy: provide values, units, periods and footnotes, inspect the trace, then consider a separately authorized paid rerun.
+4. Rebuild summaries from the same three Tesla results, retaining source hashes and links. Results remain three supported and five insufficient; no chart assertion became verified. **Automatic geometric validation is unfinished.**
 
-[驗證紀錄](verification.log)與[重播檢查](replay.log)保留在此目錄。新增五項離線測試涵蓋真實圖表重播、成功文字不代表幾何正確、錯誤優先、空文字及 HTML 安全轉義。使用 `uv run python scripts/replay_chart_diagnosis.py`（使用 repo 鎖定依賴） 可重播；不讀 API key、不需要 SEC 網路請求。既有付費輸入輸出保持原樣，新增 API 費用 $0。
+[Verification](verification.log) and [replay](replay.log) retain the runs. Five new offline tests cover the real chart, text/geometry distinction, error precedence, empty text and HTML escaping. Replay with `uv run python scripts/replay_chart_diagnosis.py`; it reads no keys and requires no SEC network. Original paid inputs/outputs remain unchanged; added API cost was $0.
 
-## 下一步：依實用性及可驗證性排序
+## Next steps, ordered by usefulness and verifiability
 
-| 順位 | 要做的事 | 通過條件 |
+| Priority | Work | Acceptance boundary |
 | --- | --- | --- |
-| P1 | 同股票多文件中，把圖表與同份官方簡報的數值表建立候選關聯；先要求人工確認 | 每項有公司、季度、單位、GAAP／non-GAAP、文件版本和頁碼；確認表格數字不代表圖形已正確 |
-| P1 | 擴充季度營運現金流及交付量等證據來源 | 年初累計不能直接當單季；計算差額需同版本證據及完整算式；非 GAAP 須保留定義與調節表 |
-| P2 | 新增可選原生視覺結構抽取：圖框、軸、序列、柱框、季度、單位、註腳 | 同圖／同 prompt 三平台比較，保存完整 input/output；圖形估值須獨立標為 approximate，不能冒充原文精確引述 |
-| P2 | 幾何讀值與區間判定 | 依刻度、像素誤差與圖形品質建立區間，處理負值、截斷軸、對數軸；與證據相交僅算區間相容，不宣稱精確值相等 |
-| P3 | 擴大盲測及錯誤圖表組 | 多公司、重列、雙軸、堆疊、遮擋、誤導刻度；獨立標註＋保留測試組；分開公布抽取覆蓋、數值誤差及錯誤支持率 |
+| P1 | Link charts to tables in the same official presentation; require review | Company, quarter, unit, accounting basis, version and page retained; a correct table does not validate geometry |
+| P1 | Add quarterly operating-cash-flow and deliveries evidence | Do not treat YTD as a quarter; retain compatible components, formulas and non-GAAP reconciliations |
+| P2 | Optional native visual extraction of chart bounds, axes, series, bars, quarters and footnotes | Compare identical images/prompts across providers; retain inputs/outputs; label estimates approximate |
+| P2 | Geometric values and interval comparison | Include scale/pixel error, negative/truncated/log axes; overlapping intervals do not establish exact equality |
+| P3 | Larger blind and adversarial chart sets | Include restatements, dual axes, stacking, occlusion and misleading scales; separate extraction coverage, error and false support |
 
-評審展示目前應說：「能指出哪份文件沒有完成查核及原因，並引導補齊資料。」在 P2 通過前，不能說「已能驗證所有財報圖表」。本次不再花額度重跑純 OCR，因為那不會補上缺失的圖形表示；後續實驗應另存新版本並明確限定預算。
+The current demo can identify unchecked documents and explain what is missing. It cannot claim universal financial-chart verification. More plain OCR would not supply the missing geometry; later experiments need separate versions and bounded budgets.
 
-## 驗證結果與限制
+## Verification results and limits
 
-906 個產品測試、149 個 demo Python 測試、55 個 Node 測試通過；圖表重建與三份資料輸出位元組一致性檢查也通過。完整 runner 在最後連結檢查失敗：建立隔離副本時，本次診斷的 JSON 與摘要 HTML 尚未產生。原始失敗保留於 [verification.log](verification.log)；檔案產生完成後，對目前 repo 重跑的 [全部連結檢查](links.log)通過。沒有把原始失敗 log 改寫成成功，也未重跑已通過且程式未變動的模型／產品測試。
+906 product tests, 149 demo Python tests and 55 Node tests passed, as did figure rebuilds and three byte-identical data outputs. The original complete runner failed its final link check because the disposable copy was created before this diagnosis JSON and summary HTML existed. [verification.log](verification.log) preserves that failure; after artifacts were written, [links.log](links.log) passed on the current tree. The failure was not rewritten as success, and already-passing unchanged suites were not rerun.

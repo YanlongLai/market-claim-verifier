@@ -444,7 +444,7 @@ Recorded total: **30 artwork files** (3 raw sheets + 24 transparent pose exports
 
 ## v3 cute candidates
 
-Owner brief: 「機器人請再可愛一點，多做幾個讓我選」. Five independent candidate characters for selection; no page integration, no B asset replacement, no commit or push. Built-in `image_gen` creates four-pose magenta sheets; local processing only keys, despills, cuts, scales and encodes the generated artwork, then adds review labels. Pose order: `idle`, `inspect`, `stamp-down`, `approve`.
+Owner brief: “Make the robot cuter and provide several candidates to choose from”. Five independent candidate characters for selection; no page integration, no B asset replacement, no commit or push. Built-in `image_gen` creates four-pose magenta sheets; local processing only keys, despills, cuts, scales and encodes the generated artwork, then adds review labels. Pose order: `idle`, `inspect`, `stamp-down`, `approve`.
 
 The worktree is `market-claim-verifier-stamp2`, branch `site/stamp-v2`. Existing changes are preserved. Repository remote is not matched in the DappGo developer registry; this is a local, bounded asset task. All task files are under `docs/site/img/auditor/candidates-v3/`, plus this appended section. Candidate design and expressions must be judged at 72 px as well as enlarged.
 

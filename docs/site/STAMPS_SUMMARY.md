@@ -17,7 +17,7 @@ the page never requests the source sheet.
 
 Cards show the fictional post author's circular avatar (40 px desktop / 32 px
 phone), localized display name, handle or outlet, example follower count, post
-date and **Example post / 示範貼文** tag. The tag explains that authors and follower
+date and **Example post** tag. The tag explains that authors and follower
 counts are fictional, while claims and verdicts come from real checks. Below it
 are the real ticker, SEC company name, source kind, enlarged claim number and
 bilingual period chip. The example dates are validated against SEC companyfacts;
@@ -54,7 +54,7 @@ footer. The compact layout puts B above/right
 and the passage in a reserved area in the lower half of the card. The filed
 value, meter and stamp have separate space. Reduced motion uses a complete,
 linked static list with verdict, severity, score, filed value, and passage text;
-that same list is available to assistive technology during animation. EN/中文
+that same list is available to assistive technology during animation. English/Traditional Chinese
 are retained. Light mode keeps warm paper; dark mode uses cool slate
 (`#202d36`) with subtle grain and a slight lift from the background. Playback is
 right-aligned below the stage, with space reserved before the next section.
@@ -70,25 +70,24 @@ of growth checks and both components of the derived Apple quarter are included;
 duplicate evidence references are collapsed. Opinions and forecasts have no
 checked figures, so their basis is empty, and their dates still cannot be future.
 
-| # | Persona · claim | Kind · followers (EN / 中文) | Post date | `date_basis` first-filed dates | Verdict | Severity · score |
+| # | Persona · claim | Kind · followers (English / Traditional Chinese) | Post date | `date_basis` first-filed dates | Verdict | Severity · score |
 | --- | --- | --- | --- | --- | --- | --- |
-| 1 | Ticker Owl · @tickerowl · AMZN Q3 2023 | Thread · 18.4K / 1.84 萬 | 2025-11-03 | AMZN Q3: 2023-10-27 | TRUE | Exact · 100 |
-| 2 | Ticker Owl · @tickerowl · AAPL fiscal Q4 2025 | Thread · 18.4K / 1.84 萬 | 2025-11-03 | Full year: 2025-10-31; nine months: 2025-08-01 | FALSE | Severe · 0 |
-| 3 | Ticker Owl · @tickerowl · NVDA valuation opinion | Thread · 18.4K / 1.84 萬 | 2025-11-03 | None: opinion | CAN'T CHECK | — |
-| 4 | Ticker Owl · @tickerowl · NVDA FY2024 revenue + growth | Thread · 18.4K / 1.84 萬 | 2025-11-03 | FY2024: 2024-02-21; FY2023: 2023-02-24 | TRUE | Exact · 100 |
-| 5 | Chart Coon · @chartcoon · TSLA FY2025 growth | Thread · 52.1K / 5.21 萬 | 2026-02-03 | FY2025: 2026-01-29; FY2024: 2025-01-30 | FALSE | Major · 46 |
-| 6 | US Stocks in 1 Minute / 美股懶人包 · MSFT FY2024 | Social post · 43K / 4.3 萬 | 2025-02-24 | FY2024: 2024-07-30; FY2023: 2023-07-27 | TRUE | Exact · 100 |
-| 7 | Chart Coon · @chartcoon · AAPL forecast | Thread · 52.1K / 5.21 萬 | 2026-02-03 | None: forecast | CAN'T CHECK | — |
-| 8 | Chart Coon · @chartcoon · AAPL FY2024 | Thread · 52.1K / 5.21 萬 | 2026-02-03 | FY2024: 2024-11-01 | TRUE | Exact · 100 |
-| 9 | US Stocks in 1 Minute / 美股懶人包 · KO FY2024 | Social post · 43K / 4.3 萬 | 2025-02-24 | FY2024: 2025-02-20 | FALSE | Moderate · 88 |
-| 10 | Banana News Flash / 香蕉新聞快報 · AMZN headline | Article · 96K / 9.6 萬 | 2023-10-27 | Q3 2023: 2023-10-27 | TRUE | Exact · 100 |
-| 11 | Market Recap · KO repost | Repost · 210K / 21 萬 | 2025-02-25 | FY2024: 2025-02-20 | FALSE | Moderate · 88 |
+| 1 | Ticker Owl · @tickerowl · AMZN Q3 2023 | Thread · 18.4K | 2025-11-03 | AMZN Q3: 2023-10-27 | TRUE | Exact · 100 |
+| 2 | Ticker Owl · @tickerowl · AAPL fiscal Q4 2025 | Thread · 18.4K | 2025-11-03 | Full year: 2025-10-31; nine months: 2025-08-01 | FALSE | Severe · 0 |
+| 3 | Ticker Owl · @tickerowl · NVDA valuation opinion | Thread · 18.4K | 2025-11-03 | None: opinion | CAN'T CHECK | — |
+| 4 | Ticker Owl · @tickerowl · NVDA FY2024 revenue + growth | Thread · 18.4K | 2025-11-03 | FY2024: 2024-02-21; FY2023: 2023-02-24 | TRUE | Exact · 100 |
+| 5 | Chart Coon · @chartcoon · TSLA FY2025 growth | Thread · 52.1K | 2026-02-03 | FY2025: 2026-01-29; FY2024: 2025-01-30 | FALSE | Major · 46 |
+| 6 | US Stocks in 1 Minute · MSFT FY2024 | Social post · 43K | 2025-02-24 | FY2024: 2024-07-30; FY2023: 2023-07-27 | TRUE | Exact · 100 |
+| 7 | Chart Coon · @chartcoon · AAPL forecast | Thread · 52.1K | 2026-02-03 | None: forecast | CAN'T CHECK | — |
+| 8 | Chart Coon · @chartcoon · AAPL FY2024 | Thread · 52.1K | 2026-02-03 | FY2024: 2024-11-01 | TRUE | Exact · 100 |
+| 9 | US Stocks in 1 Minute · KO FY2024 | Social post · 43K | 2025-02-24 | FY2024: 2025-02-20 | FALSE | Moderate · 88 |
+| 10 | Banana News Flash · AMZN headline | Article · 96K | 2023-10-27 | Q3 2023: 2023-10-27 | TRUE | Exact · 100 |
+| 11 | Market Recap · KO repost | Repost · 210K | 2025-02-25 | FY2024: 2025-02-20 | FALSE | Moderate · 88 |
 
 Chart Coon is the fictional finance influencer; Banana News Flash is the
 fictional newsroom. The two added cards share their original `check_id`, quote,
 verdict, exact unrounded score, severity, gap, filed value and excerpt. There are
-still **nine source claims**. The repost says **Reposted from 美股懶人包 / 轉貼自
-美股懶人包**; the article uses bilingual headline copy of the same Amazon claim.
+still **nine source claims**. The repost says **Reposted from US Stocks in 1 Minute**; the article uses bilingual headline copy of the same Amazon claim.
 
 ## Filing provenance
 

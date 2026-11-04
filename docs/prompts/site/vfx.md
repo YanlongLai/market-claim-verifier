@@ -2,7 +2,7 @@
 
 Generated on **2026-10-29** with the built-in **image_gen** tool, one generation
 per requested texture. These seven AI-generated bitmap masters implement the
-visual material described in [STAMP-V2-DESIGN.md §8.4](../../site/STAMP-V2-DESIGN.md#84-spotlight-owner-round-5-像探照燈要有電影的效果).
+visual material described in [STAMP-V2-DESIGN.md §8.4](../../site/STAMP-V2-DESIGN.md#84-spotlight-owner-round-5-cinematic-searchlight-effect).
 Generation was followed by local Pillow/NumPy crop, grayscale/levels, alpha,
 seam treatment, resizing and WebP encoding. No site code, commit or push belongs
 to this asset task. All project outputs are in `docs/site/img/fx/` and this file.

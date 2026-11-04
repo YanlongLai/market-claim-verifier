@@ -4,7 +4,7 @@ Implementation on `site/simplify`, based on `f54856f6b60477db15ee5a6a680a77d4be6
 
 ## Content and preservation
 
-- [README](../../../README.md): 12-line opening, shared fact table and linked technical detail. [繁體中文](../../../README.zh-TW.md) follows the same structure.
+- [README](../../../README.md): 12-line opening, shared fact table and linked technical detail. [Traditional Chinese](../../../README.zh-TW.md) follows the same structure.
 - [Judge guide](../../../JUDGES.md): watch → saved check → live check → evidence; shared table, honesty limits and disclosure. Video TODO retained; live-check TODO replaced.
 - [Homepage](../../site/index.html) and generated [Chinese page](../../zh/index.html): Hero → Try → Facts → Evidence → footer; navigation Try · Facts · Evidence. The saved trace opens on request. No corrected-draft output is invented for the saved run.
 - [Technical guide](../../evidence/TECHNICAL_GUIDE.md), [Chinese reference](../../evidence/TECHNICAL_GUIDE.zh-TW.md), [extended judge review](../../evidence/REVIEW_GUIDE.md), [site evidence tour](../../evidence/site-tour/index.html): relocated material, original anchors and honesty labels retained. Existing evidence files are preserved. The [public evidence index](../../evidence/index.html) links source documents on GitHub so repository-relative references resolve.

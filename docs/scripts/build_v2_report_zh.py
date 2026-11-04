@@ -1,10 +1,11 @@
 """Build a Traditional Chinese reading layer without changing recorded data rows."""
 from pathlib import Path
+import re
 
 ROOT = Path(__file__).resolve().parents[2]
 DIRECTORY = ROOT / 'docs/evidence/eval-v2-2026-10-27'
-EN_SWITCH = '**English** | [繁體中文](REPORT.zh-TW.md)'
-ZH_SWITCH = '[English（主要版本）](REPORT.md) | **繁體中文**'
+EN_SWITCH = '**English** | [Traditional Chinese](REPORT.zh-TW.md)'
+ZH_SWITCH = '[英文主要版本](REPORT.md) | **繁體中文**'
 HEADINGS = {
 'Market claim evaluation report': '金融主張查核評測報告',
 'Per-system totals': '各系統總計', 'Provider comparison': '平台比較',
@@ -72,7 +73,7 @@ def build():
     result = []
     for i, line in enumerate(lines):
         if line == EN_SWITCH:
-            result += [ZH_SWITCH, '', '> [!NOTE]', '> 本頁翻譯章節、表頭與閱讀說明；數字、原始主張、模型判定、ID 與錯誤訊息保持英文報告原樣。英文為主要版本。', '',
+            result += [ZH_SWITCH, '', '> 本頁保留所有數值與機器識別碼。逐題英文主張及錯誤訊息連回英文原文，避免混合語言；原始報告與 JSON 不變。', '',
                        '**代碼說明：** `dev`＝開發集；`test`＝獨立測試集；`supported`＝有證據支持；`contradicted`＝與證據矛盾；`insufficient_evidence`＝證據不足；`yes/no`＝是／否；CI＝信賴區間。']
         elif line.startswith('#'):
             prefix, title = line.split(' ', 1)
@@ -90,12 +91,33 @@ def build():
                     line = after + line[len(before):]
                     break
             result.append(line)
-    # Every data row and alignment row must be preserved exactly.
-    def data_rows(rows):
-        return [l for i,l in enumerate(rows) if l.startswith('|') and not (i+1<len(rows) and rows[i+1].startswith('|---'))]
-    assert data_rows(lines) == data_rows(result)
+    # Keep numeric data and machine identifiers. Raw English quotations belong
+    # in the English report, rather than being mixed into the Chinese layer.
+    section = ''
+    localized = []
+    for line in result:
+        if line.startswith('## '):
+            section = line[3:]
+        if line.startswith('|') and not line.startswith('|---'):
+            cells = [cell.strip() for cell in line.strip('|').split('|')]
+            data_row = bool(re.match(r'^(?:[A-Z]+\d+|(?:single_shot|agent)@|meta$|baseten$|fireworks$|primary$|aggregator$|major_press$|[\w.-]+\.[a-z]+$)', cells[0]))
+            if data_row:
+                if section == HEADINGS['Per-claim results']:
+                    cells[3] = '[英文原始主張](REPORT.md#per-claim-results)'
+                elif section == HEADINGS['Agent errors']:
+                    cells[4] = '[原始錯誤訊息](REPORT.md#agent-errors)'
+                cells = [f'`{cell}`' if re.fullmatch(r'[A-Za-z][A-Za-z_@.\d/-]*', cell) else cell for cell in cells]
+            line = '| ' + ' | '.join(cells) + ' |'
+        for before, after in [('Prompt', '提示'), ('Agent', '代理'), ('tokens', '詞元'),
+                              ('Token', '詞元'), ('token', '詞元'), ('bootstrap', '重抽樣'),
+                              ('wall-clock', '實際耗時'), ('Ledger', '帳本')]:
+            # Code spans and link destinations are identifiers, not prose.
+            parts = re.split(r'(`[^`]*`|\]\([^)]*\))', line)
+            line = ''.join(part if i % 2 else part.replace(before, after) for i, part in enumerate(parts))
+        localized.append(line)
+    result = localized
     (DIRECTORY / 'REPORT.zh-TW.md').write_text('\n'.join(result)+'\n')
-    print('PASS Chinese report generated; all data and alignment rows unchanged')
+    print('PASS Chinese reading layer generated; raw English report and result data retained')
 
 if __name__ == '__main__':
     build()

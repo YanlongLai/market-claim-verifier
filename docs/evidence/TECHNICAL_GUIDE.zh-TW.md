@@ -1,6 +1,6 @@
 # Market Claim Verifier
 
-[English](../../README.md) · [繁體中文](../../README.zh-TW.md)
+[英文](../../README.md) · [繁體中文](../../README.zh-TW.md)
 
 **用 Meta 開放權重模型 Muse Spark Open 對照 SEC 財報查核金融主張，讓每個結論都有可追溯的證據。**
 
@@ -12,7 +12,7 @@ Baseten · Muse Spark Open 查核流程，原始保留文字測試組，採修�
 
 **Apple：「單季營收 $416.2B」→ 其實是全年。** 2025 財年第四季營收為 **$102.5B**，原主張約為該季的 **4 倍**。[保存的查核與計算](posts-2026-10-28/demo-thread-baseten/report.json) · [可閱讀報告](posts-2026-10-28/demo-thread-baseten/report.html)。
 
-**[線上 Demo](https://hackathon.dappgo.com/)** · **[評審導覽](../../JUDGES.md)** · [影片 — TODO（Claude 待補）](../../JUDGES.md#demo-video-todo) · [本機試用](#開始使用)
+**[線上 示範](https://hackathon.dappgo.com/)** · **[評審導覽](../../JUDGES.md)** · [影片 — 待補（Claude 待補）](../../JUDGES.md#demo-video-todo) · [本機試用](#開始使用)
 
 網站提供需要密碼的即時文字查核與免密碼的已儲存範例；CLI 也可即時查核。瀏覽器上傳仍在規劃中。[評測與產品限制](../../JUDGES.md#limits)。
 
@@ -28,7 +28,7 @@ Baseten · Muse Spark Open 查核流程，原始保留文字測試組，採修�
 
 真實公司資料可看 [Microsoft 法說會查核](real-av-context-live/REPORT.md)或 [Tesla 多文件查核](stock-context-posthoc-2026-10-30/REPORT.md)。每份報告保留原文、證據、計算與尚未釐清的問題。
 
-[Live check](https://hackathon.dappgo.com/#live-check) (password-protected; saved examples need none) · [In the wild](https://hackathon.dappgo.com/wild/)。
+[即時查核](https://hackathon.dappgo.com/zh/#live-check)（需密碼；已儲存範例不需密碼）· [真實世界](https://hackathon.dappgo.com/wild/)。
 
 ## 為什麼使用 Meta 開放權重模型
 
@@ -42,22 +42,22 @@ Baseten · Muse Spark Open 查核流程，原始保留文字測試組，採修�
 
 ¹ 錯誤支持指標準答案為矛盾或證據不足，卻被接受為支持。表格只使用 [266 個保留測試主張](eval-v2-2026-10-27/REPORT.md#metrics)，失敗均計為錯誤。
 
-**可攜性：**同一套 agent 迴圈可在 Baseten 與 Fireworks 執行，沿用相同工具、證據 ID、預算紀錄與 Python 檢查。上表保存的開放權重結果涵蓋兩個平台。[平台轉接程式](../../src/claimcheck/providers.py) · [確切模型 ID 與執行 manifest](eval-v2-2026-10-27/manifest.json)。
+**可攜性：**同一套 代理 迴圈可在 Baseten 與 Fireworks 執行，沿用相同工具、證據 ID、預算紀錄與 Python 檢查。上表保存的開放權重結果涵蓋兩個平台。[平台轉接程式](../../src/claimcheck/providers.py) · [確切模型 ID 與執行 執行清單](eval-v2-2026-10-27/manifest.json)。
 
 Meta 也透過 **`muse-voice-transcribe-1.0`** 提供語音轉錄，並以 Muse Spark OCR 讀取圖片及抽樣影片畫面，再交給選定平台進行文字查核。[媒體轉接程式](../../src/claimcheck/ingest_media.py) · [保存的影音查核](real-av-context-live/REPORT.md)。
 
-## Agentic：Muse 選擇下一步，Python 檢查答案
+## 代理運作：Muse 選擇下一步，Python 檢查答案
 
 - **Muse 決定查什麼。** 自主選擇工具與參數：`lookup_fact`、用 `list_periods` 確認可用期間、用 `compute_change` 比較變化、用 `history_rank` 查核紀錄型主張；合格的展望與 non-GAAP 主張則使用 `find_earnings_release` 後接 `quote_release`，再引用回傳證據撰寫判定草稿。[工具定義](../../src/claimcheck/tools.py) · [公司公告工具](../../src/claimcheck/release_tools.py)。
 - **Python 執行並驗證。** 計算數值、檢查期間、單位、精度、方向與證據 ID，驗證公告原始位元組及引文位置，並決定最終判定。模型呼叫前會先保留預算。[程式檢查](../../src/claimcheck/checks.py) · [公告檢查](../../src/claimcheck/release_checks.py) · [預算紀錄](../../src/claimcheck/budget.py)。
 
-在一筆[真實 Alphabet trace](2026-10-27/20261027T222758Z-8959a100.json)中，Muse 先選擇 `lookup_fact`，再用 `history_rank` 查核「首次」的說法；Python 檢查引用證據後才回傳判定。[時序圖](../diagrams/real-run-sequence.mmd)。
+在一筆[真實 Alphabet 軌跡](2026-10-27/20261027T222758Z-8959a100.json)中，Muse 先選擇 `lookup_fact`，再用 `history_rank` 查核「首次」的說法；Python 檢查引用證據後才回傳判定。[時序圖](../diagrams/real-run-sequence.mmd)。
 
 ## 查核流程
 
 1. **保留原文。** 抽出財務主張，記錄引用與可取得的頁碼、畫面或音訊位置。
 2. **搜尋證據。** Meta Muse 模型選取對應公司與期間的 SEC 數值或合格公司公告。
-3. **程式檢查。** Python 驗證引用、數字、單位、比較方向與四捨五入。最終摘要依程式判定產生，模型原稿另存於 trace。
+3. **程式檢查。** Python 驗證引用、數字、單位、比較方向與四捨五入。最終摘要依程式判定產生，模型原稿另存於 軌跡。
 4. **檢視報告。** 開啟 HTML 或重用 JSON；同一股票的多份文件可以彙整，未完成項目仍會顯示。
 
 | 結果 | 意義 |
@@ -97,7 +97,7 @@ uv run python -m claimcheck verify --provider baseten --budget 1 \
   'Meta Q2 2025 revenue was $47.5B'
 ```
 
-Meta 使用 `MODEL_API_KEY`，Fireworks 使用 `FIREWORKS_API_KEY`。即時查核需要網路，trace 與預算紀錄存於 `runs/`。多媒體前處理另外需要 Meta key。
+Meta 使用 `MODEL_API_KEY`，Fireworks 使用 `FIREWORKS_API_KEY`。即時查核需要網路，軌跡 與預算紀錄存於 `runs/`。多媒體前處理另外需要 Meta 金鑰。
 
 ### 查核整篇貼文
 
@@ -116,11 +116,11 @@ HTML／JSON 報告保留原文、證據與程式檢查。[英文與中文保存�
 
 ## API 單價與使用成本
 
-文件費用包含前處理、主張抽取與每次查核呼叫。開頭費用來自[保留文字測試組的保存平均值](eval-v2-2026-10-27/REPORT.md#metrics)。[費用、延遲與有日期的平台價格快照](../PROVIDERS.md) · [費用計算與 Batch 限制](../../JUDGES.md#cost-accounting) · [最近一輪查核費用](real-av-context-live/REPORT.md#spend-usd-estimatedreserved)。
+文件費用包含前處理、主張抽取與每次查核呼叫。開頭費用來自[保留文字測試組的保存平均值](eval-v2-2026-10-27/REPORT.md#metrics)。[費用、延遲與有日期的平台價格快照](../PROVIDERS.md) · [費用計算與 批次 限制](../../JUDGES.md#cost-accounting) · [最近一輪查核費用](real-av-context-live/REPORT.md#spend-usd-estimatedreserved)。
 
 ## 真實世界測試
 
-[News 與 Threads 評測](real-world-2026-11-02/REPORT.md)保留了 80 則新聞改寫，以及第二階段的 30 則自家貼文、48 則第三方 Threads 改寫與兩張真實卡片。三個平台分別執行主張查核、貼文抽取查核及圖片匯入。Threads 來自 Owner 授權的登入瀏覽與 Top 搜尋結果，沒有可靠的互動數據，不能視為已驗證的高互動樣本。
+[新聞 與 Threads 評測](real-world-2026-11-02/REPORT.md)保留了 80 則新聞改寫，以及第二階段的 30 則自家貼文、48 則第三方 Threads 改寫與兩張真實卡片。三個平台分別執行主張查核、貼文抽取查核及圖片匯入。Threads 來自 擁有者 授權的登入瀏覽與 熱門 搜尋結果，沒有可靠的互動數據，不能視為已驗證的高互動樣本。
 
 第二階段只有 **5 筆**獨立 SEC 事實標籤，另有 36 筆僅評估範圍外的預期棄答、37 筆待審；自家貼文與圖片的事實準確率無法估計。六條圖片路徑均未完成主張查核：四條主張抽取未完成、一條抽取逾時、一條 OCR 未完成；所有失敗與費用均保留，每個計費平台共用 $8 上限。報告分開呈現翻譯顯示中的單位／比較期間錯誤、覆蓋、失敗、延遲及完整費用；原始貼文、卡片與逐字 OCR 留在本地忽略目錄。[合併結果](real-world-2026-11-02/REPORT.md#threads) · [待提供的自家 Reels／YouTube 檔案](real-world-2026-11-02/NEXT_SOURCES.md)。
 
@@ -128,15 +128,15 @@ HTML／JSON 報告保留原文、證據與程式檢查。[英文與中文保存�
 
 ## 限制
 
-[JUDGES.md — Limits](../../JUDGES.md#limits)集中說明評測設計、來源範圍、媒體漏抽、附條件的事件期間與費用計算。
+[JUDGES.md — 限制](../../JUDGES.md#limits)集中說明評測設計、來源範圍、媒體漏抽、附條件的事件期間與費用計算。
 
 ## 重現結果與擴充
 
-執行 `sh scripts/verify.sh` 可檢查資料 fixture、Python／Node 測試、圖表、資料重建與連結；完整驗證另需 Node 22+。安裝依賴可能使用網路，驗證本身則離線執行，不需要模型金鑰。[驗證指南](../../AGENTS.md) · [測試與可重用輸入輸出](../TEST_RECORDS.md)。
+執行 `sh scripts/verify.sh` 可檢查資料 固定測試資料、Python／Node 測試、圖表、資料重建與連結；完整驗證另需 Node 22+。安裝依賴可能使用網路，驗證本身則離線執行，不需要模型金鑰。[驗證指南](../../AGENTS.md) · [測試與可重用輸入輸出](../TEST_RECORDS.md)。
 
 新增財務來源可從[擴充指南](../EXTENDING.md)、[證據格式](../EVIDENCE_RECORDS.md)及[資料政策](../DATA_SOURCES.md)開始。[開發計畫](../DAY5_PLAN.md)區分已完成能力，以及仍待開發的上傳介面、更多真實資料評測和跨模態整合。
 
-Repo 程式與 demo 工作均於 hackathon 期間建立。[建置紀錄](../../BUILD_LOG.md) · [更新紀錄](../../CHANGELOG.md) · [MIT 程式授權](../../LICENSE) · [資料與媒體來源](../../CREDITS.md)。英文為主要文件語言，原始證據保持原文。[語言規範](../LANGUAGE.md)。
+專案 程式與 示範 工作均於 黑客松 期間建立。[建置紀錄](../../BUILD_LOG.md) · [更新紀錄](../../CHANGELOG.md) · [MIT 程式授權](../../LICENSE) · [資料與媒體來源](../../CREDITS.md)。英文為主要文件語言，原始證據保持原文。[語言規範](../LANGUAGE.md)。
 
 ## 技術參考
 

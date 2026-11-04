@@ -55,7 +55,7 @@ in addition to the original replay, figure, explorer, site and link checks.
 
 The [PDF render](post-pdf-preview.png) was inspected after generation: one page,
 Times serif, legible paragraphs, no clipping; native extraction matches the post
-after whitespace normalization, including the thread emoji. EN/繁中 hostile-text
+after whitespace normalization, including the thread emoji. English/Traditional Chinese hostile-text
 DOM tests cover 390/768/1280 px configurations. These adapter tests do not measure
 browser fonts or replace visual browser approval.
 
