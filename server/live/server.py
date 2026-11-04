@@ -1,4 +1,4 @@
-"""Single-process HTTP adapter, shared spend gate and bounded public history."""
+"""Single-process HTTP adapter, provider spend gates and bounded public history."""
 from __future__ import annotations
 
 import asyncio
@@ -56,6 +56,17 @@ class Settings:
     meta_api_key: str = ""
     examples_dir: Path = Path("/app/examples")
     fireworks_api_key: str = ""
+    meta_daily_budget: str = "30"
+    meta_lifetime_budget: str = "20"
+    baseten_daily_budget: str = "30"
+    baseten_lifetime_budget: str = "20"
+    fireworks_daily_budget: str = "30"
+    fireworks_lifetime_budget: str = "20"
+
+    @property
+    def provider_budgets(self):
+        return {name: (getattr(self, name + "_daily_budget"), getattr(self, name + "_lifetime_budget"))
+                for name in ("baseten", "fireworks", "meta")}
 
     @classmethod
     def from_env(cls):
@@ -64,7 +75,10 @@ class Settings:
                    secret(env, "LIVE_CHECK_PASSWORD"), secret(env, "LIVE_ORIGIN_TOKEN"),
                    env.get("DAILY_BUDGET_USD", "3"), env.get("TOTAL_BUDGET_USD", "20"),
                    secret(env, "META_MODEL_API_KEY"), Path(env.get("LIVE_EXAMPLES_DIR", "/app/examples")),
-                   secret(env, "FIREWORKS_API_KEY"))
+                   secret(env, "FIREWORKS_API_KEY"),
+                   **{name + "_" + period + "_budget": env.get(name.upper() + "_" + period.upper() + "_BUDGET_USD", default)
+                      for name in ("baseten", "fireworks", "meta")
+                      for period, default in (("daily", "30"), ("lifetime", "20"))})
 
 
 def load_example(folder, example_id):
@@ -230,6 +244,7 @@ class SpendGate:
                     result, status = transition(state, action, data, now=self.clock(),
                                                 budget=self.settings.daily_budget,
                                                 total_budget=self.settings.total_budget,
+                                                provider_budgets=self.settings.provider_budgets,
                                                 password_secret=self.settings.password)
                 # No reset_id: lifetime counters and stop flags are never reset.
                 self.db.execute("INSERT OR REPLACE INTO ledger (id, body) VALUES (1, ?)", (json.dumps(state),))
@@ -314,7 +329,7 @@ class Services:
                         # Latch 402 before reading a possibly broken/private body.
                         body = "" if response.status_code == 402 else (await response.aread()).decode("utf-8", errors="replace")
                         if provider_credit_exhausted(response.status_code, body):
-                            await self.gate("credit_exhausted", {})
+                            await self.gate("credit_exhausted", {"provider": provider})
                             raise LiveError("credit_exhausted")
                         raise LiveError("provider_error")
                     return json.loads(await response.aread())
@@ -333,7 +348,7 @@ class Services:
                 if not response.is_success:
                     body = "" if response.status_code == 402 else (await response.aread()).decode("utf-8", errors="replace")
                     if provider_credit_exhausted(response.status_code, body):
-                        await self.gate("credit_exhausted", {})
+                        await self.gate("credit_exhausted", {"provider": "meta"})
                         raise LiveError("credit_exhausted")
                     raise LiveError("preprocessing_failed")
                 return json.loads(await response.aread())
@@ -386,11 +401,14 @@ async def execute(services, request, provider, *, claim=None, example=None):
     status = 200
     try:
         async with asyncio.timeout(EXAMPLE_TIMEOUT if example else 55):
-            # Every compare member checks the same durable shared budget. The
-            # runner also reserves atomically before *each* external paid call.
+            # Check this member's provider and any paid Meta preprocessing.
+            # Each external paid call still requires an atomic reservation.
             budget = await services.gate("budget", {})
-            if budget["status"] != "ready":
-                raise LiveError(budget["status"], 429 if budget["status"] == "budget_exhausted" else 503, budget)
+            needed = [provider, "meta"] if example and example[2] in {"image", "audio", "video"} else [provider]
+            for name in needed:
+                budget_status = budget["providers"][name]["status"]
+                if budget_status != "ready":
+                    raise LiveError(budget_status, 429 if budget_status == "budget_exhausted" else 503, budget)
             if not services.provider_key(provider) or (example and example[2] in {"image", "audio", "video"}
                                                        and not services.settings.meta_api_key):
                 raise LiveError("unavailable")
@@ -487,7 +505,7 @@ async def handle(request):
             if not compare:
                 return reply(result, status)
             runs.append(result)
-            if result.get("error") in {"budget_exhausted", "total_budget_exhausted", "credit_exhausted", "rate_limited"}:
+            if result.get("error") == "rate_limited":
                 break
         return reply({"runs": runs})
     except (LiveError, TimeoutError) as error:

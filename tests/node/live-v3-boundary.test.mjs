@@ -66,11 +66,11 @@ test("compare forwards one sequential request and returns only run envelopes thr
   t.mock.method(globalThis, "fetch", async req => {
     assert.equal(req.url, "https://live-origin.example.com/api/compare");
     assert.deepEqual(await req.json(), { text, password: "x", providers: ["meta", "fireworks", "baseten"] });
-    return Response.json({ runs: [{ ...envelope("meta"), password: "drop" }, stopped], raw_ip: "drop" });
+    return Response.json({ runs: [{ ...envelope("meta"), password: "drop" }, stopped, envelope("baseten")], raw_ip: "drop" });
   });
   const response = await onCompare({ request: post("compare", { text, password: "x", providers: ["meta", "fireworks", "baseten"] }), env });
   assert.equal(response.status, 200);
-  const expected = JSON.parse(JSON.stringify({ runs: [envelope("meta"), stopped] }));
+  const expected = JSON.parse(JSON.stringify({ runs: [envelope("meta"), stopped, envelope("baseten")] }));
   assert.deepEqual(await response.json(), expected);
 });
 

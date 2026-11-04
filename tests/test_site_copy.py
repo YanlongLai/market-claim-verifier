@@ -158,11 +158,18 @@ def test_readme_accuracy_tables_match_completed_saved_results():
                     assert f'{100 * correct / len(subset):.1f}%({correct}/{len(subset)})' in text
 
 
-def test_budget_configuration_and_public_meter_use_10_daily_60_lifetime():
+def test_provider_budget_placeholders_and_meters_are_in_the_chooser():
     yaml = (ROOT / "deploy/k8s/live-check.yaml").read_text()
     toml = (ROOT / "workers/live/wrangler.toml").read_text()
-    assert re.search(r'name: DAILY_BUDGET_USD\s+value: "10"', yaml)
-    assert re.search(r'name: TOTAL_BUDGET_USD\s+value: "60"', yaml)
-    assert 'DAILY_BUDGET_USD = "10"' in toml and 'TOTAL_BUDGET_USD = "60"' in toml
+    for provider in ("META", "BASETEN", "FIREWORKS"):
+        for period, default in (("DAILY", "30"), ("LIFETIME", "20")):
+            name = f"{provider}_{period}_BUDGET_USD"
+            assert re.search(rf'name: {name}\s+value: "REPLACE_WITH_{provider}_{period}_CAP"', yaml)
+            assert f'{name} = "{default}"' in toml
     for relative in ("docs/site/index.html", "docs/zh/index.html"):
-        assert 'id="live-budget-meter" max="10"' in (ROOT / relative).read_text()
+        html = (ROOT / relative).read_text()
+        chooser = html.split('<fieldset class="provider-picker">', 1)[1].split('</fieldset>', 1)[0]
+        for provider in ("baseten", "fireworks", "meta"):
+            assert f'id="budget-{provider}-text"' in chooser
+            assert f'id="budget-{provider}-meter"' in chooser
+        assert 'id="live-budget-meter"' not in html

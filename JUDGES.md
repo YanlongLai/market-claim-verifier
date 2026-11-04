@@ -30,7 +30,7 @@ Muse Spark chooses SEC tools; Python binds evidence, calculates the verdict and 
 | Cost & speed | Live headline: $0.01 / 6 s. Planning band: $0.01–0.04 / 6–25 s by input size, plus media preprocessing. Benchmark: $0.02 per claim, 10 s median, p95 21 s. [Receipts and scope](docs/evidence/readme-v3-2026-11-04/REPORT.md#cost-and-speed). |
 | Accuracy | 90.2% (240/266) held out; false support 1/139 reference contradicted/insufficient claims. Failures count as wrong. [Original report](docs/evidence/eval-v2-2026-10-27/REPORT.md#metrics). |
 | Corrections | Strike disproved numbers, insert program values and cite component filings. Only uniquely bound checked assertions change; never article approval. [Retained Apple example](docs/evidence/corrected-draft-2026-11-03/REPORT.md#retained-apple-example). |
-| Live limits | $10/day; $60 lifetime; 5 checks / 10 min per IP. Authenticated inputs/results are public for 14 days. [Current configuration report](docs/evidence/readme-v3-2026-11-04/REPORT.md#scope-and-limits). |
+| Live limits | Per-provider daily/lifetime caps; 5 checks / 10 min per IP. Authenticated inputs/results are public for 14 days. [Cap settings and migration](deploy/README.md#setting-provider-caps). |
 
 ## Accuracy & evidence
 
@@ -47,7 +47,7 @@ coverage ≠ accuracy. [Explorer](https://hackathon.dappgo.com/explorer/) · [Re
 - The original [manifest](docs/evidence/eval-v2-2026-10-27/manifest.json) records a dirty working tree.
 - [Post-hoc rechecks](docs/evidence/real-world-2026-11-03-fixcheck/REPORT.md) reuse seen inputs; frozen transcripts do not retest OCR/ASR.
 - Extraction can miss assertions. Ambiguous periods, sampled frames and missing evidence limit coverage.
-- Compare spends sequentially from shared limits. The planning band is not an observed extreme or an SLA; saved receipts keep their historical values.
+- Compare spends sequentially from independent provider limits and an aggregate ceiling; exhausted providers are labeled and skipped. The planning band is not an observed extreme or an SLA; saved receipts keep their historical values.
 
 [Full limits](docs/evidence/REVIEW_GUIDE.md#limits) · [Provider/input boundaries](docs/PROVIDERS.md) · [Test-record policy](docs/TEST_RECORDS.md).
 

@@ -39,6 +39,32 @@ async function originFetch(env, path, options = {}, timeout = 55000) {
   } finally { clearTimeout(timer); }
 }
 
+const budgetStatuses = new Set(["ready", "budget_exhausted", "total_budget_exhausted", "credit_exhausted"]);
+const budgetCounters = ["daily_limit", "daily_spent", "daily_remaining", "lifetime_limit", "lifetime_spent", "lifetime_remaining"];
+function publicBudgetRow(row) {
+  if (!row || !budgetStatuses.has(row.status) || !budgetCounters.every(key =>
+    typeof row[key] === "number" && Number.isFinite(row[key]) && row[key] >= 0)) return null;
+  return Object.fromEntries([...budgetCounters, "status"].map(key => [key, row[key]]));
+}
+function publicBudget(data) {
+  if (!data || !/^\d{4}-\d{2}-\d{2}$/.test(data.day) || !Number.isFinite(Date.parse(data.resets_at)) ||
+      !budgetStatuses.has(data.status)) return null;
+  const providers = {};
+  for (const name of ["baseten", "fireworks", "meta"]) {
+    providers[name] = publicBudgetRow(data.providers?.[name]);
+    if (!providers[name]) return null;
+  }
+  const result = { day: data.day, providers, status: data.status, resets_at: data.resets_at };
+  // Compatibility sums contain public counters only; no ledger/hold fields.
+  for (const key of budgetCounters) result[key + "_usd"] = Math.round(
+    Object.values(providers).reduce((sum, row) => sum + row[key], 0) * 1e9) / 1e9;
+  if ("global" in data) {
+    result.global = publicBudgetRow(data.global);
+    if (!result.global) return null;
+  }
+  return result;
+}
+
 export const onBudget = async ({ request, env }) => {
   if (request.method !== "GET") return error("method_not_allowed", 405);
   const url = new URL(request.url);
@@ -46,21 +72,20 @@ export const onBudget = async ({ request, env }) => {
   if (env.LIVE_CHECK_MOCK === "1" && ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname)) {
     const now = new Date(), reset = new Date(now);
     reset.setUTCHours(24, 0, 0, 0);
-    return Response.json({ day: now.toISOString().slice(0, 10), daily_limit_usd: 3, daily_spent_usd: 0,
-      daily_remaining_usd: 3, resets_at: reset.toISOString(), status: "ready", mode: "mock" }, { headers });
+    const row = { daily_limit: 30, daily_spent: 0, daily_remaining: 30,
+      lifetime_limit: 20, lifetime_spent: 0, lifetime_remaining: 20, status: "ready" };
+    return Response.json({ ...publicBudget({ day: now.toISOString().slice(0, 10), resets_at: reset.toISOString(),
+      status: "ready", providers: { baseten: row, fireworks: row, meta: row } }), mode: "mock" }, { headers });
   }
   try {
     // Only origin credentials enter this request; no visitor headers or IP.
     const { response, data } = await originFetch(env, "/api/budget");
     // Status only (no body): tells Access (HTML 403), origin auth (JSON 401/403) and tunnel errors apart.
     if (!response.ok) return diagnostic(response.status);
-    // Allowlist the public daily counters; never forward internal ledger data.
-    const { day, daily_limit_usd, daily_spent_usd, daily_remaining_usd, resets_at, status } = data;
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(day) || !Number.isFinite(Date.parse(resets_at)) ||
-        ![daily_limit_usd, daily_spent_usd, daily_remaining_usd].every(v => typeof v === "number" && Number.isFinite(v) && v >= 0) ||
-        !["ready", "budget_exhausted", "total_budget_exhausted", "credit_exhausted"].includes(status)) return error("unavailable", 503);
+    const budget = publicBudget(data);
+    if (!budget) return error("unavailable", 503);
     // Post-check fetches bypass caches; ordinary page loads may reuse 5 s.
-    return Response.json({ day, daily_limit_usd, daily_spent_usd, daily_remaining_usd, resets_at, status }, {
+    return Response.json(budget, {
       headers: { ...headers, "Cache-Control": request.headers.get("Cache-Control") === "no-cache" ? "no-store" :
         "public, max-age=0, s-maxage=5, must-revalidate" }
     });
@@ -122,8 +147,10 @@ function publicEnvelope(value, required = false) {
       "cost_is_bound" in value && typeof value.cost_is_bound !== "boolean") return null;
   const result = pick(value, ["mode", "model", "provider", "events", "evidence", "cost_usd", "cost_is_bound", "latency_ms",
     "verdict", "model_verdict", "summary", "claims", "corrections", "scope", "error", "demo", "history_truncated", "request_id"]);
-  if ("budget" in value) result.budget = pick(value.budget ?? {},
-    ["day", "daily_limit_usd", "daily_spent_usd", "daily_remaining_usd", "resets_at", "status"]);
+  if ("budget" in value) {
+    result.budget = publicBudget(value.budget);
+    if (!result.budget) return null;
+  }
   if (required || "receipt" in value) {
     result.receipt = publicReceipt(value.receipt);
     if (!result.receipt || "provider" in value && value.provider !== result.receipt.provider ||
@@ -216,7 +243,7 @@ async function onCheck({ request, env }, action) {
       const runs = result.runs.map(run => publicEnvelope(run, true));
       if (runs.some((run, i) => !run || run.receipt.provider !== requestedProviders[i] ||
           example && run.input.example_id !== data.example_id)) return error("unavailable", 503);
-      const stopped = new Set(["budget_exhausted", "total_budget_exhausted", "credit_exhausted", "rate_limited"]);
+      const stopped = new Set(["rate_limited"]);
       if (runs.slice(0, -1).some(run => stopped.has(run.error)) ||
           runs.length < requestedProviders.length && !stopped.has(runs.at(-1).error)) return error("unavailable", 503);
       return Response.json({ runs }, { headers });

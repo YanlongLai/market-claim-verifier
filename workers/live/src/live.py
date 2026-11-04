@@ -105,6 +105,7 @@ def reservation_for(payload: dict, provider: str = "baseten") -> dict:
     prices = ledger.price(adapter.default_model, provider=provider)
     hold = ceiling * prices["input"] + MAX_OUTPUT * prices["output"]
     return {"id": estimate.reservation_id, "amount": hold,
+            "provider": provider,
             "cli_estimate": estimate.amount, "input_ceiling": ceiling,
             "estimated_input_tokens": estimate.estimated_input_tokens}
 
@@ -264,7 +265,7 @@ class LiveRun:
             if not isinstance(response, dict):
                 raise LiveError("provider_error")
             actual = usage_cost(payload, response.get("usage"), self.provider)
-            await self.gate("settle", {"id": reservation["id"], "amount": actual})
+            await self.gate("settle", {"id": reservation["id"], "amount": actual, "provider": self.provider})
             if actual is not None:
                 self.cost += actual - reservation["amount"]
             self.cost_is_bound = any(e.get("cost_is_bound") for e in self.events) or actual is None
@@ -379,14 +380,15 @@ class ExampleRun(LiveRun):
     async def reserve_media(self, reservation):
         if self.stopped.is_set():
             raise LiveError("timeout", 504)
-        await self.gate("reserve", {"id": reservation.reservation_id, "amount": reservation.amount})
+        await self.gate("reserve", {"id": reservation.reservation_id, "amount": reservation.amount, "provider": "meta"})
         self.media_holds[reservation.reservation_id] = True
         self.cost += reservation.amount
         self.input_info["preprocessing"]["cost_usd"] += reservation.amount
         self.cost_is_bound = True
 
     async def settle_media(self, reservation, amount, missing_usage):
-        await self.gate("settle", {"id": reservation.reservation_id, "amount": None if missing_usage else amount})
+        await self.gate("settle", {"id": reservation.reservation_id, "amount": None if missing_usage else amount,
+                                   "provider": "meta"})
         self.media_holds[reservation.reservation_id] = missing_usage
         delta = 0 if missing_usage else amount - reservation.amount
         self.cost += delta

@@ -166,7 +166,7 @@ def test_preprocessing_failure_keeps_one_hold_and_does_not_retry(tmp_path, statu
             assert result["input"]["preprocessing"]["cost_usd"] > 0 and result["cost_is_bound"]
             assert not next(iter(state(services)["holds"].values()))["settled"]
             if status == 402:
-                assert (await services.gate("budget", {}))["status"] == "credit_exhausted"
+                assert (await services.gate("budget", {}))["providers"]["meta"]["status"] == "credit_exhausted"
     asyncio.run(run())
 
 
