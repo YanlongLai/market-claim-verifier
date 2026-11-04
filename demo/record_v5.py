@@ -14,6 +14,7 @@ import hashlib
 import importlib.util
 import json
 import math
+import re
 import os
 from pathlib import Path
 import subprocess
@@ -84,6 +85,12 @@ def live_copy_supported(result):
 def live_cue_events(scene, receipt):
     """Resolve ordered phase-local offsets from this take's picture clock."""
     phases = {t["phase"]: t["at_s"] for t in receipt["timings"]}
+    # Tool-call reveal marks carry the event index of their take; the storyboard binds
+    # to the first and second shown tool calls (named tool_call_2/4_reveal historically).
+    shown = [t for t in receipt["timings"] if re.fullmatch(r"tool_call_\d+_reveal", t["phase"])]
+    for alias, ordinal in (("tool_call_2_reveal", 0), ("tool_call_4_reveal", 1)):
+        if alias not in phases and len(shown) > ordinal:
+            phases[alias] = shown[ordinal]["at_s"]
     events = []
     for spec in scene["cue_events"]:
         phase = spec.get("receipt_phase")
