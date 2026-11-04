@@ -121,53 +121,54 @@ Copy each answer into the matching field. Character limits are the form's.
 | --- | --- |
 | Team Name | DappGo |
 | Team Members | Yanlong (solo) |
-| Which track are you submitting to? | **Indie Developer Track** (registered as indie; solo builder; judged on creativity, technical ambition and whether it works) |
-| Which problem statement did you build towards? | **Build for Your World** (DappGo publishes US-market commentary; this fixes a problem found in our own fact checks) |
+| Which track are you submitting to? | **Indie Developer Track** |
+| Which problem statement did you build towards? | **Build for Your World** (DappGo publishes US-market commentary; this addresses a fact-checking problem found in that product.) |
 | Most Viral Track — X post link | `<X post URL>` (post the X cut first, then paste the link) |
 | Public GitHub Repository | https://github.com/YanlongLai/market-claim-verifier |
 | 3-Minute Demo Video | `<YouTube URL>` |
-| Partner technologies feedback (≤150) | Baseten: fast Muse Spark Open, stable tool calling. Fireworks: works, latency tail to 100 s today. Credits and docs were enough. |
+| Partner technologies feedback (≤150) | Baseten: fast Muse Spark Open and reliable tool calling. Fireworks: integrated, but held-out agent p95 was 226 s. Credits and docs were sufficient. |
 | How likely to build with Meta Model API? | Very likely |
 | Overall opinion of Meta Model API | Very favorable |
 | Permission checkbox | Accept (required to be judged/published) |
 | Recommend Meta Model API (0–5) | 5 |
-| Recommend Muse Code (0–5) | 3 (not used in this build — answer honestly; 3 = neutral) |
-| Biggest obstacle | **Slow responses** (provider latency tails of 20–100 s forced a 50→90 s request budget) |
-| Compared with other models for this work | Somewhat better (tool selection was reliable once the program decided verdicts) |
+| Recommend Muse Code (0–5) | 3 (not used in this build) |
+| Biggest obstacle | **Slow responses** (held-out agent p95: 226 s on Fireworks; 21 s on Baseten) |
+| Compared with other models for this work | Somewhat better — structured tool calling fit the evidence workflow, while Python made the final decision. |
 | What matters most when choosing a model | Agent abilities such as tool calling and multi-step tasks |
-| Hardest part of switching models | Our product is tuned to our current model's behavior and prompts |
-| What would stop production use | Rate limits or capacity too low for real traffic |
+| Hardest part of switching models | Preserving tool-call and evidence-binding behavior across provider adapters and prompts |
+| What would stop production use | Rate limits or capacity too low for production traffic |
 
 ### Project Description (≤ 3,000 characters)
 
-Market Claim Verifier checks every number in a finance post against SEC filings and hands back a corrected draft with citations.
+Market Claim Verifier checks extracted financial claims against SEC filings and returns a corrected draft with citations.
+Headline result: Baseten's corrected-gold held-out text split reached 90.2% (240/266), with false support at 1/139 among non-supported claims; benchmark cost was ~$0.02 per claim and the live-text planning band is 6–25 s per Baseten check.
 
-The problem is one we hit in our own publishing at DappGo: a viral post quotes a real number with the wrong period, unit or comparison. "Apple pulled in $416.2 billion in fiscal Q4 2025" is the annual figure; the quarter was $102.5 billion. A fluent model summary does not catch that, and numbers like this move money.
+The problem is one we hit in our own publishing at DappGo: a post can quote a real number with the wrong period, unit or comparison. In the retained Apple example, “Apple pulled in $416.2 billion in fiscal Q4 2025” uses the annual figure; the quarter was $102.5 billion. A fluent summary does not reliably catch that, and numbers like this move money.
 
-How it works: Meta's Muse Spark reads the post, extracts each financial assertion and chooses which SEC tool to call (lookup_fact, compute_change, history_rank, list_periods). The tools return XBRL facts with evidence IDs, units, periods and filing links. Python, not the model, binds each claim to its evidence, does the arithmetic and returns the verdict: supported, contradicted or insufficient evidence. A correction strikes the disproved value and inserts the filed one, citing the 10-K/10-Q. The model proposes; the program decides.
+How it works: Meta's Muse Spark reads the post, extracts financial assertions and selects an SEC tool such as `lookup_fact`, `compute_change`, `history_rank` or `list_periods`. The tools return XBRL facts with evidence IDs, units, periods and filing links. Python, not the model, binds each claim to its evidence, performs the arithmetic and returns `supported`, `contradicted` or `insufficient_evidence`. A correction changes only a checked assertion with a program-bound value and citation. The model proposes; the program decides.
 
-Results: on 266 held-out text claims the agent scores 90.2% (240/266) and wrongly says "supported" once in 139; asking the same model directly, without tools, gets 20.7%. A live check costs about $0.02 and takes 6–25 s on Baseten; Fireworks and the Meta Model API are also wired. Inputs: text, screenshots (Muse OCR), PDFs, audio and video (Muse Voice Transcribe) — media becomes claim text first, verdicts still require SEC evidence.
+For context, the same held-out split's no-tool Baseten baseline was 21.1% (56/266); the all-claim baseline was 20.7% (74/357). The live site also wires Fireworks and the Meta Model API. The CLI accepts text, images, native-text PDFs, audio and video; Meta OCR/ASR turns media into claim text, while financial verdicts still require SEC evidence.
 
-What you can try: hackathon.dappgo.com has three stories × five input formats with saved results (no password) and live checks on any of the three providers (password = team name), with a public history that shows every run's provider, verdict, duration and cost. The repository (MIT) includes the CLI, the evaluation set frozen before execution, per-claim traces, an offline verifier that reproduces every committed data output, and a disclosure of what pre-existed (nothing in this repository — DappGo the company did).
+What you can try: hackathon.dappgo.com offers 3 stories × 5 packaged inputs, saved results with no password, and live checks on Baseten, Fireworks or the Meta Model API with the team name as the judge password. Public history reopens full results. The MIT repository includes the CLI, a frozen evaluation set, per-claim traces, and an offline verifier that rebuilds committed outputs. Nothing in this repository pre-existed the hackathon; existing DappGo product code is outside this submission.
 
-Limits, stated plainly: text-benchmark accuracy is not accuracy on every post; coverage on real posts is reported separately; two gold labels were corrected after the run and both scorings are published; only US-GAAP SEC filers; extraction can miss claims.
+Limits, stated plainly: benchmark accuracy is not accuracy on every post; real-world coverage is reported separately; two gold labels were corrected after the run and both scorings are published; the primary scope is US-GAAP SEC XBRL filers; and extraction can miss claims.
 
 ### Describe your use of Meta products (≤ 3,000 characters)
 
 Every model that runs at request time is a Meta model.
 
-Muse Spark Open (meta-models/muse-spark-open-1026 on Baseten; accounts/fireworks/models/muse-spark-open on Fireworks) and Muse Spark 1.3 (Meta Model API) run the agent loop: claim extraction from the post, tool selection against our SEC XBRL tools, and the cited explanation draft. The three routes share one prompt registry with versioned hashes, and every recorded run stores the exact model ID.
+Muse Spark Open (`meta-models/muse-spark-open-1026` on Baseten; `accounts/fireworks/models/muse-spark-open` on Fireworks) and Muse Spark 1.3 (`muse-spark-1.3` through Meta Model API) run the agent loop: claim extraction, tool selection against our SEC XBRL tools, and the cited explanation draft. The routes use a versioned prompt registry, and every recorded run stores the exact model ID.
 
-Muse OCR (through the Meta Model API) reads screenshots; Muse Voice Transcribe (muse-voice-transcribe-1.0) transcribes audio and the audio track of video, with sampled frames read by OCR. These outputs become claim text; they are never treated as evidence.
+Muse Spark 1.3 through Meta Model API reads screenshots; Muse Voice Transcribe (`muse-voice-transcribe-1.0`) transcribes audio and the audio track of video, with three sampled video frames read by OCR. Native-text PDFs are read locally. These outputs become claim text; they are never treated as evidence.
 
-Program design around the models: temperature 0, program-side evidence binding (the model's numbers are never allowed to become corrections — only values returned by the tools, with their evidence IDs), a reserve-before-call cost ledger per provider, and a trace of every request, tool call, result and program check that judges can open on the site.
+Program design around the models: temperature 0, program-side evidence binding (the model's numbers never become corrections — only values returned by tools with evidence IDs), a reserve-before-call cost ledger, and a trace of every request, tool call, result and program check that judges can inspect in saved runs.
 
-Evaluation: 357 frozen claims (266 held out), run on all three routes; the agent-with-tools configuration reaches 323/357 on Baseten and Fireworks and 297/357 on the Meta Model API; single-shot answers from the same models reach 74, 71 and 158. The per-claim explorer and raw traces are public.
+Evaluation: 357 frozen claims (266 held out), run on all three routes. Agent-with-tools results are 323/357 on Baseten, 323/357 on Fireworks and 297/357 on Meta Model API; single-shot results are 74/357, 71/357 and 158/357 respectively. The per-claim explorer and raw traces are public.
 
-Built Oct 27 – Nov 4, 2026. Muse Code was not used.
+Built during the October 27–November 4, 2026 hackathon window. Muse Code was not used.
 
 ### Why are Meta's models important to your solution? (≤ 3,000 characters)
 
-Fact-checking a finance post is an agent problem, not a summarisation problem: the model has to split a post into checkable assertions, decide which filing fact answers each one, call a tool with the right ticker, metric and period, read what comes back and try again when the period is wrong. Muse Spark did that reliably enough that we could make the program, not the model, the judge: the model proposes tools and interpretations; Python binds evidence and decides. That split is what turns 20.7% (direct answers) into 90.2% (held-out, with tools), and it is only possible because tool calling with structured arguments works consistently across the open-weight and API routes.
+Fact-checking a finance post is an agent problem, not a summarisation problem: the model has to split a post into checkable assertions, decide which filing fact answers each one, call a tool with the right ticker, metric and period, read what comes back and try again when the period is wrong. Muse Spark makes it possible for the program, not the model, to be the judge: the model proposes tools and interpretations; Python binds evidence and decides. On the same corrected-gold held-out Baseten split, that agent path reaches 90.2% (240/266) versus 21.1% (56/266) for the no-tool baseline.
 
-The open weights matter for cost and control: Muse Spark Open on Baseten gives us about $0.02 per claim and 6–25 s, which is what makes "check every number before you post" affordable for a small publisher; the same weights on Fireworks give a second route; the Meta Model API adds OCR and speech so screenshots, PDFs, podcasts and videos enter the same pipeline. One model family across text, image and audio keeps the system simple enough that a solo developer could build, evaluate and ship it in nine days, with every run auditable.
+The open weights matter for cost and control: the recorded Baseten benchmark rounds to ~$0.02 per claim, while the live-text planning band is 6–25 s by input size, not an SLA. The same verifier is available through Fireworks; Meta Model API supplies OCR and speech for screenshots, audio and video, while native-text PDFs are read locally. All inputs become claim text before SEC checking. This common pipeline was built, evaluated and documented by one developer during the October 27–November 4 window, with every saved run auditable.
