@@ -24,7 +24,7 @@ export function cardScrollDelta(audit,elements,scroll,maxScroll,{verdict=false}=
  let high=Math.min(maxScroll-scroll,...elements.map(r=>r.top-80));
  if(verdict){
   if(!audit.input_charge||!audit.corrected_heading)throw new Error('verdict_surroundings_missing');
-  low=Math.max(low,audit.input_charge.bottom+2);
+  low=Math.max(low,audit.input_charge.bottom+.25);
  }
  const rects=[...audit.lines,...audit.controls,...(verdict?[audit.corrected_heading]:[])];
  const candidates=[Math.max(low,Math.min(high,0)),low,high,
