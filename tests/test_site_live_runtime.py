@@ -38,9 +38,32 @@ def test_saved_post_renders_one_cited_edit_reasons_and_result_section_order(lang
     ("$60.0M", "$60.9M", 60922000, "$60.9M"),
     ("-$60.0 million", "-$60.9 million", -60922000, "−$60.9M"),
 ])
-def test_draft_citations_and_evidence_share_stated_scale(language, stated, replacement, value, expected):
+def test_draft_keeps_edit_text_while_citations_and_evidence_share_stated_scale(language, stated, replacement, value, expected):
     run_check(SCALED_MONEY, language=language, stated=stated, replacement=replacement,
               value=value, expected=expected)
+
+
+@pytest.mark.parametrize("language", ["en", "zh"])
+@pytest.mark.parametrize("edit_count", [0, 2])
+def test_corrected_draft_is_verbatim_except_recorded_codepoint_edits(language, edit_count):
+    text = ('🧵 e\u0301 — Amazon revenue was $143.1 billion.\r\n'
+            'NVIDIA revenue was $60.9 billion; growth: 20%.\t'
+            'Apple Q4 revenue: $416.2 billion.\n'
+            'Unchanged: 20%, $416.2 billion.\u00a0\u202f<keep>&.')
+    edits = []
+    for original, replacement in [("20%", "125.9%"), ("$416.2 billion", "$102.5 billion")][:edit_count]:
+        start = text.index(original)
+        edits.append({"start": start, "end": start + len(original),
+                      "original": original, "replacement": replacement})
+    corrections = {"original_text": text, "span_unit": "unicode_codepoints", "edits": edits}
+    page = "docs/zh/index.html" if language == "zh" else "docs/site/index.html"
+    run_check(VERBATIM_DRAFT, page=page, language=language, corrections=corrections)
+
+
+@pytest.mark.parametrize("language", ["en", "zh"])
+@pytest.mark.parametrize("mode", ["recorded", "live", "mock"])
+def test_receipts_round_cost_to_cents_and_duration_to_tenths(language, mode):
+    run_check(RECEIPT_PRECISION, language=language, mode=mode)
 
 
 @pytest.mark.parametrize("language", ["en", "zh"])
@@ -203,7 +226,8 @@ const edit={start:0,end:Array.from(config.stated).length,original:config.stated,
 const result={events:[],evidence:[fact],claims:[{text:config.stated,evidence_ids:['E1']}],corrections:{
   original_text:config.stated,span_unit:'unicode_codepoints',edits:[edit],not_corrected:[]}};
 context.liveTest.renderLiveTrace(result,target);
-assert.equal(target.querySelector('.corrected-draft-text').querySelector('strong').textContent,config.expected);
+assert.equal(target.querySelector('.corrected-draft-text').querySelector('del').textContent,config.stated);
+assert.equal(target.querySelector('.corrected-draft-text').querySelector('strong').textContent,config.replacement);
 assert.ok(target.querySelector('.citation-primary').textContent.includes(config.expected));
 assert.ok(target.querySelector('.evidence-primary').textContent.startsWith(config.expected+' · '));
 assert.ok(!/億|兆/.test(target.querySelector('.corrected-draft-text').textContent));
@@ -212,6 +236,57 @@ assert.equal(target.querySelector('.live-trace').open,false);
 result.corrections=null;
 context.liveTest.renderLiveTrace(result,target);
 assert.equal(target.querySelector('.live-trace').open,true);
+"""
+
+
+VERBATIM_DRAFT = r"""
+context.URL=URL;
+const target=tree.querySelector('#live-result');
+const corrections=config.corrections;
+const original=Array.from(corrections.original_text);
+let expected=original.slice(),annotated=original.slice();
+for(const edit of corrections.edits.slice().reverse()){
+  expected.splice(edit.start,edit.end-edit.start,...Array.from(edit.replacement));
+  annotated.splice(edit.start,edit.end-edit.start,...Array.from(`${edit.original} → ${edit.replacement}`));
+}
+const verify=()=>{
+  context.liveTest.renderLiveTrace({events:[],corrections},target);
+  const draft=target.querySelector('.corrected-draft-text');
+  // Omit struck text and the edit arrow to read the resulting corrected draft.
+  const draftText=draft.children.filter(node=>['span','strong'].includes(node.tagName)).map(node=>node.textContent).join('');
+  assert.equal(draftText,expected.join(''),'only the listed codepoint spans change');
+  assert.equal(draft.children.filter(node=>['span','del'].includes(node.tagName)).map(node=>node.textContent).join(''),corrections.original_text);
+  assert.equal(draft.textContent,annotated.join(''),'all displayed text and edit tokens stay verbatim');
+  assert.deepEqual(draft.querySelectorAll('del').map(node=>node.textContent),corrections.edits.map(edit=>edit.original));
+  assert.deepEqual(draft.querySelectorAll('strong').map(node=>node.textContent),corrections.edits.map(edit=>edit.replacement));
+};
+verify();
+context.stamps.setLanguage(config.language==='zh'?'en':'zh');
+verify();
+"""
+
+
+RECEIPT_PRECISION = r"""
+context.URL=URL;
+const target=tree.querySelector('#live-result');
+const event={kind:'model',at_ms:12345.678,latency_ms:38424.567,cost_usd:.061234567,finish_reason:'stop'};
+const result={mode:config.mode,cost_usd:event.cost_usd,latency_ms:event.latency_ms,events:[event]};
+const saved=JSON.stringify(result);
+for(const bound of [false,true]){
+  result.cost_is_bound=bound;
+  context.liveTest.renderLiveTrace(result,target);
+  const seconds=config.language==='zh'?'秒':'s';
+  const metrics=target.querySelector('.trace-metrics').textContent;
+  assert.ok(metrics.endsWith(`: $0.06 · 38.4 ${seconds}`),metrics);
+  const model=target.querySelector('.trace-model');
+  assert.equal(model.querySelector('p').textContent,`38.4 ${seconds} · $0.06 · stop`);
+  assert.equal(model.querySelector('.trace-time').textContent,`+12.3 ${seconds} · `);
+  const raw=model.querySelector('.trace-data');
+  assert.ok(raw.querySelector('summary').textContent.includes(config.language==='zh'?'檢視資料':'Inspect data'));
+  assert.deepEqual(JSON.parse(raw.querySelector('pre').textContent),event);
+}
+delete result.cost_is_bound;
+assert.equal(JSON.stringify(result),saved,'rounding leaves recorded values intact');
 """
 
 
@@ -229,10 +304,15 @@ const verify=language=>{
   const draft=corrections.querySelector('.corrected-draft-text');
   assert.equal(draft.querySelectorAll('del').length,1);
   assert.equal(draft.querySelectorAll('strong').length,1);
-  assert.equal(draft.querySelector('del').textContent,'$416.2B');
-  assert.equal(draft.querySelector('strong').textContent,'$102.5B');
-  assert.ok(draft.textContent.includes('$143.1B'));
-  assert.ok(draft.textContent.includes('$60.9B'));
+  assert.equal(draft.querySelector('del').textContent,demo.corrections.edits[0].original);
+  assert.equal(draft.querySelector('strong').textContent,demo.corrections.edits[0].replacement);
+  assert.ok(draft.textContent.includes('$143.1 billion'));
+  assert.ok(draft.textContent.includes('$60.9 billion'));
+  let expected=Array.from(demo.corrections.original_text);
+  for(const edit of demo.corrections.edits.slice().reverse()){
+    expected.splice(edit.start,edit.end-edit.start,...Array.from(edit.replacement));
+  }
+  assert.equal(draft.children.filter(node=>['span','strong'].includes(node.tagName)).map(node=>node.textContent).join(''),expected.join(''));
   assert.equal(corrections.querySelector('.correction-changes').children.length,1);
   const links=corrections.querySelectorAll('a');
   assert.equal(links.length,2);
@@ -353,7 +433,7 @@ const target=tree.querySelector('#recorded-trace');
 context.liveTest.renderLiveTrace(demo,target);
 const corrections=target.querySelector('.live-corrections');
 assert.ok(corrections);
-assert.equal(corrections.querySelector('.corrected-draft-text').textContent,demo.input.replace('$109.4 billion','$109.4B'));
+assert.equal(corrections.querySelector('.corrected-draft-text').textContent,demo.corrections.original_text);
 assert.ok(corrections.querySelector('.correction-unchanged').textContent.includes(config.language==='zh'?
   '程式支持此主張，無須修改。':'The program supports this assertion; no edit needed.'));
 assert.ok(corrections.querySelector('.correction-scope').textContent.includes(config.language==='zh'?
@@ -367,7 +447,7 @@ assert.equal(target.querySelector('.evidence-primary').textContent,config.langua
 assert.equal(target.querySelector('.live-trace').open,true);
 assert.ok(target.textContent.includes('FY2026Q3'));
 assert.ok(target.textContent.includes('0000320193-26-000020'));
-assert.ok(target.textContent.includes('0.01222'));
+assert.ok(target.querySelector('.trace-metrics').textContent.includes('$0.01'));
 assert.equal(target.querySelectorAll('a').length,2);
 assert.ok(target.textContent.includes('2026-10-28T06:12:13'));
 const unsafe=JSON.parse(JSON.stringify(demo));

@@ -730,8 +730,9 @@
       if (!Number.isInteger(edit.start) || !Number.isInteger(edit.end) || edit.start < cursor ||
           edit.end <= edit.start || edit.end > original.length || typeof edit.replacement !== "string" ||
           original.slice(edit.start, edit.end).join("") !== edit.original) continue;
-      draft.append(liveNode("span", draftMoney(original.slice(cursor, edit.start).join(""))),
-        liveNode("del", draftMoney(edit.original)), document.createTextNode(" → "), liveNode("strong", draftMoney(edit.replacement)));
+      // Keep the draft code-point exact; compact money only in the edit list.
+      draft.append(liveNode("span", original.slice(cursor, edit.start).join("")),
+        liveNode("del", edit.original), document.createTextNode(" → "), liveNode("strong", edit.replacement));
       cursor = edit.end;
       const item = liveNode("li");
       item.append(liveNode("del", draftMoney(edit.original)), document.createTextNode(" → "), liveNode("strong", draftMoney(edit.replacement)));
@@ -759,7 +760,7 @@
       liveRaw(item, edit);
       changes.append(item);
     }
-    draft.append(liveNode("span", draftMoney(original.slice(cursor).join(""))));
+    draft.append(liveNode("span", original.slice(cursor).join("")));
     section.append(draft, liveNode("p", liveCopy("correctionScope"), "correction-scope"));
     if (changes.children.length) section.append(liveNode("h6", liveCopy("correctionChanges")), changes);
     if (Array.isArray(corrections.not_corrected) && corrections.not_corrected.length) {
@@ -782,8 +783,9 @@
     const head = liveNode("div", null, "trace-head");
     head.append(liveNode("p", liveCopy(result.mode === "recorded" ? "recorded" : result.mode === "mock" ? "mock" : "live"), "trace-mode"));
     if (result.verdict) head.append(liveNode("h4", liveVerdict(result.verdict), `trace-verdict is-${result.verdict}`));
-    const money = Number.isFinite(result.cost_usd) ? `$${result.cost_usd.toFixed(5)}` : "—";
-    head.append(liveNode("p", `${liveCopy(result.cost_is_bound ? "bound" : "cost")}: ${money} · ${liveNumber(result.latency_ms / 1000)} ${liveCopy("seconds")}`, "trace-metrics"));
+    const money = Number.isFinite(result.cost_usd) ? cost(result.cost_usd) : "—";
+    const duration = Number.isFinite(result.latency_ms) ? (result.latency_ms / 1000).toFixed(1) : "—";
+    head.append(liveNode("p", `${liveCopy(result.cost_is_bound ? "bound" : "cost")}: ${money} · ${duration} ${liveCopy("seconds")}`, "trace-metrics"));
     head.append(liveNode("p", result.model || "", "live-small"));
     if (result.started_at) head.append(liveNode("p", `${result.started_at} → ${result.finished_at}`, "live-small"));
     if (result.input) head.append(liveNode("blockquote", result.input, "trace-input"));
@@ -844,9 +846,10 @@
       label.append(liveNode("span", String(i + 1).padStart(2, "0"), "trace-step-number"),
         liveNode("strong", `${liveCopy(event.kind) || event.kind}${event.step ? ` ${event.step}` : ""}`));
       step.append(label);
-      step.append(liveNode("small", typeof event.at_ms === "number" ? `+${(event.at_ms / 1000).toFixed(3)} ${liveCopy("seconds")} · ${event.timestamp || ""}` : liveCopy("notRecorded"), "trace-time"));
+      step.append(liveNode("small", typeof event.at_ms === "number" ? `+${(event.at_ms / 1000).toFixed(1)} ${liveCopy("seconds")} · ${event.timestamp || ""}` : liveCopy("notRecorded"), "trace-time"));
       if (event.kind === "model") {
-        step.append(liveNode("p", `${(event.latency_ms / 1000).toFixed(3)} ${liveCopy("seconds")} · $${Number(event.cost_usd).toFixed(5)} · ${event.finish_reason || ""}`));
+        step.append(liveNode("p", `${(event.latency_ms / 1000).toFixed(1)} ${liveCopy("seconds")} · ${cost(event.cost_usd)} · ${event.finish_reason || ""}`));
+        liveRaw(step, event);
       } else if (event.kind === "tool_call") {
         step.append(liveNode("code", `${event.name}(${JSON.stringify(event.arguments)})`));
       } else if (event.kind === "tool_result") {
@@ -2923,11 +2926,11 @@
   }
 
   function cost(value) {
-    return `$${Number(value).toFixed(3)}`;
+    return `$${Number(value).toFixed(2)}`;
   }
 
   function seconds(value) {
-    return `${Number(value).toFixed(1)}s`;
+    return `${Number(value).toFixed(1)} s`;
   }
 
   function providerName(provider) {
