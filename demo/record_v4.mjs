@@ -4,6 +4,87 @@ import {readFile, writeFile, rename, mkdir} from 'node:fs/promises';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 
+export const presentation={viewport:[1920,1080],deviceScaleFactor:1,css_zoom:1.6,
+  body_font_px:36,column_css_px:800,cursor:'hidden except click indicator'};
+// 36 CSS px × 1.6 capture zoom × the 1.4 presentation crop / 4 = 20.16 px at 480w.
+export const captureCSS=`
+  *,*::before,*::after{cursor:none!important}html{scroll-behavior:auto!important}
+  .live-layout{display:block!important}.live-workspace{width:800px;max-width:100%;margin-inline:auto}
+  #live-form,#live-result{font-size:36px!important;line-height:1.2!important}
+  #live-form :is(label,button,input,textarea,p,span),
+  #live-result :is(p,li,small,code,pre,summary,h5,h6,blockquote){font-size:36px!important;line-height:1.2!important}
+  #live-result .trace-result{padding:16px}
+  #live-result .corrected-draft-text{white-space:normal;line-height:1.2!important}
+  #live-result .correction-citations{padding-left:20px;margin-block:8px}
+  #live-result .correction-changes{margin-block:8px}
+  #live-result .correction-changes p{margin-block:4px}
+  #live-result .trace-head .live-small{overflow-wrap:anywhere}
+  #live-result .trace-verdict{font-size:56px!important}
+  #live-result .trace-step{padding:12px}
+  #live-result .trace-data pre{max-height:none;overflow:visible;white-space:pre-wrap}
+`;
+
+export async function showTraceAndFiling({page,result,report,mark,frame,click,hold}) {
+  mark('agent_trace_expand');
+  await click('#live-result .live-trace > summary');
+  const trace=page.locator('#live-result .live-trace');
+  report.trace_details_open=await trace.evaluate(el=>el.open);
+  if(!report.trace_details_open)throw new Error('trace_details_not_open');
+  await frame('#live-result .trace-head .live-small');
+  mark('trace_model_id_reveal');await hold(700);
+  const steps=page.locator('#live-result .trace-step');
+  const shown=[];
+  for(let i=0;i<result.events.length;i++){
+    const event=result.events[i];
+    if(event.kind!=='tool_call'&&event.kind!=='verdict')continue;
+    const step=steps.nth(i);
+    await frame(step);
+    if(!await step.isVisible()||!await trace.evaluate(el=>el.open)||!await step.evaluate(el=>{
+      const r=el.getBoundingClientRect();return r.top>=200&&r.bottom<=770;
+    }))throw new Error('trace_step_hidden_or_cropped');
+    mark(event.kind==='tool_call'?`tool_call_${i+1}_reveal`:'program_verdict_reveal');
+    shown.push({index:i,kind:event.kind,name:event.name||null,visible:true,hold_ms:700});
+    await hold(700);
+  }
+  report.trace_steps_shown=shown;
+  report.tool_calls_shown=shown.filter(e=>e.kind==='tool_call').length;
+  report.program_verdict_shown=shown.some(e=>e.kind==='verdict');
+  if(!report.tool_calls_shown||!report.program_verdict_shown)throw new Error('trace_coverage');
+  if(report.tool_calls_shown!==result.events.filter(e=>e.kind==='tool_call').length)throw new Error('tool_call_coverage');
+  // The Apple quarter is derived from the two actual filing components. Inspect the
+  // native JSON, including its derivation; no SEC navigation or fabricated overlay.
+  const evidence=(result.evidence||[]).filter(e=>!e.error);
+  const index=evidence.findIndex(e=>e.ticker==='AAPL'&&e.derived&&e.components?.length===2);
+  if(index<0)throw new Error('apple_derivation_missing');
+  const fact=evidence[index];
+  await click(`#live-result .live-evidence-row:nth-child(${index+1}) .evidence-data > summary`);
+  const details=page.locator('#live-result .live-evidence-row').nth(index).locator('details');
+  report.apple_inspect_open=await details.evaluate(el=>el.open);
+  if(!report.apple_inspect_open)throw new Error('apple_inspect_closed');
+  const pre=details.locator('pre');
+  const raw=JSON.parse(await pre.innerText());
+  if(raw.derivation!==fact.derivation||raw.components[0].value-raw.components[1].value!==raw.value)
+    throw new Error('apple_annual_minus_nine_months');
+  // Scroll to the actual derivation line inside the unmodified native <pre>.
+  const target=await pre.evaluate(el=>{
+    const index=el.firstChild.textContent.indexOf('"derivation"');
+    if(index<0)throw new Error('derivation_line_missing');
+    const range=document.createRange();range.setStart(el.firstChild,index);range.setEnd(el.firstChild,index+12);
+    return scrollY+range.getBoundingClientRect().top-240;
+  });
+  await frame(pre, target);
+  mark('apple_derivation_reveal');await hold(2000);
+  const nineMonthsTarget=await pre.evaluate((el,value)=>{
+    const index=el.firstChild.textContent.indexOf(`"value": ${value}`);
+    if(index<0)throw new Error('nine_month_component_missing');
+    const range=document.createRange();range.setStart(el.firstChild,index);range.setEnd(el.firstChild,index+12);
+    return scrollY+range.getBoundingClientRect().top-240;
+  },raw.components[1].value);
+  await frame(pre,nineMonthsTarget);mark('apple_nine_months_reveal');await hold(2000);
+  report.apple_derivation={evidence_id:fact.evidence_id,derivation:raw.derivation,
+    annual:raw.components[0].value,nine_months:raw.components[1].value,quarter:raw.value,hold_ms:2000};
+}
+
 export function redact(value, secret='') {
   if (Array.isArray(value)) return value.map(item=>redact(item,secret));
   if (value && typeof value==='object') return Object.fromEntries(Object.entries(value)
@@ -37,7 +118,7 @@ function playwright() {
 export async function record(config) {
   const report={status:'started',page_url:config.page_url,timings:[],live_check_limit:1,
     recording:'Playwright recordVideo, one continuous page; beat9 is its continuous final segment',
-    presentation:{viewport:[1920,1080],deviceScaleFactor:1,css_zoom:1.25,cursor:'hidden except click indicator'},
+    presentation,
     privacy:'No screenshot, request-body log, HAR, browser trace or storage export'};
   let browser,context,page,video,secret='',stage='password_file';
   let began=performance.now();
@@ -63,34 +144,36 @@ export async function record(config) {
       return route.continue();
     });
     await context.routeWebSocket('**/*',socket=>socket.close());
-    await context.addInitScript(()=>{
+    await context.addInitScript(({presentation,captureCSS})=>{
       document.addEventListener('DOMContentLoaded',()=>{
-        document.documentElement.style.zoom='1.25';
+        document.documentElement.style.zoom=String(presentation.css_zoom);
         const style=document.createElement('style');
-        style.textContent='*,*::before,*::after{cursor:none!important}html{scroll-behavior:auto!important}';
+        style.textContent=captureCSS;
         document.head.append(style);
         const dot=document.createElement('div');dot.id='record-click';dot.setAttribute('aria-hidden','true');
         dot.style.cssText='position:fixed;z-index:2147483647;pointer-events:none;width:14px;height:14px;border:2px solid #e97628;border-radius:50%;display:none;transform:translate(-50%,-50%)';
         document.body.append(dot);
       },{once:true});
-    });
+    },{presentation,captureCSS});
     page=await context.newPage();video=page.video();began=performance.now();
     const hold=ms=>page.waitForTimeout(ms);
     const wheelTo=async target=>{
       const from=await page.evaluate(()=>scrollY);
-      const steps=Math.ceil(Math.abs(target-from)/60);
+      // Long traversals remain visible but take at most 450 ms, even at 1.6× zoom.
+      const steps=Math.max(1,Math.min(9,Math.ceil(Math.abs(target-from)/120)));
       for(let i=0;i<steps;i++){
         const remaining=target-await page.evaluate(()=>scrollY);
-        await page.mouse.wheel(0,Math.sign(remaining)*Math.min(60,Math.abs(remaining)));
+        await page.mouse.wheel(0,remaining/(steps-i));
         await hold(50);
       }
       await hold(90);
     };
-    const frame=async selector=>{
-      const target=await page.locator(selector).first().evaluate(el=>{
+    const frame=async (selector,explicitTarget)=>{
+      const locator=typeof selector==='string'?page.locator(selector).first():selector;
+      const target=explicitTarget??await locator.evaluate(el=>{
         const r=el.getBoundingClientRect();
         return Math.max(0,Math.min(document.documentElement.scrollHeight-innerHeight,
-          scrollY+r.top-Math.max(50,(innerHeight-r.height)/2)));
+          scrollY+r.top-Math.max(200,Math.min(350,770-r.height))));
       });
       await wheelTo(target);
     };
@@ -99,7 +182,7 @@ export async function record(config) {
       const box=await page.locator(selector).boundingBox();
       if(!box)throw new Error('click_target_missing');
       await page.evaluate(({x,y})=>{
-        const dot=document.querySelector('#record-click'),zoom=1.25;
+        const dot=document.querySelector('#record-click'),zoom=1.6;
         dot.style.left=`${x/zoom}px`;dot.style.top=`${y/zoom}px`;dot.style.display='block';
       },{x:box.x+box.width/2,y:box.y+box.height/2});
       await page.locator(selector).click({timeout:5000});
@@ -109,6 +192,13 @@ export async function record(config) {
     mark('open_page');
     await page.goto(config.page_url,{waitUntil:'load',timeout:20000});
     await page.evaluate(()=>document.fonts.ready);
+    report.readability=await page.locator('.live-workspace').first().evaluate(el=>{
+      const r=el.getBoundingClientRect();
+      return {column_center_x:(r.left+r.right)/2,source_width:r.width,
+        playback_body_px:parseFloat(getComputedStyle(document.querySelector('#live-input')).fontSize)*1.6*1.4/4};
+    });
+    if(Math.abs(report.readability.column_center_x-960)>4||report.readability.playback_body_px<20)
+      throw new Error('capture_readability_floor');
     await hold(500);
     await page.waitForFunction(()=>!document.querySelector('#live-input')?.disabled &&
       !document.querySelector('#live-submit')?.disabled,null,{timeout:12000});
@@ -122,7 +212,8 @@ export async function record(config) {
     await click('#live-password');
     await page.locator('#live-password').pressSequentially(secret,{delay:25});
     if(await page.locator('#live-password').getAttribute('type')!=='password')throw new Error('unmasked_password');
-    mark('check_against_sec');
+    await frame('#live-submit');
+    mark('check_against_sec');const clickedAt=performance.now();
     const [response]=await Promise.all([
       page.waitForResponse(r=>r.url()===`${origin}/api/check` && r.request().method()==='POST',{timeout:45000}),
       click('#live-submit'),
@@ -133,55 +224,52 @@ export async function record(config) {
     if(!response.ok())throw new Error('http_result_not_successful');
     validateLiveResult(result);
     await page.locator('#live-result .trace-verdict').first().waitFor({state:'visible'});
-    mark('verdict_hold');
-    await frame('#live-result .trace-head');await hold(2500);
+    await frame('#live-result .trace-verdict');mark('verdict_reveal');await hold(2000);
     const model=await page.locator('#live-result .trace-head').first().innerText();
     if(!model.includes(result.model))throw new Error('native_model_line_missing');
     report.native_ui={model_line:result.model,provider:result.provider,
       provider_display:'Native form says Baseten; native result heading shows the model ID separately. No model/provider overlay added.'};
-    mark('corrected_draft_hold');
-    await frame('#live-result .corrected-draft-text');await hold(4000);
+    await frame('#live-result .corrected-draft-text strong');mark('draft_reveal');await hold(3000);
     const deleted=await page.locator('#live-result .corrected-draft-text del').allTextContents();
     const corrected=await page.locator('#live-result .corrected-draft-text strong').allTextContents();
     if(!deleted.includes('$416.2 billion') || !corrected.includes('$102.5 billion'))throw new Error('native_correction_missing');
-    mark('sec_evidence_hold');
-    await frame('#live-result .live-evidence');await hold(3000);
+    const appleIndex=result.evidence.filter(e=>!e.error).findIndex(e=>e.ticker==='AAPL'&&e.derived);
+    await frame(`#live-result .live-evidence-row:nth-child(${appleIndex+1}) .evidence-primary`);
+    mark('evidence_reveal');await hold(2000);
     // Show the actual link without navigating away to SEC or making an SEC request.
     await page.locator('#live-result .live-evidence a').first().hover();await hold(400);
-    mark('agent_trace');
-    const steps=page.locator('#live-result .trace-step');
-    const count=await steps.count();
-    report.trace_steps_shown=count;report.tool_calls_shown=0;
-    // Director cut: dwell only on the model's tool calls and the final program verdict;
-    // the other steps scroll past so the whole live beat fits its 50-second scene.
-    for(let i=0;i<count;i++){
-      const cls=await steps.nth(i).getAttribute('class');
-      const tool=cls.includes('trace-tool_call'), last=i===count-1;
-      if(tool)report.tool_calls_shown++;
-      if(!tool && !last && i!==0) continue;
-      await frame(`#live-result .trace-step:nth-child(${i+1})`);
-      await hold(tool?700:300);
-    }
-    if(report.tool_calls_shown!==result.events.filter(e=>e.kind==='tool_call').length)throw new Error('tool_call_coverage');
+    await showTraceAndFiling({page,result,report,mark,frame,click,hold});
     mark('hover_receipt');
     await frame('#live-result .trace-metrics');
     await page.locator('#live-result .trace-metrics').first().hover();await hold(1200);
     report.beat6_actions_end_s=(performance.now()-began)/1000;
+    report.after_click_s=(performance.now()-clickedAt)/1000;
     mark('beat6_choreography_gate');
     // Leave two seconds for the recorder's initial frame / encoder start variance.
-    if(report.beat6_actions_end_s>56)throw new Error('beat6_actions_exceed_first_58_seconds');
+    if(report.after_click_s>56||report.beat6_actions_end_s>56)throw new Error('beat6_actions_exceed_first_58_seconds');
     await hold(Math.max(0,60000-(performance.now()-began)));
     mark('beat9_frame_corrected_draft_and_filing');
-    const draft='#live-result .corrected-draft-text', citation='#live-result .correction-citations a';
+    let draft='#live-result .corrected-draft-text strong';
+    const citation='#live-result .correction-citations';
+    // Prefer the draft itself. At the 20px playback floor the whole post and its
+    // intervening scope text may not fit with both citations; then hold the native
+    // corrected edit within the same draft section, immediately above the filings.
+    const span=await page.evaluate(({draft,citation})=>
+      document.querySelector(citation).getBoundingClientRect().bottom-
+      document.querySelector(draft).getBoundingClientRect().top,{draft,citation});
+    if(span>570)draft='#live-result .correction-changes > li > strong';
+    report.ending_frame={draft_selector:draft,citation_selector:citation,
+      description:'Native corrected draft/edit and both component filing links; held through final frame'};
     const target=await page.evaluate(({draft,citation})=>{
       const a=document.querySelector(draft).getBoundingClientRect();
       const b=document.querySelector(citation).getBoundingClientRect();
-      if(b.bottom-a.top>innerHeight-100)throw new Error('draft_and_filing_do_not_fit');
-      return Math.max(0,scrollY+a.top-(innerHeight-(b.bottom-a.top))/2);
+      // D4's centred 1.4× crop and the caption panel leave source y=200…770 safe.
+      if(b.bottom-a.top>570)throw new Error('draft_and_filing_do_not_fit');
+      return Math.max(0,scrollY+a.top-200-(570-(b.bottom-a.top))/2);
     },{draft,citation});
     await wheelTo(target);
     const together=await page.evaluate(({draft,citation})=>[draft,citation].every(s=>{
-      const r=document.querySelector(s).getBoundingClientRect();return r.top>=0&&r.bottom<=innerHeight;
+      const r=document.querySelector(s).getBoundingClientRect();return r.top>=200&&r.bottom<=770;
     }),{draft,citation});
     if(!together)throw new Error('draft_and_filing_not_in_view');
     const beat9Start=performance.now();

@@ -103,12 +103,19 @@ def mix_audio(voices: list[Path], shots: list[dict], music: Path, gain: float, d
     args, filters, labels = [], [], []
     for voice,shot in zip(voices,shots):
         voice_start=shot.get('voice_start',shot['start'])
-        index=len(labels); label=f'voice{index}'
-        args += ['-t',f'{shot["voice_end"]-voice_start:.9f}','-i',voice]
-        delay=round(voice_start*48000)
-        filters.append(f'[{index}:a]aresample=48000,aformat=sample_fmts=fltp:channel_layouts=stereo,'
-                       f'asetpts=PTS-STARTPTS,adelay={delay}S:all=1,apad,atrim=duration={timeline_duration:.9f}[{label}]')
-        labels.append(label)
+        segments=shot.get('voice_segments',[dict(source_start_s=0,source_end_s=shot['voice_end']-voice_start,at_s=voice_start)])
+        for segment in segments:
+            a,b=segment['source_start_s'],segment['source_end_s']
+            if not 0 <= a < b or not math.isfinite(segment['at_s']):
+                raise BuildError('Invalid narration source span')
+            index=len(labels); label=f'voice{index}'
+            if 'voice_segments' in shot:
+                args += ['-ss',f'{a:.9f}']
+            args += ['-t',f'{b-a:.9f}','-i',voice]
+            delay=round(segment['at_s']*48000)
+            filters.append(f'[{index}:a]aresample=48000,aformat=sample_fmts=fltp:channel_layouts=stereo,'
+                           f'asetpts=PTS-STARTPTS,adelay={delay}S:all=1,apad,atrim=duration={timeline_duration:.9f}[{label}]')
+            labels.append(label)
     if labels:
         filters.append(''.join(f'[{label}]' for label in labels)+f'amix=inputs={len(labels)}:duration=longest:normalize=0[voice]')
     else:

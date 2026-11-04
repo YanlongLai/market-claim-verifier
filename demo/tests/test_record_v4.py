@@ -105,15 +105,27 @@ def make_takes(tmp_path, monkeypatch):
     for scene_id, (beat, _) in recorder.BEATS.items():
         seconds=lengths[scene_id]
         receipt = {"status": "ready", "scene_id": scene_id,
+                   "capture_version":5,"zoom":1.6,
+                   "readability":{"playback_body_px":20.16,"column_center_x":960},
+                   "timings":[{"phase":"verdict_reveal","at_s":22.08978275},
+                              {"phase":"draft_reveal","at_s":25.017312916}],
+                   "choreography":{"trace_details_open":True,"apple_inspect_open":True,
+                       "program_verdict_shown":True,"after_click_s":45,"beat6_actions_end_s":50,
+                       "apple_derivation":{"annual":416161000000,"nine_months":313695000000,
+                           "quarter":102466000000,"hold_ms":2000},
+                       "trace_steps_shown":[{"index":0,"kind":"tool_call","visible":True,"hold_ms":700},
+                                            {"index":1,"kind":"verdict","visible":True,"hold_ms":700}]},
                    "result": {"mode": "live", "provider": "baseten", "model": "meta-models/muse-spark-open-1026",
-                              "cost_usd": .02, "latency_ms": 20000}}
+                              "cost_usd": .02, "latency_ms": 20000,
+                              "events":[{"kind":"tool_call"},{"kind":"verdict"}]}}
         for kind in ("webm", "mp4"):
             path = tmp_path / f"{beat}.{kind}"
             path.write_bytes(f"synthetic {kind} fixture".encode())
             receipt[kind] = {"path": path.name, "sha256": recorder.digest(path)}
         receipt_path = tmp_path / f"{beat}.json"
         recorder.save(receipt_path, receipt)
-        story["scenes"].append({"id": scene_id, "target_s": seconds,
+        original=next(s for s in yaml.safe_load(recorder.STORYBOARD.read_text())['scenes'] if s['id']==scene_id)
+        story["scenes"].append({"id": scene_id, "target_s": seconds,"cue_events":original['cue_events'],
                                 "recording": {"asset": f"{beat}.mp4", "receipt": receipt_path.name, "offset_s": 0}})
     monkeypatch.setattr(recorder, "probe", lambda path: {"duration_s": lengths['v406' if 'beat6' in str(path) else 'v409'],
                                                        "width": 1920, "height": 1080, "fps": "30/1"})
@@ -161,15 +173,35 @@ def test_source_preview_stays_rebuildable_without_ignored_host_cache(tmp_path):
         recorder.check_recordings(story,tmp_path)
 
 
-def test_new_live_measurements_must_support_the_unchanged_price_and_speed_copy():
+def test_numeric_free_copy_accepts_genuine_measurements_without_price_or_speed_targets():
     assert recorder.live_copy_supported({"cost_usd": .02, "latency_ms": 20000})
     assert recorder.live_copy_supported({"cost_usd": .01, "latency_ms": 10900})
-    for result in ({"cost_usd": .062084, "latency_ms": 38400},
-                   {"cost_usd": .01, "latency_ms": 6000},
-                   {"cost_usd": .03, "latency_ms": 20000},
-                   {"cost_usd": .02, "latency_ms": 25000},
+    assert recorder.live_copy_supported({"cost_usd": .062084, "latency_ms": 38400})
+    assert recorder.live_copy_supported({"cost_usd": .01, "latency_ms": 6000})
+    for result in ({"cost_usd": -1, "latency_ms": 20000},
+                   {"cost_usd": .01, "latency_ms": 0},
+                   {"cost_usd": float('nan'), "latency_ms": 20000},
                    {"cost_usd": .02, "latency_ms": 20000, "cost_is_bound": True}):
         assert not recorder.live_copy_supported(result)
+
+
+@pytest.mark.parametrize('patch',[
+    {'trace_details_open':False},{'apple_inspect_open':False},{'program_verdict_shown':False},
+    {'trace_steps_shown':[]},{'after_click_s':56.01},{'beat6_actions_end_s':56.01},
+])
+def test_closed_or_incomplete_trace_and_overlong_choreography_are_rejected(tmp_path,monkeypatch,patch):
+    make_takes(tmp_path,monkeypatch)
+    receipt=json.loads((tmp_path/'beat6.json').read_text())
+    recorder.check_choreography(receipt)
+    receipt['choreography'].update(patch)
+    with pytest.raises(recorder.RecordingError,match='r5 requires'):
+        recorder.check_choreography(receipt)
+
+
+def test_cue_positions_follow_receipt_reveals_instead_of_model_latency():
+    scene=yaml.safe_load(recorder.STORYBOARD.read_text())['scenes'][5]
+    receipt={'timings':[{'phase':'verdict_reveal','at_s':19},{'phase':'draft_reveal','at_s':24}]}
+    assert [e['at_scene_s'] for e in recorder.live_cue_events(scene,receipt)]==[0,18,21,24]
 
 
 def test_wiring_uses_timestamped_assets_and_preserves_all_narration_and_cuts(tmp_path, monkeypatch):

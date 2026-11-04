@@ -29,7 +29,7 @@ STORYBOARD = ROOT / "demo/storyboard-v4.yaml"
 FFMPEG = Path("/opt/homebrew/bin/ffmpeg")
 FFPROBE = Path("/opt/homebrew/bin/ffprobe")
 ORIGIN = "https://hackathon.dappgo.com"
-BEATS = {"v406": ("beat6", 50.0), "v409": ("beat9", 16.0)}
+BEATS = {"v406": ("beat6", 58.0), "v409": ("beat9", 14.0)}
 
 
 class RecordingError(RuntimeError):
@@ -46,11 +46,49 @@ def save(path, value):
 
 
 def live_copy_supported(result):
-    """Do not silently publish the locked 'about two cents and twenty seconds' copy."""
+    """Narration refers to the receipt without promising a price or latency."""
     cost, latency = result.get("cost_usd"), result.get("latency_ms")
-    return (isinstance(cost, (float, int)) and math.isfinite(cost) and .01 <= cost < .03
-            and isinstance(latency, (float, int)) and math.isfinite(latency) and 8000 <= latency < 25000
+    return (type(cost) in (float, int) and math.isfinite(cost) and cost >= 0
+            and type(latency) in (float, int) and math.isfinite(latency) and latency > 0
             and not result.get("cost_is_bound"))
+
+
+def live_cue_events(scene, receipt):
+    """Resolve exact onsets from this take's reveal phases, never model latency."""
+    phases = {t["phase"]: t["at_s"] for t in receipt["timings"]}
+    # Older takes remain usable for source previews. Host gates require r5.
+    phases.setdefault("verdict_reveal", phases.get("verdict_hold"))
+    phases.setdefault("draft_reveal", phases.get("corrected_draft_hold"))
+    events = []
+    for spec in scene["cue_events"]:
+        phase = spec.get("receipt_phase")
+        at = phases[phase] + spec.get("offset_s", 0) if phase else 0
+        if type(at) not in (float, int) or not math.isfinite(at) or not 0 <= at < scene["target_s"]:
+            raise RecordingError("Live narration cue falls outside the locked scene")
+        events.append({**spec, "at_scene_s": at})
+    return events
+
+
+def check_choreography(receipt):
+    proof = receipt.get("choreography", {})
+    events = receipt.get("result", {}).get("events", [])
+    calls = [i for i,e in enumerate(events) if e["kind"] == "tool_call"]
+    shown = proof.get("trace_steps_shown", [])
+    derivation=proof.get('apple_derivation',{})
+    readability=receipt.get('readability',{})
+    if (receipt.get("capture_version") != 5 or not proof.get("trace_details_open")
+            or not proof.get("apple_inspect_open") or not proof.get("program_verdict_shown")
+            or [s["index"] for s in shown if s["kind"] == "tool_call" and s.get("visible")] != calls
+            or not calls or not 0 < proof.get("after_click_s", math.inf) <= 56
+            or not 0 < proof.get("beat6_actions_end_s", math.inf) <= 56
+            or any(s.get('hold_ms',0)<700 for s in shown)
+            or not any(s['kind']=='verdict' and s.get('visible') for s in shown)
+            or derivation.get('hold_ms',0)<2000
+            or derivation.get('annual',0)-derivation.get('nine_months',0)!=derivation.get('quarter')
+            or readability.get('playback_body_px',0)<20
+            or abs(readability.get('column_center_x',0)-960)>4
+            or receipt.get("zoom") != 1.6):
+        raise RecordingError("r5 requires an open trace, all visible tool calls, program verdict and Apple inspector; re-record on host")
 
 
 def probe(path):
@@ -98,7 +136,10 @@ def check_recordings(story, root=ROOT, *, required=True):
                 or result.get("model") != "meta-models/muse-spark-open-1026"):
             raise RecordingError(f"{scene['id']}: real Baseten Muse result required")
         if not live_copy_supported(result):
-            raise RecordingError(f"{scene['id']}: live receipt does not support locked price/speed narration; director review required")
+            raise RecordingError(f"{scene['id']}: measured cost/time receipt missing or bounded")
+        check_choreography(receipt)
+        if scene['id'] == 'v406' and scene.get('cue_events') != live_cue_events(scene, receipt):
+            raise RecordingError("v406: cue times differ from the wired receipt")
         for kind in ("webm", "mp4"):
             artifact = receipt[kind]
             path = (root / artifact["path"]).resolve()
@@ -180,7 +221,11 @@ def wire_storyboard(receipts, stamp):
         scene.pop("placeholder", None)
         scene["renderer"] = "live-site" if scene["id"] == "v406" else "result-site"
         scene["recording"] = {"asset": receipt["mp4"]["path"],
-                              "receipt": receipt_path.relative_to(ROOT).as_posix(), "offset_s": 0.0}
+                              "receipt": receipt_path.relative_to(ROOT).as_posix(), "offset_s": 0.0,
+                              "timings":receipt["timings"],"receipt_sha256":digest(receipt_path),
+                              "capture_version":receipt["capture_version"]}
+        if scene['id'] == 'v406':
+            scene['cue_events'] = live_cue_events(scene, receipt)
         scene["on_screen"] = "Live product · corrected draft + SEC filing" if scene["id"] == "v409" else "Live product · SEC evidence · agent trace · measured receipt"
         scene["director_notes"] = "Real product recording; uncut source. Locked scene duration; first scene-length seconds used."
     check_recordings(story)
@@ -258,8 +303,13 @@ def main():
             supported = live_copy_supported(session["result"])
             receipt = {**run, "status": "ready" if supported else "needs-director-review", "scene_id": scene_id, "scene_duration_s": minimum,
                        "locked_live_copy_supported": supported,
-                       "viewport": [1920, 1080], "deviceScaleFactor": 1, "zoom": 1.25,
+                       "capture_version": 5,
+                       "viewport": [1920, 1080], "deviceScaleFactor": 1, "zoom": 1.6,
                        "result": session["result"], "timings": session["timings"],
+                       "presentation": session["presentation"],
+                       "readability": session["readability"],
+                       "choreography": {k: session[k] for k in ("trace_details_open", "trace_steps_shown", "tool_calls_shown",
+                           "program_verdict_shown", "apple_inspect_open", "apple_derivation", "after_click_s", "beat6_actions_end_s")},
                        "source_session": worker_path.relative_to(ROOT).as_posix(),
                        "native_ui": session["native_ui"], "trim": "first scene-duration seconds; source retained uncut"}
             for kind, path in (("webm", webm), ("mp4", mp4)):

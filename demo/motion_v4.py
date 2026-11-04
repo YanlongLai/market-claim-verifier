@@ -11,8 +11,8 @@ from html.parser import HTMLParser
 
 import yaml
 
-from motion_cues import cue_document, detect_silences, map_sentences, sentence_subtitles
-from pipeline import BuildError, file_hash, read_json, to_srt, write_json
+from motion_cues import cue_document, detect_silences, map_sentences, sentence_subtitles, split_phrases
+from pipeline import BuildError, Subtitle, subtitle_chunks, file_hash, read_json, to_srt, write_json
 from scale_v4 import compile_scale
 
 ROOT=Path(__file__).resolve().parent.parent
@@ -94,6 +94,70 @@ def validate(story):
         raise BuildError('v4 must remain <=178.0 seconds.')
 
 
+def place_live_voice(scene, mapped, duration, *, measured):
+    """Move four intact spans of the new v406 take onto its receipt phase clock."""
+    cues, method = mapped
+    events = scene['cue_events']
+    if ' '.join(e['narration'] for e in events) != scene['narration'] or len(events) != 4:
+        raise BuildError('v406 requires four complete narration cue events.')
+    if not measured:
+        # Source-only captions are a labelled layout preview, with no audio claim.
+        placed=[]
+        for i,event in enumerate(events):
+            onset=event['at_scene_s']
+            limit=events[i+1]['at_scene_s'] if i+1<len(events) else scene['target_s']-.3
+            estimate=min(len(event['narration'])/14,limit-onset)
+            if estimate<=0:raise BuildError('Live receipt cue onsets must increase.')
+            placed.extend(map_sentences(event['narration'],estimate,[],offset=onset)[0])
+        return (placed,'target preview / four receipt cues'), []
+    starts, index = [], 0
+    for event in events:
+        starts.append(cues[index]['start'])
+        # map_sentences already splits these exact sentences, including decimals.
+        count = len(split_phrases(event['narration']))
+        if ' '.join(c['text'] for c in cues[index:index+count]) != event['narration']:
+            raise BuildError('v406 voice spans differ from the four narration cues.')
+        index += count
+    starts[0] = 0  # Keep leading silence as well as every recorded speech sample.
+    ends = starts[1:] + [duration]
+    placed, segments = [], []
+    for i,(event,a,b) in enumerate(zip(events,starts,ends)):
+        onset = event['at_scene_s']
+        limit = events[i+1]['at_scene_s'] if i+1 < len(events) else scene['target_s']-.3
+        if onset+b-a > limit+1e-8:
+            raise BuildError(f"v406 {event['event']}: voice span {b-a:.3f}s exceeds its {limit-onset:.3f}s cue budget. "
+                             'Retain the host take; exact receipt onsets prohibit overlap, truncation or faster speech.')
+        segments.append(dict(source_start_s=a,source_end_s=b,at_s=scene['target_start_s']+onset,
+                             event=event['event']))
+        count = len(split_phrases(event['narration']))
+        # Source cues and audio use the same piecewise translation.
+        group = cues[sum(len(split_phrases(e['narration'])) for e in events[:i]):][:count]
+        placed.extend({**c,'start':c['start']-a+onset,'end':c['end']-a+onset} for c in group)
+    return (placed,method+' / four receipt-placed spans'), segments
+
+
+def merge_caption_fragments(captions):
+    """Reflow the preceding line with the two short orphans, preserving 2×42."""
+    result=[]
+    for caption in captions:
+        if caption.text in ('November 4.','run.') and result:
+            previous=result.pop()
+            lines=previous.text.splitlines()
+            if len(lines)==2:
+                split=previous.start+(previous.end-previous.start)*len(lines[0])/len(previous.text)
+                result.append(Subtitle(previous.start,split,lines[0]))
+                text=lines[1]+' '+caption.text
+                start=split
+            else:
+                text=previous.text+' '+caption.text
+                start=previous.start
+            chunks=subtitle_chunks(text)
+            if len(chunks)!=1:raise BuildError('Orphan merge exceeds 2×42 characters.')
+            result.append(Subtitle(start,caption.end,chunks[0]))
+        else:result.append(caption)
+    return result
+
+
 def compile_data(root=ROOT, story=None, voices=None):
     story=copy.deepcopy(story or yaml.safe_load((root/'demo/storyboard-v4.yaml').read_text()))
     validate(story)
@@ -102,6 +166,16 @@ def compile_data(root=ROOT, story=None, voices=None):
         check_recordings(story, root, required=False)
     except RecordingError as error:
         raise BuildError(str(error)) from error
+    live=story['scenes'][5]
+    live_receipt={'timings':live.get('recording',{}).get('timings',[])}
+    if live.get('recording'):
+        receipt_path=root/live['recording']['receipt']
+        if receipt_path.is_file():
+            from record_v4 import live_cue_events
+            live_receipt=read_json(receipt_path)
+            resolved=live_cue_events(live,live_receipt)
+            if resolved!=live['cue_events']:
+                raise BuildError('v406 cue times are stale for the wired receipt; rewire the recording.')
     scale=read_json(root/'demo/data/scale-v4.json')
     if scale!=compile_scale(root):
         raise BuildError('scale-v4.json is stale; rebuild it before motion preparation.')
@@ -127,6 +201,13 @@ def compile_data(root=ROOT, story=None, voices=None):
         else:
             analysis[s['id']]=dict(source='target preview; narration not synthesized or measured')
         local[s['id']]=map_sentences(s['narration'],duration,silences)
+        if s['id']=='v406':
+            local[s['id']],segments=place_live_voice(s,local[s['id']],duration,measured=bool(voices))
+            if voices:
+                shot['voice_segments']=segments
+                shot['voice_end']=max(e['at_s']+e['source_end_s']-e['source_start_s'] for e in segments)
+            else:
+                shot['voice_end']=s['target_start_s']+local[s['id']][0][-1]['end']
         shots.append(shot)
     config=story['music'];grid=read_json(root/config['beats'])
     beats=[round(t-config['music_offset_s'],9) for t in grid['beats_s'] if t>=config['music_offset_s']]
@@ -135,7 +216,7 @@ def compile_data(root=ROOT, story=None, voices=None):
         cut_rule='Fixed director boundaries; do not snap cuts to beats, trim or accelerate speech.',
         placeholders=['v406','v409'])
     cues=cue_document(story['scenes'],timing,local,analysis,beats)
-    subtitles=sentence_subtitles(story['scenes'],timing,cues)
+    subtitles=merge_caption_fragments(sentence_subtitles(story['scenes'],timing,cues))
     # Build a complete claim record from the frozen reference and original results.
     from replay_v4 import comparison
     sources={};list(comparison(sources))
@@ -182,6 +263,8 @@ def compile_data(root=ROOT, story=None, voices=None):
         ('v406',tuple(BOUNDARIES[5]+t for t in (17,21,25,49))),
         ('v409',(BOUNDARIES[8],BOUNDARIES[9]-1/30)),
     ) for t in times)
+    keyframes.extend(dict(t=66+e['at_s']+.3,shot='v406') for e in live_receipt['timings']
+                     if e['phase'].endswith('_reveal') and 0<=e['at_s']<57.7)
     return dict(timing=timing,cues=cues,beats=dict(beats_s=beats,music_offset_s=config['music_offset_s']),
         scenes=story['scenes'],keyframes=sorted(keyframes,key=lambda f:f['t']),
         subtitles=[dict(start=c.start,end=c.end,text=c.text) for c in subtitles],
@@ -189,8 +272,10 @@ def compile_data(root=ROOT, story=None, voices=None):
         product=product,phone_post=phone_post,hero=hero,metrics=metrics,inputs=inputs,provenance=provenance,
         scale=dict(median=scale['cohorts'][scale['selected_cohort']]['median_wall_seconds'],
                    hours=scale['projection']['sequential_hours_at_median']),
-        asset_status=dict(site_footage='recorded live takes' if all(s.get('recording') for s in story['scenes'] if s['id'] in ('v406','v409')) else 'director pending: v406=50 s, v409=16 s',
-                          terminal='real PTY recordings',broll='see demo/prompts/broll/prompts-r4.json'))
+        asset_status=dict(site_footage='recorded r5 live takes' if all(s.get('recording',{}).get('capture_version')==5
+                          for s in story['scenes'] if s['id'] in ('v406','v409')) else
+                          'host r5 re-record required; prior takes retained',
+                          terminal='real PTY recordings · 56px labels / 96px principal lines',broll='disabled'))
 
 
 def artifacts(data, root=ROOT):

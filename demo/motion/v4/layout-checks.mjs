@@ -27,6 +27,9 @@ export async function checkV4Layout(page,state) {
         fit:getComputedStyle(video).objectFit,
         overflow:getComputedStyle(video.parentElement).overflow}:null,
       url:url?{...box(url),text:url.textContent,fontSize:parseFloat(getComputedStyle(url).fontSize)}:null,
+      accent:stage.querySelectorAll('[data-accent],.scale-accent').length,
+      input:stage.querySelector('#input-label')?.textContent,
+      metricFonts:[...stage.querySelectorAll('.metric span')].map(el=>parseFloat(getComputedStyle(el).fontSize)),
     };
   });
   if(state.index===0){
@@ -59,5 +62,8 @@ export async function checkV4Layout(page,state) {
     }
   }
   if(!state.siteURL)assert.equal(layout.url,null,'URL overlay belongs only to beat 9');
+  assert.equal(layout.accent,0,'The rejected Wan insert must not return');
+  for(const size of layout.metricFonts)assert(size>=56,'Supporting metric labels must be readable');
+  if(state.index===2)assert.equal(layout.input.split(' · ')[0],['Screenshot','PDF','Podcast','Video'][state.input]);
   return layout;
 }

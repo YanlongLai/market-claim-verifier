@@ -1,5 +1,6 @@
 export const boundaries=[0,9,22,34,50,66,124,148,164,178];
 export const siteURL='hackathon.dappgo.com';
+export const inputIndex=local=>local<3.5?0:local<7?1:local<10.5?2:3;
 export function repostCascade(local) {
   return Array.from({length:5},(_,i)=>{
     const elapsed=local-i*.45;
@@ -12,11 +13,10 @@ export function repostCascade(local) {
 }
 export function liveTakeCrop(shot) {
   if(!['v406','v409'].includes(shot))return null;
-  // The retained 1920×1080 takes put the form/result at x=892…1628.
-  // Clamp the centred crop to the source edge; use the top for beat 6 so its
-  // receipt survives the original draft scroll, and the middle for beat 9.
-  const scale=1.4,centerX=(892+1628)/2;
-  return {scale,x:Math.max(1920*(1-scale),960-centerX*scale),y:shot==='v406'?0:540*(1-scale)};
+  // r5 capture centres the active 800-CSS-px column. Keep D4's 1.4× crop,
+  // centred on the viewport in both axes; the recorder frames inside its safe area.
+  const scale=1.4;
+  return {scale,x:960*(1-scale),y:540*(1-scale)};
 }
 export const architectureReveal=local=>({
   nodes:Array.from({length:5},(_,i)=>Math.max(0,Math.min(1,(local-i*2.8)/.6))),
@@ -30,5 +30,5 @@ export function stateAt(t,scenes=[]) {
   return {shot,index,local,placeholder:scenes.length?Boolean(scenes[index]?.placeholder):index===5||index===8,
     cascade:index===1?repostCascade(local):null,liveTake:liveTakeCrop(shot),siteURL:index===8?siteURL:null,
     architecture:index===4?architectureReveal(local):null,
-    broll:index===6&&local>=8&&local<11?'numbers-raining-into-filing':null};
+    input:index===2?inputIndex(local):null,broll:null};
 }

@@ -133,7 +133,11 @@ def keyframes(builder) -> None:
 
 
 def narration_subtitles(scenes: list[dict], timing: dict, cues: dict):
-    return sentence_subtitles(scenes, timing, cues)
+    captions=sentence_subtitles(scenes, timing, cues)
+    if scenes[0]['id']=='v401':
+        from motion_v4 import merge_caption_fragments
+        captions=merge_caption_fragments(captions)
+    return captions
 
 
 def review_frames(builder) -> None:

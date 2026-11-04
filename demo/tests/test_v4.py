@@ -14,7 +14,7 @@ from PIL import Image
 import motion_build
 import motion_v4
 from pipeline import BuildError
-from replay_v4 import COLS, ROWS, FOOTER, money, pages
+from replay_v4 import COLS, ROWS, FOOTERS, FOOTER_ROW, KEY_ROW, money, pages
 import phone_v4
 from scale_v4 import compile_scale
 
@@ -57,7 +57,9 @@ def test_scale_is_rebuildable_with_all_sources_retained_and_no_parallel_projecti
     assert saved['projection']['parallel_1000_posts'] is None
     assert motion_v4.scale_narration(saved) in STORY['scenes'][6]['narration']
     assert STORY['scenes'][6]['narration'].endswith('At that median, a thousand posts take about two hours on one worker.')
-    assert 'About two cents and twenty seconds.' in STORY['scenes'][5]['narration']
+    assert STORY['scenes'][5]['narration']==('Live, on the site. Paste the post and run it. '
+        'Muse Spark calls the SEC tools — every call is on the record. Contradicted, with the filing. '
+        'Here is the corrected draft; cost and time are on the receipt.')
     assert saved['cohorts']['news/baseten/post']['items']==80
     assert saved['recorded_parallel_batches']['threads']['workers']==3
     assert saved['eval_v2']['median_completed_latency_seconds']==pytest.approx(10.012793354457244)
@@ -75,17 +77,19 @@ def test_comparison_recomputes_original_scores_and_media_replay_retains_limits()
     for token in ('lookup_fact','Program verdicts','muse-spark-1.3','muse-voice-transcribe-1.0',
                   'frozen synthetic','3 of 5','$2.29B → $229M'):
         assert token in text
-    assert [b.group for b in batch]==['post','claims','tools','verdicts','batch','image','audio','scale']
-    assert len(batch[1].lines)==3 and len(batch[2].lines)==2
-    assert len(batch[4].lines)==6
-    assert sum('FAILED' in line for line in batch[4].lines)==1
-    assert len(batch[5].lines)==len(batch[6].lines)==2
-    assert batch[-1].lines[-1]=='median 6.8 s/post · 1,000 posts ≈ 2 h, one worker'
+    assert [b.group for b in batch]==['post','claims','tools','verdicts','scale','batch','image','audio']
+    assert len(batch[1].lines)==3 and len(batch[2].lines)==5
+    assert len(batch[5].lines)==6
+    assert sum('FAILED' in line for line in batch[5].lines)==1
+    assert batch[4].lines[-2:] == ['median 6.8 s/post','1,000 posts ≈ 2 h · 1 worker']
+    # The actual final keystroke is 0.78 s into the block; both numbers precede
+    # the retained voice's scale sentence at 8.6 s by more than one second.
+    assert sum(b.seconds for b in batch[:4])+.78 <= 8.6-1
+    assert sum(b.seconds for b in batch[:5])>=16.8
     assert '2290000000.0' not in text
     for kind,blocks,seconds in [('beat4',comparison,16),('beat7',batch,24)]:
         assert sum(b.seconds for b in blocks)==seconds
         assert all(len(b.lines)+2<=8 and all(len(line)<=COLS-4 for line in b.lines) for b in blocks)
-        assert all(len(b.lines)<=3 for b in blocks if b.group!='batch')
 
 
 def terminal_screen(stream):
@@ -110,19 +114,20 @@ def terminal_screen(stream):
 
 
 def test_recorded_terminal_artifacts_and_immutable_source_snapshot():
-    folder=ROOT/'demo/assets/terminal-v4'
-    snapshots=json.loads((folder/'source-snapshots.json').read_text())
+    folder=ROOT/'demo/assets/terminal-v4-r5'
     for kind,duration in [('beat4',16),('beat7',24)]:
         receipt=json.loads((folder/f'{kind}.json').read_text())
         assert receipt['exit_code']==0
         assert receipt['status']=='rendered-real-terminal-recording'
-        assert receipt['resolution']==[1920,1080] and receipt['font_px']>=40
+        assert receipt['resolution']==[1920,1080] and receipt['label_font_px']>=56
+        assert receipt['principal_font_px']>=96
         assert receipt['font']=='Menlo'
-        assert receipt['footer']==FOOTER and receipt['footer_row']==ROWS
+        assert receipt['footers']==FOOTERS and receipt['footer_row']==FOOTER_ROW
+        assert receipt['footer_bottom_limit_px']<=receipt['caption_zone_top_px']==880
         assert receipt['max_visible_lines']==8 and receipt['key_typed_last'] is True
         assert receipt['duration_s']==duration
         assert receipt['replay_script_sha256']==hashlib.sha256((ROOT/'demo/replay_v4.py').read_bytes()).hexdigest()
-        for ext,key in [('cast','cast_sha256'),('gif','gif_sha256'),('mp4','mp4_sha256')]:
+        for ext,key in [('cast','cast_sha256'),('mp4','mp4_sha256')]:
             assert hashlib.sha256((folder/f'{kind}.{ext}').read_bytes()).hexdigest()==receipt[key]
         events=list(map(json.loads,(folder/f'{kind}.cast').read_text().splitlines()))
         assert events[0]['version']==2 and events[0]['width']==COLS and events[0]['height']==ROWS
@@ -136,18 +141,19 @@ def test_recorded_terminal_artifacts_and_immutable_source_snapshot():
         for stream,block in zip(streams[1:],blocks):
             grid,writes=terminal_screen(stream)
             actual=[''.join(grid.get((r,c),(' ',()))[0] for c in range(1,COLS+1)).strip() for r in range(1,ROWS+1)]
-            assert [line for line in actual if line]==[block.title,*block.lines,FOOTER]
-            assert actual[-1]==FOOTER and actual.count(FOOTER)==1
-            assert all(grid[ROWS,c][1]==(2,90) for c in range(3,3+len(FOOTER)))
-            key=block.lines[-1];key_row=5+2*(len(block.lines)-1)
-            assert writes[-len(key):]==[(key_row,c,(1,33)) for c in key]
+            assert [line for line in actual if line]==[block.title,*block.lines,block.footer]
+            assert actual[-1]==block.footer and actual.count(block.footer)==1
+            assert all(grid[FOOTER_ROW,c][1]==(1,37) for c in range(3,3+len(block.footer)))
+            key=block.lines[-1]
+            assert writes[-len(key):]==[(KEY_ROW,c,(1,33)) for c in key]
         assert 'OCR/ASR is not retested' in '\n'.join(receipt['limits'])
-        previous=ROOT/receipt['previous_take']
+        previous=ROOT/'demo/assets/terminal-v4'
         old=json.loads((previous/f'{kind}.json').read_text())
         assert hashlib.sha256((previous/f'{kind}.mp4').read_bytes()).hexdigest()==old['mp4_sha256']
         for source,digest in receipt['sources'].items():
             raw=(ROOT/source).read_bytes()
             if hashlib.sha256(raw).hexdigest()!=digest:
+                snapshots=json.loads((previous/'source-snapshots.json').read_text())
                 record=snapshots[source]
                 assert record['sha256_at_recording']==digest
                 assert hashlib.sha256((ROOT/record['snapshot']).read_bytes()).hexdigest()==digest
@@ -190,7 +196,9 @@ def test_motion_compiler_keeps_v3_host_outputs_and_rejects_voice_overrun():
     for frame in data['keyframes']:
         scene=next(s for s in STORY['scenes'] if s['id']==frame['shot'])
         assert scene['target_start_s']<=frame['t']<scene['target_end_s']
-    assert all(len(c['text'].splitlines())<=3 and max(map(len,c['text'].splitlines()))<=42 for c in data['subtitles'])
+    assert all(len(c['text'].splitlines())<=2 and max(map(len,c['text'].splitlines()))<=42 for c in data['subtitles'])
+    assert not any(c['text'] in ('November 4.','run.') for c in data['subtitles'])
+    assert all(a['end']<=b['start'] for a,b in zip(data['subtitles'],data['subtitles'][1:]))
     # Host preparation replaces target cue timing with measured voice timing.
     # Both forms must keep the evidence current and all saved outputs consistent.
     saved=json.loads((ROOT/'demo/motion/v4/data.js').read_text().removeprefix('window.MOTION_DATA = ').removesuffix(';\n'))
@@ -222,10 +230,56 @@ def test_r3_measured_cues_fit_the_director_reallocation_without_changing_later_c
         assert row['scene_id']==scene['id'] and row['narration_matches']
         assert row['voice_s']+STORY['pad_s']<=scene['target_s']
         voices.append(dict(voice_s=row['voice_s'],key='offline-fixture',artifacts={'audio':{'path':str(audio)}}))
+    # Historical v406 remains retained but is no longer valid for the new copy.
+    # A short synthetic span fixture verifies the fixed-cut compiler offline.
+    voices[5]['voice_s']=4
     timing=motion_v4.compile_data(voices=voices)['timing']
     assert timing['shots'][0]['voice_end']==8.24 and timing['shots'][0]['end']==9
     assert timing['shots'][1]['start']==9 and timing['shots'][1]['end']==22
     assert [shot['end'] for shot in timing['shots'][1:]]==[22,34,50,66,124,148,164,178]
+
+
+def test_live_audio_spans_keep_every_sample_and_reject_overlapping_receipt_cues():
+    scene=STORY['scenes'][5]
+    mapped=motion_v4.map_sentences(scene['narration'],4,[])
+    (_,method),segments=motion_v4.place_live_voice(scene,mapped,4,measured=True)
+    assert segments[0]['source_start_s']==0 and segments[-1]['source_end_s']==4
+    assert all(a['source_end_s']==b['source_start_s'] for a,b in zip(segments,segments[1:]))
+    assert [s['at_s'] for s in segments]==[66+e['at_scene_s'] for e in scene['cue_events']]
+    assert 'receipt' in method
+    with pytest.raises(BuildError,match='cue budget'):
+        motion_v4.place_live_voice(scene,motion_v4.map_sentences(scene['narration'],20,[]),20,measured=True)
+
+
+def test_segmented_mix_places_intact_synthetic_speech_spans_at_four_onsets(tmp_path):
+    import array
+    import math
+    import wave
+    import media
+    import motion_media
+    if not media.FFMPEG.exists():pytest.skip('Homebrew FFmpeg required')
+    def wav(path,seconds,amplitude):
+        with wave.open(str(path),'wb') as out:
+            out.setparams((1,2,48000,0,'NONE','not compressed'))
+            out.writeframes(array.array('h',(int(amplitude*math.sin(2*math.pi*440*i/48000))
+                                            for i in range(round(seconds*48000)))).tobytes())
+    source,bed=tmp_path/'speech.wav',tmp_path/'silent-bed.wav'
+    wav(source,.8,12000);wav(bed,4,0)
+    segments=[dict(source_start_s=i*.2,source_end_s=(i+1)*.2,at_s=i+.1) for i in range(4)]
+    shot=dict(start=0,end=4,voice_start=0,voice_end=3.3,voice_segments=segments)
+    mixed=tmp_path/'mix.wav'
+    motion_media.mix_audio([source],[shot],bed,-22,mixed,offset=0,timeline_duration=4)
+    # Decode the actual mix, then compare RMS in each speech hold and preceding gap.
+    decoded=tmp_path/'decoded.wav'
+    media.ffmpeg(['-i',mixed,'-c:a','pcm_s16le','-ac','1',decoded])
+    with wave.open(str(decoded)) as inp:samples=array.array('h',inp.readframes(inp.getnframes()))
+    def rms(a,b):
+        values=samples[round(a*48000):round(b*48000)]
+        return math.sqrt(sum(v*v for v in values)/len(values))
+    for i in range(4):
+        # FFmpeg's mono→stereo conversion applies sqrt(1/2) to each channel.
+        assert 5900<rms(i+.13,i+.27)<6100
+        assert rms(i+.01,i+.08)<2
 
 
 def test_opening_iframe_uses_only_the_current_worktree_hero_without_navigation_or_scripts():

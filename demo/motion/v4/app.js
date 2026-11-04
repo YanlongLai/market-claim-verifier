@@ -4,9 +4,6 @@ const root='../../../';
 const esc=s=>String(s).replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;');
 let previous='',pending=[];
 const video=(path,classes='terminal')=>`<video muted preload="auto" class="${classes}" data-source="${esc(path)}" src="${root}${esc(path)}"></video>`;
-const brollPaths={
-  'numbers-raining-into-filing':'demo/assets/broll-v4/numbers-raining-into-filing.mp4',
-};
 function body(state){
  const scene=data.scenes[state.index];
  if(scene.recording){
@@ -18,9 +15,9 @@ function body(state){
  case 0:return `<iframe class="hero" srcdoc="${esc(data.hero.html)}" sandbox="allow-same-origin" scrolling="no" title="Current local site hero only"></iframe><section class="disclosure"><h1>DappGo existed before this hackathon.</h1><p>This verifier, its site and every piece of evidence were built between October 27 and November 4.</p><p class="note">Director disclosure · local site source preview · no live call</p></section>`;
  case 1:return `<section class="scene"><div class="repost-cascade" aria-hidden="true">${state.cascade.map(()=>`<img class="phone repost-copy" src="${root}${esc(data.phone_post.path)}" alt="">`).join('')}</div><img class="phone original-post" src="${root}${esc(data.phone_post.path)}" alt="Full saved finance post · 28 Oct 2026"><div class="viral-question"><h1>A real number.<br>The wrong period.</h1></div></section>`;
  case 2:return `<section class="scene"><div class="kicker">REAL SAVED CLI INPUTS · CONTROLLED FIXTURES</div><h1 id="input-label"></h1><div id="input-preview"></div><div class="input-details"><p>One verification path.</p><p>Extract claims → SEC tools → Python verdict</p><code id="input-path"></code><p class="note">fair-multimodal-v1 · saved inputs and outputs<br>Not a new OCR/ASR execution.</p></div></section>`;
- case 3:return video('demo/assets/terminal-v4/beat4.mp4');
+ case 3:return video('demo/assets/terminal-v4-r5/beat4.mp4');
  case 4:return `<div class="architecture">${data.architecture_svg}</div>`;
- case 6:return video('demo/assets/terminal-v4/beat7.mp4');
+ case 6:return video('demo/assets/terminal-v4-r5/beat7.mp4');
  case 7:{const m=data.metrics;return `<section class="scene"><div class="kicker">ORIGINAL V2 · BASETEN · CORRECTED REFERENCE LABELS</div><h1>Held-out text claims</h1><div class="metrics"><div class="metric"><strong>${(100*m.heldout_correct/m.heldout_n).toFixed(1)}%</strong><span>${m.heldout_correct}/${m.heldout_n} correct</span></div><div class="metric"><strong>${m.false_support}/${m.negative_n}</strong><span>false support</span></div><div class="metric"><strong>$${m.mean_cost_usd.toFixed(2)}</strong><span>mean cost / claim</span></div><div class="metric"><strong>${Math.round(m.median_claim_seconds)} s</strong><span>median / claim</span></div></div><p class="results-note">Real posts: coverage ≠ accuracy.</p><p class="note">Saved benchmark text · failures count as wrong · not a guarantee on every post</p></section>`;}
  default:throw new Error('Unknown v4 scene');
  }
@@ -51,7 +48,7 @@ window.seek=t=>{
   copy.style.opacity=opacity;
  });
  if(state.index===2){
-  const index=Math.min(3,Math.floor(state.local/3.5)),input=data.inputs[index];
+  const index=state.input,input=data.inputs[index];
   document.querySelector('#input-label').textContent=input.label;
   document.querySelector('#input-path').textContent=`claimcheck ingest ${input.path}`;
   const preview=document.querySelector('#input-preview');
@@ -67,16 +64,8 @@ window.seek=t=>{
   state.architecture.nodes.forEach((v,i)=>document.querySelector(`#node-${i}`).style.opacity=v);
   state.architecture.links.forEach((v,i)=>document.querySelector(`#link-${i}`).style.opacity=v);
  }
- const accent=stage.querySelector('[data-accent]');
- if(state.broll){
-  if(!accent){const holder=document.createElement('div');holder.dataset.accent=state.broll;
-   holder.innerHTML=video(brollPaths[state.broll],state.index===6?'scale-accent':'accent');
-   const media=holder.querySelector('video');media.addEventListener('error',()=>{holder.innerHTML=`<div class="accent-status">480 TEST B-ROLL PENDING<br>${state.broll}</div>`;},{once:true});stage.append(holder);
-  }
- }else accent?.remove();
  for(const el of stage.querySelectorAll('video')){
-  const isAccent=el.closest('[data-accent]');
-  seekVideo(el,isAccent?state.local-8:state.index===2?state.local-10.5:state.local);
+  seekVideo(el,state.index===2?state.local-10.5:state.local);
  }
  return state;
 };
