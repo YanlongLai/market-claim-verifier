@@ -17,7 +17,7 @@ from test_live_server import PASSWORD, TOKEN, data, request, running, settings, 
 from test_live_check import APPLE, TRACE, fixture_sec
 
 ROOT = Path(__file__).resolve().parents[1]
-IMAGE = ROOT / "docs/site/examples/post.png"
+IMAGE = ROOT / "docs/examples/post.png"
 
 
 def config(tmp_path, kind="text", **options):
@@ -175,7 +175,7 @@ def test_missing_meta_key_and_pending_assets_do_not_spend(tmp_path):
         async with running(replace(config(tmp_path, "image"), meta_api_key="")) as (app, services):
             assert data(await example_request(app, "image"))["error"] == "unavailable"
             assert not state(services).get("holds")
-        folder = ROOT / "docs/site/examples"
+        folder = ROOT / "docs/examples"
         async with running(replace(settings(tmp_path), examples_dir=folder)) as (app, services):
             # This committed build deliberately has no synthesized narration.
             if not (folder / "post.mp3").exists():

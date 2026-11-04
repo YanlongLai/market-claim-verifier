@@ -101,7 +101,7 @@ def main() -> int:
     run("Checking saved claim and post envelopes", python, "scripts/build_live_demo.py", "--check")
     run("Checking example assets, hashes and saved envelopes", python, "scripts/build_examples.py", "--check")
     run("Checking example saved results", python, "scripts/build_example_results.py", "--check")
-    example_outputs = [path for base in ("docs/site/examples", "docs/site/data/examples")
+    example_outputs = [path for base in ("docs/examples", "docs/site/data/examples")
                        for path in sorted((snapshot / base).glob("*")) if path.is_file()]
     example_before = {path: path.read_bytes() for path in example_outputs}
     run("Rebuilding examples without synthesis or recording", python, "scripts/build_examples.py")

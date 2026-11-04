@@ -581,10 +581,10 @@
   COPY.en.examples = {
     title: "One post, five ways in", note: "Our own example post. Run a fresh check with the password, or read a saved result without one.",
     textTitle: "Text", imageTitle: "Image", pdfTitle: "PDF", audioTitle: "Audio", videoTitle: "Video",
-    text: "The saved Big Tech post, including the wrong Apple quarter.",
-    image: "The same post as a screenshot. Muse reads the visible text.", pdf: "A one-page post with native text, read without OCR.",
-    audio: "The post read by the locked Breeze narrator. Muse transcribes it.",
-    video: "The screenshot with narration. Muse reads three frames and the audio.",
+    text: "Big Tech post; wrong Apple quarter.",
+    image: "Muse reads this screenshot.", pdf: "One page of selectable text.",
+    audio: "Breeze voice; Muse transcription.",
+    video: "Muse reads frames and narration.",
     run: "Run live", saved: "See saved result", savedPending: "Saved result pending", reused: "Saved text run · 28 Oct 2026",
     savedReady: "Saved result available · no password", pendingDetails: "Recording status", openMedia: "Play the file",
     openText: "Read the full post", openImage: "Open the image", openPdf: "Open the PDF", nativeText: "1 page · native text",
@@ -595,9 +595,9 @@
   COPY.zh.examples = {
     title: "同一篇貼文，五種輸入", note: "使用我們自製的範例貼文。輸入密碼即可即時查核；查看已儲存結果不需密碼。",
     textTitle: "文字", imageTitle: "圖片", pdfTitle: "PDF", audioTitle: "音訊", videoTitle: "影片",
-    text: "已保存的科技股貼文，含 Apple 季度數字錯誤。", image: "同一篇貼文的截圖，由 Muse 讀取畫面文字。",
-    pdf: "單頁原生文字 PDF，直接讀取文字，不經 OCR。", audio: "由鎖定的 Breeze 旁白朗讀貼文，再由 Muse 轉錄。",
-    video: "截圖搭配旁白；Muse 讀取三個影格並轉錄音軌。",
+    text: "科技股貼文，含 Apple 季度錯誤。", image: "Muse 讀取貼文截圖。",
+    pdf: "單頁 PDF，可直接擷取文字。", audio: "Breeze 旁白，由 Muse 轉錄。",
+    video: "Muse 讀取影格與旁白。",
     run: "即時查核", saved: "查看已儲存結果", savedPending: "已儲存結果待補", reused: "文字查核紀錄 · 2026 年 10 月 28 日",
     savedReady: "可查看已儲存結果 · 免密碼", pendingDetails: "製作狀態", openMedia: "播放檔案",
     openText: "閱讀完整貼文", openImage: "開啟圖片", openPdf: "開啟 PDF", nativeText: "1 頁 · 原生文字",
@@ -920,18 +920,19 @@
       if (!response.ok) return;
       const rows = await response.json();
       if (!Array.isArray(rows) || rows.length !== 5 || rows.some(row => !exampleIds.includes(row.id) || row.kind !== row.id ||
-        !["ready", "pending"].includes(row.status) || !/^post\.(txt|png|pdf|mp3|mp4)(\.pending\.txt)?$/.test(row.file))) return;
+        !["ready", "pending"].includes(row.status) || !/^post\.(txt|png|pdf|mp3|mp4)(\.pending\.txt)?$/.test(row.file) ||
+        row.url !== `/examples/${row.file}`)) return;
       examplesIndex = rows;
       for (const row of rows) {
         const card = $(`[data-example-card="${row.id}"]`);
         if (card) card.dataset.exampleReady = String(row.status === "ready");
         const link = $(`[data-example-download="${row.id}"]`);
-        if (link) link.href = `/examples/${row.file}`;
+        if (link) link.href = row.url;
         if (["audio", "video"].includes(row.id) && row.status === "ready") {
           const player = liveNode(row.id);
           player.controls = true;
           player.preload = "none";
-          player.src = `/examples/${row.file}`;
+          player.src = row.url;
           if (row.id === "video") player.poster = "/examples/post.png";
           $(`[data-example-player="${row.id}"]`)?.replaceChildren(player);
         }

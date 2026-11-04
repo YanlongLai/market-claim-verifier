@@ -11,17 +11,18 @@ import pytest
 from scripts import build_examples as assets
 from scripts import build_example_results as results
 from scripts import run_example_records as recorder
+from scripts import serve_site
 from scripts.serve_site import output_path
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
 def isolated(tmp_path, monkeypatch):
-    for directory in ("docs/site/examples", "docs/site/data/examples"):
+    for directory in ("docs/examples", "docs/site/data/examples"):
         shutil.copytree(ROOT / directory, tmp_path / directory)
     shutil.copyfile(ROOT / "docs/site/data/live-demo-post.json", tmp_path / "docs/site/data/live-demo-post.json")
     monkeypatch.setattr(assets, "ROOT", tmp_path)
-    monkeypatch.setattr(assets, "EXAMPLES", tmp_path / "docs/site/examples")
+    monkeypatch.setattr(assets, "EXAMPLES", tmp_path / "docs/examples")
     monkeypatch.setattr(results, "ROOT", tmp_path)
     monkeypatch.setattr(results, "OUTPUT", tmp_path / "docs/site/data/examples")
     monkeypatch.setattr(recorder, "ROOT", tmp_path)
@@ -34,22 +35,23 @@ def isolated(tmp_path, monkeypatch):
 
 
 def test_five_example_manifest_hashes_native_pdf_and_root_relative_routes():
-    rows = json.loads((ROOT / "docs/site/examples/manifest.json").read_text())
+    rows = json.loads((ROOT / "docs/examples/manifest.json").read_text())
     assert [row["id"] for row in rows] == ["text", "image", "pdf", "audio", "video"]
     for row in rows:
-        path = ROOT / "docs/site/examples" / row["file"]
+        path = ROOT / "docs/examples" / row["file"]
         assert path.stat().st_size == row["size_bytes"]
         assert hashlib.sha256(path.read_bytes()).hexdigest() == row["sha256"]
         assert set(row["contains"]) == {"en", "zh"}
         assert row["id"] == row["kind"]
-        assert output_path("/examples/" + row["file"]) == path
+        assert row["url"] == "/examples/" + row["file"]
+        assert output_path(row["url"]) == path
         if row["status"] == "pending":
             assert row["file"].endswith(".pending.txt") and row["duration_s"] is None
         if row["kind"] == "video" and row["status"] == "ready":
             assert row["size_bytes"] <= 2_000_000 and 0 < row["duration_s"] <= 60
     post = json.loads((ROOT / "docs/site/data/live-demo-post.json").read_text())["input"]
-    assert (ROOT / "docs/site/examples/post.txt").read_text() == post
-    pdf = PdfReader(ROOT / "docs/site/examples/post.pdf")
+    assert (ROOT / "docs/examples/post.txt").read_text() == post
+    pdf = PdfReader(ROOT / "docs/examples/post.pdf")
     assert len(pdf.pages) == 1
     assert " ".join(pdf.pages[0].extract_text().split()) == " ".join(post.split())
     assert pdf.pages[0]["/Resources"]["/Font"]["/F1"]["/BaseFont"] == "/Times-Roman"
@@ -57,16 +59,46 @@ def test_five_example_manifest_hashes_native_pdf_and_root_relative_routes():
 
 def test_asset_and_saved_envelope_builders_reproduce_every_byte_and_detect_staleness(tmp_path, monkeypatch):
     isolated(tmp_path, monkeypatch)
-    before = {path.relative_to(tmp_path): path.read_bytes() for path in (tmp_path / "docs/site").rglob("*") if path.is_file()}
+    before = {path.relative_to(tmp_path): path.read_bytes() for path in (tmp_path / "docs").rglob("*") if path.is_file()}
     for _ in range(2):
         assets.build()
         results.build()
         assets.build(check=True)
         results.build(check=True)
-    assert before == {path.relative_to(tmp_path): path.read_bytes() for path in (tmp_path / "docs/site").rglob("*") if path.is_file()}
+    assert before == {path.relative_to(tmp_path): path.read_bytes() for path in (tmp_path / "docs").rglob("*") if path.is_file()}
     (assets.EXAMPLES / "post.txt").write_text("wrong")
     with pytest.raises(ValueError, match="Stale example"):
         assets.build(check=True)
+
+
+def test_preview_uses_published_examples_without_a_site_overlay(tmp_path, monkeypatch):
+    published = tmp_path / "docs"
+    for directory in ("examples", "site/examples"):
+        (published / directory).mkdir(parents=True)
+    (published / "examples/post.png").write_bytes(b"published image")
+    (published / "site/examples/post.png").write_bytes(b"unpublished decoy")
+    monkeypatch.setattr(serve_site, "ROOT", published)
+    assert output_path("/examples/post.png").read_bytes() == b"published image"
+    assert not output_path("/examples/missing.png").exists()
+
+
+def test_pages_crawler_checks_even_unlinked_manifest_assets(tmp_path, monkeypatch, capsys):
+    monkeypatch.syspath_prepend(str(ROOT / "scripts"))
+    from scripts import check_site_routes as routes
+
+    published = tmp_path / "docs"
+    shutil.copytree(ROOT / "docs/examples", published / "examples")
+    for name in ("index.html", "zh/index.html", "explorer/index.html", "explorer/index.zh.html", "llms.txt"):
+        page = published / name
+        page.parent.mkdir(parents=True, exist_ok=True)
+        page.write_text("No asset links.")
+    monkeypatch.setattr(routes, "ROOT", published)
+    monkeypatch.setattr(routes, "output_path", lambda url: published / url.lstrip("/"))
+    assert not routes.crawl()
+    capsys.readouterr()
+    (published / "examples/post.png").unlink()
+    assert routes.crawl()
+    assert "MISSING /examples/post.png (from /examples/manifest.json)" in capsys.readouterr().out
 
 
 def test_text_reuses_actual_envelope_and_other_saved_results_are_explicitly_pending():

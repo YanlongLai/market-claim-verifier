@@ -54,7 +54,7 @@ class Settings:
 
 
 def load_example(folder, example_id):
-    """Only the five packaged, hash-checked inputs; never accept a visitor path."""
+    """Load hash-checked docs/examples inputs packaged at /app/examples."""
     if not isinstance(example_id, str) or example_id not in EXAMPLES:
         raise LiveError("unknown_example", 400)
     try:

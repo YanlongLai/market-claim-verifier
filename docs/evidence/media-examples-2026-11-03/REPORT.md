@@ -7,7 +7,7 @@ No deployment, push, model invocation, SEC fetch or new accuracy measurement.
 
 ## Inputs and saved-result boundary
 
-[The manifest](../../site/examples/manifest.json) records every file's hash and
+[The manifest](../../examples/manifest.json) records every file's hash and
 size. Text, the exact supplied PNG and native-text PDF are ready. The MP3/MP4
 entries point to explicit `.pending.txt` placeholders until host preparation.
 The installed Breeze environment's capability-only probe returned

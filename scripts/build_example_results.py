@@ -40,7 +40,7 @@ def from_record(folder, example_id, asset):
 
 
 def build(*, check=False, records=None):
-    assets = json.loads((ROOT / "docs/site/examples/manifest.json").read_text())
+    assets = json.loads((ROOT / "docs/examples/manifest.json").read_text())
     original = json.loads((ROOT / "docs/site/data/live-demo-post.json").read_text())
     text = original["input"]
     original["input"] = {"example_id": "text", "kind": "text", "text_read": text,
