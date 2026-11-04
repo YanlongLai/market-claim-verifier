@@ -6,7 +6,7 @@ export const targets={
  v503:{single:['.terminal-row.principal'],agent:['.terminal-row'],nine:['.terminal-row.principal'],heldout:['.terminal-row.principal']},
  v504:{model:['#node-1','#node-2'],program:['#node-3','#node-4'],principle:['.architecture [data-on-screen]']},
  v505:{live:['.live-overlay'],paste:['.live-overlay'],tools:['.live-terminal'],claims:['.live-terminal'],lookups:['.live-terminal'],evidence_ids:['.live-terminal'],thinking:['.live-terminal','.live-stopwatch','.live-terminal-line[data-kind="reasoning"]'],decide:['.live-terminal','.live-stopwatch'],verdict:['.live-overlay h2','.filing-citation[data-form="10-K"]','.filing-citation[data-form="10-Q"]'],draft:['.live-overlay'],evidence:['.live-overlay'],trace:['.live-overlay'],each:['.live-overlay'],program:['.live-overlay'],receipt:['.live-overlay']},
- v506:{run:['.terminal-row'],ocr:['.terminal-row'],asr:['.terminal-row'],median:['.terminal-row.principal'],projection:['.terminal-row.principal']},
+ v506:{run:['.local-terminal'],ocr:['.terminal-row'],asr:['.terminal-row'],median:['.terminal-row.principal'],projection:['.terminal-row.principal']},
  v507:{accuracy:['[data-metric="accuracy"]'],false_support:['[data-metric="false_support"]'],cost_time:['[data-metric="cost_time"]'],coverage:['.results-note']},
  v508:{filing:['.ending'],url:['.site-url']},v509:{credit:['.credit'],wordmark:['.outro .wordmark','.stamp-robot']},
 };

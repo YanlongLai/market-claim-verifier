@@ -158,9 +158,9 @@ def compile_data(root=ROOT,story=None,voices=None,*,preview=False):
         if path.is_file():
             if file_hash(path)!=recording['receipt_sha256']:raise BuildError('Wired live receipt changed')
             receipt=read_json(path)
-            fields=('capture_version','timings','geometry_checks','startup_cover','named_element_checks','ending_frame')
+            fields=('capture_version','timings','geometry_checks','startup_cover','named_element_checks','ending_frame','server_log')
             summary={k:receipt[k] for k in fields if k in receipt}
-            summary['result']={k:receipt['result'][k] for k in ('cost_usd','cost_is_bound','latency_ms','model','provider','verdict')}
+            summary['result']={k:receipt['result'][k] for k in ('cost_usd','cost_is_bound','latency_ms','model','provider','verdict','request_id') if k in receipt['result']}
             from live_terminal_v5 import trace_events
             summary['result']['events']=trace_events(receipt['result']['events'])
             # Retain the exact source objects for offline citation rebuilding.
@@ -242,18 +242,36 @@ def compile_data(root=ROOT,story=None,voices=None,*,preview=False):
     for index in (0,2,5,7,9):keyframes.append(dict(t=BOUNDARIES[index]+1,shot=f'v50{index}',cue='chapter sample'))
     data=dict(timing=timing,cues=cues,beats={'beats_s':[t-story['music']['music_offset_s'] for t in read_json(root/story['music']['beats'])['beats_s'] if t>=story['music']['music_offset_s']]},scenes=story['scenes'],chapter_bar=story['chapter_bar'],brand=story['brand'],brand_motion=story['brand_motion'],keyframes=sorted(keyframes,key=lambda f:f['t']),subtitles=[dict(start=c.start,end=c.end,text=c.text) for c in captions],metrics=values,post_text=(root/'demo/assets/examples-v5/a.txt').read_text().strip(),inputs=inputs,waveform=waveform,architecture_svg=architecture(root,story['scenes'][4]['on_screen']),live_receipt=dict(cost_usd=live_receipt['result']['cost_usd'],latency_ms=live_receipt['result']['latency_ms'],model=live_receipt['result']['model'],tool_calls=len([e for e in live_receipt['result']['events'] if e['kind']=='tool_call'])) if live_receipt else None,terminal_replays=terminal,batch_labels=story['terminal_captions'],live_named_elements=live_receipt.get('named_element_checks',[]) if live_receipt else [],ending_named_elements=portable['recordings'].get('v508',{}).get('receipt',{}).get('ending_frame',{}).get('named_elements',[]),portable_inputs=portable,provenance=provenance,asset_status={'live':('new v7 capture wired' if live_receipt.get('capture_version')==7 else 'host re-record required: legacy take has no audited startup cover') if live_receipt else 'host capture pending','voice':('measured' if all(voices) else 'partially measured; changed scene needs host synthesis') if voices else 'unmeasured layout preview','terminal':'literal saved PTY ranges; no new OCR/ASR','broll':'none'})
     data['live_filing_citations']=filing_citations
-    from live_terminal_v5 import compile_live_terminal
-    data['live_terminal']=compile_live_terminal(live_receipt) if live_receipt else None
+    from live_terminal_v5 import compile_live_terminal,compile_local_terminal
+    data['live_terminal']=compile_live_terminal(live_receipt,root) if live_receipt else None
+    data['local_terminal']=compile_local_terminal(root)
+    data['trace_format']=2
+    data['asset_status']['terminal']='Real pod log + recorded local CLI; OCR/ASR remain labelled saved replays'
+    local_block=next(b for b in terminal['beat6']['blocks'] if b['block']=='run')
+    local_trace=data['local_terminal']
+    # Retain time for typing and a readable final receipt; compression is explicit.
+    window=local_block['end_s']-local_block['at_s']
+    if window<=1:raise BuildError('Local CLI block needs room for typing, replay and final receipt hold')
+    speed=max(1,math.ceil(local_trace['source_duration_s']/(window-1.0)))
+    local_trace.update(start_scene_s=local_block['at_s']+.6,typing_start_scene_s=local_block['at_s'],
+        end_scene_s=local_block['end_s'],speed=speed,honesty_label=f'replayed at {speed}×' if speed>1 else 'recorded local CLI · real time')
+    for path in ('demo/assets/cli-v5/local-cli.json','demo/assets/cli-v5/receipt.json'):
+        data['provenance'][path]=file_hash(root/path)
     if data['live_terminal']:
         trace=data['live_terminal'];start=58+trace['start_scene_s']
         keyframes.extend(dict(t=t,shot='v505',cue=cue) for t,cue in [
             (58+trace['typing_start_scene_s'],'terminal command starts'),
             (start,'terminal stopwatch starts'),
-            *[(start+c['at_s'],f"terminal {c['name']} {c['evidence_id']}") for c in trace['calls']],
-            (start+trace['reasoning_at_s'],'terminal model reasoning'),
+            *[(start+r['at_s'],f"server log {r['event']}") for r in trace['rows']],
             (start+trace['verdict']['at_s'],'terminal verdict and stopped clock'),
             (58+trace['end_scene_s']-1/30,'terminal final hold')])
         data['keyframes']=sorted(keyframes,key=lambda f:f['t'])
+        data['provenance'][live_receipt['server_log']['path']]=live_receipt['server_log']['sha256']
+    keyframes.extend(dict(t=116+local_trace['start_scene_s']+r['at_s']/speed,shot='v506',cue='local CLI chunk') for r in local_trace['frames'])
+    # Whole-composite checks include the silent spaces, both gutters and mask changes.
+    keyframes.extend(dict(t=t,shot='v505',cue='whole composite continuity') for t in range(58,116))
+    keyframes.extend(dict(t=e['t']+delta,shot='v505',cue='composite cue edge') for e in cues['_events']['v505'] for delta in (-1/30,0,1/30) if 58<=e['t']+delta<116)
+    data['keyframes']=sorted(keyframes,key=lambda f:f['t'])
     data['asset_status']['live']=('v9 capture with native text line audit wired' if (live_receipt or {}).get('capture_version')==9
         else 'host re-record required: retained take lacks the v9 card-edge audit')
     english_only(json.dumps(data,ensure_ascii=False),'compiled motion data')

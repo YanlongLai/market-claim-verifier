@@ -68,3 +68,14 @@ def test_encoded_cut_rejects_a_premature_ending_or_missing_boundary_frames(cut_i
     encoded,native,before=cut_images;encoded[0]=native[0]
     assert audit_cut_frames(encoded,native)['frames'][0]['status']=='fail'
     with pytest.raises(BuildError,match='4619–4622'):audit_cut_frames(encoded[1:],native)
+
+
+def test_whole_composite_mask_rejects_a_native_glyph_even_in_the_outer_gutter():
+    from check_composite_v5 import mask_pixels
+    clear=Image.new('RGB',(76,228),'#111a20')
+    assert mask_pixels(clear)
+    leaked=clear.copy();ImageDraw.Draw(leaked).text((2,100),'Facts',fill='#f7f5ef')
+    assert not mask_pixels(leaked)
+    password=Image.new('RGB',(1920,24),'#111a20')
+    ImageDraw.Draw(password).text((180,1),'Authenticated runs are public',fill='#f7f5ef')
+    assert not mask_pixels(password)

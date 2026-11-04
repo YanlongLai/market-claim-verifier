@@ -17,9 +17,11 @@ import math
 import os
 from pathlib import Path
 import subprocess
+import sys
 import tarfile
 import tempfile
 import threading
+import time
 
 import yaml
 
@@ -31,6 +33,7 @@ FFPROBE = Path("/opt/homebrew/bin/ffprobe")
 ORIGIN = "https://hackathon.dappgo.com"
 BEATS = {"v505": ("beat6", 58.0), "v508": ("beat9", 16.0)}
 CAPTURE_VERSION = 9
+MAIN = ROOT.parent / 'market-claim-verifier'
 LIVE_PHASES = ('live_workspace_reveal','use_apple_example','check_against_sec','verdict_reveal','draft_reveal',
                'evidence_reveal','tool_call_2_reveal','tool_call_4_reveal','program_verdict_reveal','hover_receipt')
 
@@ -288,6 +291,10 @@ def check_recordings(story, root=ROOT, *, required=True):
         if not live_copy_supported(result):
             raise RecordingError(f"{scene['id']}: measured cost/time receipt missing or bounded")
         check_choreography(receipt)
+        from live_terminal_v5 import compile_live_terminal
+        from pipeline import BuildError
+        try:compile_live_terminal(receipt,root)
+        except BuildError as error:raise RecordingError(str(error)) from error
         if scene['id'] == 'v505' and scene.get('cue_events') != live_cue_events(scene, receipt):
             raise RecordingError("v505: cue times differ from the wired receipt")
         for kind in ("webm", "mp4"):
@@ -414,6 +421,10 @@ def main():
     password_file = environment.get("LIVE_CHECK_PASSWORD_FILE")
     if not password_file or not Path(password_file).is_file():
         raise RecordingError("Set LIVE_CHECK_PASSWORD_FILE to an existing private password file; do not pass the password itself")
+    sudo_file=environment.get('DAPPGO_HA_SUDO_FILE')
+    tail_script=MAIN/'scripts/tail_live_log.py'
+    if not sudo_file or not Path(sudo_file).is_file() or not tail_script.is_file():
+        raise RecordingError('Real log capture requires main scripts/tail_live_log.py and DAPPGO_HA_SUDO_FILE')
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
     OUT.mkdir(parents=True, exist_ok=True)
     run_path = OUT / f"run-{stamp}.json"
@@ -424,13 +435,25 @@ def main():
            "implementation": {p.relative_to(ROOT).as_posix(): digest(p)
                               for p in (Path(__file__).resolve(), worker, ROOT / "scripts/serve_site.py")}}
     save(run_path, run)
+    log_path=OUT/f'serverlog-{stamp}.jsonl'
+    id_path=OUT/f'request-id-{stamp}.txt'
+    tail=None
     try:
         with site_snapshot(args.site_ref) as (docs, source), serve(docs, args.port) as url:
             run.update(site_source=source, page_url=url)
             save(run_path, run)
             worker_path = OUT / f"session-{stamp}.json"
             save(config_path, {"page_url": url, "out": str(OUT), "stamp": stamp,
-                               "receipt": str(worker_path)})
+                               "receipt": str(worker_path), 'request_id_file':str(id_path),
+                               'server_log_spool':str(log_path)+'.all.jsonl'})
+            # Start before Chromium and the POST. Keep every partial spool and safe diagnostic.
+            with (OUT/f'serverlog-{stamp}.txt').open('x') as diagnostics:
+                tail=subprocess.Popen([sys.executable,str(tail_script),'--out',str(log_path),
+                    '--request-id-file',str(id_path),'--stop-after-verdict','--duration','180'],
+                    env=environment,stdout=diagnostics,stderr=diagnostics)
+            time.sleep(2)
+            if tail.poll() is not None:
+                raise RecordingError('Log tail stopped before the request; retained diagnostics; no paid request attempted')
             print(f"Recording {url} from {source['commit'][:12]}; at most one paid check, no retry.", flush=True)
             result = subprocess.run(["node", str(worker), str(config_path)], env=environment, capture_output=True)
             if result.returncode or not worker_path.is_file():
@@ -438,6 +461,14 @@ def main():
             session = json.loads(worker_path.read_text())
             if session.get("status") != "captured":
                 raise RecordingError("Capture did not pass the live-result / choreography gate; attempt retained")
+            try:tail_code=tail.wait(timeout=15)
+            except subprocess.TimeoutExpired:
+                raise RecordingError('Log tail did not finish for this request; partial take retained')
+            if tail_code or not id_path.is_file() or not log_path.is_file():
+                raise RecordingError('Real server log missing or incomplete; take retained without wiring')
+            server_log=dict(path=log_path.relative_to(ROOT).as_posix(),sha256=digest(log_path),
+                request_id=id_path.read_text().strip(),id_source=session['request_id_source'],
+                helper=str(tail_script),helper_sha256=digest(tail_script))
         raw = OUT / f"beat6-{stamp}.webm"
         media = probe(raw)
         start=select_workspace_start(raw,session)
@@ -458,6 +489,7 @@ def main():
                        "capture_version": CAPTURE_VERSION,
                        "viewport": [1920, 1080], "deviceScaleFactor": 1, "zoom": 1.95,
                        "result": session["result"], "timings": session["timings"],
+                       "server_log": server_log,
                        "presentation": session["presentation"],
                        "readability": session["readability"],
                        "geometry_checks": session["geometry_checks"], "language_checks": session["language_checks"],
@@ -480,6 +512,10 @@ def main():
         run.update(status="failed", failure="Retained partial attempt; no automatic retry; storyboard wiring requires both validated takes")
         raise
     finally:
+        if tail is not None and tail.poll() is None:
+            tail.terminate()
+            try:tail.wait(timeout=8)
+            except subprocess.TimeoutExpired:tail.kill();tail.wait()
         save(run_path, run)
 
 

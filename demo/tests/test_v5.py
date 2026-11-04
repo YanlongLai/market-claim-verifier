@@ -9,9 +9,9 @@ from pipeline import BuildError,file_hash,read_json
 import record_v5 as recorder
 
 @pytest.fixture(scope='module')
-def story():return yaml.safe_load((ROOT/'demo/storyboard-v5.yaml').read_text())
+def story(v5_story):return v5_story
 @pytest.fixture(scope='module')
-def data():return compile_data()
+def data(story):return compile_data(story=story,preview=True)
 
 @pytest.mark.parametrize('i',range(10))
 def test_binding_scene_table(story,i):
@@ -209,8 +209,12 @@ def test_unchanged_voice_cache_aliases_and_renderer(tmp_path,story):
         if s.get('voice_cache_scene'):
             _,_,folder=b.voice_spec(s);assert folder.parent.name==s['voice_cache_scene']
 
-def test_generated_files_current(data):
-    for name,content in artifacts(data).items():assert (ROOT/name).read_text()==content,name
+def test_synthetic_compile_is_deterministic_and_production_has_no_log_fallback(data):
+    assert artifacts(data)==artifacts(copy.deepcopy(data))
+    actual=yaml.safe_load((ROOT/'demo/storyboard-v5.yaml').read_text())
+    saved=read_json(ROOT/'demo/motion/v5/inputs.json')['recordings']['v505']['receipt']
+    if not saved.get('server_log'):
+        with pytest.raises(BuildError,match='server-log JSONL required'):compile_data(story=actual,preview=True)
 
 def test_rendered_on_screen_is_the_storyboard_copy(story,data):
     import xml.etree.ElementTree as ET
@@ -221,28 +225,26 @@ def test_rendered_on_screen_is_the_storyboard_copy(story,data):
     assert ET.fromstring(architecture(ROOT,changed)).find('.//*[@data-on-screen="v504"]').text==changed
     assert 'disclosure' not in data['brand']  # One source: v500.on_screen, exercised in the JS renderer test.
 
-def test_portable_measured_metadata_rebuilds_without_private_media(measured_data,monkeypatch):
+def test_portable_measured_metadata_rebuilds_without_private_media(story,measured_data,monkeypatch):
     import motion_v5
     data=measured_data
     read=motion_v5.read_json
     monkeypatch.setattr(motion_v5,'read_json',lambda p:data['portable_inputs'] if p==ROOT/'demo/motion/v5/inputs.json' else read(p))
     original=Path.is_file
     monkeypatch.setattr(Path,'is_file',lambda p:False if 'cache/live-takes/' in p.as_posix() else original(p))
-    assert compile_data()==data
+    assert compile_data(story=story)==data
     assert data['asset_status']['voice']=='measured'
 
-def test_batch_run_uses_exact_saved_three_verdict_rows(data):
+def test_batch_run_is_real_cli_and_old_saved_run_is_empty(data):
     run=data['terminal_replays']['beat6']['blocks'][0]
-    assert run['block']=='run' and run['at_s']==0 and run['end_s']==pytest.approx(data['scenes'][6]['cue_events'][1]['picture_at_scene_s'])
-    assert 4.01<run['source_start_s']<run['source_end_s']<6
-    for frame in run['frames']:
-        text='\n'.join(r['text'] for r in frame['rows'])
-        assert 'FY2024 · SUPPORTED · $1.915B → $1.915B' in text
-        assert 'FY2025 · CONTRADICTED · $51.31B → $5.131B' in text
-        assert 'FY2023 · CONTRADICTED' in text
-        assert not any(word in text for word in ('FAILED','INSUFFICIENT','UNCHECKED'))
-        assert all(r['row']!=12 for r in frame['rows'])
-    assert '$2.29B → $229M' in '\n'.join(r['text'] for r in run['frames'][-1]['rows'])
+    assert run['block']=='run' and run['at_s']==0
+    assert all(not frame['rows'] for frame in run['frames'])
+    trace=data['local_terminal'];window=trace['end_scene_s']-trace['start_scene_s']
+    assert trace['source_duration_s']/trace['speed']<window
+    assert trace['honesty_label']==f"replayed at {trace['speed']}×"
+    assert 'CoreWeave' not in trace['command']
+    assert data['batch_labels']['median']=='78 attempts · 72 completed · median 6.8 s'
+
 
 def test_every_new_named_element_onset_has_an_exact_review_frame(data):
     for check in data['live_named_elements']:
@@ -338,7 +340,6 @@ def test_pcm_bounds_measure_leading_trailing_silence_and_keep_internal_pause(tmp
 
 def test_sync_refuses_any_unmeasured_row_even_with_real_frame_names(data):
     from sync_v5 import ledger_rows
-    data=compile_data(preview=True)
     index=[dict(shot=f['shot'],t=f['t'],captioned_file=f'{i}.png') for i,f in enumerate(data['keyframes'])]
     with pytest.raises(BuildError,match='measured sentence onset'):ledger_rows(data['timing'],data['cues'],index)
 

@@ -1,106 +1,113 @@
-# Demo v5 round 5 — fill the live wait
+# Demo v5 round 6 — real online and local traces
 
-Source base: `demo/v5` at `ef980294`. Reuse the wired **capture v9** take,
-`demo/cache/live-takes/v5/beat6-20261104T144805450235Z.json` (SHA-256
-`9a1ff164348c73bb71c335e945f964cf811ec22597df9ca807cdc35976512e1f`).
-**No re-record, paid request or voice synthesis was performed in this source round.**
-AI001 remains disabled. The ten cuts, 178-second duration, other scenes' measured
-cues, voice identities, assets, chapter labels and the round-4 export gates remain.
+Base: `demo/v5` at `4f65cf54` (host v021). This is a **source delivery pending a new
+host capture and render**. Chromium cannot launch inside this session's macOS
+sandbox; Computer Use also denied Chrome access. No paid request or voice synthesis
+was made. [Preflight record](prep/v5/r6/host-preflight.json). AI001 remains disabled.
 
-## Receipt-bound terminal
+The existing v021 MP4, recordings, generated timeline and bundle are retained as
+historical outputs. They do **not** show r6. The preview entry refuses stale r5 data;
+production compilation and `record_v5.py --check` reject the old take because it has
+no real server-log JSONL. No response-event or synthetic fixture substitutes for it.
 
-The checking card becomes an opaque HTML/CSS/JS terminal at **x=80–1840,
-y=558–790**. It has three dots, the title **claimcheck · this live request**,
-30 px monospace rows, at most five visible lines, and the footer
-**recorded trace of this request**. It keeps the native in-progress SEC status
-clear above it, with the existing v9 native rectangles and card-edge audit.
+## Online
 
-The check starts at scene-local **7.831466834 s**, film **65.831466834 s**.
-Typing starts 0.6 seconds earlier and finishes at that onset:
+The recorder starts **main checkout** `scripts/tail_live_log.py` before Chromium and
+the POST, with `DAPPGO_HA_SUDO_FILE`. It retains
+`demo/cache/live-takes/v5/serverlog-<stamp>.jsonl`, its full spool, diagnostics and ID
+file next to the take. After the response, it atomically saves `request_id`. Until
+Pages forwards that field, it can select the **only** `live id=` in the POST window,
+using the retained Kubernetes source timestamps to exclude the 30-second pre-roll.
+Multiple IDs fail closed. Partial attempts remain; there is no automatic paid retry.
+Both take receipts retain the selected log's SHA-256, request ID, ID source and
+main helper hash. Carry that exact selected JSONL when moving the new scene to
+another checkout; portable response metadata is deliberately insufficient. `--check` requires that exact file and a complete matching verdict.
 
-```text
-$ claimcheck post post.txt --provider baseten --budget 1
-```
+The terminal title is **Online · hackathon.dappgo.com · server log**, with footer
+**live request <8-character prefix> · pod log**. The command is retained. Every public
+log row appears at `check_against_sec + runner elapsed`; JSONL host arrival times and
+response events do not position rows. Display-only condensation keeps time, event,
+ticker, metric, period and evidence ID in fixed columns. Public model-running
+notifications read “model reasoning (Muse Spark)” with their recorded step; this is
+a progress label, not access to private reasoning. The film-clock stopwatch freezes
+on the real `event=verdict`. The terminal holds through native result arrival and
+yields only when card 3 is ready.
 
-Each call's time, name and arguments come from `result.events`. Its evidence ID
-comes from the matching subsequent `tool_result`. The portable inputs retain these
-fields so media-free verification rebuilds the same terminal.
+## Local
 
-| From check onset | Recorded row / state |
-| --- | --- |
-| +2.129651 s | `lookup_fact AMZN revenue 2023Q3 → E1` |
-| +2.400641 s | `lookup_fact NVDA revenue FY2024 → E2` |
-| +2.701321 s | `lookup_fact AAPL revenue FY2025Q4 → E3` |
-| +6.844600 s | `compute_change NVDA revenue FY2024 vs FY2023 → E6` |
-| +7.334576 s | Last result received; `… model reasoning (Muse Spark)` and a film-clock cursor |
-| +16.412355 s | `verdict contradicted 16.4 s $0.02`; clock freezes at `16.4 s` |
-| Scene +25.304457834 s | Terminal yields to the existing verdict card and both E3 filing citations |
+[local-cli.json](assets/cli-v5/local-cli.json) is a byte-identical copy of main's
+`runs/real-trace-001/local-cli.json`; [receipt](assets/cli-v5/receipt.json) retains
+its source/copy SHA-256, input hash and original report hashes. It is a completed,
+non-dry-run **38.571843 s** recording from 2026-11-04: **2 supported, 1 contradicted,
+1 not checked**, measured total **$0.061142** (displayed **$0.0611**).
 
-The fourth call's actual result is **E6**, not the E4 in the direction's example:
-`compute_change` creates intermediate evidence internally. No ID is relabelled.
-The displayed cost rounds the recorded `$0.0215182` to `$0.02`. The stopwatch
-stops at the **verdict event**, independently of `latency_ms` or browser wall time.
-Typing, rows, blink and clock all support deterministic backward/nonsequential seeks.
+The window title is **Local · CLI · recorded 2026-11-04**. Its typed shell command
+comes from the session's `command`, wrapped with shell continuations. Completed
+PTY chunks, including partial lines and report JSON, follow their original
+`t_rel_s` and reflow at 98 columns; the final counts/cost come
+from that session. The compiler chooses the smallest integer replay speed that
+fits the measured run picture window, reserving 0.6 s for typing and at least
+0.4 s for its final receipt. The muted footer explicitly says **replayed at N×**.
+No speed is claimed before the changed narration is measured.
 
-## Narration and sync
+Only `v506/run` changes words: “The same check runs locally from the command line.”
+`voice --only v506` reuses the other four cached cue WAVs. OCR and ASR keep their
+saved-replay labels and sources. The old CoreWeave run rows are removed from the
+compiled run block.
 
-There are **48 independent sentence/phrase units** (43 existing + 5 new). The
-three requested additions contain five sentences, each with its own cached WAV,
-PCM measurement, SRT cue, named proof and ledger row:
+## Readability and AI2 leftovers
 
-| Cue unit | Phase-local earliest speech onset | Narration |
-| --- | --- | --- |
-| `claims` | +0.8 s | Four claims. |
-| `lookups` | +1.8 s, after the preceding unit | Four SEC lookups. |
-| `evidence_ids` | +4.2 s | Each filed number comes back with its evidence ID. |
-| `thinking` | +9.0 s | The clock is the model's thinking time. |
-| `decide` | +13.0 s, after the preceding unit | Then the program decides. |
+Both terminals use **28 px monospace, 34 px line pitch, five scrolling rows plus
+header**, with 28 px titles, clocks and muted footers. Older rows leave at the top;
+text never shrinks. The online window keeps **x=80–1840, y=558–790**; the local
+window uses the same 1760 × 232 style above its scene caption.
 
-**Timing conflict resolved by retaining the existing cue:** “Muse Spark calls the
-SEC tools.” already speaks from check +0.2 to +2.435 s in the retained measured
-source. A new +0.8 s sentence would overlap it. The new offsets therefore specify
-earliest starts; same-phase sentences queue after the whole preceding PCM unit.
-The original cue stays in place. The final actual onsets come from the host's new
-PCM measurements; no sentence is truncated, accelerated or silently overlapped.
+B1: a fully opaque backplate covers **x=0–1920, y=558–790**, including both side
+gutters. During the recorded password-form state it begins at **y=530**. The real
+field, button, native SEC status, cover calibration, card-band and named-element
+checks remain. Every rendered Chromium frame audits the whole backplate and named
+proof clearance; review keyframes add silent one-second samples and cue-edge
+neighbors. The export also decodes **every live-scene frame** to check both outer
+gutters and the higher password mask, preserving a `composite.json` receipt and
+rejecting native glyph leaks. Actual whole-film visual acceptance remains pending.
 
-Each sentence's terminal focus arrives **0.2 s before its measured onset** and
-holds through the last word. Focus changes the command, title, call rows, reasoning
-line or clock while trace rows retain their recorded arrival times. Each new
-sentence is bound to `check_against_sec` with `offset_s`. The compiler refuses
-any checking-phase unit whose complete audio would leave **less than 0.4 s before
-`verdict_reveal`**, and still requires the native status to remain visible through
-the last spoken word. A shorter future take must pass both limits.
+B2: `v503-02.required_visual` now reads **“SEC tools + Python verdict heading;
+357 claims · corrected gold · includes dev qualifier”**. The score remains on
+`v503-03`. The median footer is **78 attempts · 72 completed · median 6.8 s**.
+“Illustrative post” uses the card's 30 px byline/body scale.
 
-The delivered v505 SRT/timing is explicitly an **unmeasured preview** pending host
-voice generation. The other nine scenes retain their existing measured timing and
-metadata. Preview timing cannot produce an accepted sync ledger or export.
+<!-- actual-encode:start -->
+Actual existing encode: **v021**, 178.000 s; **−14.20 LUFS integrated**, **−1.23 dBTP**.
+These are fresh FFmpeg measurements of `demo/out/demo-v021.mp4`, not r6 estimates.
+[Measurement receipt](prep/v5/r6/v021-actual-loudness.json) ·
+[raw measurement](prep/v5/r6/v021-actual-loudness.log). **R6 encode pending.**
+<!-- actual-encode:end -->
 
-The named-element audit now requires **the terminal window plus the clear native
-in-progress SEC status** for all six checking-phase voice units. It validates
-terminal bounds, opacity, title, dots, 30 px type, five-line scrolling, exact rows,
-clock and cursor. Every sentence still receives onset/end frame audits. Local OCR
-selection includes every live sentence and every scene (at least 24 frames);
-its report is named `ocr-N.json` for the actual sample count. The verdict sentence
-continues to require both native verdict and the two receipt-bound E3 filings.
+## Host sequence
 
-## Host sequence — reuse this take
-
-Retain prior review directories before regenerating them. Run in order after
-importing the bundle; existing sentence caches are reused and only new units need
-synthesis. No recording command is needed.
+Run from this worktree after importing the `demo/v5` bundle. Keep the existing
+password files private. The recorder writes the new log directly next to the new
+take; it never writes credentials into receipts. Retain old review directories.
 
 ```sh
-export UV_CACHE_DIR=/private/tmp/mcv-v5-uv-cache
+export UV_CACHE_DIR=/private/tmp/claimcheck-verify-uv-cache
 export PLAYWRIGHT_MODULE=/Users/yan/ml-engines/playwright/node_modules/playwright
+export LIVE_CHECK_PASSWORD_FILE="$HOME/secret/live-check-password.txt"
+export DAPPGO_HA_SUDO_FILE="$HOME/secret/dappgo-ha-cp-1.txt"
+
+uv run --project demo python demo/record_v5.py --preflight
+uv run --project demo python demo/record_v5.py
+uv run --project demo python demo/record_v5.py --check
+uv run --project demo python demo/build.py voice --only v506 --storyboard demo/storyboard-v5.yaml
+uv run --project demo python demo/motion_v5.py --measured
+uv run --project demo python demo/motion_v5.py --measured --check
+
 v5_review_stamp=$(date -u +%Y%m%dT%H%M%SZ)
 for v5_review_dir in demo/out/review-v5 demo/out/keyframes-v5; do
   if test -e "$v5_review_dir"; then
-    mv "$v5_review_dir" "$v5_review_dir-before-r5-$v5_review_stamp"
+    mv "$v5_review_dir" "$v5_review_dir-before-r6-$v5_review_stamp"
   fi
 done
-uv run --project demo python demo/build.py voice --only v505 --storyboard demo/storyboard-v5.yaml
-uv run --project demo python demo/motion_v5.py --measured
-uv run --project demo python demo/motion_v5.py --measured --check
 uv run --project demo python demo/build.py review-frames --storyboard demo/storyboard-v5.yaml --out demo/out/review-v5
 uv run --project demo python demo/build.py keyframes --storyboard demo/storyboard-v5.yaml --out demo/out/keyframes-v5
 CLANG_MODULE_CACHE_PATH=/private/tmp/mcv-v5-swift-cache uv run --project demo python demo/review_v5.py --frames demo/out/review-v5
@@ -108,44 +115,19 @@ uv run --project demo python demo/build.py render --storyboard demo/storyboard-v
 uv run --project demo python demo/sync_v5.py --frames demo/out/review-v5
 ```
 
-If a measured unit exceeds the available interval, retain the failed attempt and
-repair narration timing before continuing. The take must stay wired. Final
-listening, continuous-picture acceptance, native-status clearance, terminal
-readability, card-3 transition and the existing encoded-cut check remain host work.
-The render retains the round-4 encoded-frame gate at frames 4619–4622 and the
-178 s, −14±1 LUFS and ≤−1 dBTP gates.
+A short take that cannot hold every existing checking sentence with the 0.4 s
+margin fails the measured gate. Retain it and repair timing; never invent a longer
+server run or retry automatically. The 178 s limit, −14±1 LUFS / ≤−1 dBTP gate and
+encoded 154 s cut check remain. A successful full r6 render updates the actual-encode
+block above from its measured export, then the sync ledger awaits listening and
+continuous-picture review.
 
-## Offline evidence and bundle import
+[Round-6 test records](prep/v5/r6/) retain failures and subsequent results. Synthetic
+online logs live only under test fixtures and are never film inputs. Offline tests
+exercise the new pipeline without SSH, model calls, SEC fetches or private media.
+The full guarded verification result is recorded there; capture, new voice,
+frame inspection, r6 export and listening still require the host sequence above.
 
-[Round-5 records](prep/v5/r5/) retain the baseline, initial failures and validation
-logs. [Round-4 records](prep/v5/r4/) remain available. The guarded verifier runs in
-a disposable copy without provider credentials, model calls, SEC fetches or media.
-The exact validation results are in the retained round-5 logs. All new film text
-is English. Host voice, frame review and full film acceptance remain pending.
-
-Final guarded verification: **1,269 product tests, 328 demo Python tests and 136
-Node tests pass**, with figure/data rebuilds and local links green
-([full log](prep/v5/r5/offline-verify-final.log)). The media-free delivery clone also
-reproduces the compiled files ([check](prep/v5/r5/portable-compiled-check-second.log)).
-The direct working-tree link check's retained failure is limited to pre-existing
-absolute links in ignored host review outputs; the isolated source check passes.
-
-```sh
-uv run --project demo python demo/motion_v5.py --check
-UV_CACHE_DIR=/private/tmp/mcv-v5-verify-uv-cache UV_OFFLINE=1 sh scripts/verify.sh
-```
-
-The supplied linked worktree's Git metadata is outside the writable sandbox;
-[the prior write failure](prep/v5/r3/git-worktree-write.log) records that constraint.
-Delivery commits are on `demo/v5` in a writable temporary clone based on
-`ef980294`, and the supplied worktree contains the same source changes. The bundle
-excludes unrelated untracked media and host run records. On the host, on `demo/v5`:
-
-```sh
-git fetch demo/out/v5-r5.bundle demo/v5
-git merge-base --is-ancestor HEAD FETCH_HEAD
-git reset --mixed FETCH_HEAD
-```
-
-The ancestry check must pass before the mixed reset. This imports the commits
-while preserving working files and any later host recording changes.
+Final guarded verification: **1,269 product tests, 332 demo Python tests and 138
+Node tests pass**, with figure/data rebuilds and links green
+([full log](prep/v5/r6/offline-verify-final.log)).

@@ -55,18 +55,21 @@ def bind_replays(replays,scenes,cues):
     for i,event in enumerate(events):
         label=event['terminal_block'];original=source['agent' if label=='nine' else label]
         rows=copy.deepcopy(original['frames'][-1]['rows'])
+        if sid=='v506' and label=='run':rows=[] # Real CLI session is rendered separately, never CoreWeave.
         if label=='agent':rows=[r for r in rows if not r['principal']]
         if label=='median':rows=[r for r in rows if r['row'] not in (5,10)]
         at=event['picture_start']-scene['target_start_s']
         end=events[i+1]['picture_start']-scene['target_start_s'] if i+1<len(events) else scene['target_s']
         blocks.append({**original,'block':label,'at_s':at,'end_s':end,'frames':[dict(at_s=at,rows=rows)]})
     outputs[name]['blocks']=blocks
-    outputs[name]['note']='Completed literal saved PTY rows, sentence-bound holds. Later result rows are withheld until their own cue. No new execution or OCR/ASR.'
+    outputs[name]['note']='Completed saved PTY rows at sentence-bound holds. The v506 run block is replaced by the separately hash-checked real local CLI session. OCR/ASR remain saved replays.'
  return outputs
 def main():
  parser=argparse.ArgumentParser(description=__doc__)
  parser.add_argument('--check',action='store_true',help='Validate retained source hashes/ranges without rendering')
  parser.parse_args()
  replays,_=compile_replays()
- print('PASS terminal v5: 14 s comparison; 22 s saved replay; CoreWeave T03 verdicts at run; no media rendered')
+ from live_terminal_v5 import compile_local_terminal
+ compile_local_terminal(ROOT)
+ print('PASS terminal v5: real local CLI hash; saved comparison/OCR/ASR sources; no media rendered')
 if __name__=='__main__':main()

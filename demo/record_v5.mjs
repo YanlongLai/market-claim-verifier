@@ -138,6 +138,36 @@ export function validateGeometry(g){
   if(!['source_width','left_margin','right_margin','horizontal_overflow'].every(k=>Number.isFinite(g[k]))||g.source_width<1500||g.left_margin<60||g.right_margin<60||Math.abs(g.left_margin-g.right_margin)>4||g.horizontal_overflow>1)throw new Error('workspace_must_be_full_width_and_centred');
 }
 
+export function requestIdFromLog(spool,afterWallMs){
+ const ids=new Set();
+ // The helper flushes complete JSONL records; ignore a concurrent partial write.
+ for(const line of spool.split('\n').slice(0,-1)){
+  if(!line)continue;
+  const row=JSON.parse(line),match=/\blive id=([0-9a-f]{32})\b/.exec(row.line);
+  // Exclude kubectl's --since pre-roll using its retained source timestamp.
+  const sourceTime=Date.parse(row.line.split(/\s/)[0]);
+  if(match&&Number.isFinite(sourceTime)&&sourceTime>=afterWallMs-1000)ids.add(match[1]);
+ }
+ if(ids.size>1)throw new Error('ambiguous_live_request_ids');
+ return ids.size===1?[...ids][0]:null;
+}
+
+export async function saveRequestId(config,result,afterWallMs){
+ let id=result.request_id,source='response';
+ if(id!==undefined&&!/^[0-9a-f]{32}$/.test(id))throw new Error('invalid_response_request_id');
+ if(!id){
+  source='only live id in captured POST window';
+  for(let i=0;i<50&&!id;i++){
+   id=requestIdFromLog(await readFile(config.server_log_spool,'utf8'),afterWallMs);
+   if(!id)await new Promise(resolve=>setTimeout(resolve,100));
+  }
+ }
+ if(!id)throw new Error('request_id_missing_from_response_and_log');
+ const temporary=config.request_id_file+'.tmp';
+ await writeFile(temporary,id+'\n',{flag:'wx'});await rename(temporary,config.request_id_file);
+ return {id,source};
+}
+
 export async function showTraceAndFiling({page,result,report,mark,frame,click,hold}) {
   await click('#live-result .live-trace > summary');
   const trace=page.locator('#live-result .live-trace');
@@ -364,11 +394,14 @@ export async function record(config) {
     if(await page.locator('#live-password').getAttribute('type')!=='password')throw new Error('unmasked_password');
     await frame('#live-submit');
     const clickedAt=performance.now();
+    const postWallMs=Date.now();
     const [response]=await Promise.all([
       page.waitForResponse(r=>/\/api\/check(-example)?$/.test(r.url()) && r.url().startsWith(origin) && r.request().method()==='POST',{timeout:90000}),
       click('#live-submit').then(async()=>{await frame('#live-status');mark('check_against_sec');}),
     ]);
     const result=await response.json();
+    const requestId=await saveRequestId(config,result,postWallMs);
+    report.request_id=requestId.id;report.request_id_source=requestId.source;
     report.result=redact(result,secret);report.http_status=response.status();
     mark('validate_live_result');
     if(!response.ok())throw new Error('http_result_not_successful');

@@ -244,7 +244,9 @@ def render(builder, *, test: bool = False) -> dict:
         implementation['voice_v5.py']=file_hash(builder.demo/'voice_v5.py')
         implementation['live_terminal_v5.py']=file_hash(builder.demo/'live_terminal_v5.py')
         implementation['check_ending_v5.py']=file_hash(builder.demo/'check_ending_v5.py')
-        evidence=compile_data(builder.repo,builder.story)['provenance']
+        implementation['check_composite_v5.py']=file_hash(builder.demo/'check_composite_v5.py')
+        v5_data=compile_data(builder.repo,builder.story)
+        evidence=v5_data['provenance']
     elif builder.story.get('motion_variant') == 'v4':
         from motion_v4 import compile_data
         implementation['motion_v4.py']=file_hash(builder.demo/'motion_v4.py')
@@ -274,6 +276,8 @@ def render(builder, *, test: bool = False) -> dict:
         take=next(s for s in builder.scenes if s['id']=='v508')['recording']['asset']
         validation['ending_cut']=check_ending_cut(folder/'master.mp4',builder.repo/take,folder/'ending-cut',
             outgoing=frames/'frame-004619.png')
+        from check_composite_v5 import check_composite
+        validation['composite']=check_composite(folder/'master.mp4',v5_data,folder/'composite')
     if test:
         builder.alias(folder/'master.mp4',output)
         output.with_suffix('.srt').write_text(to_srt(local))
@@ -303,6 +307,10 @@ def render(builder, *, test: bool = False) -> dict:
                         music_offset_s=timing['music_offset_s'],draft_only=any(v.get('draft_only') for v in voices),
                         timing_notes=timing['cut_rule']+'; hard cuts; subtitles share cues.json sentence timing and character offsets.')
     stamp=datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S%fZ')
-    write_json(builder.demo/'runs'/f'{stamp}-v{version:03}.json',run); append_build_log(builder.demo/'BUILD_LOG.md',run)
+    run_path=builder.demo/'runs'/f'{stamp}-v{version:03}.json'
+    write_json(run_path,run); append_build_log(builder.demo/'BUILD_LOG.md',run)
+    if builder.story.get('motion_variant')=='v5':
+        from check_composite_v5 import update_review_encode
+        update_review_encode(builder.demo/'REVIEW-v5.md',output,loudness,validation,run_path)
     print(f'Built {output} ({length:.3f} s) and {srt}',flush=True)
     return run

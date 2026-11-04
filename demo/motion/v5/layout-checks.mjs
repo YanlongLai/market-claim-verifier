@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import {targets,requiredText} from './sentence-targets.mjs';
 import {assertCardFrame,cardBands} from './card-band.mjs';
-import {liveTerminalAt} from './live-terminal.mjs';
+import {liveTerminalAt,localTerminalAt} from './live-terminal.mjs';
 
 export function intersects(a,b){
  return a.left<b.right&&a.right>b.left&&a.top<b.bottom&&a.bottom>b.top;
@@ -24,18 +24,18 @@ export function assertVerdictReferents(check,expected){
  }
 }
 
-export function assertLiveTerminal(terminal,expected,native){
+export function assertLiveTerminal(terminal,expected,native,trace,top=558){
  assert(terminal,'Receipt-bound terminal window required');
- assert.deepEqual([terminal.left,terminal.right,terminal.top,terminal.bottom],[80,1840,558,790]);
+ assert.deepEqual([terminal.left,terminal.right,terminal.top,terminal.bottom],[80,1840,top,top+232]);
  assert.equal(terminal.colour,'rgb(17, 26, 32)');assert.equal(terminal.opacity,'1');
- assert.equal(terminal.title,'claimcheck · this live request');assert.equal(terminal.dots,3);
- assert.equal(terminal.footer,'recorded trace of this request');
+ assert.equal(terminal.title,trace.title);assert.equal(terminal.dots,3);
+ assert.equal(terminal.footer,trace.honesty_label);
  assert.equal(terminal.clock,expected.clock);assert.equal(terminal.running,String(expected.running));
  assert.deepEqual(terminal.rows.map(r=>({kind:r.kind,text:r.text})),expected.rows);
  assert(terminal.rows.length<=5,'Terminal scrolls at five lines');
  for(const row of terminal.rows){
-  assert.equal(row.font,30);assert.equal(row.lineHeight,32);
-  assert(row.left>=terminal.left&&row.right<=terminal.right&&row.top>=terminal.top+36&&row.bottom<=terminal.bottom-26,'Terminal row is clipped');
+  assert(row.font>=28);assert(row.lineHeight>=34);
+  assert(row.left>=terminal.left&&row.right<=terminal.right&&row.top>=terminal.top+32&&row.bottom<=terminal.bottom-28,'Terminal row is clipped');
   assert(row.scroll<=row.width+1,'Terminal row overflows horizontally');
  }
  assert.equal(terminal.cursor,expected.cursor,'Cursor blink must follow the film clock');
@@ -48,7 +48,7 @@ export async function checkV5Layout(page,state){
   const box=el=>{const r=el.getBoundingClientRect();return {left:r.left,right:r.right,top:r.top,bottom:r.bottom,width:r.width,height:r.height};};
   const visible=el=>{let opacity=1;for(let p=el;p;p=p.parentElement){const s=getComputedStyle(p);if(s.visibility==='hidden'||s.display==='none')return false;opacity*=Number(s.opacity);}return opacity>=.5;};
   const cjk=/[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/u;
-  const overlay=document.querySelector('.live-overlay'),v=document.querySelector('.live-take'),paint=document.querySelector('.native-video-frame'),terminal=document.querySelector('.live-terminal');
+  const overlay=document.querySelector('.live-overlay'),v=document.querySelector('.live-take'),paint=document.querySelector('.native-video-frame'),terminal=document.querySelector('.terminal-window'),plate=document.querySelector('.live-backplate');
   const textBoxes=[],walker=document.createTreeWalker(document.querySelector('#stage'),NodeFilter.SHOW_TEXT);
   for(let node;node=walker.nextNode();){
    if(!node.textContent.trim()||!visible(node.parentElement)||node.parentElement.closest('.post-copy'))continue;
@@ -80,6 +80,8 @@ export async function checkV5Layout(page,state){
    sentenceChecks,
    expectedFilings:data.live_filing_citations,
    liveTrace:data.live_terminal,
+   localTrace:data.local_terminal,
+   plate:plate?{...box(plate),state:plate.dataset.state,colour:getComputedStyle(plate).backgroundColor,opacity:getComputedStyle(plate).opacity}:null,
    terminalNative:data.live_named_elements.find(c=>c.phase==='check_against_sec'),
    terminal:terminal?{...box(terminal),colour:getComputedStyle(terminal).backgroundColor,opacity:getComputedStyle(terminal).opacity,
     title:terminal.querySelector('.live-terminal-title').textContent,dots:terminal.querySelectorAll('.terminal-dots i').length,
@@ -124,6 +126,11 @@ export async function checkV5Layout(page,state){
  if(state.index===1){assert.equal(actual.copies,7);assert(actual.cascadeClip.right<=1056);assert(actual.viralHeadline.left>=1056,'Headline column is reserved');}
  if(state.index===2)assert.equal(actual.tiles,4);
  if(actual.video){
+  assert(actual.plate,'Whole-composite backplate required, including between cues');
+  assert.equal(actual.plate.left,0);assert.equal(actual.plate.right,1920);
+  assert.equal(actual.plate.colour,'rgb(17, 26, 32)');assert.equal(actual.plate.opacity,'1');
+  assert.equal(actual.plate.top,state.index===8?610:actual.plate.state==='password'?530:558);
+  assert.equal(actual.plate.bottom,790);
   assert.deepEqual(actual.video.source,[1920,1080]);assert.equal(actual.video.fit,'contain');assert.equal(actual.video.transform,'none');
   assert.equal(actual.video.left,0);assert.equal(actual.video.top,0);assert.equal(actual.video.right,1920);assert.equal(actual.video.bottom,1080);
   assert(actual.decodedFrame?.ready,'Decoded native image must be painted before composing the frame, including the ending cut');
@@ -134,17 +141,19 @@ export async function checkV5Layout(page,state){
   const terminal=liveTerminalAt(state.local,actual.liveTrace);
   assert.equal(actual.overlay?.phase,terminal?'check_against_sec':state.overlay.receipt_phase);assert.equal(actual.overlay.colour,'rgb(17, 26, 32)');assert.equal(actual.overlay.opacity,'1');assert(actual.overlay.bottom<=790);
   if(actual.overlay.top===558)assert.equal(actual.overlay.bottom,790,'Lower mask must meet the chapter band without a paragraph slit');
-  if(terminal)assertLiveTerminal(actual.terminal,terminal,actual.terminalNative);
+  if(terminal)assertLiveTerminal(actual.terminal,terminal,actual.terminalNative,actual.liveTrace);
   else {assert(actual.overlay.fonts.every(x=>x>=56));assert(actual.overlay.keyFonts.every(x=>x>=96),'Key numbers must be at least 96 px');}
   assert(actual.overlay.scroll<=actual.overlay.client+2,'Live explanation overflows');
   if(Math.abs(state.local-state.overlay.at_scene_s)<1e-6)assert(actual.namedChecks.length,'Missing named element audit at cue onset');
  }
- assertNamedClearance([actual.overlay,actual.band,{left:0,right:1920,top:880,bottom:1080}],actual.namedChecks);
+ const local=state.index===6?localTerminalAt(state.local,actual.localTrace):null;
+ if(local)assertLiveTerminal(actual.terminal,local,null,actual.localTrace,250);
+ assertNamedClearance([actual.overlay,actual.plate,actual.band,{left:0,right:1920,top:880,bottom:1080}],actual.namedChecks);
  for(const check of actual.namedChecks)if(state.index===5)assertCardFrame(check.card_edge_audit,cardBands[check.overlay_band],{verdict:check.phase==='verdict_reveal'});
  for(const check of actual.sentenceChecks){
   for(const r of check.elements){assert(r.width>0&&r.height>0&&r.left>=0&&r.right<=1920&&r.top>=0&&r.bottom<=790,`${check.scene}/${check.event}: named proof is clipped`);}
   // Web proof may itself be the overlay; native proof must clear it completely.
-  assertNamedClearance([actual.overlay,actual.band,{left:0,right:1920,top:880,bottom:1080}],check.native?[check.native]:[]);
+  assertNamedClearance([actual.overlay,actual.plate,actual.band,{left:0,right:1920,top:880,bottom:1080}],check.native?[check.native]:[]);
   if(state.index===5)assertCardFrame(check.native?.card_edge_audit,cardBands[check.native?.overlay_band],{verdict:check.event==='verdict'});
   if(check.scene==='v505'&&check.event==='verdict'){
    assertVerdictReferents(check,actual.expectedFilings);

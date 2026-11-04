@@ -13,51 +13,48 @@ ROOT=Path(__file__).resolve().parents[2]
 
 
 @pytest.fixture
-def receipt():
-    return json.loads((ROOT/'demo/motion/v5/inputs.json').read_text())['recordings']['v505']['receipt']
+def receipt(v5_story):
+    return json.loads(Path(v5_story['scenes'][5]['recording']['receipt']).read_text())
 
 
-def test_live_trace_rebuild_uses_actual_times_arguments_and_matched_evidence(receipt):
+def test_terminal_uses_pod_elapsed_not_arrival_or_response_events(receipt):
     before=copy.deepcopy(receipt);trace=compile_live_terminal(receipt)
-    assert trace['command']=='$ claimcheck post post.txt --provider baseten --budget 1'
+    assert trace['title']=='Online · hackathon.dappgo.com · server log'
+    assert trace['honesty_label']=='live request 00000000 · pod log'
     assert trace['typing_start_scene_s']==pytest.approx(trace['start_scene_s']-.6)
-    assert [c['evidence_id'] for c in trace['calls']]==['E1','E2','E3','E6']
-    assert [c['at_s'] for c in trace['calls']]==pytest.approx([2.129651,2.400641,2.701321,6.8446])
-    assert [c['arguments']['ticker'] for c in trace['calls']]==['AMZN','NVDA','AAPL','NVDA']
-    assert 'FY2024 vs FY2023  → E6' in trace['calls'][-1]['text']
-    assert trace['reasoning_at_s']==pytest.approx(7.334576)
-    assert trace['verdict']['at_s']==pytest.approx(16.412355)
-    assert trace['verdict_text']=='verdict  contradicted   16.4 s   $0.02'
+    assert trace['rows'][2]['at_s']==2.13 # JSONL host arrivals are all after +100 s.
+    assert trace['rows'][3]['text'].endswith('2023Q3  → E1')
+    assert trace['rows'][-1]['text']=='verdict  contradicted  16.4 s  $0.0215'
+    assert trace['verdict']['at_s']==16.41
     assert receipt==before
+    receipt['result']['events']=[]
+    assert compile_live_terminal(receipt)==trace # Never reconstruct a log from receipt events.
 
 
-def test_later_take_rebinds_clock_rows_evidence_cost_and_provider(receipt):
-    receipt['result'].update(provider='meta',cost_usd=.034,verdict='supported')
-    for event in receipt['result']['events']:
-        event['at_ms']+=100
-        if event['kind']=='tool_result':event['result']['evidence_id']='E99'
-        if event['kind']=='tool_call':event['arguments']['ticker']='MSFT'
-        if event['kind']=='verdict':event['verdict']='supported'
-    trace=compile_live_terminal(receipt)
-    assert '--provider meta' in trace['command']
-    assert all('MSFT' in c['text'] and c['text'].endswith('→ E99') for c in trace['calls'])
-    assert trace['verdict_text']=='verdict  supported   16.5 s   $0.03'
-    assert compile_live_terminal(dict(receipt,result={**receipt['result'],'events':trace_events(receipt['result']['events'])}))==trace
-
-
-@pytest.mark.parametrize('mutation',[
-    lambda r:r['result']['events'].pop(),
-    lambda r:r['result']['events'][2]['result'].pop('evidence_id'),
-    lambda r:r['result']['events'][2].update(name='unmatched_tool'),
-    lambda r:r['result']['events'][1].update(at_ms=-1),
-    lambda r:r['result']['events'][0].update(at_ms=-.5),
-    lambda r:r['result']['events'][-1].update(verdict='supported'),
-    lambda r:r['result'].update(cost_is_bound=True),
-    lambda r:r['result']['events'][-1].update(at_ms=999999),
-])
-def test_incomplete_or_mismatched_trace_is_refused(receipt,mutation):
-    mutation(receipt)
+@pytest.mark.parametrize('change', ['missing','hash','id','cost','verdict','reveal'])
+def test_missing_or_mismatched_real_logs_fail_closed(receipt,change):
+    if change=='missing':receipt.pop('server_log')
+    if change=='hash':receipt['server_log']['sha256']='f'*64
+    if change=='id':receipt['server_log']['request_id']='1'*32
+    if change=='cost':receipt['result']['cost_is_bound']=True
+    if change=='verdict':receipt['result']['verdict']='supported'
+    if change=='reveal':
+        next(t for t in receipt['timings'] if t['phase']=='verdict_reveal')['at_s']=0
     with pytest.raises(BuildError):compile_live_terminal(receipt)
+
+
+def test_local_cli_is_byte_identical_and_final_receipt_is_real():
+    from live_terminal_v5 import compile_local_terminal
+    from pipeline import file_hash
+    trace=compile_local_terminal(ROOT)
+    session=json.loads((ROOT/'demo/assets/cli-v5/local-cli.json').read_text())
+    assert trace['session_sha256']==file_hash(ROOT/'demo/assets/cli-v5/local-cli.json')
+    assert trace['source_duration_s']==38.571843 and not session['dry_run']
+    assert all(len(f['rows'])<=5 and all(len(r['text'])<=98 for r in f['rows']) for f in trace['frames'])
+    assert any('screen_reason' in r['text'] for f in trace['frames'] for r in f['rows'])
+    assert 'uv run python -m claimcheck post docs/examples/post.txt' in trace['command']
+    assert trace['frames'][-1]['rows'][-1]['text']=='verdict  2 supported · 1 contradicted  $0.0611'
+    assert [f['at_s'] for f in trace['frames']]==[c['t_rel_s'] for c in session['chunks']]
 
 
 def unit(event,start,duration=1,leading=.1):
@@ -97,10 +94,28 @@ def test_phase_offsets_cannot_be_invalid_or_cross_the_verdict(offset):
         dict(phase='check_against_sec',at_s=0),dict(phase='verdict_reveal',at_s=6)]})
 
 
-def test_compiled_voice_status_is_honest_and_other_scenes_keep_measurements():
-    data=compile_data()
+def test_compiled_voice_status_is_honest_and_other_scenes_keep_measurements(v5_story):
+    data=compile_data(story=v5_story,preview=True)
     if data['portable_inputs']['voices'][5] is None:
         assert data['cues']['_methods']['v505']=='target preview; unmeasured'
         assert not any(e['measured'] for e in data['cues']['v505'])
-    assert all(data['cues']['_methods'][f'v50{i}']=='measured PCM speech bounds per sentence/phrase' for i in range(10) if i!=5)
+    assert all(data['cues']['_methods'][f'v50{i}']=='measured PCM speech bounds per sentence/phrase' for i in range(10) if i not in (5,6))
     assert any(f['cue']=='terminal verdict and stopped clock' for f in data['keyframes'])
+
+
+def test_jsonl_absence_is_not_repaired_by_a_portable_response_trace(receipt):
+    receipt['server_log']['path']='demo/cache/live-takes/v5/nonexistent-r6-server-log.jsonl'
+    with pytest.raises(BuildError,match='JSONL missing'):compile_live_terminal(receipt)
+
+
+@pytest.mark.parametrize('change',['order','other_id','no_verdict','bounded'])
+def test_invalid_captured_log_is_rejected_even_with_a_matching_file_hash(receipt,tmp_path,change):
+    from pipeline import file_hash
+    rows=[json.loads(line) for line in (ROOT/receipt['server_log']['path']).read_text().splitlines()]
+    if change=='order':rows[2],rows[3]=rows[3],rows[2]
+    if change=='other_id':rows[3]['line']=rows[3]['line'].replace('0'*32,'1'*32)
+    if change=='no_verdict':rows.pop()
+    if change=='bounded':rows[-1]['line']=rows[-1]['line'].replace('cost_is_bound=false','cost_is_bound=true')
+    path=tmp_path/'captured.jsonl';path.write_text(''.join(json.dumps(r)+'\n' for r in rows))
+    receipt['server_log'].update(path=path.name,sha256=file_hash(path))
+    with pytest.raises(BuildError):compile_live_terminal(receipt,tmp_path)

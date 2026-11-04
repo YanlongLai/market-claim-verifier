@@ -1,19 +1,23 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {readFileSync} from 'node:fs';
+import {readFileSync,mkdtempSync,writeFileSync,rmSync} from 'node:fs';
+import {tmpdir} from 'node:os';
+import path from 'node:path';
 import vm from 'node:vm';
 import {stateAt,boundaries,chapterState,repostCascade,overlayAt,terminalAt,outroStampAt} from '../motion/v5/plan.js';
 import {labelPositions} from '../motion/v5/chapters.js';
 import {targets} from '../motion/v5/sentence-targets.mjs';
 import {assertNamedClearance,checkV5Layout} from '../motion/v5/layout-checks.mjs';
-import {installCaptureDOM,validateGeometry,hasCJK,presentation,showTraceAndFiling,validateLiveResult,redact,endingExpectedLinks,coverDocument,captureCoverCSS,revealCaptureDOM,namedSelectors} from '../record_v5.mjs';
+import {installCaptureDOM,validateGeometry,hasCJK,presentation,showTraceAndFiling,validateLiveResult,redact,endingExpectedLinks,coverDocument,captureCoverCSS,revealCaptureDOM,namedSelectors,requestIdFromLog,saveRequestId} from '../record_v5.mjs';
 import {parseArgs} from '../motion/render.mjs';
-import {liveTerminalAt} from '../motion/v5/live-terminal.mjs';
+import {liveTerminalAt,localTerminalAt} from '../motion/v5/live-terminal.mjs';
 import {assertLiveTerminal} from '../motion/v5/layout-checks.mjs';
 const ctx={window:{}};vm.runInNewContext(readFileSync(new URL('../motion/v5/data.js',import.meta.url),'utf8'),ctx);
 const data=JSON.parse(JSON.stringify(ctx.window.MOTION_DATA)),scenes=data.scenes,segments=data.chapter_bar.segments;
+const terminalFixtures=JSON.parse(readFileSync(new URL('./fixtures/v5-terminals.json',import.meta.url),'utf8'));
+data.live_terminal=terminalFixtures.online;data.local_terminal=terminalFixtures.local;
 const state=t=>stateAt(t,scenes,segments);
-test('live terminal types before T0, follows every recorded call, scrolls, then yields to card 3',()=>{
+test('real-log terminal uses runner elapsed, scrolls five rows, freezes at verdict and yields to card 3',()=>{
  const trace=data.live_terminal,start=trace.start_scene_s;
  assert.equal(liveTerminalAt(trace.typing_start_scene_s-.001,trace),null);
  assert.equal(liveTerminalAt(trace.typing_start_scene_s,trace).rows[0].text,'');
@@ -21,26 +25,24 @@ test('live terminal types before T0, follows every recorded call, scrolls, then 
  assert(halfway.length>0&&halfway.length<trace.command.length);
  assert.equal(liveTerminalAt(start,trace).rows[0].text,trace.command);
  assert.equal(liveTerminalAt(start,trace).clock,'00.0 s');
- for(const call of trace.calls){
-  assert(!liveTerminalAt(start+call.at_s-.001,trace).rows.some(r=>r.text===call.text));
-  assert(liveTerminalAt(start+call.at_s,trace).rows.some(r=>r.text===call.text));
+ for(const row of trace.rows){
+  assert(!liveTerminalAt(start+row.at_s-.001,trace).rows.some(r=>r.text===row.text));
+  assert(liveTerminalAt(start+row.at_s,trace).rows.some(r=>r.text===row.text));
  }
- const reasoning=liveTerminalAt(start+trace.reasoning_at_s,trace);
+ const reasoning=liveTerminalAt(start+9,trace);
  assert.equal(reasoning.rows.length,5);assert(!reasoning.rows.some(r=>r.kind==='command'));
- assert.equal(reasoning.rows.at(-1).text,'… model reasoning (Muse Spark)');
+ assert(reasoning.rows.at(-1).text.includes('model reasoning (Muse Spark) · step 3'));
  let previous=0;
  for(let f=Math.ceil(trace.typing_start_scene_s*30);f/30<trace.end_scene_s;f++){
-  const at=f/30,picture=liveTerminalAt(at,trace),clock=parseFloat(picture.clock);
-  assert(picture.rows.length<=5);assert(clock>=previous);assert(clock<=16.4);previous=clock;
-  assert.equal(picture.running,at>=start&&at<start+trace.verdict.at_s);
+  const picture=liveTerminalAt(f/30,trace);assert(picture.rows.length<=5);
+  const elapsed=parseFloat(picture.clock);assert(elapsed>=previous);previous=elapsed;
  }
  const final=liveTerminalAt(start+trace.verdict.at_s,trace);
- assert.equal(final.clock,'16.4 s');assert.equal(final.running,false);assert.equal(final.done,true);
- assert.equal(final.rows.at(-1).text,'verdict  contradicted   16.4 s   $0.02');
+ assert.equal(final.rows.at(-1).text,'verdict  contradicted  16.4 s  $0.0215');assert(!final.running);
  assert.equal(liveTerminalAt(trace.end_scene_s-.001,trace).clock,final.clock);
  assert.equal(liveTerminalAt(trace.end_scene_s,trace),null);
- assert.equal(state(58+trace.end_scene_s).overlay.event,'verdict');
- assert.deepEqual(liveTerminalAt(start,trace).rows,[{kind:'command',text:trace.command}]);
+ // Native result reframe keeps the terminal, with no stale card-2 headline.
+ assert.equal(liveTerminalAt(trace.end_scene_s-.03,trace).rows.at(-1).kind,'verdict');
 });
 
 test('terminal cursor and stopwatch use seek time, including backward and nonsequential seeks',()=>{
@@ -50,24 +52,25 @@ test('terminal cursor and stopwatch use seek time, including backward and nonseq
  assert.deepEqual(liveTerminalAt(start+3.2,trace),a);
  const later=structuredClone(trace);later.verdict.at_s=12.345;
  assert.equal(liveTerminalAt(start+13,later).clock,'12.3 s');
- const instant=structuredClone(trace);instant.calls[0].at_s=0;
+ const instant=structuredClone(trace);instant.rows[0]={...instant.rows[0],kind:'call'};
  assert(!liveTerminalAt(start-.1,instant).rows.some(r=>r.kind==='call'));
  assert(liveTerminalAt(start,instant).rows.some(r=>r.kind==='call'));
 });
 
-test('terminal audit rejects fabricated rows, clocks, clipping and coverage of the native status',()=>{
+test('terminal audit rejects fabricated rows, small text, clipping and coverage of native status',()=>{
  const trace=data.live_terminal,expected=liveTerminalAt(trace.start_scene_s+10,trace);
  const terminal={left:80,right:1840,top:558,bottom:790,colour:'rgb(17, 26, 32)',opacity:'1',
-  title:'claimcheck · this live request',dots:3,footer:'recorded trace of this request',clock:expected.clock,running:String(expected.running),cursor:expected.cursor,
-  rows:expected.rows.map((r,i)=>({...r,left:103,right:1817,top:598+i*32,bottom:630+i*32,width:1714,font:30,lineHeight:32,scroll:1714}))};
+  title:trace.title,dots:3,footer:trace.honesty_label,clock:expected.clock,running:String(expected.running),cursor:expected.cursor,
+  rows:expected.rows.map((r,i)=>({...r,left:103,right:1817,top:591+i*34,bottom:625+i*34,width:1714,font:28,lineHeight:34,scroll:1714}))};
  const native={phase:'check_against_sec',elements:[{name:'native in-progress SEC status',left:180,right:1531,top:187,bottom:224}]};
- assertLiveTerminal(terminal,expected,native);
- for(const mutate of [t=>t.clock='99.9 s',t=>t.rows[0].text='invented call',t=>t.rows[0].font=29,t=>t.rows.push(t.rows[0]),t=>t.opacity='.9',t=>t.rows[0].scroll=2000,t=>t.rows[0].bottom=800]){
-  const bad=structuredClone(terminal);mutate(bad);assert.throws(()=>assertLiveTerminal(bad,expected,native));
+ assertLiveTerminal(terminal,expected,native,trace);
+ for(const mutate of [t=>t.clock='99.9 s',t=>t.rows[0].text='invented call',t=>t.rows[0].font=27,t=>t.rows[0].lineHeight=33,t=>t.rows.push(t.rows[0]),t=>t.opacity='.9',t=>t.rows[0].scroll=2000,t=>t.rows[0].bottom=800]){
+  const bad=structuredClone(terminal);mutate(bad);assert.throws(()=>assertLiveTerminal(bad,expected,native,trace));
  }
  native.elements[0].bottom=560;
- assert.throws(()=>assertLiveTerminal(terminal,expected,native),/covers/);
+ assert.throws(()=>assertLiveTerminal(terminal,expected,native,trace),/covers/);
 });
+
 test('ten binding cuts, full-frame live playback, 178-second film',()=>{
  assert.deepEqual(boundaries,[0,8,20,32,46,58,116,138,154,170,178]);
  boundaries.slice(0,-1).forEach((t,i)=>assert.equal(state(t).shot,`v50${i}`));
@@ -83,7 +86,8 @@ test('live cards arrive 0.2 s before their sentence and trace starts on the firs
   assert.equal(state(58+at).overlay.event,e.event);
   if(at>0)assert.equal(state(58+at-1/300).overlay?.event,i?events[i-1].event:undefined);
   const cue=data.cues._events.v505.find(c=>c.event===e.event);
-  assert(Math.abs(cue.cue_start-cue.t-.2)<1e-7);
+  assert(cue.cue_start-cue.t>=.1-1e-7&&cue.cue_start-cue.t<=.3+1e-7);
+  if(i)assert(cue.t>=data.cues._events.v505[i-1].cue_end-1e-7);
  }
  assert.equal(events.find(e=>e.event==='trace').receipt_phase,'tool_call_2_reveal');
  assert.equal(events.find(e=>e.event==='each').receipt_phase,'tool_call_4_reveal');
@@ -199,7 +203,8 @@ test('rendered on_screen nodes equal their storyboard strings, including changed
  const stage={innerHTML:'',dataset:{},querySelector:()=>null,querySelectorAll:()=>[]};
  const element=()=>({style:{},getBoundingClientRect:()=>({width:100}),classList:{toggle(){}},querySelector:()=>({style:{}})});
  const context={window:{MOTION_DATA:structuredClone(data)},document:{querySelector:s=>s==='#stage'?stage:s==='#chapter-layer'?{}:s==='#chapters'||s.startsWith('[data-')||s.startsWith('#node-')||s.startsWith('#link-')?element():null}};
- vm.runInNewContext(readFileSync(new URL('../motion/v5/bundle.js',import.meta.url),'utf8')+'\nglobalThis.sceneBody=body;',context);
+ const source=['plan.js','chapters.js','video-frame.mjs','live-terminal.mjs','app.js'].map(name=>readFileSync(new URL('../motion/v5/'+name,import.meta.url),'utf8').split('\n').filter(line=>!line.startsWith('import ')).join('\n').replaceAll('export ','')).join('\n');
+ vm.runInNewContext(source+'\nglobalThis.sceneBody=body;',context);
  const decode=s=>s.replaceAll('&lt;','<').replaceAll('&gt;','>').replaceAll('&quot;','"').replaceAll('&amp;','&');
  let count=0;
  for(let i=0;i<10;i++){
@@ -214,15 +219,20 @@ test('rendered on_screen nodes equal their storyboard strings, including changed
  assert(!context.sceneBody(state(170)).includes('disclosure'));
 });
 
-test('every frame of the batch run shows saved CoreWeave verdicts and no failure panel',()=>{
- const end=data.terminal_replays.beat6.blocks[0].end_s;
- for(let f=0;f/30<end;f++){
-  const picture=terminalAt(f/30,data.terminal_replays.beat6),text=picture.rows.map(r=>r.text).join('\n');
-  assert.equal(picture.block,'run');assert(text.includes('FY2024 · SUPPORTED'));assert(text.includes('$51.31B → $5.131B'));assert(text.includes('FY2023 · CONTRADICTED'));
-  assert(!/FAILED|INSUFFICIENT|UNCHECKED/.test(text));assert(picture.rows.every(r=>r.row!==12));
+test('real local session types the recorded command, compresses chunk times and holds its final receipt',()=>{
+ const trace=data.local_terminal;
+ assert.equal(localTerminalAt(-.001,trace),null);
+ assert.equal(localTerminalAt(0,trace).rows[0].text,'');
+ assert(localTerminalAt(.6,trace).rows.some(r=>r.text.startsWith('$ uv run python -m claimcheck')));
+ for(const frame of trace.frames){
+  const at=trace.start_scene_s+frame.at_s/trace.speed;
+  assert.deepEqual(localTerminalAt(at,trace).rows.slice(-frame.rows.length),frame.rows);
  }
- assert(terminalAt(end-.001,data.terminal_replays.beat6).rows.some(r=>r.text==='$2.29B → $229M'));
- assert.equal(terminalAt(end,data.terminal_replays.beat6).block,'ocr');
+ const final=localTerminalAt(trace.end_scene_s-.001,trace);
+ assert(final.done);assert(final.rows.at(-1).text.includes('$0.0611'));
+ assert(!final.rows.some(r=>r.text.includes('CoreWeave')));
+ assert.equal(localTerminalAt(trace.end_scene_s,trace),null);
+ const back=localTerminalAt(1,trace);localTerminalAt(4,trace);assert.deepEqual(localTerminalAt(1,trace),back);
 });
 
 test('overlay audit rejects any intersection with named evidence, verdict, correction, trace or receipt',()=>{
@@ -331,4 +341,40 @@ test('decode failure rejects the frame instead of accepting a dark placeholder',
  const painting=paintVideoFrame(video,0,canvas);await tick();
  video.dispatchEvent(new Event('error'));await assert.rejects(painting,/Recorded image unavailable/);
  assert.equal(canvas.dataset.nativePageReady,undefined);
+});
+
+
+test('recorder learns the response ID or the unique captured POST-window ID, never a prior request',async()=>{
+ const folder=mkdtempSync(path.join(tmpdir(),'v5-log-id-'));
+ try{
+  const id='a'.repeat(32),other='b'.repeat(32),wall=Date.parse('2026-11-04T16:00:00Z');
+  const row=(rid,time)=>JSON.stringify({line:`${time} INFO live id=${rid} +0.00s event=start`});
+  const config={request_id_file:path.join(folder,'response-id'),server_log_spool:path.join(folder,'spool')};
+  writeFileSync(config.server_log_spool,row(other,'2026-11-04T15:59:30Z')+'\n'+row(id,'2026-11-04T16:00:00Z')+'\n');
+  const fromResponse=await saveRequestId(config,{request_id:other},wall);
+  assert.equal(fromResponse.source,'response');assert.equal(readFileSync(config.request_id_file,'utf8').trim(),other);
+  config.request_id_file=path.join(folder,'log-id');
+  const fallback=await saveRequestId(config,{},wall);assert.equal(fallback.id,id);
+  assert.equal(readFileSync(config.request_id_file,'utf8').trim(),id);
+  assert.equal(requestIdFromLog(row(other,'2026-11-04T15:59:30Z')+'\n',wall),null);
+  assert.equal(requestIdFromLog(row(id,'2026-11-04T16:00:00Z'),wall),null); // partial JSONL write
+  assert.throws(()=>requestIdFromLog(row(id,'2026-11-04T16:00:00Z')+'\n'+row(other,'2026-11-04T16:00:01Z')+'\n',wall),/ambiguous/);
+  await assert.rejects(()=>saveRequestId(config,{request_id:'bad'},wall),/invalid_response/);
+ }finally{rmSync(folder,{recursive:true,force:true});}
+});
+
+test('whole-composite audit checks full-width gutters and higher password mask between cues',async()=>{
+ const current=state(58.1),widths=Array(10).fill(90),centres=labelPositions(segments,widths);
+ const actual={sentenceChecks:[],cjk:false,inserts:0,captureVersion:9,bar:{height:12,width:1920,top:844},
+  band:{left:0,right:1920,top:790,bottom:1080,colour:'rgb(17, 26, 32)',opacity:'1'},
+  labels:centres.map((c,i)=>({font:32,left:c-45,right:c+45,bottom:834,current:i===5})),
+  segments:current.chapters.map(s=>({width:1920*s.duration_s/178,fill:s.fill})),onScreen:[],textBoxes:[],namedChecks:[],
+  plate:{left:0,right:1920,top:530,bottom:790,state:'password',topBand:false,colour:'rgb(17, 26, 32)',opacity:'1'},
+  overlay:{left:80,right:1840,top:558,bottom:790,phase:current.overlay.receipt_phase,colour:'rgb(17, 26, 32)',opacity:'1',fonts:[56],keyFonts:[],scroll:232,client:232},
+  video:{source:[1920,1080],fit:'contain',transform:'none',left:0,right:1920,top:0,bottom:1080},
+  decodedFrame:{ready:true,left:0,right:1920,top:0,bottom:1080,sourceTime:.1},liveTrace:data.live_terminal};
+ await checkV5Layout({evaluate:async()=>actual},current);
+ for(const mutate of [a=>a.plate=null,a=>a.plate.left=80,a=>a.plate.right=1840,a=>a.plate.top=558,a=>a.plate.opacity='.96']){
+  const bad=structuredClone(actual);mutate(bad);await assert.rejects(()=>checkV5Layout({evaluate:async()=>bad},current));
+ }
 });

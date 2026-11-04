@@ -13,3 +13,10 @@ The active [v010 storyboard](../../storyboard-v3.yaml), committed [preview](../.
 and compiler/trace/zone tests in [test_v010.py](../test_v010.py) and
 [motion-v3.test.mjs](../motion-v3.test.mjs) cover the revised thirteen-scene film without relying on local
 host timing outputs. Temporary News/Threads compiler fixtures are synthetic and are never film evidence.
+
+[v5-serverlog-synthetic.jsonl](v5-serverlog-synthetic.jsonl) uses an all-zero request ID and
+artificial host arrival times to test runner-clock placement without SSH or model calls.
+[v5-terminals.json](v5-terminals.json) pairs that synthetic online projection with the
+[real local CLI session](../../assets/cli-v5/local-cli.json) for deterministic JavaScript
+seek/scroll tests. Neither fixture is wired to the film or accepted by the host recorder.
+The production compiler still requires the new take's actual server JSONL and hash.
