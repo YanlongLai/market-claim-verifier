@@ -99,12 +99,32 @@ async function paintVideoFrame(video,time,canvas){
  ctx.drawImage(video,0,0,1920,1080);
  canvas.dataset.nativePageReady='true';canvas.dataset.sourceTime=String(target);
 }
+/** Stateless projection: seeking backwards and frame capture use only the film clock. */
+function liveTerminalAt(local,trace){
+ if(!trace||local+1e-9<trace.typing_start_scene_s||local+1e-9>=trace.end_scene_s)return null;
+ const elapsed=local-trace.start_scene_s,done=elapsed+1e-9>=trace.verdict.at_s;
+ const progress=Math.max(0,Math.min(1,(local-trace.typing_start_scene_s)/.6));
+ const command=trace.command.slice(0,Math.floor(progress*trace.command.length+1e-7));
+ const rows=[{kind:'command',text:command}];
+ for(const call of trace.calls)if(elapsed+1e-9>=call.at_s)rows.push({kind:'call',text:call.text});
+ const reasoning=elapsed+1e-9>=trace.reasoning_at_s&&!done;
+ if(reasoning)rows.push({kind:'reasoning',text:trace.reasoning_text});
+ if(done)rows.push({kind:'verdict',text:trace.verdict_text});
+ const tenths=Math.floor((Math.min(Math.max(0,elapsed),trace.verdict.at_s)+1e-9)*10);
+ return {rows:rows.slice(-5),clock:`${(tenths/10).toFixed(1).padStart(4,'0')} s`,
+  running:local+1e-9>=trace.start_scene_s&&!done,done,
+  cursor:reasoning&&Math.floor(elapsed/.65)%2===0};
+}
 const data=window.MOTION_DATA,stage=document.querySelector('#stage'),root='../../../';
 const esc=s=>String(s).replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;');
 let previous='',pending=[];
 const video=(path,classes='terminal')=>`<video muted preload="auto" class="${classes}" data-source="${esc(path)}" src="${root}${esc(path)}"></video><canvas class="native-video-frame" width="1920" height="1080" aria-label="Decoded native page"></canvas>`;
 const post=()=>`<article class="post-card"><p class="post-byline">Illustrative post</p>${data.post_text.split('\n\n').map((p,i)=>i===0?`<h2>${esc(p)}</h2>`:`<p class="post-paragraph${p.includes('Apple')?' apple-line':''}">${esc(p)}</p>`).join('')}<p class="post-focus"><strong>$416.2 billion</strong><br>… fiscal Q4 2025</p></article>`;
-function liveOverlay(event){
+function liveOverlay(event,local){
+ const terminal=liveTerminalAt(local,data.live_terminal);
+ if(terminal)return `<aside class="live-overlay live-terminal" data-phase="check_against_sec" data-cue="${event?.receipt_phase==='check_against_sec'?esc(event.event):''}" aria-label="Terminal window: recorded trace of this request">
+ <header><span class="terminal-dots" aria-hidden="true"><i></i><i></i><i></i></span><span class="live-terminal-title">claimcheck · this live request</span><time class="live-stopwatch" data-running="${terminal.running}">${terminal.clock}</time></header>
+ <div class="live-terminal-lines">${terminal.rows.map(row=>`<div class="live-terminal-line" data-kind="${row.kind}">${esc(row.text)}${row.kind==='reasoning'?`<span class="live-terminal-cursor" style="visibility:${terminal.cursor?'visible':'hidden'}">▎</span>`:''}</div>`).join('')}</div><footer>${esc(data.live_terminal.honesty_label)}</footer></aside>`;
  if(!event)return '';
  const titles={draft:'4 · Corrected draft',evidence:'5 · SEC evidence',trace:'6 · Agent trace',each:'6 · Each tool call',program:'6 · Program verdict',receipt:'7 · Live take'};
  if(event.event==='verdict')titles.verdict='3 · Contradicted · Apple SEC · E3';
@@ -141,7 +161,7 @@ function seekVideo(el,time){
 window.seek=t=>{
  pending=[];const state=stateAt(t,data.scenes,data.chapter_bar.segments);
  if(state.shot!==previous){stage.innerHTML=body(state);previous=state.shot;}
- const overlay=document.querySelector('#live-overlay');if(overlay)overlay.innerHTML=liveOverlay(state.overlay);
+ const overlay=document.querySelector('#live-overlay');if(overlay)overlay.innerHTML=liveOverlay(state.overlay,state.local);
  const rows=document.querySelector('#terminal-rows');if(rows){
   const terminal=terminalAt(state.local,data.terminal_replays[state.index===3?'beat3':'beat6']);
   rows.innerHTML=terminal.rows.map(row=>`<p data-row="${row.row}" class="terminal-row${row.principal?' principal':''}">${esc(row.text)}</p>`).join('');

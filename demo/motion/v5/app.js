@@ -1,12 +1,17 @@
 import {stateAt,terminalAt,outroStampAt} from './plan.js';
 import {chapterMarkup,updateChapters} from './chapters.js';
 import {paintVideoFrame} from './video-frame.mjs';
+import {liveTerminalAt} from './live-terminal.mjs';
 const data=window.MOTION_DATA,stage=document.querySelector('#stage'),root='../../../';
 const esc=s=>String(s).replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;');
 let previous='',pending=[];
 const video=(path,classes='terminal')=>`<video muted preload="auto" class="${classes}" data-source="${esc(path)}" src="${root}${esc(path)}"></video><canvas class="native-video-frame" width="1920" height="1080" aria-label="Decoded native page"></canvas>`;
 const post=()=>`<article class="post-card"><p class="post-byline">Illustrative post</p>${data.post_text.split('\n\n').map((p,i)=>i===0?`<h2>${esc(p)}</h2>`:`<p class="post-paragraph${p.includes('Apple')?' apple-line':''}">${esc(p)}</p>`).join('')}<p class="post-focus"><strong>$416.2 billion</strong><br>… fiscal Q4 2025</p></article>`;
-function liveOverlay(event){
+function liveOverlay(event,local){
+ const terminal=liveTerminalAt(local,data.live_terminal);
+ if(terminal)return `<aside class="live-overlay live-terminal" data-phase="check_against_sec" data-cue="${event?.receipt_phase==='check_against_sec'?esc(event.event):''}" aria-label="Terminal window: recorded trace of this request">
+ <header><span class="terminal-dots" aria-hidden="true"><i></i><i></i><i></i></span><span class="live-terminal-title">claimcheck · this live request</span><time class="live-stopwatch" data-running="${terminal.running}">${terminal.clock}</time></header>
+ <div class="live-terminal-lines">${terminal.rows.map(row=>`<div class="live-terminal-line" data-kind="${row.kind}">${esc(row.text)}${row.kind==='reasoning'?`<span class="live-terminal-cursor" style="visibility:${terminal.cursor?'visible':'hidden'}">▎</span>`:''}</div>`).join('')}</div><footer>${esc(data.live_terminal.honesty_label)}</footer></aside>`;
  if(!event)return '';
  const titles={draft:'4 · Corrected draft',evidence:'5 · SEC evidence',trace:'6 · Agent trace',each:'6 · Each tool call',program:'6 · Program verdict',receipt:'7 · Live take'};
  if(event.event==='verdict')titles.verdict='3 · Contradicted · Apple SEC · E3';
@@ -43,7 +48,7 @@ function seekVideo(el,time){
 window.seek=t=>{
  pending=[];const state=stateAt(t,data.scenes,data.chapter_bar.segments);
  if(state.shot!==previous){stage.innerHTML=body(state);previous=state.shot;}
- const overlay=document.querySelector('#live-overlay');if(overlay)overlay.innerHTML=liveOverlay(state.overlay);
+ const overlay=document.querySelector('#live-overlay');if(overlay)overlay.innerHTML=liveOverlay(state.overlay,state.local);
  const rows=document.querySelector('#terminal-rows');if(rows){
   const terminal=terminalAt(state.local,data.terminal_replays[state.index===3?'beat3':'beat6']);
   rows.innerHTML=terminal.rows.map(row=>`<p data-row="${row.row}" class="terminal-row${row.principal?' principal':''}">${esc(row.text)}</p>`).join('');

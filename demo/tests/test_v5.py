@@ -27,14 +27,15 @@ def test_chapter_durations_and_safe_lane(story):
 
 def test_phase_coverage_and_real_receipt_clock(story):
     scene=story['scenes'][5]
-    assert tuple(e['receipt_phase'] for e in scene['cue_events'])==LIVE_PHASES
-    times=[e['preview_at_scene_s'] for e in scene['cue_events']]
-    receipt={'timings':[dict(phase=p,at_s=t) for p,t in zip(LIVE_PHASES,times)]}
+    assert tuple(dict.fromkeys(e['receipt_phase'] for e in scene['cue_events']))==LIVE_PHASES
+    bases={e['receipt_phase']:e['preview_at_scene_s'] for e in scene['cue_events'] if not e.get('offset_s')}
+    receipt={'timings':[dict(phase=p,at_s=bases[p]) for p in LIVE_PHASES]}
     events=recorder.live_cue_events(scene,receipt)
-    assert [e['at_scene_s'] for e in events]==times
-    assert events[6]['receipt_phase']=='tool_call_2_reveal'
-    assert events[7]['receipt_phase']=='tool_call_4_reveal'
-    assert events[8]['receipt_phase']=='program_verdict_reveal'
+    assert [e['at_scene_s'] for e in events]==[bases[e['receipt_phase']]+e.get('offset_s',0) for e in events]
+    by_name={e['event']:e for e in events}
+    assert by_name['trace']['receipt_phase']=='tool_call_2_reveal'
+    assert by_name['each']['receipt_phase']=='tool_call_4_reveal'
+    assert by_name['program']['receipt_phase']=='program_verdict_reveal'
     receipt['timings'].pop()
     with pytest.raises(recorder.RecordingError):recorder.live_cue_events(scene,receipt)
 
@@ -59,7 +60,7 @@ def test_picture_leads_every_measured_unit_without_hiding_previous_speech(measur
             assert event['picture_start']>=previous_end-1e-7
             assert event['alignment']=='measured PCM speech bounds'
             previous_end=event['cue_end']
-    assert len(measured_data['cues']['_events']['v505'])==10
+    assert len(measured_data['cues']['_events']['v505'])==15
 
 def test_every_boundary_and_phase_has_keyframe(data):
     frames=data['keyframes']
@@ -76,11 +77,13 @@ def test_sentence_ledger_covers_every_phrase_with_start_and_end_evidence(measure
         frame['frame_audit']=[dict(scene=frame['shot'],event=e['event'],at_s=frame['t'],status='pass',measured=True,elements=[{'name':'synthetic native proof'}]) for e in events]
         for check in frame['frame_audit']:
             if check['scene']=='v505' and check['event']=='verdict':check.update(referents=['verdict','filing'],filings=[{'form':'10-K'},{'form':'10-Q'}])
+            if check['scene']=='v505' and check['event'] in ('tools','claims','lookups','evidence_ids','thinking','decide'):
+                check.update(referents=['terminal window','native in-progress SEC status'],elements=[{'name':'.live-terminal'}],native={'elements':[{'name':'native in-progress SEC status'}]})
     rows=ledger_rows(data['timing'],data['cues'],index)
     expected=sum(len(data['cues'][s['id']]) for s in data['scenes'])
     assert len(rows)==expected
     assert all(r['status']=='pending' and r['verified_frame'] is None for r in rows)
-    assert {r['cue_unit'] for r in rows if r['scene']=='v505'}=={'live','paste','tools','verdict','draft','evidence','trace','each','program','receipt'}
+    assert {r['cue_unit'] for r in rows if r['scene']=='v505'}=={'live','paste','tools','claims','lookups','evidence_ids','thinking','decide','verdict','draft','evidence','trace','each','program','receipt'}
     assert all(r['measured_onset'] and r['actual_sentence_start_s']==r['cue_start_s'] and r['cue_start_s']<r['cue_end_s'] and r['required_visual'] for r in rows)
     bad=copy.deepcopy(index);[f.pop('frame_audit') for f in bad]
     with pytest.raises(BuildError,match='actual-frame'):ledger_rows(data['timing'],data['cues'],bad)
@@ -90,7 +93,12 @@ def test_sentence_ledger_covers_every_phrase_with_start_and_end_evidence(measure
         for check in f['frame_audit']:
             if check['scene']=='v505' and check['event']=='verdict':check.pop('referents')
     with pytest.raises(BuildError,match='both verdict and filing'):ledger_rows(data['timing'],data['cues'],bad)
-    assert '10-K fiscal 2025 annual' in next(r for r in rows if r['id']=='v505-04')['required_visual']
+    assert '10-K fiscal 2025 annual' in next(r for r in rows if r['cue_unit']=='verdict' and r['scene']=='v505')['required_visual']
+    bad=copy.deepcopy(index)
+    for f in bad:
+        for check in f['frame_audit']:
+            if check['scene']=='v505' and check['event']=='thinking':check.pop('referents')
+    with pytest.raises(BuildError,match='terminal window'):ledger_rows(data['timing'],data['cues'],bad)
 
 def test_english_only_templates_data_and_captions(data):
     for p in (ROOT/'demo/motion/v5').iterdir():
@@ -127,7 +135,7 @@ def test_terminal_blocks_match_narrated_clauses(story,data):
 def test_legacy_take_preserved_but_cannot_enter_final_film(story,data):
     retained=read_json(ROOT/'demo/prep/v5/r3/inputs-before.json')
     assert retained['recordings']['v505']['receipt']['capture_version']==7
-    assert data['portable_inputs']['recordings']['v505']['receipt']['capture_version']==8
+    assert data['portable_inputs']['recordings']['v505']['receipt']['capture_version']==9
     assert recorder.CAPTURE_VERSION==9
     pending=copy.deepcopy(story)
     for scene in pending['scenes']:
@@ -270,7 +278,8 @@ def test_local_ocr_selection_covers_twenty_frames_and_all_states(data):
     from review_v5 import select
     index=[dict(f,captioned_file=f"captioned/{i}.png") for i,f in enumerate(data['keyframes'])]
     chosen=select(index)
-    assert len(chosen)==20 and {f['shot'] for f in chosen}=={f'v50{i}' for i in range(10)}
+    assert len(chosen)>=24 and {f['shot'] for f in chosen}=={f'v50{i}' for i in range(10)}
+    assert {f.get('event') or f.get('cue') for f in chosen if f['shot']=='v505'}>={'claims','lookups','evidence_ids','thinking','decide'}
     assert {e['event'] for e in data['scenes'][5]['cue_events']}<={f['cue'] for f in chosen if f['shot']=='v505'}
 
 def test_cue_audio_assembly_retains_every_sample_and_receipts(tmp_path):
@@ -296,7 +305,7 @@ def test_cue_audio_assembly_retains_every_sample_and_receipts(tmp_path):
 
 def test_every_sentence_has_a_private_unit_and_no_multi_sentence_alias(story):
     from voice_v5 import units
-    assert sum(len(s['cue_events']) for s in story['scenes'])==43
+    assert sum(len(s['cue_events']) for s in story['scenes'])==48
     for scene in story['scenes']:
         assert not scene.get('voice_cache_scene')
         assert [u['narration'] for u in units(scene)]==[e['narration'] for e in scene['cue_events']]
@@ -339,7 +348,7 @@ def test_compiler_does_not_abandon_native_evidence_mid_sentence(story):
     from unittest.mock import patch
     changed=copy.deepcopy(story)
     changed['scenes'][5].pop('placeholder',None);changed['scenes'][5]['recording']={'asset':'absent.mp4','receipt':'absent.json','receipt_sha256':'a'*64,'offset_s':0}
-    receipt={'timings':[dict(phase=e['receipt_phase'],at_s=e['at_scene_s']) for e in changed['scenes'][5]['cue_events']],
+    receipt={'timings':[dict(phase=e['receipt_phase'],at_s=e['at_scene_s']) for e in changed['scenes'][5]['cue_events'] if not e.get('offset_s')],
              'named_element_checks':[dict(phase=e['receipt_phase'],at_s=e['at_scene_s'],visible_until_s=e['at_scene_s']+.3,elements=[{}]) for e in changed['scenes'][5]['cue_events']]}
     # Inject a retained capture summary, never an accepted take. The compiler must
     # reject its inadequate hold even though the audio and reveal clocks are valid.

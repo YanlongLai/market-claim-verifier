@@ -2,6 +2,7 @@
 import assert from 'node:assert/strict';
 import {targets,requiredText} from './sentence-targets.mjs';
 import {assertCardFrame,cardBands} from './card-band.mjs';
+import {liveTerminalAt} from './live-terminal.mjs';
 
 export function intersects(a,b){
  return a.left<b.right&&a.right>b.left&&a.top<b.bottom&&a.bottom>b.top;
@@ -23,13 +24,31 @@ export function assertVerdictReferents(check,expected){
  }
 }
 
+export function assertLiveTerminal(terminal,expected,native){
+ assert(terminal,'Receipt-bound terminal window required');
+ assert.deepEqual([terminal.left,terminal.right,terminal.top,terminal.bottom],[80,1840,558,790]);
+ assert.equal(terminal.colour,'rgb(17, 26, 32)');assert.equal(terminal.opacity,'1');
+ assert.equal(terminal.title,'claimcheck · this live request');assert.equal(terminal.dots,3);
+ assert.equal(terminal.footer,'recorded trace of this request');
+ assert.equal(terminal.clock,expected.clock);assert.equal(terminal.running,String(expected.running));
+ assert.deepEqual(terminal.rows.map(r=>({kind:r.kind,text:r.text})),expected.rows);
+ assert(terminal.rows.length<=5,'Terminal scrolls at five lines');
+ for(const row of terminal.rows){
+  assert.equal(row.font,30);assert.equal(row.lineHeight,32);
+  assert(row.left>=terminal.left&&row.right<=terminal.right&&row.top>=terminal.top+36&&row.bottom<=terminal.bottom-26,'Terminal row is clipped');
+  assert(row.scroll<=row.width+1,'Terminal row overflows horizontally');
+ }
+ assert.equal(terminal.cursor,expected.cursor,'Cursor blink must follow the film clock');
+ assertNamedClearance([terminal],native?[native]:[]);
+}
+
 export async function checkV5Layout(page,state){
  const actual=await page.evaluate(({index,local,targets,requiredText})=>{
   const data=window.MOTION_DATA;
   const box=el=>{const r=el.getBoundingClientRect();return {left:r.left,right:r.right,top:r.top,bottom:r.bottom,width:r.width,height:r.height};};
   const visible=el=>{let opacity=1;for(let p=el;p;p=p.parentElement){const s=getComputedStyle(p);if(s.visibility==='hidden'||s.display==='none')return false;opacity*=Number(s.opacity);}return opacity>=.5;};
   const cjk=/[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/u;
-  const overlay=document.querySelector('.live-overlay'),v=document.querySelector('.live-take'),paint=document.querySelector('.native-video-frame');
+  const overlay=document.querySelector('.live-overlay'),v=document.querySelector('.live-take'),paint=document.querySelector('.native-video-frame'),terminal=document.querySelector('.live-terminal');
   const textBoxes=[],walker=document.createTreeWalker(document.querySelector('#stage'),NodeFilter.SHOW_TEXT);
   for(let node;node=walker.nextNode();){
    if(!node.textContent.trim()||!visible(node.parentElement)||node.parentElement.closest('.post-copy'))continue;
@@ -48,16 +67,25 @@ export async function checkV5Layout(page,state){
     return els.map(el=>({name:selector,...box(el),text:el.textContent}));
    });
    const expected=requiredText[`${sid}/${e.event}`];
+   if(selectors.includes('.live-terminal')&&terminal?.dataset.cue!==e.event)throw new Error(`Terminal focus must lead and hold through its measured sentence: ${e.event}`);
    if(sid==='v502'&&e.event==='formats'&&elements.length!==4)throw new Error('All four real previews must be present at sentence onset');
    if(expected&&!elements.some(el=>el.text.includes(expected)))throw new Error(`Incomplete named text at onset/end: ${sid}/${e.event}`);
    const native=index===5?e.native_check:index===8?{phase:'ending hold',at_s:0,visible_until_s:16,elements:data.ending_named_elements}:null;
    if([5,8].includes(index)&&(!native?.elements?.length||local<native.at_s-1e-6||local>native.visible_until_s+1e-6))throw new Error(`Native proof not held through sentence: ${sid}/${e.event}`);
    const filings=sid==='v505'&&e.event==='verdict'?[...document.querySelectorAll('.filing-citation')].filter(visible).map(el=>({form:el.dataset.form,evidence_id:el.dataset.evidenceId,href:el.href,text:el.textContent,font:parseFloat(getComputedStyle(el).fontSize)})):null;
-   return {scene:sid,event:e.event,at_s:at,measured:e.measured,status:'pass',elements,native,expected,filings};
+   return {scene:sid,event:e.event,at_s:at,measured:e.measured,status:'pass',elements,native,expected,filings,
+    ...(selectors.includes('.live-terminal')?{referents:['terminal window','native in-progress SEC status']}:{} )};
   });
   return {
    sentenceChecks,
    expectedFilings:data.live_filing_citations,
+   liveTrace:data.live_terminal,
+   terminalNative:data.live_named_elements.find(c=>c.phase==='check_against_sec'),
+   terminal:terminal?{...box(terminal),colour:getComputedStyle(terminal).backgroundColor,opacity:getComputedStyle(terminal).opacity,
+    title:terminal.querySelector('.live-terminal-title').textContent,dots:terminal.querySelectorAll('.terminal-dots i').length,
+    footer:terminal.querySelector('footer').textContent,clock:terminal.querySelector('time').textContent,running:terminal.querySelector('time').dataset.running,
+    cursor:!!terminal.querySelector('.live-terminal-cursor')&&getComputedStyle(terminal.querySelector('.live-terminal-cursor')).visibility==='visible',
+    rows:[...terminal.querySelectorAll('.live-terminal-line')].map(el=>({...box(el),kind:el.dataset.kind,text:el.firstChild?.nodeValue||'',font:parseFloat(getComputedStyle(el).fontSize),lineHeight:parseFloat(getComputedStyle(el).lineHeight),scroll:el.scrollWidth}))}:null,
    cjk:cjk.test(document.body.innerText),bar:box(document.querySelector('.chapter-rail')),
    band:{...box(document.querySelector('#chapters')),colour:getComputedStyle(document.querySelector('#chapters')).backgroundColor,opacity:getComputedStyle(document.querySelector('#chapters')).opacity},
    labels:[...document.querySelectorAll('[data-chapter]')].map(el=>({text:el.textContent,...box(el),font:parseFloat(getComputedStyle(el).fontSize),current:el.classList.contains('current')})),
@@ -103,9 +131,11 @@ export async function checkV5Layout(page,state){
   assert(Math.abs(actual.decodedFrame.sourceTime-state.local)<1/30+.0001,'Decoded native frame must follow the unchanged take clock');
  }
  if(state.index===5&&state.overlay){
-  assert.equal(actual.overlay?.phase,state.overlay.receipt_phase);assert.equal(actual.overlay.colour,'rgb(17, 26, 32)');assert.equal(actual.overlay.opacity,'1');assert(actual.overlay.bottom<=790);
+  const terminal=liveTerminalAt(state.local,actual.liveTrace);
+  assert.equal(actual.overlay?.phase,terminal?'check_against_sec':state.overlay.receipt_phase);assert.equal(actual.overlay.colour,'rgb(17, 26, 32)');assert.equal(actual.overlay.opacity,'1');assert(actual.overlay.bottom<=790);
   if(actual.overlay.top===558)assert.equal(actual.overlay.bottom,790,'Lower mask must meet the chapter band without a paragraph slit');
-  assert(actual.overlay.fonts.every(x=>x>=56));assert(actual.overlay.keyFonts.every(x=>x>=96),'Key numbers must be at least 96 px');
+  if(terminal)assertLiveTerminal(actual.terminal,terminal,actual.terminalNative);
+  else {assert(actual.overlay.fonts.every(x=>x>=56));assert(actual.overlay.keyFonts.every(x=>x>=96),'Key numbers must be at least 96 px');}
   assert(actual.overlay.scroll<=actual.overlay.client+2,'Live explanation overflows');
   if(Math.abs(state.local-state.overlay.at_scene_s)<1e-6)assert(actual.namedChecks.length,'Missing named element audit at cue onset');
  }

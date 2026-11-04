@@ -242,6 +242,7 @@ def render(builder, *, test: bool = False) -> dict:
         from motion_v5 import compile_data
         implementation['motion_v5.py']=file_hash(builder.demo/'motion_v5.py')
         implementation['voice_v5.py']=file_hash(builder.demo/'voice_v5.py')
+        implementation['live_terminal_v5.py']=file_hash(builder.demo/'live_terminal_v5.py')
         implementation['check_ending_v5.py']=file_hash(builder.demo/'check_ending_v5.py')
         evidence=compile_data(builder.repo,builder.story)['provenance']
     elif builder.story.get('motion_variant') == 'v4':

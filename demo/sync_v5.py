@@ -20,7 +20,12 @@ VISUALS={
          'program':'Python arithmetic and verdict nodes',
          'principle':'Model proposes; program decides.'},
  'v505':{'live':'Centred native Try workspace', 'paste':'The real English post in the centred live workspace',
-         'tools':'A real in-progress check against SEC; live status visible',
+         'tools':'Terminal window: receipt-bound command, trace and clock; native in-progress SEC status clear above it',
+         'claims':'Terminal window: recorded tool calls; native in-progress SEC status clear above it',
+         'lookups':'Terminal window: recorded SEC calls and their evidence IDs; native status clear above it',
+         'evidence_ids':'Terminal window: receipt-bound evidence IDs on filed-number rows; native status clear above it',
+         'thinking':'Terminal window: running stopwatch and Muse Spark reasoning line; native status clear above it',
+         'decide':'Terminal window: model clock and recorded trace held through the last word; native status clear above it',
          'verdict':'The native CONTRADICTED verdict + Apple SEC E3 component filings: 10-K fiscal 2025 annual; 10-Q nine months to 28 Jun 2025 (form and period, receipt-bound citations)',
          'draft':'The native corrected draft; $416.2B to $102.5B overlay',
          'evidence':'The native SEC filing evidence; annual minus nine-month equation',
@@ -50,6 +55,11 @@ def ledger_rows(timing,cues,index):
         if shot=='v505' and event=='verdict' and (checks[0].get('referents')!=['verdict','filing']
             or {c.get('form') for c in checks[0].get('filings',[])}!={'10-K','10-Q'}):
             raise BuildError('Verdict sentence frame audit must name both verdict and filing referents')
+        if shot=='v505' and event in ('tools','claims','lookups','evidence_ids','thinking','decide') and (
+            checks[0].get('referents')!=['terminal window','native in-progress SEC status']
+            or not checks[0].get('native',{}).get('elements')
+            or not any(e.get('name')=='.live-terminal' for e in checks[0]['elements'])):
+            raise BuildError('Live wait sentence frame audit must name the terminal window and clear native status')
         return f['captioned_file'],checks[0]
     for shot in timing['shots']:
         sid=shot['id'];events=cues['_events'][sid]

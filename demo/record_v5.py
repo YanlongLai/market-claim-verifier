@@ -79,16 +79,20 @@ def live_copy_supported(result):
 
 
 def live_cue_events(scene, receipt):
-    """Resolve exact onsets from this take's reveal phases, never model latency."""
+    """Resolve ordered phase-local offsets from this take's picture clock."""
     phases = {t["phase"]: t["at_s"] for t in receipt["timings"]}
     events = []
     for spec in scene["cue_events"]:
         phase = spec.get("receipt_phase")
-        if phase not in phases or spec.get('offset_s',0)!=0:
-            raise RecordingError('Every live cue must start exactly at its recorded picture phase')
-        at = phases[phase]
+        offset=spec.get('offset_s',0)
+        if phase not in LIVE_PHASES or phase not in phases or type(offset) not in (float,int) or not math.isfinite(offset) or offset<0:
+            raise RecordingError('Every live cue requires a recorded picture phase and a finite nonnegative offset')
+        at = phases[phase]+offset
         if type(at) not in (float, int) or not math.isfinite(at) or not 0 <= at < scene["target_s"]:
             raise RecordingError("Live narration cue falls outside the locked scene")
+        next_phase=next((p for p in LIVE_PHASES[LIVE_PHASES.index(phase)+1:] if p in phases),None)
+        if (events and at<=events[-1]['at_scene_s']) or (next_phase and at>=phases[next_phase]):
+            raise RecordingError('Live narration offsets must increase within their recorded phase')
         events.append({**spec, "at_scene_s": at})
     return events
 

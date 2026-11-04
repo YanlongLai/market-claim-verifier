@@ -29,7 +29,16 @@ def validate(story):
             raise BuildError('Every v5 sentence/phrase requires its own voice unit; multi-sentence cache aliases are forbidden')
         if i in (5,8) and bool(s.get('placeholder'))==bool(s.get('recording')):raise BuildError('Live scene must be pending or recorded')
         if i not in (5,8) and (s.get('placeholder') or s.get('recording')):raise BuildError('Only live scenes accept recordings')
-    if tuple(e.get('receipt_phase') for e in scenes[5]['cue_events'])!=LIVE_PHASES or any(e.get('offset_s',0)!=0 for e in scenes[5]['cue_events']):raise BuildError('Live sentence cues must cover the recorded picture phases, in order')
+    live_events=scenes[5]['cue_events']
+    if tuple(dict.fromkeys(e.get('receipt_phase') for e in live_events))!=LIVE_PHASES:
+        raise BuildError('Live sentence cues must cover the recorded picture phases, in order')
+    previous_phase=-1;previous_offset=-1
+    for event in live_events:
+        phase=LIVE_PHASES.index(event['receipt_phase']);offset=event.get('offset_s',0)
+        if (type(offset) not in (int,float) or not math.isfinite(offset) or offset<0 or phase<previous_phase
+            or phase==previous_phase and offset<=previous_offset):
+            raise BuildError('Live phase offsets must be finite, nonnegative and ordered')
+        previous_phase,previous_offset=phase,offset
     chapter=story['chapter_bar'];segments=chapter['segments']
     if len(segments)!=10 or sum(s['duration_s'] for s in segments)!=178:raise BuildError('Chapter segments must total 178 seconds')
     for i,s in enumerate(segments):
@@ -59,7 +68,11 @@ def cue_spans(scene,voice=None):
     previous_end=0.;previous_speech_end=-1.
     for i,event in enumerate(events):
         floor=event['at_scene_s'];live=bool(event.get('receipt_phase'))
-        limit=events[i+1]['at_scene_s'] if live and i+1<len(events) else scene['target_s']-.15
+        # Several independently measured sentences can share one stationary native
+        # phase. Their offsets are earliest starts; retain all PCM and queue safely.
+        next_phase=next((e for e in events[i+1:] if e.get('receipt_phase')!=event.get('receipt_phase')),None) if live else None
+        limit=next_phase['at_scene_s'] if next_phase else scene['target_s']-.15
+        if not live:limit=scene['target_s']-.15
         if not math.isfinite(floor) or floor<0 or limit<=floor:raise BuildError('Cue onsets must increase inside the scene')
         source=spans[i] if voice else None
         if source:
@@ -72,11 +85,16 @@ def cue_spans(scene,voice=None):
             leading=0.;duration=min(len(event['narration'])/16,max(.1,limit-floor-.35))
         # Web states follow the measured speech clock. Live phases are fixed by
         # the continuous take; other sentences may move later to retain every sample.
-        onset=max(.2,floor+(.2 if live else 0),leading)
+        # A phase's original zero-offset cue keeps its existing 0.2 s picture
+        # lead. Added offsets specify earliest speech onsets on that phase clock.
+        onset=max(.2,floor+(.2 if live and not event.get('offset_s') else 0),leading)
         if voice and not i and not live and onset>.3:
             raise BuildError(f"{scene['id']}: leading silence would expose the first picture more than 0.3 s before speech")
         a=onset-leading
-        if not live:a=max(a,previous_end+(.06 if i else 0),previous_speech_end+.2-leading)
+        same_phase=live and i>0 and events[i-1].get('receipt_phase')==event['receipt_phase']
+        if not live or same_phase:a=max(a,previous_end+(.06 if i else 0),previous_speech_end+.2-leading)
+        if live and event['receipt_phase']=='check_against_sec' and a+duration>limit-.4+1e-8:
+            raise BuildError(f"{scene['id']} / {event['event']}: measured voice needs 0.4 s margin before verdict_reveal; retain the take and repair narration")
         if duration<=0 or a+duration>limit+1e-8 or (live and a<previous_end-1e-8):
             raise BuildError(f"{scene['id']} / {event['event']}: measured voice {duration:.3f} s exceeds {limit-a:.3f} s visual budget. Retain the take; no speech is cut or accelerated.")
         previous_end=a+duration
@@ -90,7 +108,7 @@ def voice_input(story):
 def measured_metadata(voices):
     if not voices:return None
     return [dict(voice_s=v['voice_s'],key=v['key'],artifacts={'audio':{'sha256':v['artifacts']['audio']['sha256']}},
-        **({'cue_spans':copy.deepcopy(v['cue_spans'])} if v.get('cue_spans') else {})) for v in voices]
+        **({'cue_spans':copy.deepcopy(v['cue_spans'])} if v.get('cue_spans') else {})) if v else None for v in voices]
 
 def architecture(root,on_screen):
     """Reuse the diagram, with its rendered headline bound to the storyboard."""
@@ -107,6 +125,11 @@ def architecture(root,on_screen):
 def compile_data(root=ROOT,story=None,voices=None,*,preview=False):
     story=copy.deepcopy(story or yaml.safe_load((root/'demo/storyboard-v5.yaml').read_text()));validate(story)
     saved=read_json(root/OUT/'inputs.json') if (root/OUT/'inputs.json').is_file() else {}
+    if preview and voices is None and saved.get('voices') and saved.get('voice_input',{}).get('voice')==story['voice']:
+        # Keep unchanged scenes' measured clocks. A changed scene is explicitly
+        # unmeasured until host synthesis; never invent PCM bounds for new words.
+        old={s['id']:(s,v) for s,v in zip(saved['voice_input']['scenes'],saved['voices'])}
+        voices=[old[s['id']][1] if old.get(s['id'],(None,None))[0]==s else None for s in voice_input(story)['scenes']]
     if not preview and voices is None and saved.get('voices'):
         if saved.get('voice_input')!=voice_input(story):raise BuildError('Measured voice metadata is stale for the narration; host voice/measured step required')
         voices=saved['voices']
@@ -137,8 +160,9 @@ def compile_data(root=ROOT,story=None,voices=None,*,preview=False):
             receipt=read_json(path)
             fields=('capture_version','timings','geometry_checks','startup_cover','named_element_checks','ending_frame')
             summary={k:receipt[k] for k in fields if k in receipt}
-            summary['result']={k:receipt['result'][k] for k in ('cost_usd','latency_ms','model')}
-            summary['result']['events']=[{'kind':e['kind']} for e in receipt['result']['events']]
+            summary['result']={k:receipt['result'][k] for k in ('cost_usd','cost_is_bound','latency_ms','model','provider','verdict')}
+            from live_terminal_v5 import trace_events
+            summary['result']['events']=trace_events(receipt['result']['events'])
             # Retain the exact source objects for offline citation rebuilding.
             summary['result']['evidence']=[e for e in receipt['result']['evidence'] if e.get('evidence_id')=='E3']
             summary['result']['corrections']={'edits':[e for e in receipt['result']['corrections']['edits'] if 'E3' in e.get('evidence_ids',[])]}
@@ -173,7 +197,7 @@ def compile_data(root=ROOT,story=None,voices=None,*,preview=False):
         cues['_events'][scene['id']]=events;cues['_methods'][scene['id']]='measured PCM speech bounds per sentence/phrase' if voice else 'target preview; unmeasured'
         cues['_analysis'][scene['id']]={'voice_key':voice['key'],'audio_sha256':voice['artifacts']['audio']['sha256']} if voice else {'source':'target preview; not synthesized'}
         shots.append(shot)
-    timing=dict(version=2,source='measured cue sources / binding cuts' if voices else 'director targets; voice and new live capture pending',duration=178.,shots=shots,music_offset_s=story['music']['music_offset_s'],cut_rule='Fixed section 10 cuts; receipt-bound narration and overlays; no speech acceleration or truncation',placeholders=[s['id'] for s in story['scenes'] if s.get('placeholder')])
+    timing=dict(version=2,source=('measured cue sources / binding cuts' if all(voices) else 'mixed measured scenes / changed scene unmeasured / binding cuts') if voices else 'director targets; voice and new live capture pending',duration=178.,shots=shots,music_offset_s=story['music']['music_offset_s'],cut_rule='Fixed section 10 cuts; receipt-bound narration and overlays; no speech acceleration or truncation',placeholders=[s['id'] for s in story['scenes'] if s.get('placeholder')])
     captions=sentence_subtitles(story['scenes'],timing,cues)
     if any(len(c.text.splitlines())>2 or any(len(line)>42 for line in c.text.splitlines()) for c in captions):raise BuildError('Compiled captions exceed 2 x 42')
     values,metric_sources=metrics(root)
@@ -210,8 +234,20 @@ def compile_data(root=ROOT,story=None,voices=None,*,preview=False):
     keyframes.extend(dict(t=stamp_at+t,shot='v509',cue='sentence-bound completed stamp') for t in (0,.3,.6,1.1,1.6))
     keyframes.append(dict(t=178-1/30,shot='v509',cue='last encoded frame'))
     for index in (0,2,5,7,9):keyframes.append(dict(t=BOUNDARIES[index]+1,shot=f'v50{index}',cue='chapter sample'))
-    data=dict(timing=timing,cues=cues,beats={'beats_s':[t-story['music']['music_offset_s'] for t in read_json(root/story['music']['beats'])['beats_s'] if t>=story['music']['music_offset_s']]},scenes=story['scenes'],chapter_bar=story['chapter_bar'],brand=story['brand'],brand_motion=story['brand_motion'],keyframes=sorted(keyframes,key=lambda f:f['t']),subtitles=[dict(start=c.start,end=c.end,text=c.text) for c in captions],metrics=values,post_text=(root/'demo/assets/examples-v5/a.txt').read_text().strip(),inputs=inputs,waveform=waveform,architecture_svg=architecture(root,story['scenes'][4]['on_screen']),live_receipt=dict(cost_usd=live_receipt['result']['cost_usd'],latency_ms=live_receipt['result']['latency_ms'],model=live_receipt['result']['model'],tool_calls=len([e for e in live_receipt['result']['events'] if e['kind']=='tool_call'])) if live_receipt else None,terminal_replays=terminal,batch_labels=story['terminal_captions'],live_named_elements=live_receipt.get('named_element_checks',[]) if live_receipt else [],ending_named_elements=portable['recordings'].get('v508',{}).get('receipt',{}).get('ending_frame',{}).get('named_elements',[]),portable_inputs=portable,provenance=provenance,asset_status={'live':('new v7 capture wired' if live_receipt.get('capture_version')==7 else 'host re-record required: legacy take has no audited startup cover') if live_receipt else 'host capture pending','voice':'measured' if voices else 'unmeasured layout preview','terminal':'literal saved PTY ranges; no new OCR/ASR','broll':'none'})
+    data=dict(timing=timing,cues=cues,beats={'beats_s':[t-story['music']['music_offset_s'] for t in read_json(root/story['music']['beats'])['beats_s'] if t>=story['music']['music_offset_s']]},scenes=story['scenes'],chapter_bar=story['chapter_bar'],brand=story['brand'],brand_motion=story['brand_motion'],keyframes=sorted(keyframes,key=lambda f:f['t']),subtitles=[dict(start=c.start,end=c.end,text=c.text) for c in captions],metrics=values,post_text=(root/'demo/assets/examples-v5/a.txt').read_text().strip(),inputs=inputs,waveform=waveform,architecture_svg=architecture(root,story['scenes'][4]['on_screen']),live_receipt=dict(cost_usd=live_receipt['result']['cost_usd'],latency_ms=live_receipt['result']['latency_ms'],model=live_receipt['result']['model'],tool_calls=len([e for e in live_receipt['result']['events'] if e['kind']=='tool_call'])) if live_receipt else None,terminal_replays=terminal,batch_labels=story['terminal_captions'],live_named_elements=live_receipt.get('named_element_checks',[]) if live_receipt else [],ending_named_elements=portable['recordings'].get('v508',{}).get('receipt',{}).get('ending_frame',{}).get('named_elements',[]),portable_inputs=portable,provenance=provenance,asset_status={'live':('new v7 capture wired' if live_receipt.get('capture_version')==7 else 'host re-record required: legacy take has no audited startup cover') if live_receipt else 'host capture pending','voice':('measured' if all(voices) else 'partially measured; changed scene needs host synthesis') if voices else 'unmeasured layout preview','terminal':'literal saved PTY ranges; no new OCR/ASR','broll':'none'})
     data['live_filing_citations']=filing_citations
+    from live_terminal_v5 import compile_live_terminal
+    data['live_terminal']=compile_live_terminal(live_receipt) if live_receipt else None
+    if data['live_terminal']:
+        trace=data['live_terminal'];start=58+trace['start_scene_s']
+        keyframes.extend(dict(t=t,shot='v505',cue=cue) for t,cue in [
+            (58+trace['typing_start_scene_s'],'terminal command starts'),
+            (start,'terminal stopwatch starts'),
+            *[(start+c['at_s'],f"terminal {c['name']} {c['evidence_id']}") for c in trace['calls']],
+            (start+trace['reasoning_at_s'],'terminal model reasoning'),
+            (start+trace['verdict']['at_s'],'terminal verdict and stopped clock'),
+            (58+trace['end_scene_s']-1/30,'terminal final hold')])
+        data['keyframes']=sorted(keyframes,key=lambda f:f['t'])
     data['asset_status']['live']=('v9 capture with native text line audit wired' if (live_receipt or {}).get('capture_version')==9
         else 'host re-record required: retained take lacks the v9 card-edge audit')
     english_only(json.dumps(data,ensure_ascii=False),'compiled motion data')
@@ -224,7 +260,7 @@ def artifacts(data,root=ROOT):
     from pipeline import Subtitle
     outputs[f'{OUT}/subtitles.srt']=to_srt([Subtitle(**c) for c in data['subtitles']])
     scripts=[]
-    for name in ('plan.js','chapters.js','video-frame.mjs','app.js'):
+    for name in ('plan.js','chapters.js','video-frame.mjs','live-terminal.mjs','app.js'):
         text='\n'.join(line for line in (root/OUT/name).read_text().splitlines() if not line.startswith('import ')).replace('export ','')
         scripts.append(text)
     outputs[f'{OUT}/bundle.js']='// Generated by motion_v5.py for offline file rendering.\n'+'\n'.join(scripts)+'\n'
