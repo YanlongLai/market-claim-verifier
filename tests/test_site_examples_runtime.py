@@ -33,7 +33,7 @@ def test_browser_deadline_covers_text_examples_and_all_comparison_members(custom
 
 @pytest.mark.parametrize("language", ["en", "zh"])
 def test_public_history_opens_full_envelope_then_edits_text_and_provider(language):
-    run_check(SETUP + HISTORY, language=language)
+    run_check(SETUP + HISTORY, language=language, page="docs/zh/index.html" if language == "zh" else "docs/site/index.html")
 
 
 @pytest.mark.parametrize("language", ["en", "zh"])
@@ -44,6 +44,12 @@ def test_failed_history_keeps_cost_and_reads_error_from_saved_envelope(language)
 @pytest.mark.parametrize("language", ["en", "zh"])
 def test_budget_partial_comparison_and_unavailable_history_keep_public_reads(language):
     run_check(SETUP + PARTIAL, language=language)
+
+
+@pytest.mark.parametrize("language", ["en", "zh"])
+def test_history_modal_loading_errors_keyboard_focus_close_and_cancellation(language):
+    run_check(SETUP + MODAL, language=language,
+              page="docs/zh/index.html" if language == "zh" else "docs/site/index.html")
 
 
 def test_stale_history_and_text_responses_cannot_replace_a_new_selection():
@@ -82,6 +88,14 @@ def test_rate_limit_without_server_retry_time_reports_it_as_unavailable(language
 
 SETUP = r"""
 context.URL=URL;context.AbortController=AbortController;
+// Native dialog/focus semantics for the offline DOM adapter, not a browser layout claim.
+Element.prototype.showModal=function(){this.open=true;this.setAttribute('open','');};
+Element.prototype.close=function(){this.open=false;this.removeAttribute('open');this.events.close?.();};
+Element.prototype.focus=function(){this.focused=true;document.activeElement=this;};
+Element.prototype.getClientRects=function(){
+  for(let node=this;node;node=node.parent)if(node.hidden)return [];
+  return [{}];
+};
 context.setTimeout=()=>0;context.clearTimeout=()=>{};
 const saved=JSON.parse(readFileSync(root+'/docs/site/data/examples/text.json','utf8'));
 const raw=saved.input.text_read;
@@ -240,8 +254,17 @@ assert.ok(tree.querySelector('#history-rows').textContent.includes(config.langua
 assert.ok(tree.querySelector('#history-rows .history-verdict').className.includes('is-contradicted'));
 await tree.querySelector('#history-rows tr').events.click();
 assert.equal(paid.length,0);assert.ok(reads.includes('/api/history/run-0'));
-assert.equal(tree.querySelector('#live-result .trace-input').textContent,'An editable saved claim');
-await click('#result-edit');
+const dialog=tree.querySelector('#history-dialog');
+assert.equal(dialog.open,true);
+assert.equal(tree.querySelector('body').style.overflow,'hidden');
+assert.equal(tree.querySelector('#history-dialog-input').textContent,'An editable saved claim');
+const expected=document.createElement('div');context.liveTest.renderLiveTrace(historyDetails['run-0'].envelope,expected);
+assert.equal(tree.querySelector('#history-dialog-result').textContent,expected.textContent);
+const meta=tree.querySelector('#history-dialog-meta').textContent;
+assert.ok(meta.includes(modelIds.fireworks));assert.ok(meta.includes('Chrome'));assert.ok(meta.includes('$0.01'));
+assert.equal(context.liveTest.state().liveResult,null);
+await click('#history-dialog-edit');
+assert.equal(dialog.open,false);assert.equal(tree.querySelector('body').style.overflow,'');
 assert.equal(tree.querySelector('#live-input').value,'An editable saved claim');
 assert.equal(context.liveTest.state().selectedProvider,'fireworks');
 assert.equal(tree.querySelector('#input-tab-image').getAttribute('aria-selected'),'true');
@@ -272,7 +295,8 @@ context.fetch=async(url,opts)=>url==='/api/history/older'?new Promise(resolve=>f
 const old=click('[data-history-id="older"]'),fresh=click('[data-history-id="newer"]');
 finishNew({ok:true,json:async()=>({...envelope(),input:{kind:'text',text_read:'New result'}})});await fresh;
 finishOld({ok:true,json:async()=>({...envelope(),input:{kind:'text',text_read:'Stale result'}})});await old;
-assert.equal(tree.querySelector('#live-result .trace-input').textContent,'New result');
+assert.equal(tree.querySelector('#history-dialog-input').textContent,'New result');
+await click('#history-dialog-close');
 let finishText;
 context.fetch=async(url,opts)=>url==='/examples/b-text.txt'?new Promise(resolve=>finishText=resolve):baseFetch(url,opts);
 const loading=click('[data-story-slot="1"]');
@@ -355,6 +379,14 @@ assert.ok(cleared.includes(1));
 
 COMMITTED_CATALOGUE = r"""
 context.URL=URL;context.AbortController=AbortController;
+// Native dialog/focus semantics for the offline DOM adapter, not a browser layout claim.
+Element.prototype.showModal=function(){this.open=true;this.setAttribute('open','');};
+Element.prototype.close=function(){this.open=false;this.removeAttribute('open');this.events.close?.();};
+Element.prototype.focus=function(){this.focused=true;document.activeElement=this;};
+Element.prototype.getClientRects=function(){
+  for(let node=this;node;node=node.parent)if(node.hidden)return [];
+  return [{}];
+};
 context.setTimeout=()=>0;context.clearTimeout=()=>{};
 const catalogue=JSON.parse(readFileSync(root+'/docs/examples/manifest.json','utf8'));
 const gets=[];
@@ -428,4 +460,59 @@ password.value='password-marker';
 responseFactory=async()=>({ok:false,status:429,json:async()=>({error:'rate_limited'})});
 await submit();
 assert.ok(tree.querySelector('#live-status').textContent.includes(config.language==='zh'?'無法取得重設時間':'Reset time unavailable'));
+"""
+
+
+MODAL = r"""
+const record={id:'modal',at:'2026-11-03T17:05:00Z',device:'Desktop',browser:'Chrome',story:'a',kind:'text',
+ provider:'baseten',model:modelIds.baseten,verdict:'contradicted',input_text:'List preview',cost_usd:.01,latency_ms:1200};
+historyData=[record];await click('#history-refresh');
+const dialog=tree.querySelector('#history-dialog'),close=tree.querySelector('#history-dialog-close');
+const body=tree.querySelector('body'),main=tree.querySelector('#live-result');
+const baseFetch=context.fetch;let finish;
+context.fetch=async(url,opts)=>url==='/api/history/modal'?new Promise(resolve=>finish=resolve):baseFetch(url,opts);
+const row=tree.querySelector('[data-history-row="modal"]');
+assert.equal(row.getAttribute('tabindex'),'0');assert.equal(row.getAttribute('aria-haspopup'),'dialog');
+assert.ok(row.querySelector('.history-chevron'));assert.equal(dialog.getAttribute('aria-labelledby'),'history-dialog-title');
+body.style.overflow='scroll';row.focus();let prevented=0;
+const opening=row.events.keydown({key:' ',target:row,preventDefault(){prevented++;}});
+assert.equal(prevented,1);assert.equal(dialog.open,true);assert.equal(document.activeElement,close);
+assert.equal(body.style.overflow,'hidden');assert.equal(tree.querySelector('#history-dialog-edit').disabled,true);
+assert.ok(tree.querySelector('#history-dialog-status').textContent.includes(config.language==='zh'?'正在開啟':'Opening'));
+dialog.events.keydown({key:'Tab',shiftKey:true,preventDefault(){prevented++;}});
+assert.equal(document.activeElement,close);assert.equal(prevented,2);
+finish({ok:true,json:async()=>({...record,input_text:'Full record',envelope:{...envelope(),input:{kind:'text',text_read:'Full record'}}})});
+await opening;
+assert.equal(tree.querySelector('#history-dialog-input').textContent,'Full record');
+assert.equal(tree.querySelector('#history-dialog-title').textContent,config.language==='zh'?'已儲存查核':'Saved check');
+assert.equal(main.hidden,true);assert.equal(tree.querySelector('#history-dialog-edit').disabled,false);
+close.focus();dialog.events.keydown({key:'Tab',preventDefault(){prevented++;}});
+assert.equal(document.activeElement,tree.querySelector('#history-dialog-input'));
+tree.querySelector('#history-dialog-input').focus();
+dialog.events.keydown({key:'Tab',shiftKey:true,preventDefault(){prevented++;}});assert.equal(document.activeElement,close);
+dialog.events.keydown({key:'Escape',preventDefault(){prevented++;}});
+assert.equal(dialog.open,false);assert.equal(body.style.overflow,'scroll');assert.equal(document.activeElement,row);
+// Closing while loading cancels the request and ignores its late response.
+const late=click('[data-history-id="modal"]');
+dialog.events.click({target:dialog});assert.equal(dialog.open,false);
+finish({ok:true,json:async()=>envelope()});await late;
+assert.equal(dialog.open,false);assert.equal(body.style.overflow,'scroll');
+// A fetch failure stays inside the dialog with a working close button.
+context.fetch=async(url,opts)=>url==='/api/history/modal'?{ok:false,status:404}:baseFetch(url,opts);
+await row.events.keydown({key:'Enter',target:row,preventDefault(){}});
+assert.equal(dialog.open,true);assert.equal(tree.querySelector('#history-dialog-content').hidden,true);
+assert.ok(tree.querySelector('#history-dialog-status').textContent.includes(config.language==='zh'?'無法開啟':'could not be opened'));
+dialog.events.cancel({preventDefault(){}});assert.equal(dialog.open,false);assert.equal(document.activeElement,row);
+// Failed runs expose their localized status and raw error code, without fake result sections.
+context.fetch=async(url,opts)=>url==='/api/history/modal'?{ok:true,json:async()=>({envelope:{error:'timeout'}})}:baseFetch(url,opts);
+await click('[data-history-id="modal"]');
+assert.ok(tree.querySelector('#history-dialog-meta .history-verdict').textContent.includes(config.language==='zh'?'逾時':'Timeout'));
+assert.ok(tree.querySelector('#history-dialog-result').textContent.includes('timeout'));
+assert.ok(!tree.querySelector('#history-dialog-result .live-proof'));
+assert.ok(!tree.querySelector('#history-dialog-result .live-receipt'));
+await click('#history-dialog-edit');assert.equal(tree.querySelector('#live-input').value,'List preview');
+assert.equal(context.liveTest.state().selectedProvider,'baseten');assert.equal(paid.length,0);
+assert.equal(property('.history-dialog-input','white-space'),'pre-wrap');
+assert.equal(property('.history-dialog-input','overflow-y'),'auto');
+assert.equal(property('.history-dialog-footer button','min-height'),'44px');
 """

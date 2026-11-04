@@ -652,6 +652,7 @@
     privacy: "Authenticated runs and their input text are public in history for 14 days. OCR/ASR uses the Meta Model API; SEC checks use your chosen provider. 5 checks / 10 min per IP; a shared office IP shares this limit. A rate-limited request shows the reset time.",
     history: "Recent checks", historyNote: "Last 50 runs · public · retained for 14 days", refresh: "Refresh", historyLoading: "Loading history…",
     historyEmpty: "No checks yet.", historyUnavailable: "History is unavailable. Try Refresh.", historyOpening: "Opening the saved check…",
+    historyDialog: "Saved check", historyInput: "Input text", historyClose: "Close",
     historyFailed: "This check could not be opened. Try again.", whenDevice: "Time / device", storyKind: "Story / input",
     providerVerdict: "Provider / verdict", timeCost: "Duration / cost", custom: "Custom text", edit: "Edit & re-run",
     assetPending: "Example asset pending", assetsLoading: "Loading examples…", assetsFailed: "Examples could not be loaded. Reload to try again.", textLoading: "Loading example text…", textFailed: "Example text could not be loaded. Try Reset example.",
@@ -674,6 +675,7 @@
     privacy: "通過密碼驗證的查核與輸入文字會公開於歷史紀錄，保留 14 天。OCR／ASR 使用 Meta Model API；SEC 查核使用所選供應商。每個 IP 每 10 分鐘限 5 次；共用辦公室 IP 也共用此額度。達到限制時會顯示重設時間。",
     history: "最近查核", historyNote: "最近 50 次 · 公開 · 保留 14 天", refresh: "重新整理", historyLoading: "正在讀取歷史紀錄…",
     historyEmpty: "尚無查核紀錄。", historyUnavailable: "無法讀取歷史紀錄，請重新整理。", historyOpening: "正在開啟已儲存查核…",
+    historyDialog: "已儲存查核", historyInput: "輸入文字", historyClose: "關閉",
     historyFailed: "無法開啟此筆查核，請再試一次。", whenDevice: "時間／裝置", storyKind: "故事／輸入",
     providerVerdict: "供應商／判定", timeCost: "耗時／費用", custom: "自訂文字", edit: "編輯並重新查核",
     assetPending: "範例檔案待補", assetsLoading: "正在讀取範例…", assetsFailed: "無法讀取範例，請重新載入。", textLoading: "正在讀取範例文字…", textFailed: "無法讀取範例文字，請重設範例。",
@@ -917,6 +919,8 @@
   let customText = false, inputLoadState = "assetsLoading", compareRuns = [], resultContext = null;
   let rateLimitReset = null;
   let historyRows = [], historyState = "historyLoading", historyRequest = 0, resultRequest = 0, inputRequest = 0;
+  let historyDetailRequest = 0, historyDetailController = null, historyModalRecord = null, historyModalResult = null;
+  let historyModalState = "", historyReturnId = null, historyBodyOverflow = "";
   const exampleTexts = new Map();
 
   function matrixCopy(key) { return COPY[pageLanguage].matrix[key] || ""; }
@@ -1321,6 +1325,7 @@
     renderMatrix();
     renderComparison();
     renderHistory();
+    renderHistoryDialog();
     renderLiveBudget();
   }
 
@@ -1589,10 +1594,20 @@
     target.replaceChildren();
     historyRows.forEach(record => {
       const row = liveNode("tr"), time = liveNode("td");
+      row.setAttribute("tabindex", "0");
+      row.setAttribute("data-history-row", record.id);
+      row.setAttribute("aria-haspopup", "dialog");
+      row.addEventListener("keydown", event => {
+        if (event.target === row && ["Enter", " "].includes(event.key)) {
+          event.preventDefault();
+          return openHistoryRow(record);
+        }
+      });
       const label = historyTime(record.at);
       const open = liveNode("button", label, "history-open");
-      open.type = "button"; open.setAttribute("data-history-id", record.id); open.disabled = liveBusy;
+      open.type = "button"; open.setAttribute("tabindex", "-1"); open.setAttribute("aria-haspopup", "dialog"); open.setAttribute("data-history-id", record.id); open.disabled = liveBusy;
       open.setAttribute("aria-label", `${matrixCopy("openResult")}: ${label} · ${record.story || matrixCopy("custom")} · ${record.kind || "text"} · ${providerLabel(record.provider)}`);
+      row.setAttribute("aria-label", open.getAttribute("aria-label"));
       open.addEventListener("click", event => { event?.stopPropagation?.(); return openHistoryRow(record); });
       row.addEventListener("click", () => { if (!liveBusy) return openHistoryRow(record); });
       time.append(open, liveNode("small", [record.device, record.browser].filter(Boolean).join(" / ") || "—"));
@@ -1606,32 +1621,127 @@
       metrics.append(liveNode("span", duration(record.latency_ms)), liveNode("small", money(record.cost_usd, 2)));
       if (Number.isFinite(record.preprocessing_cost_usd) && record.preprocessing_cost_usd > 0)
         metrics.append(liveNode("small", `+ ${money(record.preprocessing_cost_usd, 2)} ${liveCopy("preprocessing")}`));
+      const chevron = liveNode("span", "›", "history-chevron");
+      chevron.setAttribute("aria-hidden", "true");
+      metrics.append(chevron);
       row.append(time, input, provider, metrics); target.append(row);
+    });
+  }
+
+  function renderHistoryDialog() {
+    if (!historyModalRecord) return;
+    const record = historyModalRecord, result = historyModalResult;
+    const receipt = result ? runReceipt(result) : record;
+    const header = $("#history-dialog-meta");
+    header.replaceChildren();
+    header.append(liveNode("span", [historyTime(record.at), record.device, record.browser,
+      providerLabel(receipt.provider || record.provider), receipt.model || record.model || liveCopy("notRecorded")].filter(Boolean).join(" · ")));
+    const error = result?.error || record.error;
+    const verdict = result?.verdict || record.verdict;
+    const chip = liveNode("span", error ? COPY[pageLanguage].matrix.historyErrors[error] || COPY[pageLanguage].matrix.historyErrors.unknown
+      : verdict ? liveVerdict(verdict) : "—", `history-verdict is-${error ? "unchecked" : verdict || "unchecked"}`);
+    header.append(document.createTextNode(" · "), chip,
+      liveNode("span", ` · ${duration(receipt.latency_ms)} · ${money(receipt.cost_usd, 2)}`));
+    $("#history-dialog-status").textContent = matrixCopy(historyModalState);
+    const input = typeof result?.input === "string" ? result.input : result?.input?.text_read;
+    $("#history-dialog-input").textContent = input ?? record.input_text ?? "—";
+    $("#history-dialog-content").hidden = !result;
+    $("#history-dialog-edit").disabled = !result;
+    const target = $("#history-dialog-result");
+    if (result?.error) {
+      target.replaceChildren(liveNode("p", `${liveErrorText(result.error)} · ${result.error}`, "live-error"));
+      target.hidden = false;
+    } else if (result) renderLiveTrace(result, target);
+    else target.replaceChildren();
+  }
+
+  function finishHistoryDialog() {
+    if (!historyModalRecord) return;
+    ++historyDetailRequest;
+    historyDetailController?.abort();
+    historyDetailController = null;
+    historyModalRecord = null;
+    historyModalResult = null;
+    document.querySelector("body").style.overflow = historyBodyOverflow;
+    const row = $(`[data-history-row="${historyReturnId}"]`);
+    (row || $("#history-refresh"))?.focus({ preventScroll: true });
+  }
+
+  function closeHistoryDialog() {
+    const dialog = $("#history-dialog");
+    if (dialog.open && typeof dialog.close === "function") dialog.close();
+    else dialog.removeAttribute("open");
+    finishHistoryDialog();
+  }
+
+  function setupHistoryDialog() {
+    const dialog = $("#history-dialog");
+    if (!dialog) return;
+    $("#history-dialog-close").addEventListener("click", closeHistoryDialog);
+    $("#history-dialog-edit").addEventListener("click", () => {
+      if (!historyModalResult) return;
+      const result = historyModalResult, record = historyModalRecord;
+      closeHistoryDialog();
+      showResult(result, record);
+      editResult();
+    });
+    dialog.addEventListener("close", () => { if (!dialog.open) finishHistoryDialog(); });
+    dialog.addEventListener("cancel", event => { event.preventDefault(); closeHistoryDialog(); });
+    dialog.addEventListener("click", event => { if (event.target === dialog) closeHistoryDialog(); });
+    dialog.addEventListener("keydown", event => {
+      if (event.key === "Escape") { event.preventDefault(); closeHistoryDialog(); }
+      if (event.key !== "Tab") return;
+      const candidates = new Set(["button", "a[href]", "summary", "[tabindex]"].flatMap(selector => Array.from(dialog.querySelectorAll(selector))));
+      const focusable = Array.from(dialog.querySelectorAll("*"))
+        .filter(node => candidates.has(node) && !node.disabled && !node.hidden && node.getClientRects?.().length !== 0 && node.getAttribute("tabindex") !== "-1");
+      const first = focusable[0], last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
+      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
     });
   }
 
   async function openHistoryRow(record) {
     if (liveBusy || !validId(String(record.id))) return;
-    const request = ++resultRequest;
-    historyState = "historyOpening";
-    renderHistory();
+    const dialog = $("#history-dialog");
+    if (!dialog) return;
+    const request = ++historyDetailRequest;
+    historyDetailController?.abort();
+    const controller = new AbortController();
+    historyDetailController = controller;
+    if (!historyModalRecord) {
+      historyBodyOverflow = document.querySelector("body").style.overflow || "";
+      document.querySelector("body").style.overflow = "hidden";
+    }
+    historyModalRecord = record;
+    historyReturnId = record.id;
+    historyModalResult = null;
+    historyModalState = "historyOpening";
+    renderHistoryDialog();
+    if (!dialog.open) {
+      if (typeof dialog.showModal === "function") dialog.showModal();
+      else dialog.setAttribute("open", "");
+    }
+    $("#history-dialog-close").focus();
+    const timer = setTimeout(() => controller.abort(), 8000);
     try {
-      const response = await fetch(`/api/history/${encodeURIComponent(record.id)}`, { cache: "no-store" });
+      const response = await fetch(`/api/history/${encodeURIComponent(record.id)}`, { cache: "no-store", signal: controller.signal });
       if (!response.ok) throw Error("missing history result");
       const data = await response.json(), result = data.envelope || data;
       if (!result || typeof result !== "object" || (!result.verdict && !result.error)) throw Error("invalid history envelope");
-      if (request !== resultRequest) return;
+      if (request !== historyDetailRequest) return;
       // Older rows can keep input/receipt fields alongside their envelope.
-      if (!result.input && typeof record.input_text === "string") result.input = { kind: record.kind, text_read: record.input_text, example_id: record.example_id, story: record.story };
-      if (!result.receipt) result.receipt = { provider: record.provider, model: record.model, latency_ms: record.latency_ms,
-        cost_usd: record.cost_usd, preprocessing: result.input?.preprocessing || (record.preprocessing_cost_usd ? { cost_usd: record.preprocessing_cost_usd } : null) };
-      compareRuns = []; exampleSavedStatus = ""; liveStatus = "";
-      historyState = "";
-      showResult(result, record);
-      localizeLive();
-      $("#live-result").focus?.({ preventScroll: true });
-      $("#live-result").scrollIntoView?.({ behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "nearest" });
-    } catch { if (request === resultRequest) { historyState = "historyFailed"; renderHistory(); } }
+      const source = { ...record, ...data };
+      if (!result.input && typeof source.input_text === "string") result.input = { kind: source.kind, text_read: source.input_text, example_id: source.example_id, story: source.story };
+      if (!result.receipt) result.receipt = { provider: result.provider || source.provider, model: result.model || source.model,
+        latency_ms: result.latency_ms ?? source.latency_ms, cost_usd: result.cost_usd ?? source.cost_usd,
+        preprocessing: result.input?.preprocessing || (source.preprocessing_cost_usd ? { cost_usd: source.preprocessing_cost_usd } : null) };
+      historyModalRecord = source;
+      historyModalResult = result;
+      historyModalState = "";
+      renderHistoryDialog();
+    } catch {
+      if (request === historyDetailRequest) { historyModalState = "historyFailed"; renderHistoryDialog(); }
+    } finally { clearTimeout(timer); }
   }
 
   function editResult() {
@@ -1714,6 +1824,7 @@
     $("#example-saved").addEventListener("click", () => selectExampleSaved());
     $("#result-edit").addEventListener("click", editResult);
     $("#history-refresh").addEventListener("click", refreshHistory);
+    setupHistoryDialog();
     $$('[data-saved-demo]').forEach(button => button.addEventListener("click", () => selectSavedDemo(button.dataset.savedDemo)));
 
     const runLive = async () => {
