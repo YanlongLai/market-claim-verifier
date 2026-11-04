@@ -178,7 +178,9 @@ export async function checkV5Layout(page,state){
   if(terminal)assertLiveTerminal(actual.terminal,terminal,actual.terminalNative,actual.liveTrace);
   else {assert(actual.overlay.fonts.every(x=>x>=56));assert(actual.overlay.keyFonts.every(x=>x>=96),'Key numbers must be at least 96 px');}
   assert(actual.overlay.scroll<=actual.overlay.client+2,'Live explanation overflows');
-  if(Math.abs(state.local-state.overlay.at_scene_s)<1e-6)assert(actual.namedChecks.length,'Missing named element audit at cue onset');
+  // Terminal cues are bound to the request's log clock, not to a recorder mark; their named
+  // element is the terminal window itself, audited by assertLiveTerminal above.
+  if(!terminal&&Math.abs(state.local-state.overlay.at_scene_s)<1e-6)assert(actual.namedChecks.length,'Missing named element audit at cue onset');
  }
  const local=state.index===6?localTerminalAt(state.local,actual.localTrace):null;
  if(local)assertLiveTerminal(actual.terminal,local,null,actual.localTrace,64);

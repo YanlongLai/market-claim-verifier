@@ -88,9 +88,9 @@ The following measurement describes the historical v022 export. It does not cert
 round 7. The normal render command updates this block only after a successful export.
 
 <!-- actual-encode:start -->
-Actual r6 encode: **demo-v022**, 178.000 s; **-14.18 LUFS integrated**, **-1.23 dBTP**.
-Measured from `demo-v022.mp4`; SHA-256 `1dc5a48a33704eeb48f339f3436b9e7a0676ca33bda5b5edfe3a86e6bcc1fba8`.
-[Export and measurement receipt](runs/20261104T174936925302Z-v022.json).
+Actual r6 encode: **demo-v023**, 178.000 s; **-14.18 LUFS integrated**, **-1.08 dBTP**.
+Measured from `demo-v023.mp4`; SHA-256 `4490351abb290f782a7ed5e5b997e49dff86efc27f068ba0724acd556c6ec902`.
+[Export and measurement receipt](runs/20261104T190515292215Z-v023.json).
 <!-- actual-encode:end -->
 
 ## Host completion

@@ -393,3 +393,13 @@ Headless Chromium could not launch in this workspace. The v022 MP4 and earlier
 review remain historical; no r7 encoded-picture or listening pass is claimed.
 The [host completion commands](REVIEW-v5.md#host-completion) render from the same
 take and sources without recording another request.
+
+## v023 — 2026-11-04T19:05:15.287301+00:00
+
+Length: 178.000 s. Scenes >25% over budget: none.
+
+Changed scene cache keys: v500: render; v501: render; v502: render; v503: render; v504: render; v505: render, voice; v506: render; v507: render; v508: render; v509: render.
+
+Changed global cache keys: assembly_cache_key, audio_master_cache_key.
+
+Output: `/Users/yan/git/market-claim-verifier-video/demo/out/demo-v023.mp4`; SHA-256 `4490351abb290f782a7ed5e5b997e49dff86efc27f068ba0724acd556c6ec902`.
