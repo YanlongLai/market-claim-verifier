@@ -1,0 +1,133 @@
+....F........F......                                                     [100%]
+=================================== FAILURES ===================================
+_ test_host_recorder_freezes_all_cases_retains_failure_and_does_not_store_password _
+
+tmp_path = PosixPath('/private/var/folders/r0/301bdklx6b7bb7jktlxtsyc80000gn/T/pytest-of-yan/pytest-109/test_host_recorder_freezes_all0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10bf30710>
+capsys = <_pytest.capture.CaptureFixture object at 0x10b9ce120>
+
+    def test_host_recorder_freezes_all_cases_retains_failure_and_does_not_store_password(tmp_path, monkeypatch, capsys):
+        isolated(tmp_path, monkeypatch)
+        output = tmp_path / "docs/evidence/example-records/offline-fixture"
+        monkeypatch.setattr(sys, "argv", ["run_example_records.py", "--origin", "https://example.test", "--ids", "a-text", "a-image",
+            "--max-spend-usd", "3", "--output", str(output), "--execute"])
+        password_file = tmp_path / "password"
+        password_file.write_text("recording-secret-marker\n")
+        monkeypatch.setenv("LIVE_CHECK_PASSWORD_FILE", str(password_file))
+        calls = []
+        text = json.loads((results.OUTPUT / "text.json").read_text())
+        text["mode"] = "live"
+        text["input"].update(example_id="a-text", story="a")
+        text["receipt"] = {"provider": "baseten", "model": recorder.MODEL}
+        def fetch(origin, path, body=None):
+            calls.append((path, body))
+            if path == "/examples/manifest.json":
+                return 200, (assets.EXAMPLES / "manifest.json").read_bytes()
+            if path == "/api/budget":
+                return 200, json.dumps({"day": "2026-11-03", "status": "ready", "daily_limit_usd": 3,
+                                        "daily_remaining_usd": 3, "resets_at": "2099-11-04T00:00:00Z"}).encode()
+            value = json.loads(body)
+            assert (output / "plan.json").exists()
+            assert value["password"] == "recording-secret-marker"
+            assert value["provider"] == "baseten"
+            return (200, json.dumps(text).encode()) if value["example_id"] == "a-text" else (504, b'{"error":"timeout","cost_is_bound":true,"echo":"recording-secret-marker"}')
+        monkeypatch.setattr(recorder, "fetch", fetch)
+        with pytest.raises(SystemExit, match="Recording incomplete"):
+            recorder.main()
+        assert len([call for call in calls if call[0] == "/api/check-example"]) == 2
+        assert json.loads((output / "plan.json").read_text())["attempts_per_id"] == 1
+        for example_id, status in (("a-text", 200), ("a-image", 504)):
+            receipt = json.loads((output / example_id / "receipt.json").read_text())
+            assert receipt["http_status"] == status
+            assert receipt["response_sha256"] == hashlib.sha256((output / example_id / "response.json").read_bytes()).hexdigest()
+        assert all("recording-secret-marker" not in path.read_text() for path in output.rglob("*") if path.is_file())
+        assert "recording-secret-marker" not in str(capsys.readouterr())
+        assert not (results.OUTPUT / "a-image.json").exists()
+>       saved = json.loads((results.OUTPUT / "a-text.json").read_text())
+                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_example_assets.py:136: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+../../.local/share/uv/python/cpython-3.14.6-macos-aarch64-none/lib/python3.14/pathlib/__init__.py:787: in read_text
+    with self.open(mode='r', encoding=encoding, errors=errors, newline=newline) as f:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = PosixPath('/private/var/folders/r0/301bdklx6b7bb7jktlxtsyc80000gn/T/pytest-of-yan/pytest-109/test_host_recorder_freezes_all0/docs/site/data/examples/a-text.json')
+mode = 'r', buffering = -1, encoding = 'locale', errors = None, newline = None
+
+    def open(self, mode='r', buffering=-1, encoding=None,
+             errors=None, newline=None):
+        """
+        Open the file pointed to by this path and return a file object, as
+        the built-in open() function does.
+        """
+        if "b" not in mode:
+            encoding = io.text_encoding(encoding)
+>       return io.open(self, mode, buffering, encoding, errors, newline)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       FileNotFoundError: [Errno 2] No such file or directory: '/private/var/folders/r0/301bdklx6b7bb7jktlxtsyc80000gn/T/pytest-of-yan/pytest-109/test_host_recorder_freezes_all0/docs/site/data/examples/a-text.json'
+
+../../.local/share/uv/python/cpython-3.14.6-macos-aarch64-none/lib/python3.14/pathlib/__init__.py:771: FileNotFoundError
+__ test_retained_synthetic_wav_encodes_under_limits_and_reencodes_identically __
+
+tmp_path = PosixPath('/private/var/folders/r0/301bdklx6b7bb7jktlxtsyc80000gn/T/pytest-of-yan/pytest-109/test_retained_synthetic_wav_en0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10b9574d0>
+
+    @pytest.mark.skipif(not shutil.which("ffmpeg") or not shutil.which("ffprobe"), reason="Optional host FFmpeg encoder")
+    def test_retained_synthetic_wav_encodes_under_limits_and_reencodes_identically(tmp_path, monkeypatch):
+        folder = isolate(tmp_path, monkeypatch)
+        story = assets.load_stories()[0]
+        source = folder / "narration/synthetic.wav"
+        source.parent.mkdir(exist_ok=True)
+        with wave.open(str(source), "wb") as stream:
+            stream.setnchannels(1)
+            stream.setsampwidth(2)
+            stream.setframerate(24000)
+            stream.writeframes(struct.pack("<h", 1000) * (24000 * 21))
+        info = {"text_sha256": assets.digest(story["text"].encode()), "source_wav": "narration/synthetic.wav",
+                "source_sha256": assets.digest(source.read_bytes()), "outputs": {}}
+        (folder / "narration/a.json").write_bytes(assets.encoded(info))
+>       assets.render_media([story])
+
+tests/test_w3_examples.py:128: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+stories = [{'id': 'a', 'title': {'en': 'Wrong period', 'zh': '期間錯置'}, 'text': 'Big Tech earnings recap\n\nAmazon Q3 2023 revenue...], 'boundary': 'Expected outcomes for synthetic demonstrations, not recorded model results or a new benchmark.'}, ...}]
+
+    def render_media(stories):
+        """Same inputs + pinned FFmpeg build/flags produce identical encoded bytes."""
+        for story in stories:
+            data = media_metadata(story)
+            if not data:
+                raise ValueError("Synthesize all narration first with --synthesize")
+            stem = story["id"]
+            source = EXAMPLES / data["source_wav"]
+            duration = float(probe(source)["format"]["duration"])
+            # Read every word. Speed up a full narration rather than truncating it.
+            tempo = max(1, duration / 19.7)
+            if tempo > 2:
+                raise ValueError("Narration needs >2x speed; retain this attempt and shorten/review the story")
+            audio, video = EXAMPLES / f"{stem}.mp3", EXAMPLES / f"{stem}.mp4"
+            common = ["ffmpeg", "-v", "error", "-nostdin", "-y", "-fflags", "+bitexact"]
+            audio_args = ["-i", str(source), "-map_metadata", "-1", "-af", f"atempo={tempo:.9f}", "-ac", "1", "-ar", "24000",
+                          "-c:a", "libmp3lame", "-b:a", "64k", "-flags:a", "+bitexact", "-id3v2_version", "0", str(audio)]
+            video_args = ["-loop", "1", "-framerate", "10", "-i", str(EXAMPLES / f"{stem}.png"), "-i", str(audio),
+                          "-map_metadata", "-1", "-c:v", "libx264", "-threads", "1", "-preset", "slow", "-crf", "32",
+                          "-tune", "stillimage", "-pix_fmt", "yuv420p", "-flags:v", "+bitexact", "-c:a", "aac", "-b:a", "64k",
+                          "-flags:a", "+bitexact", "-shortest", "-movflags", "+faststart", str(video)]
+            subprocess.run(common + audio_args, check=True)
+            subprocess.run(common + video_args, check=True)
+            outputs = {}
+            for kind, path in (("audio", audio), ("video", video)):
+                info = probe(path)
+                seconds = float(info["format"]["duration"])
+                if not 0 < seconds <= MAX_SECONDS or not 0 < path.stat().st_size <= MAX_BYTES:
+>                   raise ValueError("Retain the attempt; media exceeds 20 seconds or 2 MB")
+E                   ValueError: Retain the attempt; media exceeds 20 seconds or 2 MB
+
+scripts/build_examples.py:275: ValueError
+=========================== short test summary info ============================
+FAILED tests/test_example_assets.py::test_host_recorder_freezes_all_cases_retains_failure_and_does_not_store_password
+FAILED tests/test_w3_examples.py::test_retained_synthetic_wav_encodes_under_limits_and_reencodes_identically
+2 failed, 18 passed in 2.94s
