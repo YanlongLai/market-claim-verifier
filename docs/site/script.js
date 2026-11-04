@@ -589,7 +589,7 @@
     savedReady: "Saved result available · no password", pendingDetails: "Recording status", openMedia: "Play the file",
     openText: "Read the full post", openImage: "Open the image", openPdf: "Open the PDF", nativeText: "1 page · native text",
     imageAlt: "Screenshot of our example Big Tech post", videoAlt: "Preview of the example video still",
-    audioPending: "Breeze narration pending", videoPending: "Narrated video pending", loading: "Loading the saved example…",
+    loading: "Loading the saved example…",
     privacy: "Example images and audio go to the Meta Model API for reading; the extracted text goes to Baseten for SEC checks. 5 checks / 10 min; shared daily budget.",
   };
   COPY.zh.examples = {
@@ -602,7 +602,7 @@
     savedReady: "可查看已儲存結果 · 免密碼", pendingDetails: "製作狀態", openMedia: "播放檔案",
     openText: "閱讀完整貼文", openImage: "開啟圖片", openPdf: "開啟 PDF", nativeText: "1 頁 · 原生文字",
     imageAlt: "自製科技股範例貼文截圖", videoAlt: "範例影片的靜態預覽",
-    audioPending: "Breeze 旁白待製作", videoPending: "旁白影片待製作", loading: "正在讀取已儲存範例…",
+    loading: "正在讀取已儲存範例…",
     privacy: "範例圖片與音訊由 Meta Model API 讀取，再將擷取文字交給 Baseten 核對 SEC。每 10 分鐘限 5 次，共用每日預算。",
   };
   Object.assign(COPY.en.live, { read: "What the model read", preprocessing: "Input reading", local: "Local text extraction",

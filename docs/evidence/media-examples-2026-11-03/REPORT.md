@@ -3,15 +3,17 @@
 Scope: five self-made inputs of the saved Big Tech post, a packaged-file API,
 bilingual cards/read-text rendering, and host-only preparation/recording tools.
 Base: `adc9406d24a22f1f6f732ae2670202a4197adbb6`, branch `feat/media-examples`.
-No deployment, push, model invocation, SEC fetch or new accuracy measurement.
+The offline implementation and packaging made no deployment, push, verifier
+model invocation, SEC fetch or new accuracy measurement. Host Breeze synthesis
+is recorded below.
 
 ## Inputs and saved-result boundary
 
 [The manifest](../../examples/manifest.json) records every file's hash and
-size. Text, the exact supplied PNG and native-text PDF are ready. The MP3/MP4
-entries point to explicit `.pending.txt` placeholders until host preparation.
-The installed Breeze environment's capability-only probe returned
-`MPS available: False`; no voice synthesis or substitute voice was invoked.
+size. All five input files are ready, including the host-generated MP3 and MP4
+packaged in [round 3](#round-3--finished-media-package). During the initial offline
+implementation, the installed Breeze environment's capability-only probe returned
+`MPS available: False`; that pass invoked no synthesis or substitute voice.
 
 [The text envelope](../../site/data/examples/text.json) reuses the original
 recorded post run with unchanged claims, evidence, corrections, events, cost,
@@ -62,6 +64,53 @@ Browser screenshot review was unavailable: computer use returned
 forced. `DESIGN-final.md` was absent from this worktree and searches of the nearby
 Git worktrees/temp directories; the implementation retains the established
 paper/serif/green site style and the brief's five-card/result-order requirements.
+
+## Round 3 — finished media package
+
+Base: `c0e3c762`, branch `feat/media-examples`. All five manifest entries are
+ready. The real MP3 is 32.96 s / 264,428 bytes. The H.264 1920×1080 + AAC MP4 is
+33.46 s / 626,547 bytes, ending exactly 0.5 s after its unchanged 32.96 s audio
+track and below the 2,000,000-byte limit. The manifest and site example index
+record the measured durations, final sizes and SHA-256 hashes. Both cards now
+contain native controls and real file links, including before JavaScript loads.
+The two pending notices are removed; offline rebuilding no longer recreates them.
+Unrecorded saved verification results remain explicitly pending.
+
+Asset receipts live under `docs/evidence/example-assets/`:
+
+- [First host synthesis receipt](../example-assets/20261104T005047.671530Z/source.wav.json),
+  with jobs, input/reference hashes, source WAV and synthesis log retained in the
+  same directory.
+- [Second host synthesis receipt](../example-assets/20261104T010559.135205Z/source.wav.json),
+  with the same full records retained; the published media came from this host
+  preparation. Both receipts record Breeze-TTS-2, seed 2026 and the locked voice.
+- [Offline packaging receipt](../example-assets/20261104T011425.576957Z-packaging/receipt.json),
+  with the original 40.90 s MP4, exact FFmpeg command and encoding log retained.
+  This trim copied the AAC stream without re-encoding. No new synthesis, Meta
+  model, SEC request or OCR/ASR accuracy check was run during packaging.
+
+[Media validation](../example-assets/20261104T011425.576957Z-packaging/validation.log)
+decoded both complete files, confirmed the identical AAC bitstream before/after
+trim and checked all manifest hashes, sizes and measured durations. Offline
+encoding of the second retained source WAV reproduced the published MP3 byte for
+byte; this was an encoding recheck, not new voice synthesis.
+
+The two demo preview source-hash references were refreshed for removal of unused
+pending-media translations. Existing narration timing, cues and keyframes were
+preserved; historical run records were not rewritten.
+
+Round-3 verification records:
+
+- [First full verifier](verify-media-r3.log): 1,280 product tests passed;
+  2 demo tests failed and 204 passed because the adapted hover-source hash stamp
+  was stale in that snapshot. The stamp is now refreshed.
+- [Static route crawl](routes-media-r3.log): 45 local paths, zero missing;
+  external origins listed without requests.
+- [Final full verifier](verify-media-r3-final.log): PASS, 1,280 product tests,
+  206 demo tests and all standalone Node suites. Figure rebuild/check, Markdown
+  links, all three core data outputs and all example asset/envelope byte-identical
+  rebuilds passed. The same offline command documented above made no model or
+  SEC calls, used no credentials and left the source tree unchanged.
 
 ## Host handoff
 

@@ -97,10 +97,12 @@ def synthesize(video_repo, breeze):
     subprocess.run(["ffmpeg", "-v", "error", "-nostdin", "-y", "-i", str(record / "source.wav"),
                     "-map_metadata", "-1", "-ac", "1", "-ar", "24000", "-c:a", "libmp3lame", "-b:a", "64k",
                     str(EXAMPLES / "post.mp3")], check=True)
+    duration = float(subprocess.check_output(["ffprobe", "-v", "error", "-show_entries", "format=duration",
+                                             "-of", "default=nw=1:nk=1", str(EXAMPLES / "post.mp3")]))
     subprocess.run(["ffmpeg", "-v", "error", "-nostdin", "-y", "-loop", "1", "-i", str(EXAMPLES / "post.png"),
                     "-i", str(EXAMPLES / "post.mp3"), "-vf", "scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2:color=0xf7f6f0,setsar=1",
-                    "-c:v", "libx264", "-preset", "slow", "-crf", "32", "-tune", "stillimage", "-r", "10",
-                    "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "64k", "-shortest", "-movflags", "+faststart",
+                    "-c:v", "libx264", "-preset", "slow", "-crf", "32", "-tune", "stillimage", "-r", "50",
+                    "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "64k", "-t", str(duration + 0.5), "-movflags", "+faststart",
                     "-map_metadata", "-1", str(EXAMPLES / "post.mp4")], check=True)
     if (EXAMPLES / "post.mp4").stat().st_size > 2_000_000:
         raise SystemExit("Video exceeds 2 MB; retain the attempt and lower the encode bitrate before publishing")
@@ -111,6 +113,8 @@ def build(*, check=False, refresh_media=False):
     expected = {"post.txt": post.encode(), "post.pdf": post_pdf(post)}
     prior = json.loads((EXAMPLES / "manifest.json").read_text()) if (EXAMPLES / "manifest.json").exists() else []
     for kind in ("audio", "video"):
+        if (EXAMPLES / f"post.{KINDS[kind]}").is_file():
+            continue
         filename = f"post.{KINDS[kind]}.pending.txt"
         expected[filename] = (f"PENDING {kind.upper()}: locked Breeze narration has not been synthesized.\n"
             "Host: python3 scripts/build_examples.py --synthesize --video-repo /Users/yan/git/market-claim-verifier-video\n"
