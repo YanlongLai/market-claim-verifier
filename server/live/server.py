@@ -18,10 +18,12 @@ from aiohttp import web
 import httpx
 
 from workers.live.src.gate import prune, transition
-from workers.live.src.live import LiveError, LiveRun, SEC_AGENT, provider_credit_exhausted, validate_text
+from workers.live.src.live import ExampleRun, LiveError, LiveRun, SEC_AGENT, provider_credit_exhausted, validate_text
 
 GATE_LOCK = asyncio.Lock()  # One process, one critical section, including pruning.
 TTL = 6 * 60 * 60
+EXAMPLE_TIMEOUT = 60
+EXAMPLES = {"text": "post.txt", "image": "post.png", "pdf": "post.pdf", "audio": "post.mp3", "video": "post.mp4"}
 
 
 def secret(env, name):
@@ -39,13 +41,35 @@ class Settings:
     origin_token: str = ""
     daily_budget: str = "3"
     total_budget: str = "20"
+    meta_api_key: str = ""
+    examples_dir: Path = Path("/app/examples")
 
     @classmethod
     def from_env(cls):
         env = os.environ
         return cls(Path(env.get("LIVE_DATA_DIR", "/data")), secret(env, "BASETEN_API_KEY"),
                    secret(env, "LIVE_CHECK_PASSWORD"), secret(env, "LIVE_ORIGIN_TOKEN"),
-                   env.get("DAILY_BUDGET_USD", "3"), env.get("TOTAL_BUDGET_USD", "20"))
+                   env.get("DAILY_BUDGET_USD", "3"), env.get("TOTAL_BUDGET_USD", "20"),
+                   secret(env, "META_MODEL_API_KEY"), Path(env.get("LIVE_EXAMPLES_DIR", "/app/examples")))
+
+
+def load_example(folder, example_id):
+    """Only the five packaged, hash-checked inputs; never accept a visitor path."""
+    if not isinstance(example_id, str) or example_id not in EXAMPLES:
+        raise LiveError("unknown_example", 400)
+    try:
+        rows = json.loads((folder / "manifest.json").read_text())
+        row = next(row for row in rows if row["id"] == example_id)
+        if row["kind"] != example_id or row["status"] != "ready" or row["file"] != EXAMPLES[example_id]:
+            raise ValueError
+        path = folder / row["file"]
+        if path.is_symlink() or not 0 < path.stat().st_size <= 2_000_000 or row["size_bytes"] != path.stat().st_size:
+            raise ValueError
+        if hashlib.sha256(path.read_bytes()).hexdigest() != row["sha256"]:
+            raise ValueError
+        return path, row["kind"]
+    except (OSError, ValueError, TypeError, KeyError, StopIteration):
+        raise LiveError("example_unavailable") from None
 
 
 class SpendGate:
@@ -156,6 +180,27 @@ class Services:
         except (httpx.HTTPError, TimeoutError, ValueError):
             raise LiveError("provider_error") from None
 
+    async def media(self, operation, payload, audio=None):
+        """Meta Model API only for OCR/ASR, with no automatic retries."""
+        from claimcheck.providers import META_BASE_URL
+        options = ({"json": payload} if operation == "ocr" else {"files": {
+            "request": (None, json.dumps(payload), "application/json"), "audio": ("audio.wav", audio, "audio/wav")}})
+        try:
+            async with self.client.stream("POST", META_BASE_URL + ("/responses" if operation == "ocr" else "/asr/transcribe"),
+                    headers={"Authorization": "Bearer " + self.settings.meta_api_key, "Accept": "application/json"},
+                    **options, follow_redirects=False, timeout=50) as response:
+                if not response.is_success:
+                    body = "" if response.status_code == 402 else (await response.aread()).decode("utf-8", errors="replace")
+                    if provider_credit_exhausted(response.status_code, body):
+                        await self.gate("credit_exhausted", {})
+                        raise LiveError("credit_exhausted")
+                    raise LiveError("preprocessing_failed")
+                return json.loads(await response.aread())
+        except httpx.TimeoutException:
+            raise LiveError("timeout", 504) from None
+        except (httpx.HTTPError, ValueError):
+            raise LiveError("preprocessing_failed") from None
+
     async def prune(self):
         await self.ledger.update("prune")
         now = self.clock()
@@ -190,15 +235,17 @@ async def handle(request):
             return reply(budget, public=True) if request.path == "/api/budget" else reply({"ok": True})
         except Exception:
             return reply({"error": "unavailable"}, 503)
-    if request.method != "POST" or request.path != "/api/check":
+    if request.method != "POST" or request.path not in {"/api/check", "/api/check-example"}:
         return reply({"error": "not_found"}, 404)
+    is_example = request.path == "/api/check-example"
+    limit = 1024 if is_example else 4096
     run = None
     try:
-        async with asyncio.timeout(28):
+        async with asyncio.timeout(EXAMPLE_TIMEOUT if is_example else 28):
             raw = bytearray()
             async for chunk in request.content.iter_chunked(4096):
                 raw.extend(chunk)
-                if len(raw) > 4096:
+                if len(raw) > limit:
                     raise LiveError("invalid_input", 400)
             try:
                 data = json.loads(raw.decode("utf-8"))
@@ -208,13 +255,22 @@ async def handle(request):
                 raise LiveError("invalid_input", 400)
             await services.gate("authenticate", {"ip": request.headers.get("X-Live-Client-IP"),
                                                   "password": data.pop("password", None)})
+            if is_example:
+                if set(data) != {"example_id"}:
+                    raise LiveError("invalid_input", 400)
+                path, kind = load_example(services.settings.examples_dir, data["example_id"])
+                if kind in {"image", "audio", "video"} and not services.settings.meta_api_key:
+                    raise LiveError("unavailable")
             if not services.settings.api_key:
                 raise LiveError("unavailable")
-            claim = validate_text(data.get("text"))
+            claim = None if is_example else validate_text(data.get("text"))
             budget = await services.gate("budget", {})
             if budget["status"] != "ready":
                 raise LiveError(budget["status"], 429 if budget["status"] == "budget_exhausted" else 503, budget)
             await services.gate("rate", {"ip": request.headers.get("X-Live-Client-IP")})
+            if is_example:
+                run = ExampleRun(services.model, services.sec, services.gate, services.media, data["example_id"], kind)
+                return reply(await run.check_example(path))
             run = LiveRun(services.model, services.sec, services.gate)
             return reply(await run.bounded(claim))
     except (LiveError, TimeoutError) as error:

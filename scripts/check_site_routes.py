@@ -11,7 +11,7 @@ from urllib.parse import urljoin, urlsplit
 from serve_site import ROOT, output_path
 
 ORIGIN = "https://hackathon.dappgo.com"
-RUNTIME_ROUTES = {"/api/budget", "/api/check"}
+RUNTIME_ROUTES = {"/api/budget", "/api/check", "/api/check-example"}
 
 
 class Links(HTMLParser):

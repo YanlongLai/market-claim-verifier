@@ -578,6 +578,44 @@
   Object.assign(COPY.zh.live, {"title": "試用", "cta": "試試即時查核"});
   Object.assign(COPY.zh.footer, {"explorer": "結果瀏覽器", "disclosure": "DappGo 在黑客松前已存在；此查核器、網站與證據從 2026 年 10 月 27 日起於黑客松期間建立。", "legal": "專案出處", "build": "建置揭露", "license": "MIT 授權", "credits": "出處與致謝"});
 
+  COPY.en.examples = {
+    title: "One post, five ways in", note: "Our own example post. Run a fresh check with the password, or read a saved result without one.",
+    textTitle: "Text", imageTitle: "Image", pdfTitle: "PDF", audioTitle: "Audio", videoTitle: "Video",
+    text: "The saved Big Tech post, including the wrong Apple quarter.",
+    image: "The same post as a screenshot. Muse reads the visible text.", pdf: "A one-page post with native text, read without OCR.",
+    audio: "The post read by the locked Breeze narrator. Muse transcribes it.",
+    video: "The screenshot with narration. Muse reads three frames and the audio.",
+    run: "Run live", saved: "See saved result", savedPending: "Saved result pending", reused: "Saved text run · 28 Oct 2026",
+    savedReady: "Saved result available · no password", pendingDetails: "Recording status", openMedia: "Play the file",
+    openText: "Read the full post", openImage: "Open the image", openPdf: "Open the PDF", nativeText: "1 page · native text",
+    imageAlt: "Screenshot of our example Big Tech post", videoAlt: "Preview of the example video still",
+    audioPending: "Breeze narration pending", videoPending: "Narrated video pending", loading: "Loading the saved example…",
+    privacy: "Example images and audio go to the Meta Model API for reading; the extracted text goes to Baseten for SEC checks. 5 checks / 10 min; shared daily budget.",
+  };
+  COPY.zh.examples = {
+    title: "同一篇貼文，五種輸入", note: "使用我們自製的範例貼文。輸入密碼即可即時查核；查看已儲存結果不需密碼。",
+    textTitle: "文字", imageTitle: "圖片", pdfTitle: "PDF", audioTitle: "音訊", videoTitle: "影片",
+    text: "已保存的科技股貼文，含 Apple 季度數字錯誤。", image: "同一篇貼文的截圖，由 Muse 讀取畫面文字。",
+    pdf: "單頁原生文字 PDF，直接讀取文字，不經 OCR。", audio: "由鎖定的 Breeze 旁白朗讀貼文，再由 Muse 轉錄。",
+    video: "截圖搭配旁白；Muse 讀取三個影格並轉錄音軌。",
+    run: "即時查核", saved: "查看已儲存結果", savedPending: "已儲存結果待補", reused: "文字查核紀錄 · 2026 年 10 月 28 日",
+    savedReady: "可查看已儲存結果 · 免密碼", pendingDetails: "製作狀態", openMedia: "播放檔案",
+    openText: "閱讀完整貼文", openImage: "開啟圖片", openPdf: "開啟 PDF", nativeText: "1 頁 · 原生文字",
+    imageAlt: "自製科技股範例貼文截圖", videoAlt: "範例影片的靜態預覽",
+    audioPending: "Breeze 旁白待製作", videoPending: "旁白影片待製作", loading: "正在讀取已儲存範例…",
+    privacy: "範例圖片與音訊由 Meta Model API 讀取，再將擷取文字交給 Baseten 核對 SEC。每 10 分鐘限 5 次，共用每日預算。",
+  };
+  Object.assign(COPY.en.live, { read: "What the model read", preprocessing: "Input reading", local: "Local text extraction",
+    preprocessingEvent: "Read input", mock: "Offline replay · saved example", inputTiming: "Input reading time not recorded",
+    mediaPending: "Muse is reading the example, then checking SEC facts…", recordedTiming: "Timing details belong to this recorded request; see its source record." });
+  Object.assign(COPY.zh.live, { read: "模型讀到了什麼", preprocessing: "輸入讀取", local: "本機文字擷取",
+    preprocessingEvent: "讀取輸入", mock: "離線重播 · 已儲存範例", inputTiming: "未記錄輸入讀取耗時",
+    mediaPending: "Muse 正在讀取範例，接著核對 SEC 財務事實…", recordedTiming: "耗時資訊屬於此筆執行紀錄，詳見原始紀錄。" });
+  Object.assign(COPY.en.live.errors, { unknown_example: "This example is not available.", example_unavailable: "This example file is still being prepared. See its saved-result status.",
+    preprocessing_failed: "Reading the input did not finish. No complete check was issued.", saved_result_pending: "Saved result pending" });
+  Object.assign(COPY.zh.live.errors, { unknown_example: "無此範例。", example_unavailable: "此範例檔案仍在製作中，請查看已儲存結果狀態。",
+    preprocessing_failed: "輸入讀取未完成，未產出完整查核。", saved_result_pending: "已儲存結果待補" });
+
   // The static page builder imports this same dictionary through Node.
   // No DOM, provider calls or page initialization run during generation.
   if (typeof document === "undefined") {
@@ -603,6 +641,11 @@
   let budgetRequest = 0;
   let budgetTimer = null;
   let budgetDay = "";
+  const exampleIds = ["text", "image", "pdf", "audio", "video"];
+  let examplesIndex = [];
+  let selectedExample = null;
+  let exampleResult = null;
+  let exampleSavedStatus = "";
 
   function liveCopy(key) { return COPY[pageLanguage].live[key]; }
 
@@ -690,6 +733,17 @@
     if (!target) return;
     target.replaceChildren();
     target.hidden = false;
+    const input = typeof result.input === "string" ? { text_read: result.input } : result.input;
+    if (input && typeof input.text_read === "string") {
+      const read = liveNode("section", null, "live-input-read");
+      read.append(liveNode("h5", liveCopy("read")), liveNode("blockquote", input.text_read, "trace-input"));
+      const prep = input.preprocessing;
+      if (prep && typeof prep === "object") {
+        read.append(liveNode("p", [input.kind, prep.provider, prep.model].filter(value => typeof value === "string").join(" · "), "live-small"));
+        read.append(liveNode("p", `${liveCopy("preprocessing")}: ${Number.isFinite(prep.cost_usd) ? "$" + prep.cost_usd.toFixed(5) : "—"} · ${Number.isFinite(prep.latency_ms) ? liveNumber(prep.latency_ms / 1000) + " " + liveCopy("seconds") : liveCopy("inputTiming")}`, "live-small"));
+      }
+      target.append(read);
+    }
     const head = liveNode("div", null, "trace-head");
     head.append(liveNode("p", liveCopy(result.mode === "recorded" ? "recorded" : result.mode === "mock" ? "mock" : "live"), "trace-mode"));
     if (result.verdict) head.append(liveNode("h4", liveVerdict(result.verdict), `trace-verdict is-${result.verdict}`));
@@ -697,7 +751,6 @@
     head.append(liveNode("p", `${liveCopy(result.cost_is_bound ? "bound" : "cost")}: ${money} · ${liveNumber(result.latency_ms / 1000)} ${liveCopy("seconds")}`, "trace-metrics"));
     head.append(liveNode("p", result.model || "", "live-small"));
     if (result.started_at) head.append(liveNode("p", `${result.started_at} → ${result.finished_at}`, "live-small"));
-    if (result.input) head.append(liveNode("blockquote", result.input, "trace-input"));
     target.append(head);
     renderLiveCorrections(result.corrections, target);
     const evidence = (result.evidence || []).filter((fact) => !fact.error);
@@ -740,14 +793,14 @@
       proof.append(claims);
     }
     target.append(proof);
-    const trace = liveNode("section", null, "live-trace");
-    trace.append(liveNode("h5", liveCopy("trace")));
+    const trace = liveNode("details", null, "live-trace");
+    trace.append(liveNode("summary", liveCopy("trace")));
     const steps = liveNode("ol", null, "agent-trace");
     (result.events || []).forEach((event, i) => {
       const step = liveNode("li", null, `trace-step trace-${event.kind}`);
       const label = liveNode("div", null, "trace-step-label");
       label.append(liveNode("span", String(i + 1).padStart(2, "0"), "trace-step-number"),
-        liveNode("strong", `${liveCopy(event.kind) || event.kind}${event.step ? ` ${event.step}` : ""}`));
+        liveNode("strong", `${liveCopy(event.kind === "preprocessing" ? "preprocessingEvent" : event.kind) || event.kind}${event.step ? ` ${event.step}` : ""}`));
       step.append(label);
       step.append(liveNode("small", typeof event.at_ms === "number" ? `+${(event.at_ms / 1000).toFixed(3)} ${liveCopy("seconds")} · ${event.timestamp || ""}` : liveCopy("notRecorded"), "trace-time"));
       if (event.kind === "model") {
@@ -769,7 +822,7 @@
     });
     trace.append(steps, liveNode("p", liveCopy("honesty"), "live-small"));
     if (result.mode === "recorded" || result.mode === "mock") {
-      trace.append(liveNode("p", liveCopy("timing"), "live-small"));
+      trace.append(liveNode("p", liveCopy(result.recording?.receipt ? "recordedTiming" : "timing"), "live-small"));
       if (typeof result.source === "string" && /^docs\/evidence\/[\w/.-]+\.json$/.test(result.source)) {
         const link = liveNode("a", liveCopy("source"));
         link.href = `https://github.com/YanlongLai/market-claim-verifier/blob/main/${result.source}`;
@@ -807,6 +860,10 @@
     $("#live-submit").disabled = disabled;
     $("#live-example").disabled = disabled;
     $("#live-password").disabled = liveBusy;
+    $$('[data-example-run]').forEach(button => {
+      const card = $(`[data-example-card="${button.dataset.exampleRun}"]`);
+      button.disabled = disabled || card?.dataset.exampleReady !== "true";
+    });
   }
 
   async function refreshLiveBudget() {
@@ -841,10 +898,69 @@
   function localizeLive() {
     if (savedLiveDemo) renderLiveTrace(savedLiveDemo, $("#recorded-trace"));
     if (liveResult) renderLiveTrace(liveResult, $("#live-result"));
+    if (exampleResult) renderLiveTrace(exampleResult, $("#example-result"));
     const status = $("#live-status");
-    if (status) status.textContent = liveStop() ? budgetStopText(liveStop()) : liveStatus === "pending" || liveStatus === "complete"
+    if (status) status.textContent = liveStop() ? budgetStopText(liveStop()) : ["pending", "complete", "mediaPending"].includes(liveStatus)
       ? liveCopy(liveStatus) : (liveCopy("errors")[liveStatus] || "");
+    const savedStatus = $("#example-saved-status");
+    if (savedStatus) savedStatus.textContent = COPY[pageLanguage].examples[exampleSavedStatus] || "";
+    for (const row of examplesIndex) {
+      const note = $(`[data-example-saved-state="${row.id}"]`);
+      if (note) note.textContent = COPY[pageLanguage].examples[row.saved_result ? row.id === "text" ? "reused" : "savedReady" : "savedPending"];
+      const link = $(`[data-example-download="${row.id}"]`);
+      if (link) link.textContent = COPY[pageLanguage].examples[row.status === "ready" ? "openMedia" : "pendingDetails"];
+    }
     renderLiveBudget();
+  }
+
+  async function loadExamples() {
+    if (!$("#examples-title")) return;
+    try {
+      const response = await fetch("/data/examples/index.json", { cache: "no-store" });
+      if (!response.ok) return;
+      const rows = await response.json();
+      if (!Array.isArray(rows) || rows.length !== 5 || rows.some(row => !exampleIds.includes(row.id) || row.kind !== row.id ||
+        !["ready", "pending"].includes(row.status) || !/^post\.(txt|png|pdf|mp3|mp4)(\.pending\.txt)?$/.test(row.file))) return;
+      examplesIndex = rows;
+      for (const row of rows) {
+        const card = $(`[data-example-card="${row.id}"]`);
+        if (card) card.dataset.exampleReady = String(row.status === "ready");
+        const link = $(`[data-example-download="${row.id}"]`);
+        if (link) link.href = `/examples/${row.file}`;
+        if (["audio", "video"].includes(row.id) && row.status === "ready") {
+          const player = liveNode(row.id);
+          player.controls = true;
+          player.preload = "none";
+          player.src = `/examples/${row.file}`;
+          if (row.id === "video") player.poster = "/examples/post.png";
+          $(`[data-example-player="${row.id}"]`)?.replaceChildren(player);
+        }
+      }
+      localizeLive();
+    } catch { /* Static previews and saved-result buttons remain usable. */ }
+  }
+
+  async function selectExampleSaved(id) {
+    if (!exampleIds.includes(id)) return;
+    selectedExample = id;
+    exampleResult = null;
+    $("#example-result").hidden = true;
+    exampleSavedStatus = "loading";
+    localizeLive();
+    try {
+      const response = await fetch(`/data/examples/${id}.json`, { cache: "no-store" });
+      if (selectedExample !== id) return;
+      if (!response.ok) { exampleSavedStatus = response.status === 404 ? "savedPending" : "loadingFailed"; }
+      else {
+        const result = await response.json();
+        if (selectedExample !== id) return;
+        if (result.mode !== "recorded" || result.input?.example_id !== id || typeof result.input.text_read !== "string") throw Error("invalid saved example");
+        exampleResult = result;
+        exampleSavedStatus = "";
+      }
+    } catch { if (selectedExample === id) exampleSavedStatus = "savedPending"; }
+    localizeLive();
+    $("#example-result").scrollIntoView?.({ behavior: "smooth", block: "nearest" });
   }
 
   async function selectSavedDemo(kind) {
@@ -891,30 +1007,32 @@
     $$('[data-saved-demo]').forEach((button) => {
       button.addEventListener("click", () => selectSavedDemo(button.dataset.savedDemo));
     });
-    form.addEventListener("submit", async (event) => {
-      event.preventDefault();
+    const runLive = async (exampleId = null) => {
       if (submit.disabled) return;
       const attemptedPassword = password.value;
       if (!attemptedPassword) {
         liveStatus = "unauthorized"; localizeLive(); password.focus(); return;
       }
-      if (!input.value.trim() || Array.from(input.value.trim()).length > 600) {
+      if (!exampleId && (!input.value.trim() || Array.from(input.value.trim()).length > 600)) {
         liveStatus = "invalid_input"; localizeLive(); return;
       }
       liveBusy = true;
       form.setAttribute("aria-busy", "true");
       liveResult = null;
       $("#live-result").hidden = true;
-      liveStatus = "pending";
+      liveStatus = exampleId ? "mediaPending" : "pending";
       localizeLive();
       const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), 32000);
+      const timer = setTimeout(() => controller.abort(), exampleId ? 70000 : 32000);
       try {
-        const response = await fetch("/api/check", {
+        const sentText = exampleId ? null : input.value.trim();
+        const response = await fetch(exampleId ? "/api/check-example" : "/api/check", {
           method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ text: input.value.trim(), password: attemptedPassword }), signal: controller.signal, cache: "no-store"
+          body: JSON.stringify({ ...(exampleId ? { example_id: exampleId } : { text: sentText }), password: attemptedPassword }), signal: controller.signal, cache: "no-store"
         });
         const result = await response.json();
+        if (!exampleId) result.input = { kind: "text", text_read: sentText,
+          preprocessing: { model: "native-text", provider: "local", cost_usd: 0, latency_ms: 0 } };
         if (result.budget) liveBudget = result.budget;
         if (!response.ok || result.error) {
           liveStatus = result.error || "unavailable";
@@ -936,7 +1054,13 @@
         form.setAttribute("aria-busy", "false");
         localizeLive();
       }
-    });
+    };
+    form.addEventListener("submit", (event) => { event.preventDefault(); return runLive(); });
+    $$('[data-example-run]').forEach(button => button.addEventListener("click", () => {
+      if (!button.disabled) return runLive(button.dataset.exampleRun);
+    }));
+    $$('[data-example-saved]').forEach(button => button.addEventListener("click", () => selectExampleSaved(button.dataset.exampleSaved)));
+    loadExamples();
     refreshLiveBudget();
     document.addEventListener("visibilitychange", () => { if (!document.hidden) refreshLiveBudget(); });
     selectSavedDemo("post");
@@ -969,6 +1093,10 @@
     $$('[data-i18n-aria]').forEach((element) => {
       const value = getCopy(element.dataset.i18nAria);
       if (typeof value === "string") element.setAttribute("aria-label", value);
+    });
+    $$('[data-i18n-alt]').forEach((element) => {
+      const value = getCopy(element.dataset.i18nAlt);
+      if (typeof value === "string") element.setAttribute("alt", value);
     });
 
     $$('[data-language]').forEach((link) => {

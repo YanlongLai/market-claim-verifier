@@ -6,10 +6,12 @@ persisted here, and model reasoning is never copied into the public trace.
 from __future__ import annotations
 
 import asyncio
+from dataclasses import replace
 import hashlib
 import json
 import re
 import time
+import threading
 from datetime import datetime, timezone
 from typing import Any
 
@@ -265,3 +267,173 @@ class LiveRun:
             return await asyncio.wait_for(self.run(claim), timeout=28)
         except TimeoutError:
             raise LiveError("timeout", 504) from None
+
+
+class ExampleRun(LiveRun):
+    """Existing local decoder/OCR/ASR feeding the unchanged live claim runner.
+
+    The sync ingest functions use injected bridges to the async transports and
+    durable gate. Cancelling a request cancels its pending network operation and
+    seals the bridge, so a decoder thread can never start another paid call.
+    Only temporary ingest receipts are written; no visitor data enters storage.
+    """
+    def __init__(self, model, sec, gate, media, example_id, kind, *, clock=time.monotonic):
+        super().__init__(model, sec, gate, clock=clock)
+        from claimcheck.ingest_media import ASR_MODEL
+        from claimcheck.providers import META_DEFAULT_MODEL
+        models = {"text": "native-text", "pdf": "native-pdf", "image": META_DEFAULT_MODEL,
+                  "audio": ASR_MODEL, "video": f"{ASR_MODEL} + {META_DEFAULT_MODEL}"}
+        self.input_info = {"example_id": example_id, "kind": kind,
+                           "preprocessing": {"model": models[kind],
+                                             "provider": "meta" if kind in {"image", "audio", "video"} else "local",
+                                             "cost_usd": 0.0, "latency_ms": 0.0}, "text_read": ""}
+        self.media = media
+        self.stopped = threading.Event()
+        self.bridge_lock = threading.Lock()
+        self.pending = set()
+        self.media_holds = {}
+        self.ingest_error = None
+
+    def envelope(self, **fields):
+        return super().envelope(input=self.input_info, **fields)
+
+    async def reserve_media(self, reservation):
+        if self.stopped.is_set():
+            raise LiveError("timeout", 504)
+        await self.gate("reserve", {"id": reservation.reservation_id, "amount": reservation.amount})
+        self.media_holds[reservation.reservation_id] = True
+        self.cost += reservation.amount
+        self.input_info["preprocessing"]["cost_usd"] += reservation.amount
+        self.cost_is_bound = True
+
+    async def settle_media(self, reservation, amount, missing_usage):
+        await self.gate("settle", {"id": reservation.reservation_id, "amount": None if missing_usage else amount})
+        self.media_holds[reservation.reservation_id] = missing_usage
+        delta = 0 if missing_usage else amount - reservation.amount
+        self.cost += delta
+        self.input_info["preprocessing"]["cost_usd"] += delta
+        self.cost_is_bound = any(self.media_holds.values())
+        self.event("preprocessing", model=reservation.model, provider="meta",
+                   cost_usd=reservation.amount if missing_usage else amount, cost_is_bound=missing_usage)
+
+    async def media_request(self, operation, payload, audio=None):
+        if self.stopped.is_set():
+            raise LiveError("timeout", 504)
+        return await self.media(operation, payload, audio)
+
+    def _ingest_sync(self, path, loop):
+        from pathlib import Path
+        from tempfile import TemporaryDirectory
+        from types import SimpleNamespace
+        from claimcheck import ingest_media
+
+        def bridge(coroutine):
+            with self.bridge_lock:
+                if self.stopped.is_set():
+                    coroutine.close()
+                    raise LiveError("timeout", 504)
+                future = asyncio.run_coroutine_threadsafe(coroutine, loop)
+                self.pending.add(future)
+            try:
+                return future.result()
+            except LiveError as error:
+                self.ingest_error = error
+                raise
+            finally:
+                with self.bridge_lock:
+                    self.pending.discard(future)
+
+        owner = self
+
+        class MediaLedger(Ledger):
+            def __init__(self, **options):
+                super().__init__(**options)
+                self.audio_reservations = []
+
+            def reserve(self, payload, **options):
+                estimate = self.estimate(payload, **options)
+                prices = self.price(estimate.model, provider="meta")
+                # Base64 bytes and a full image patch ceiling, without discounts.
+                ceiling = len(json.dumps(payload, ensure_ascii=False).encode()) + 4096 + 80_000
+                estimate = replace(estimate, amount=max(estimate.amount,
+                    ceiling * prices["input"] + estimate.max_output_tokens * prices["output"]))
+                bridge(owner.reserve_media(estimate))
+                return estimate
+
+            def reserve_audio(self, seconds):
+                reservation = super().reserve_audio(seconds)
+                bridge(owner.reserve_media(reservation))
+                self.audio_reservations.append(reservation)
+                return reservation
+
+            def reconcile(self, reservation, usage):
+                # Missing/invalid token usage never refunds the durable hold.
+                counts = [usage.get(k) for k in ("input_tokens", "output_tokens")] if isinstance(usage, dict) else []
+                missing = len(counts) != 2 or any(type(n) is not int or n < 0 for n in counts)
+                cost = reservation.amount if missing else super().reconcile(reservation, usage)
+                bridge(owner.settle_media(reservation, cost, missing))
+                return cost
+
+        ledger = MediaLedger(persist=False, provider="meta")
+        client = SimpleNamespace(responses=SimpleNamespace(create=lambda **payload:
+            bridge(self.media_request("ocr", payload))))
+
+        class AudioHTTP:
+            def post(self, _url, *, headers, files):
+                # The transport supplies its own Meta credentials. No headers,
+                # local paths or decoded bytes enter the public trace.
+                payload = json.loads(files["request"][1])
+                raw = bridge(owner.media_request("asr", payload, files["audio"][1].read()))
+                return SimpleNamespace(status_code=200, json=lambda: raw)
+
+        async def record_text(text):
+            if self.stopped.is_set():
+                raise LiveError("timeout", 504)
+            self.input_info["text_read"] = text
+
+        with TemporaryDirectory(prefix="live-example-") as tmp:
+            folder = Path(tmp)
+            kind, channels = ingest_media.decode(path, folder)
+            if kind != self.input_info["kind"]:
+                raise LiveError("example_unavailable")
+            texts = []
+            for channel in channels:
+                if self.stopped.is_set():
+                    raise LiveError("timeout", 504)
+                if not channel.get("decoded"):
+                    raise LiveError("preprocessing_failed")
+                if channel["kind"] == "text":
+                    segments = channel["segments"]
+                elif channel["kind"] in {"ocr", "frame"}:
+                    segments, _ = ingest_media.read_image(channel, client=client, ledger=ledger,
+                                                         record=folder / (channel["id"] + ".json"))
+                else:
+                    segments, _ = ingest_media.transcribe(channel, http=AudioHTTP(), api_key="",
+                                                         ledger=ledger, record=folder / "asr.json")
+                    # ASR's rounded-seconds price has no usage reconciliation.
+                    for reservation in ledger.audio_reservations:
+                        bridge(self.settle_media(reservation, reservation.amount, False))
+                    ledger.audio_reservations.clear()
+                text = "\n".join(segment["text"] for segment in segments)
+                texts.append(f"[{channel['id']}]\n{text}" if kind == "video" else text)
+                bridge(record_text("\n\n".join(texts)))
+            return self.input_info["text_read"]
+
+    async def check_example(self, path):
+        from claimcheck.ingest_media import IngestError
+        before = self.clock()
+        try:
+            text = await asyncio.to_thread(self._ingest_sync, path, asyncio.get_running_loop())
+        except IngestError:
+            raise self.ingest_error or LiveError("preprocessing_failed") from None
+        finally:
+            with self.bridge_lock:
+                self.stopped.set()
+                for future in self.pending:
+                    future.cancel()
+            self.input_info["preprocessing"]["latency_ms"] = round((self.clock() - before) * 1000, 3)
+        # The 600-character boundary remains on arbitrary pasted text. Fixed,
+        # hash-checked media can contain four readings (audio + three frames).
+        if not text.strip() or len(text) > 12_000:
+            raise LiveError("preprocessing_failed")
+        return await self.run(text)

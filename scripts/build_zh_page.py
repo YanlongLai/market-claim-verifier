@@ -34,7 +34,7 @@ def load_copy():
 
 
 def attribute(tag, name, value):
-    pattern = rf'(\b{re.escape(name)}=")[^"]*"'
+    pattern = rf'((?<![\w-]){re.escape(name)}=")[^"]*"'
     replaced, count = re.subn(pattern, lambda m: m[1] + html.escape(value, quote=True) + '"', tag)
     if count != 1:
         raise ValueError(f"Expected one {name} in {tag}")
@@ -71,6 +71,8 @@ class Translate(HTMLParser):
             translated = attribute(translated, "lang", "zh-Hant")
         if "data-i18n-aria" in meta:
             translated = attribute(translated, "aria-label", self.value(meta["data-i18n-aria"]))
+        if "data-i18n-alt" in meta:
+            translated = attribute(translated, "alt", self.value(meta["data-i18n-alt"]))
         for name in ("href", "src", "poster"):
             value = meta.get(name, "")
             if value and not value.startswith(("/", "#", "?")) and not urlsplit(value).scheme:

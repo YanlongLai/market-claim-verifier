@@ -2,7 +2,7 @@
 
 The owner-selected path is **free Pages Functions → Cloudflare Access + Tunnel → Python 3.12 on the x86_64 DappGo k3s host**. No Workers Paid subscription or Durable Object is required. This is an operator handoff; nothing here has been deployed.
 
-The [HTTP adapter](../server/live/server.py) exposes `GET /api/budget`, `POST /api/check`, and `GET /healthz` on `0.0.0.0:8080`. Every route, including health and unknown paths, requires `X-Live-Origin-Token`. Missing headers return 401; incorrect tokens return 403, both with `origin_rejected`. Pages maps origin-auth failures to the 503 demo fallback, while wrong review passwords still return 401 / `unauthorized`. Checks additionally require the review password. Only `X-Live-Client-IP` supplies the rate/auth IP; Pages replaces it with `CF-Connecting-IP`.
+The [HTTP adapter](../server/live/server.py) exposes `GET /api/budget`, `POST /api/check`, `POST /api/check-example`, and `GET /healthz` on `0.0.0.0:8080`. Every route, including health and unknown paths, requires `X-Live-Origin-Token`. Missing headers return 401; incorrect tokens return 403, both with `origin_rejected`. Pages maps origin-auth failures to the 503 demo fallback, while wrong review passwords still return 401 / `unauthorized`. Checks additionally require the review password. Only `X-Live-Client-IP` supplies the rate/auth IP; Pages replaces it with `CF-Connecting-IP`.
 
 ## Configuration and persistence
 
@@ -11,15 +11,18 @@ The [manifest](k8s/live-check.yaml) references an **existing** `live-check-secre
 | Key | Where used |
 | --- | --- |
 | `BASETEN_API_KEY` | Python only; omit to disable model calls |
+| `META_MODEL_API_KEY` | Python only; Meta Model API for example OCR/ASR; omit to disable live image/audio/video examples |
 | `LIVE_CHECK_PASSWORD` | Python only; missing/empty disables checks with 503 |
 | `LIVE_ORIGIN_TOKEN` | Python and Pages; required, identical strong random value |
 | `LIVE_ACCESS_CLIENT_ID` / `LIVE_ACCESS_CLIENT_SECRET` | Pages only, from the Access service token; do not add to the pod |
 
-The Python process also accepts `BASETEN_API_KEY_FILE`, `LIVE_CHECK_PASSWORD_FILE`, and `LIVE_ORIGIN_TOKEN_FILE`. An explicitly set environment value wins, including an empty password; files have trailing line endings removed. A configured unreadable secret file prevents startup. Defaults are `DAILY_BUDGET_USD=3`, `TOTAL_BUDGET_USD=20`, and `LIVE_DATA_DIR=/data`.
+The Python process also accepts `BASETEN_API_KEY_FILE`, `META_MODEL_API_KEY_FILE`, `LIVE_CHECK_PASSWORD_FILE`, and `LIVE_ORIGIN_TOKEN_FILE`. An explicitly set environment value wins, including an empty password; files have trailing line endings removed. A configured unreadable secret file prevents startup. Defaults are `DAILY_BUDGET_USD=3`, `TOTAL_BUDGET_USD=20`, `LIVE_DATA_DIR=/data`, and `LIVE_EXAMPLES_DIR=/app/examples`.
+
+The Docker image copies committed `docs/site/examples/` into **`/app/examples`** and installs FFmpeg/ffprobe for the existing decoder. That directory is read-only at runtime; no download or upload endpoint populates it. The packaged manifest's hashes and the site's hashes must agree. Prepare narration/video on the host before building a release image; currently both have clearly named `.pending.txt` placeholders. [Exact preparation and one-run recording commands](../docs/LIVE_CHECK.md#examples). The shared budget includes Meta preprocessing, and both providers can latch the same provider-credit stop. Pages receives neither provider key.
 
 Run **replicas=1, strategy=Recreate, one Python process**. Do not use multiple workers, an HPA, or another copy of this service with a separate ledger. Each gate read/check/write and prune holds one process-wide asyncio lock and a SQLite `BEGIN IMMEDIATE` transaction, with WAL and `synchronous=FULL`. The 1 GiB PVC stores `/data/ledger.sqlite3` plus its WAL files and public SEC JSON cache. Preserve this PVC through upgrades and rollback. Never delete, reinitialize, rename, or restore an older ledger to make spending room. For backups, stop the pod or use SQLite's backup API; copying a live `.sqlite3` file alone can omit committed WAL writes. A k3s local-path PVC is tied to its node; moving nodes requires preserving that storage.
 
-Pruning runs every 60 seconds and on gate transitions. Expired auth/rate/day/hold rows may disappear; lifetime spending and provider/lifetime stops never expire. `BUDGET_RESET_ID` is deliberately ignored by this adapter. Restarting, changing caps, and deploying another image cannot clear a latched stop. Budget snapshots expose only the existing public daily fields. No user posts, passwords, provider bodies, or secrets are logged or stored; the disk cache contains public SEC JSON bodies only, valid for six hours. All outbound calls disallow redirects and have a 22-second deadline. The request/runner deadline is 28 seconds; Pages aborts at 25 seconds, and reservations remain charged if a response is lost.
+Pruning runs every 60 seconds and on gate transitions. Expired auth/rate/day/hold rows may disappear; lifetime spending and provider/lifetime stops never expire. `BUDGET_RESET_ID` is deliberately ignored by this adapter. Restarting, changing caps, and deploying another image cannot clear a latched stop. Budget snapshots expose only the existing public daily fields. No user posts, passwords, provider bodies, or secrets are logged or stored; the disk cache contains public SEC JSON bodies only, valid for six hours. All outbound calls disallow redirects. SEC/Baseten calls have a 22-second deadline. The text request/runner deadline is 28 seconds; Pages aborts at 25 seconds. Examples have a 60-second total deadline, individual Meta I/O allows 50 seconds, and Pages allows 65 seconds including body consumption. Reservations remain charged if a response is lost. The pod has 75 seconds to terminate gracefully.
 
 ## Host operator commands
 
@@ -76,7 +79,7 @@ For a remotely managed tunnel, add the equivalent published application route in
 
 ## Pages configuration and publish
 
-Keep project `market-claim-verifier` and the existing `docs` build output/copy step, including `docs/_headers`, `_redirects`, `_routes.json` and `data/live-demo.json`. The repository-root Functions remain the proxy. The root [wrangler.toml](../wrangler.toml) has no `[[services]]` binding. Pages never receives `BASETEN_API_KEY` or the configured review password.
+Keep project `market-claim-verifier` and the existing `docs` build output/copy step, including `docs/_headers`, `_redirects`, `_routes.json`, `data/examples/` and **`examples/`** (copy `docs/site/examples/` alongside the site's other root assets). The route list includes `/api/check-example`. The repository-root Functions remain the proxy. The root [wrangler.toml](../wrangler.toml) has no `[[services]]` binding. Pages never receives `BASETEN_API_KEY`, `META_MODEL_API_KEY` or the configured review password.
 
 In the Pages project's production environment, set `LIVE_ORIGIN_HOST` to the hostname **without** scheme, slash, port or path. Supply the three credentials as secrets. The following commands use interactive prompts; enter values there, never in shell arguments or committed files. A hostname may also be stored as a secret with the same binding name:
 

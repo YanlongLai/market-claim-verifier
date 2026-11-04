@@ -10,7 +10,7 @@ from pathlib import Path
 from urllib.parse import unquote, urlsplit
 
 ROOT = Path(__file__).resolve().parents[1] / "docs"
-COPIED = {"index.html", "styles.css", "script.js", "data", "img"}
+COPIED = {"index.html", "styles.css", "script.js", "data", "img", "examples"}
 
 
 def output_path(url):

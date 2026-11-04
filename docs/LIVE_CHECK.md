@@ -70,6 +70,46 @@ There is **no reset endpoint or reset setting** in the self-hosted adapter. `BUD
 
 Pricing and arithmetic come from the CLI ledger/provider registry. The additional conservative hold uses serialized UTF-8 bytes plus 4,096 template/control tokens and the maximum output tokens, without cached discounts. Successful verified usage reconciles using the same pricing calculation. Review model/pricing/token contract changes before enabling them. Caps cover model estimates; host/infrastructure costs are separate.
 
+## Examples
+
+The Try section contains five self-made inputs of the [saved Big Tech post](site/data/live-demo-post.json): text, screenshot, one-page native-text PDF, Breeze narration and a narrated still video. [The manifest](site/examples/manifest.json) records IDs (`text`, `image`, `pdf`, `audio`, `video`), filenames, SHA-256 hashes, bytes, measured media durations and EN/繁中 descriptions. The screenshot is the committed copy of `demo/assets/saved-post-v4.png` from the video worktree; the PDF uses Times, the site's document serif family. No third-party post or new financial result is invented.
+
+**Current preparation:** text, image and PDF files are ready. `post.mp3.pending.txt` and `post.mp4.pending.txt` are explicit placeholders, not playable media. No Breeze or Meta model was invoked for this change. Only [the text card's saved result](site/data/examples/text.json) reuses a real historical envelope, preserving its original cost, latency, evidence, corrections and source hashes. Its native reading time is unknown (`null`). The other four saved results remain **Saved result pending** / **已儲存結果待補** until a host records them. A missing saved media result never falls back to the text result. These demonstrations are not an accuracy benchmark.
+
+`POST /api/check-example` accepts only `{ "example_id": "image", "password": "…" }`, as JSON of at most **1 KiB** (also for chunked bodies). [The Pages Function](../functions/api/check-example.ts) uses the same origin, Access, origin-token, trusted-IP and response allowlists as `/api/check`; no uploads, paths or URLs are accepted. [The origin](../server/live/server.py) authenticates first, looks up the ID in `/app/examples/manifest.json`, verifies filename/size/hash, and applies the same rate and durable daily/lifetime gates. Unknown IDs return 400; unavailable/pending/tampered files return 503 without a model reservation. `/api/check` and its 600-character boundary are unchanged.
+
+The [existing ingest code](../src/claimcheck/ingest_media.py) extracts PDF text locally, reads images with **`muse-spark-1.3`** and transcribes audio with **`muse-voice-transcribe-1.0`**, both via **provider `meta` / the Meta Model API**. Video uses ASR plus all three existing frame samples (1/6, 1/2, 5/6 of duration). OCR/ASR text is untrusted input, not SEC evidence. The text enters the unchanged live claim runner and deterministic `corrections` builder. Fixed video inputs may contain multiple readings; the 12,000-character post-ingest ceiling does not change arbitrary pasted-text limits.
+
+The envelope adds `input: {example_id, kind, preprocessing: {model, provider, cost_usd, latency_ms}, text_read}`. Top-level cost/latency include preprocessing; preprocessing metrics are a subset, not an additional charge. Native extraction uses provider `local` and costs zero. Every OCR/ASR attempt reserves against the **same SQLite ledger before external I/O**; missing usage/errors/timeouts retain holds. OCR adds an image-patch ceiling; ASR uses rounded-second pricing. The sync ingest functions receive bridges to the async transport/gate. Cancellation aborts pending I/O and seals the bridge, so a still-decoding thread cannot start a late paid call. No automatic provider retry is enabled by the live adapter. The whole example request has **60 s**, Pages allows **65 s** including the body, and the browser allows **70 s**. The 28/25/32 s text path is unchanged.
+
+The bilingual renderer uses text nodes for the read text and preprocessing fields. Order: **What the model read → verdict → corrected draft → SEC evidence → agent trace (collapsed)**. Saved buttons need no password and remain available at budget stops. Ready live cards require the same password and share the five-check/ten-minute limit. Audio/video remain disabled while their asset manifest says pending. Root-relative paths work on `/zh/`; the site CSP allows media from the same origin only.
+
+Prepare the locked voice and H.264/AAC video **on the host** (this command invokes Breeze locally, seed 2026, the exact v4 clone reference/transcript; it never substitutes another voice):
+
+```sh
+python3 scripts/build_examples.py --synthesize --video-repo /Users/yan/git/market-claim-verifier-video
+python3 scripts/build_example_results.py
+python3 scripts/build_examples.py --check
+```
+
+The builder retains jobs, input/reference hashes, synthesis logs and receipts under `docs/evidence/example-assets/<timestamp>/`, including failed attempts; it does not copy the licensed reference into this repository. The MP4 is 1920×1080, H.264/AAC, at most 2,000,000 bytes. Media duration must be at most 60 s. Build the image **after** preparing media, so `/app/examples` contains the same hashes the site publishes. Package/publish static `examples/` alongside `data/`, `img/`, HTML, CSS and JS in the existing Pages copy step; this is a handoff, not authorization to deploy.
+
+After the host separately enables the reviewed service/site, record exactly one real request per ID:
+
+```sh
+# Reads LIVE_CHECK_PASSWORD(_FILE), or prompts without echo. No key in argv.
+python3 scripts/run_example_records.py --origin https://hackathon.dappgo.com --max-spend-usd 3 --execute
+# Use the exact new directory printed by that command:
+python3 scripts/build_example_results.py --records docs/evidence/example-records/REPLACE_WITH_RUN_ID
+python3 scripts/stamp_site_assets.py
+python3 scripts/build_zh_page.py
+bash scripts/verify.sh
+```
+
+[The recorder](../scripts/run_example_records.py) freezes cases/hashes/budget before requests, refuses existing output directories, makes no retries, and retains failed/partial public responses, public model/tool/program events, costs, budget snapshots and receipts. Preflight requires the server's whole daily limit to fit the frozen cap; the recorder never resets a ledger, starts no case within 75 seconds of UTC reset, and stops further cases on a day change. Provider-private raw responses are not exposed by the public API and are not claimed as retained. [The result builder](../scripts/build_example_results.py) publishes only complete, explicitly selected, hash-matched retained runs. An incomplete set stays incomplete; keep it before recording any separately named follow-up. Follow [test-record policy](TEST_RECORDS.md).
+
+Offline mock mode also accepts these IDs via `/api/check-example`, but replays only each ID's own saved envelope. Unrecorded IDs return `saved_result_pending`; it never performs OCR/ASR or SEC requests and never fabricates a media result. [Asset/record tests](../tests/test_example_assets.py), [server tests](../tests/test_live_examples.py), [proxy tests](../tests/node/live-boundary.test.mjs) and [hostile-text UI tests](../tests/test_site_examples_runtime.py) run offline. The verifier rebuilds the example assets, index and selected envelopes byte for byte.
+
 ## Privacy
 
 Posts, model responses and tool results stay in request memory and the response to that visitor. There is no application transcript/request-body/exception log. Baseten receives the post and necessary SEC tool results; providers have their own policies. The ledger stores only totals, stop flags, reservation IDs/amounts/status, expiries and salted HMAC IP buckets. The SEC cache stores public JSON bodies, never posts or provider responses. Access/hosting metadata is outside application transcript storage; do not enable body tracing or diagnostic credential dumps.

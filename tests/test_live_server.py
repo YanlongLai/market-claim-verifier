@@ -240,7 +240,7 @@ def test_origin_auth_covers_health_budget_unknown_routes_and_uses_fixed_size_com
     monkeypatch.setattr(server.hmac, "compare_digest", compare)
     async def run():
         async with running(settings(tmp_path)) as (app, services):
-            for path in ("/api/check", "/api/budget", "/healthz", "/unknown"):
+            for path in ("/api/check", "/api/check-example", "/api/budget", "/healthz", "/unknown"):
                 for token, expected in ((None, 401), ("wrong", 403)):
                     response = await request(app, path, method="GET", token=token)
                     assert response.status == expected and data(response)["error"] == "origin_rejected"
@@ -249,7 +249,7 @@ def test_origin_auth_covers_health_budget_unknown_routes_and_uses_fixed_size_com
             assert (await request(app, "/unknown", method="GET")).status == 404
             assert (await request(app, "/api/check", method="GET")).status == 404
     asyncio.run(run())
-    assert len(comparisons) == 11
+    assert len(comparisons) == 13
 
 
 def test_client_ip_only_comes_from_origin_header_and_auth_lockout_survives_restart(tmp_path):
@@ -337,12 +337,12 @@ def test_overall_timeout_keeps_reservation_and_returns_same_504_shape(tmp_path, 
 def test_env_and_file_secrets_have_defaults_without_reading_host_credentials(tmp_path, monkeypatch):
     monkeypatch.setattr(os, "environ", {})
     assert server.Settings.from_env() == server.Settings()
-    for name in ("BASETEN_API_KEY", "LIVE_CHECK_PASSWORD", "LIVE_ORIGIN_TOKEN"):
+    for name in ("BASETEN_API_KEY", "LIVE_CHECK_PASSWORD", "LIVE_ORIGIN_TOKEN", "META_MODEL_API_KEY"):
         path = tmp_path / name
         path.write_text("file-marker\n")
         monkeypatch.setenv(name + "_FILE", str(path))
     config = server.Settings.from_env()
-    assert config.api_key == config.password == config.origin_token == "file-marker"
+    assert config.api_key == config.password == config.origin_token == config.meta_api_key == "file-marker"
     monkeypatch.setenv("LIVE_CHECK_PASSWORD", "")
     assert server.Settings.from_env().password == ""
     monkeypatch.setenv("LIVE_ORIGIN_TOKEN_FILE", str(tmp_path / "missing"))

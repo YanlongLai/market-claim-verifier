@@ -68,10 +68,10 @@ def main() -> int:
     (guard / "offline.cjs").write_text(NODE_GUARD, encoding="utf-8")
     env = {
         key: value for key, value in os.environ.items()
-        if not key.startswith(("CLAIMCHECK_", "BASETEN_", "FIREWORKS_", "MODEL_API_", "OPENAI_", "LIVE_"))
+        if not key.startswith(("CLAIMCHECK_", "BASETEN_", "FIREWORKS_", "MODEL_API_", "META_MODEL_API_", "OPENAI_", "LIVE_"))
         and key not in {"PYTHONPATH", "NODE_OPTIONS"}
     }
-    for key in ("MODEL_API_KEY_FILE", "BASETEN_API_KEY_FILE", "FIREWORKS_API_KEY_FILE"):
+    for key in ("MODEL_API_KEY_FILE", "BASETEN_API_KEY_FILE", "FIREWORKS_API_KEY_FILE", "META_MODEL_API_KEY_FILE"):
         env[key] = str(work / "no-credentials")
     env.update({
         "PYTHONDONTWRITEBYTECODE": "1",
@@ -99,6 +99,15 @@ def main() -> int:
     run("Checking static Traditional Chinese page", python, "scripts/build_zh_page.py", "--check")
     run("Checking CSS/JS content hashes", python, "scripts/stamp_site_assets.py", "--check")
     run("Checking saved claim and post envelopes", python, "scripts/build_live_demo.py", "--check")
+    run("Checking example assets, hashes and saved envelopes", python, "scripts/build_examples.py", "--check")
+    run("Checking example saved results", python, "scripts/build_example_results.py", "--check")
+    example_outputs = [path for base in ("docs/site/examples", "docs/site/data/examples")
+                       for path in sorted((snapshot / base).glob("*")) if path.is_file()]
+    example_before = {path: path.read_bytes() for path in example_outputs}
+    run("Rebuilding examples without synthesis or recording", python, "scripts/build_examples.py")
+    run("Rebuilding saved examples from retained records", python, "scripts/build_example_results.py")
+    if any(path.read_bytes() != raw for path, raw in example_before.items()):
+        raise RuntimeError("Non-identical rebuilt example assets or envelopes")
     demo_outputs = ("docs/site/data/live-demo.json", "docs/site/data/live-demo-post.json")
     demo_before = {name: (snapshot / name).read_bytes() for name in demo_outputs}
     run("Rebuilding saved claim and post envelopes", python, "scripts/build_live_demo.py")
@@ -130,6 +139,7 @@ def main() -> int:
     run("Checking all Markdown and llms.txt links/anchors", python, "scripts/check_links.py")
     print("\nPASS offline Python and Node suites")
     print("PASS saved claim and post envelopes: 2 byte-identical outputs")
+    print("PASS example assets, hashes and saved envelopes: byte-identical rebuilds")
     print("PASS figure rebuild + --check")
     print("PASS explorer, site data and build summary: 3 byte-identical outputs")
     if wild_required:

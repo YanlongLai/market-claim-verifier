@@ -185,7 +185,7 @@ context.liveTest.renderLiveTrace(demo,target);
 const verify=language=>{
   const head=target.querySelector('.trace-head'),corrections=target.querySelector('.live-corrections');
   const evidence=target.querySelector('.live-proof'),trace=target.querySelector('.live-trace');
-  assert.deepEqual(target.children.map(node=>node.className),['trace-head','live-corrections','live-proof','live-trace']);
+  assert.deepEqual(target.children.map(node=>node.className),['live-input-read','trace-head','live-corrections','live-proof','live-trace']);
   assert.equal(head.querySelector('.trace-verdict').textContent,language==='zh'?'證據矛盾':'Contradicted');
   assert.equal(evidence.querySelector('.live-claims').querySelectorAll('li').length,5);
   const draft=corrections.querySelector('.corrected-draft-text');
@@ -297,6 +297,7 @@ const budget=()=>({day:'2026-11-02',daily_limit_usd:3,daily_remaining_usd:remain
 // Keep rollover timers inert in this DOM test; the real browser owns them.
 context.setTimeout=(fn,ms)=>ms>32000?0:setTimeout(fn,ms);context.clearTimeout=clearTimeout;
 context.fetch=async (url,opts)=>{
+  if(url==='/data/examples/index.json')return {ok:true,json:async()=>JSON.parse(readFileSync(root+'/docs/site/data/examples/index.json','utf8'))};
   if(url==='/data/live-demo-post.json')return {ok:true,json:async()=>JSON.parse(readFileSync(root+'/docs/site/data/live-demo-post.json','utf8'))};
   if(url==='/api/budget'){budgetReads++;assert.equal(opts.cache,'no-store');return {ok:true,json:async()=>budget()};}
   requests.push({url,opts});
@@ -345,6 +346,7 @@ context.sessionStorage={
 context.localStorage.setItem=()=>assert.fail('password must never enter localStorage');
 let requests=[],finish;
 context.fetch=async (url,opts)=>{
+  if(url==='/data/examples/index.json')return {ok:true,json:async()=>JSON.parse(readFileSync(root+'/docs/site/data/examples/index.json','utf8'))};
   if(url==='/data/live-demo-post.json')return {ok:true,json:async()=>JSON.parse(readFileSync(root+'/docs/site/data/live-demo-post.json','utf8'))};
   if(url==='/api/budget'){
     assert.ok(!JSON.stringify(opts).includes(credential));

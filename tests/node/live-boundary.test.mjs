@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
-import { onRequest, onBudget } from "../../workers/pages/check.mjs";
+import { onRequest, onBudget, onExample } from "../../workers/pages/check.mjs";
 
 const demo = JSON.parse(readFileSync(new URL("../../docs/site/data/live-demo.json", import.meta.url)));
 const postDemo = JSON.parse(readFileSync(new URL("../../docs/site/data/live-demo-post.json", import.meta.url)));
@@ -14,6 +14,77 @@ const origin = { LIVE_ORIGIN_HOST: "live-origin.example.com", LIVE_ACCESS_CLIENT
 const originHeaders = { "cf-access-client-id": origin.LIVE_ACCESS_CLIENT_ID,
   "cf-access-client-secret": origin.LIVE_ACCESS_CLIENT_SECRET, "x-live-origin-token": origin.LIVE_ORIGIN_TOKEN };
 function envWithFetch(t, fetch) { t.mock.method(globalThis, "fetch", fetch); return { ...origin }; }
+
+const exampleRequest = (body = { example_id: "image", password: "offline-password" }, more = {}) =>
+  new Request("https://hackathon.dappgo.com/api/check-example", { method: "POST",
+    headers: { "Content-Type": "application/json", "CF-Connecting-IP": "192.0.2.1", ...more }, body: JSON.stringify(body) });
+const exampleInput = { example_id: "image", kind: "image", text_read: '<img src=x onerror="evil()"> Apple $1',
+  preprocessing: { model: "muse-spark-1.3", provider: "meta", cost_usd: .001, latency_ms: 350 } };
+
+test("example proxy forwards JSON only, trusted IP and allowlisted input/preprocessing fields", async t => {
+  const env = envWithFetch(t, async req => {
+    assert.equal(req.url, "https://live-origin.example.com/api/check-example");
+    assert.deepEqual(await req.json(), { example_id: "image", password: "offline-password" });
+    assert.equal(req.headers.get("X-Live-Client-IP"), "192.0.2.1");
+    assert.equal(req.headers.get("Authorization"), null);
+    return Response.json({ verdict: "contradicted", mode: "live", corrections: { edits: [] },
+      input: { ...exampleInput, private_path: "/tmp/private", password: "drop",
+        preprocessing: { ...exampleInput.preprocessing, api_key: "drop", raw_response: "drop" } },
+      private: "drop" });
+  });
+  const response = await onExample({ request: exampleRequest({ example_id: "image", password: "offline-password", file: "/private" },
+    { "X-Live-Client-IP": "spoofed", Authorization: "private" }), env });
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { verdict: "contradicted", mode: "live", corrections: { edits: [] }, input: exampleInput });
+  assert.equal(response.headers.get("Cache-Control"), "no-store");
+});
+
+test("example boundary enforces same origin, five IDs, JSON and a 1 KiB streaming limit", async t => {
+  const env = envWithFetch(t, () => assert.fail("invalid request forwarded"));
+  for (const [req, status] of [
+    [exampleRequest({ example_id: "../post.png" }), 400], [exampleRequest({ example_id: [] }), 400],
+    [exampleRequest({ example_id: "text", password: "x".repeat(1024) }), 400],
+    [exampleRequest(undefined, { Origin: "https://evil.example" }), 403],
+    [exampleRequest(undefined, { "Sec-Fetch-Site": "cross-site" }), 403],
+    [exampleRequest(undefined, { "Content-Type": "multipart/form-data" }), 400],
+    [new Request("https://hackathon.dappgo.com/api/check-example"), 405],
+    [new Request("https://hackathon.dappgo.com/api/check-example", { method: "POST", headers: { "Content-Type": "application/json" }, body: "null" }), 400],
+  ]) assert.equal((await onExample({ request: req, env })).status, status);
+  const body = new ReadableStream({ start(controller) { controller.enqueue(new Uint8Array(1025)); controller.close(); } });
+  const req = new Request("https://hackathon.dappgo.com/api/check-example", { method: "POST", body, duplex: "half", headers: { "Content-Type": "application/json" } });
+  assert.equal((await onExample({ request: req, env })).status, 400);
+});
+
+test("example ID mock uses only that recorded input and leaves unrecorded media pending", async t => {
+  envWithFetch(t, () => assert.fail("origin called"));
+  const saved = JSON.parse(readFileSync(new URL("../../docs/site/data/examples/text.json", import.meta.url)));
+  const env = { LIVE_CHECK_MOCK: "1", ASSETS: { fetch: async req => {
+    assert.ok(["/data/examples/text.json", "/data/examples/video.json"].includes(new URL(req.url).pathname));
+    return req.url.endsWith("/text.json") ? Response.json(saved) : new Response("missing", { status: 404 });
+  } } };
+  const mockRequest = id => new Request("http://localhost/api/check-example", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ example_id: id }) });
+  const response = await onExample({ request: mockRequest("text"), env });
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { ...saved, mode: "mock" });
+  assert.equal((await (await onExample({ request: mockRequest("video"), env })).json()).error, "saved_result_pending");
+  assert.equal((await onExample({ request: exampleRequest(), env })).status, 503);
+});
+
+test("example timeout is 65 s including the body, and malformed input envelopes fail closed", async t => {
+  let callback, duration;
+  t.mock.method(globalThis, "setTimeout", (fn, ms) => { callback = fn; duration = ms; return 1; });
+  t.mock.method(globalThis, "clearTimeout", () => {});
+  const env = envWithFetch(t, async req => ({ status: 200, json: () => new Promise((resolve, reject) => {
+    req.signal.addEventListener("abort", () => reject(Error("aborted"))); callback();
+  }) }));
+  assert.equal((await onExample({ request: exampleRequest(), env })).status, 503);
+  assert.equal(duration, 65000);
+  for (const input of [undefined, { ...exampleInput, example_id: "text" }, { ...exampleInput, text_read: {} },
+    { ...exampleInput, preprocessing: { ...exampleInput.preprocessing, cost_usd: -1 } }]) {
+    t.mock.method(globalThis, "fetch", async () => Response.json({ verdict: "supported", input }));
+    assert.equal((await onExample({ request: exampleRequest(), env })).status, 503);
+  }
+});
 
 test("offline Pages mock is labelled, accepts both recorded inputs, and never fetches origin", async t => {
   const env = { ...envWithFetch(t, () => assert.fail("origin")), LIVE_CHECK_MOCK: "1", ASSETS: assets };
