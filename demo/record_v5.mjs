@@ -26,6 +26,7 @@ export const captureCSS=`
   #live-result .trace-head .live-small{overflow-wrap:anywhere}
   #live-result .trace-verdict{font-size:56px!important}
   #live-result .trace-step{padding:12px}
+  #live-result .trace-step code,#live-result .trace-step .trace-time{font-size:24px!important}
   #live-result .trace-data pre{max-height:none;overflow:visible;white-space:pre-wrap}
 `;
 export const hasCJK=text=>/[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/u.test(text);
@@ -80,9 +81,11 @@ export async function showTraceAndFiling({page,result,report,mark,frame,click,ho
     if(event.kind!=='tool_call'&&event.kind!=='verdict')continue;
     const step=steps.nth(i);
     await frame(step);
-    if(!await step.isVisible()||!await trace.evaluate(el=>el.open)||!await step.evaluate(el=>{
-      const r=el.getBoundingClientRect();return r.left>=60&&r.right<=1860&&r.top>=70&&r.top<=520&&r.bottom<=548;
-    }))throw new Error('trace_step_hidden_or_cropped');
+    const stepBox=await step.evaluate(el=>{const r=el.getBoundingClientRect();return [r.left,r.top,r.right,r.bottom].map(Math.round);});
+    if(!await step.isVisible()||!await trace.evaluate(el=>el.open)||!(stepBox[0]>=60&&stepBox[2]<=1860&&stepBox[1]>=70&&stepBox[1]<=520&&stepBox[3]<=548)){
+      report.trace_step_failure={index:i,kind:event.kind,box:stepBox,band:[60,70,1860,548]};
+      throw new Error('trace_step_hidden_or_cropped');
+    }
     mark(event.kind==='tool_call'?`tool_call_${i+1}_reveal`:'program_verdict_reveal');
     shown.push({index:i,kind:event.kind,name:event.name||null,visible:true,hold_ms:700});
     await hold(700);
@@ -121,7 +124,7 @@ export async function showTraceAndFiling({page,result,report,mark,frame,click,ho
     const range=document.createRange();range.setStart(el.firstChild,index);range.setEnd(el.firstChild,index+12);
     return scrollY+range.getBoundingClientRect().top-140;
   },raw.components[1].value);
-  await frame(pre,nineMonthsTarget);mark('apple_nine_months_reveal');await hold(2000);
+  await frame(pre,nineMonthsTarget);mark('apple_nine_months_reveal');await hold(1500);
   report.apple_derivation={evidence_id:fact.evidence_id,derivation:raw.derivation,
     annual:raw.components[0].value,nine_months:raw.components[1].value,quarter:raw.value,hold_ms:2000};
 }
@@ -219,7 +222,7 @@ export async function record(config) {
       const target=explicitTarget??await locator.evaluate(el=>{
         const r=el.getBoundingClientRect();
         return Math.max(0,Math.min(document.documentElement.scrollHeight-innerHeight,
-          scrollY+r.top-Math.max(80,Math.min(180,548-r.height))));
+          scrollY+r.top-Math.max(80,Math.min(180,540-r.height))));
       });
       await wheelTo(target);
     };
@@ -282,7 +285,7 @@ export async function record(config) {
     await page.locator('#live-result .live-evidence a').first().hover();await hold(400);
     await showTraceAndFiling({page,result,report,mark,frame,click,hold});
     await frame('#live-result .live-receipt');
-    await page.locator('#live-result .live-receipt').first().hover();mark('hover_receipt');await hold(3000);
+    await page.locator('#live-result .live-receipt').first().hover();mark('hover_receipt');await hold(800);
     report.beat6_actions_end_s=(performance.now()-began)/1000;
     report.after_click_s=(performance.now()-clickedAt)/1000;
     mark('beat6_choreography_gate');
