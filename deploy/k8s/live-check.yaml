@@ -1,0 +1,130 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: dappgo-hackathon
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: live-check-data
+  namespace: dappgo-hackathon
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: live-check
+  namespace: dappgo-hackathon
+spec:
+  # One Python process and one ledger. Never scale this deployment or add HPA.
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: live-check
+  template:
+    metadata:
+      labels:
+        app: live-check
+    spec:
+      terminationGracePeriodSeconds: 40
+      nodeSelector:
+        kubernetes.io/arch: amd64
+        # The image is imported and the local-path PVC lives on this node only.
+        kubernetes.io/hostname: dappgo-ha-worker-1
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: live-check
+          # Operator replaces this with the locally built immutable image tag.
+          image: live-check:REPLACE_WITH_COMMIT
+          imagePullPolicy: Never
+          ports:
+            - name: http
+              containerPort: 8080
+          env:
+            - name: DAILY_BUDGET_USD
+              value: "3"
+            - name: TOTAL_BUDGET_USD
+              value: "20"
+            - name: BASETEN_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: live-check-secrets
+                  key: BASETEN_API_KEY
+                  optional: true
+            - name: LIVE_CHECK_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: live-check-secrets
+                  key: LIVE_CHECK_PASSWORD
+                  optional: true
+            - name: LIVE_ORIGIN_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: live-check-secrets
+                  key: LIVE_ORIGIN_TOKEN
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi
+          securityContext:
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: tmp
+              mountPath: /tmp
+          # HTTP probes cannot interpolate a Secret header. Exec probes use the
+          # same authenticated /healthz route without exposing the token in YAML.
+          readinessProbe:
+            exec: &health
+              command:
+                - python
+                - -c
+                - "import os,urllib.request; urllib.request.urlopen(urllib.request.Request('http://127.0.0.1:8080/healthz', headers={'X-Live-Origin-Token': os.environ['LIVE_ORIGIN_TOKEN']}), timeout=2).close()"
+            initialDelaySeconds: 3
+            periodSeconds: 10
+            timeoutSeconds: 3
+          livenessProbe:
+            exec: *health
+            initialDelaySeconds: 10
+            periodSeconds: 30
+            timeoutSeconds: 3
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: live-check-data
+        - name: tmp
+          emptyDir:
+            sizeLimit: 16Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: live-check
+  namespace: dappgo-hackathon
+spec:
+  type: ClusterIP
+  selector:
+    app: live-check
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http

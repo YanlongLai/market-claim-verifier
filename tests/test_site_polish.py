@@ -81,9 +81,10 @@ def test_published_metadata_uses_existing_256px_avatars_and_recorded_input_kinds
             assert card["thread_index"] == stamp_thread_position(report["post"], card["quote"])
     bigtech = next(c for c in cards if c["id"] == "bigtech-thread-baseten-5")
     assert bigtech["thread_index"] == "5/5", "Six extracted claims came from five thread entries"
-    html = (ROOT / "docs/site/index.html").read_text()
-    for tag in re.findall(r"<img\b[^>]+>", html):
-        assert 'loading="lazy"' in tag and 'decoding="async"' in tag
+    for relative in ("docs/site/index.html", "docs/evidence/site-tour/index.html"):
+        html = (ROOT / relative).read_text()
+        for tag in re.findall(r"<img\b[^>]+>", html):
+            assert 'loading="lazy"' in tag and 'decoding="async"' in tag
 
 
 def test_dark_compare_paper_keeps_about_seventy_percent_brightness_and_a_warm_tone():
@@ -100,7 +101,7 @@ def test_dark_compare_paper_keeps_about_seventy_percent_brightness_and_a_warm_to
     assert unlit[0] > unlit[1] > unlit[2]
     # A separate stage mask excludes the entire paper (including stack edges)
     # from the stage shade and atmosphere. Existing text masks expose lit rows.
-    html = (ROOT / "docs/site/index.html").read_text()
+    html = (ROOT / "docs/evidence/site-tour/index.html").read_text()
     assert 'class="stamp-stage-hole-paper" fill="black"' in html
     assert 'class="stamp-stage-dim" mask="url(#stamp-stage-mask)"' in html
     assert 'class="stamp-fx-atmosphere" mask="url(#stamp-stage-mask)"' in html

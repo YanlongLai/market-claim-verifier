@@ -486,7 +486,7 @@ def test_paper_text_and_severity_colours_keep_4_5_contrast_with_grain(theme):
     assert tokens["severity-minor"] == tokens["severity-moderate"], "Both middle severities use amber"
 
 
-def test_page_sections_nav_and_shared_progress_headings_follow_the_v3_order():
+def test_approved_ia_keeps_the_stamp_walkthrough_on_its_linked_evidence_page():
     from html.parser import HTMLParser
 
     class Structure(HTMLParser):
@@ -517,8 +517,16 @@ def test_page_sections_nav_and_shared_progress_headings_follow_the_v3_order():
     structure = Structure()
     structure.feed(html)
     assert not structure.stack
+    assert structure.sections == ["top", "live-check", "facts", "evidence"]
+    assert structure.nav == ["#live-check", "#facts", "#evidence"]
+    assert 'href="/evidence/site-tour/"' in html
+    assert 'class="stamp-track"' not in html
+
+    html = (ROOT / "docs/evidence/site-tour/index.html").read_text()
+    structure = Structure()
+    structure.feed(html)
+    assert not structure.stack
     assert structure.sections == ["top", "how", "capabilities", "example", "results", "trust"]
-    assert structure.nav == ["#how", "#example", "#results", "#trust"]
     assert any(attrs.get("id") == "top" for _, attrs in structure.parents["stamp-scene"])
     assert any(attrs.get("id") == "example" for _, attrs in structure.parents["example-title"])
     assert structure.parents["stamp-pause"][-1][1]["class"] == "stamp-strip"

@@ -17,11 +17,27 @@ pytestmark = pytest.mark.skipif(shutil.which("node") is None, reason="Node is re
 
 
 def run_check(script, **config):
+    config.setdefault("page", "docs/evidence/site-tour/index.html")
     result = subprocess.run(
         ["node", "--input-type=module", "-", str(ROOT), json.dumps(config)],
         input=SETUP + script, text=True, capture_output=True, cwd=ROOT, check=False,
     )
     assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_evidence_tour_boot_loads_the_retained_historical_widgets():
+    run_check(r"""
+const requests=[];
+context.fetch=async url=>{
+  requests.push(url);
+  return {ok:true,json:async()=>JSON.parse(readFileSync(root+'/docs/site/data/site.json','utf8'))};
+};
+await context.liveTest.loadData();
+assert.deepEqual(requests,['/data/site.json']);
+assert.equal(tree.querySelector('#chart').children.length,3);
+assert.ok(tree.querySelector('#chart').textContent.includes('Baseten'));
+assert.ok(tree.querySelector('#research-list').children.length>0);
+""")
 
 
 @pytest.mark.parametrize("viewport", [390, 768, 1280])
@@ -189,7 +205,7 @@ const phone = viewport < 640;
 const tablet = viewport >= 640 && viewport <= 1100;
 const css = readFileSync(`${root}/docs/site/styles.css`, 'utf8');
 const source = readFileSync(`${root}/docs/site/script.js`, 'utf8');
-const html = readFileSync(`${root}/docs/site/index.html`, 'utf8');
+const html = readFileSync(`${root}/${config.page}`, 'utf8');
 const cards = JSON.parse(readFileSync(`${root}/docs/site/data/site.json`, 'utf8')).stamp_cards;
 if (config.inputKind) { cards[0].input_kind=config.inputKind; cards[0].input_media=config.inputPayload; }
 // Read the actual CSS cascade, including either side of both breakpoints.
@@ -271,7 +287,7 @@ function matches(node, selector) {
   const simple = (item, pattern) => {
     if (item.tagName === '#text') return false;
     const tag = pattern.match(/^[\w-]+/); if (tag && item.tagName !== tag[0]) return false;
-    for (const match of pattern.matchAll(/([.#])([\w-]+)/g)) {
+    for (const match of pattern.replace(/\[[^\]]*\]/g,'').matchAll(/([.#])([\w-]+)/g)) {
       if (match[1] === '#' ? item.attributes.id !== match[2] : !item.classList.contains(match[2])) return false;
     }
     for (const match of pattern.matchAll(/\[([\w-]+)(?:="([^"]*)")?\]/g)) {
@@ -387,6 +403,7 @@ const document = {
   createElement: tag => { const node = new Element(tag); created.push(node); return node; },
   createElementNS: (_namespace,tag) => { const node = new Element(tag); created.push(node); return node; },
   createTextNode: text => { const node = new Element('#text'); node.textContent = text; return node; },
+  createDocumentFragment: () => new Element('#document-fragment'),
   querySelector: selector => tree.querySelector(selector), querySelectorAll: selector => tree.querySelectorAll(selector),
   addEventListener: (key,fn) => { documentEvents[key] = fn; }
 };
@@ -404,19 +421,20 @@ const context = vm.createContext({
   ResizeObserver: class { constructor(fn) { onResize = fn; } observe() {} },
   requestAnimationFrame: fn => { callbacks.set(++nextFrame,fn); return nextFrame; }, cancelAnimationFrame: id => callbacks.delete(id)
 });
-const boot = '  setupFilingDialog();\n  setupControls();\n  applyCopy();\n  loadData();';
+const boot = '  setupLive();\n  setupFilingDialog();\n  setupControls();\n  applyCopy();\n  loadData();';
 assert.ok(source.includes(boot));
 vm.runInContext(source.replace(boot, `
   globalThis.stamps = { createStampConveyor, setLanguage: language => { pageLanguage = language; applyCopy(); } };
+  globalThis.liveTest = { setupLive, renderLiveTrace, localizeLive, refreshLiveBudget, loadData, setupControls, state: () => ({ liveResult, liveStatus, savedLiveDemo, liveBudget }) };
 `), context);
-const conveyor = context.stamps.createStampConveyor(cards);
-context.stamps.setLanguage(config.language || 'en'); conveyor.localize();
+const conveyor = tree.querySelector('.stamp-stage') ? context.stamps.createStampConveyor(cards) : null;
+context.stamps.setLanguage(config.language || 'en'); conveyor?.localize();
 const api = context.window.__stampScene, seek = seconds => api.seek(seconds);
 const scene = tree.querySelector('#stamp-scene'), stage = tree.querySelector('.stamp-stage');
 const robot = tree.querySelector('.stamp-robot'), pause = tree.querySelector('#stamp-pause');
 const track = tree.querySelector('#stamp-track'), filingBox = tree.querySelector('.stamp-filing-box');
 const filingContent = tree.querySelector('#stamp-filing-content');
-const moving = track.children, still = tree.querySelector('#stamp-static-list').children;
+const moving = track?.children || [], still = tree.querySelector('#stamp-static-list')?.children || [];
 const starts = [0,8,16,21.4,29.4,37.4,45.4,53.4,61.4,69.4,77.4,82.8,90.8,98.8,106.8];
 const hasEvidence = card => Boolean(card.excerpt);
 const find = (node,name) => node.classList.contains(name) ? node : node.querySelector(`.${name}`);
@@ -563,7 +581,7 @@ for(let index=0;index<cards.length;index++){
   const card=cards[index], body=still[index].children[0];
   assert.equal(find(body,'stamp-claim').textContent,card.text[config.language]);
   assert.equal(find(body,'stamp-company').textContent,card.company);assert.equal(body.tabIndex,config.reduced?0:-1);
-  assert.ok(body.href===card.filing_url||body.href===card.source_report.replace(/^docs\//,'../'));
+  assert.ok(body.href===card.filing_url||body.href===card.source_report.replace(/^docs\//,'/'));
   if(card.excerpt){
     const filing=find(body,'stamp-passage');
     for(const text of [card.excerpt.filed,card.excerpt.company,card.excerpt.section_title,card.excerpt.value,
@@ -749,7 +767,7 @@ seek(5);assert.match(mark.style.transform,/scale\(1\)/);
 seek(4.86);const y=Number(robot.style.transform.match(/translate3d\(0px, ([-\d.]+)px/)[1]);
 const bob=4*Math.sin(4860/(api.timing.floatPeriod*1000)*Math.PI*2);near(y-bob,8);
 seek(5.6);assert.equal(robot.dataset.pose,'approve');assert.equal(mark.style.opacity,'1');assert.equal(paper.style.opacity,'1');
-const ink=created.find(item=>item.src==='img/stamp-ink.webp');
+const ink=created.find(item=>item.src==='/img/stamp-ink.webp');
 ink.naturalWidth=1024;ink.events.load();assert.ok(scene.classList.contains('has-stamp-ink'));
 ink.events.error();assert.equal(scene.classList.contains('has-stamp-ink'),false);assert.ok(find(first,'stamp-impression').textContent);
 seek(10.95);const apple=moving[1],applePaper=passage(1);
@@ -758,7 +776,7 @@ seek(12.94);assert.equal(find(apple,'stamp-score').textContent,'0 / 100');near(s
 assert.equal(find(applePaper,'stamp-compare-stated').textContent,'$416.2B');assert.equal(find(applePaper,'stamp-compare-filed').textContent,'$102.5B');
 seek(starts[8]+4.2);assert.ok(passage(8).textContent.includes('+3.0%'));assert.ok(passage(8).textContent.includes('−2.9%'));
 seek(starts[12]+4.2);assert.ok(passage(12).textContent.includes('> $50.0B'));
-for(const image of robot.querySelectorAll('img')){assert.equal(image.loading,'lazy');assert.equal(image.decoding,'async');assert.ok(image.src.includes('/H/'));}
+for(const image of robot.querySelectorAll('img')){assert.equal(image.loading,phone&&image.classList.contains('stamp-robot-pose')?'eager':'lazy');assert.equal(image.decoding,'async');assert.ok(image.src.includes('/H/'));}
 """
 
 ASSETS = r"""
@@ -766,9 +784,9 @@ seek(9.05);
 const expected={reach:'present',point:'present',think:'inspect','stamp-down':'stamp',approve:'idle',concern:'idle',shrug:'idle'};
 assert.equal(robot.querySelectorAll('.stamp-robot-pose').length,11);
 for(const image of robot.querySelectorAll('.stamp-robot-pose')){
-  const name=image.dataset.pose;assert.equal(image.src,`img/auditor/H/${name}.webp`);
+  const name=image.dataset.pose;assert.equal(image.src,`/img/auditor/H/${name}.webp`);
   if(expected[name]){
-    image.events.error();assert.equal(image.src,`img/auditor/H/${expected[name]}.webp`);assert.equal(image.dataset.asset,expected[name]);
+    image.events.error();assert.equal(image.src,`/img/auditor/H/${expected[name]}.webp`);assert.equal(image.dataset.asset,expected[name]);
     const once=image.src;image.events.error();assert.equal(image.src,once,'No recursive retry when the fallback fails');
     assert.equal(image.dataset.pose,name,'Fallback artwork preserves the beat semantics');
   }
@@ -802,7 +820,7 @@ function check(language){
       assert.equal(find(body,'stamp-post-date').textContent,card.post_date);assert.equal(find(body,'stamp-post-date').dateTime,card.post_date);
       assert.equal(find(body,'stamp-example').textContent,language==='en'?'Example post':'示範貼文');
       assert.ok(find(body,'stamp-example').title.includes(language==='en'?'Fictional':'虛構'));
-      const avatar=find(body,'stamp-avatar');assert.equal(avatar.src,card.persona.avatar);assert.equal(avatar.alt,'');
+      const avatar=find(body,'stamp-avatar');assert.equal(avatar.src,'/'+card.persona.avatar);assert.equal(avatar.alt,'');
       assert.equal(avatar.loading,'lazy');assert.equal(avatar.decoding,'async');
       if(card.reposted_from)assert.equal(find(body,'stamp-reposted').textContent,`${language==='en'?'Reposted from':'轉貼自'} 美股懶人包`);
       if(card.source_kind==='article')assert.equal(find(body,'stamp-source').textContent,language==='en'?'Article':'新聞報導');
@@ -963,14 +981,14 @@ if(config.reduced){
   assert.deepEqual(preloads().map(node=>node.dataset.texture).sort(),
     ['beam-cone','beam-pool','dust-motes','film-grain','impact-burst','lens-flare','vignette']);
   for(const image of preloads()){
-    assert.equal(image.src,`img/fx/${image.dataset.texture}.webp`);
+    assert.equal(image.src,`/img/fx/${image.dataset.texture}.webp`);
     image.events.error();
     assert.equal(light.querySelector('.stamp-beam-post').style.opacity,'1','Flat fallback stays lit even if every texture fails');
     assert.equal(light.querySelector('.stamp-beam-filing').style.opacity,'1');
     assert.ok(sources.filter(node=>node.dataset.texture===image.dataset.texture).every(node=>!node.attributes.href));
   }
   for(const image of preloads())image.events.load();
-  assert.ok(sources.every(node=>node.attributes.href===`img/fx/${node.dataset.texture}.webp`));
+  assert.ok(sources.every(node=>node.attributes.href===`/img/fx/${node.dataset.texture}.webp`));
   assert.ok(!sources.some(node=>node.attributes.href.includes('contact.png')));
   const dust=preloads().find(node=>node.dataset.texture==='dust-motes');dust.events.error();
   assert.ok(sources.filter(node=>node.dataset.texture==='dust-motes').every(node=>!node.attributes.href));
@@ -1143,7 +1161,7 @@ assert.notEqual(Number(robot.dataset.visorY),before,'Contain-fit follows the new
 assert.equal(intrinsicReads,reads,'Artwork loads never remeasure phone content maxima');
 near(Number(scene.querySelector('#stamp-light-filing').attributes.y1),Number(robot.dataset.visorY));
 const loaded=fingerprint();seek(13);seek(3);assert.equal(fingerprint(),loaded);
-image.events.error();assert.equal(image.src,'img/auditor/H/present.webp');assert.equal(robot.dataset.pose,'point');
+image.events.error();assert.equal(image.src,'/img/auditor/H/present.webp');assert.equal(robot.dataset.pose,'point');
 assert.equal(intrinsicReads,reads);assert.notEqual(fingerprint(),loaded,'Fallback artwork uses its own visor anchor');
 """
 
@@ -1239,7 +1257,7 @@ for (let i=0;i<cards.length;i++) {
     if(card.source_kind==='article') {
       assert.equal(find(body,'stamp-article-lead').textContent,card.article.lead[config.language||'en']);
       const masthead=find(body,'stamp-masthead');assert.equal(masthead.loading,'lazy');
-      assert.equal(masthead.dataset.src,'img/polish/banana-masthead.webp');
+      assert.equal(masthead.dataset.src,'/img/polish/banana-masthead.webp');
       assert.equal(body.querySelectorAll('.stamp-article-picture').length,2);
       masthead.events.error();assert.ok(find(body,'stamp-identity').classList.contains('masthead-unavailable'));
       assert.equal(find(body,'stamp-author').textContent,card.persona.name[config.language||'en']);
@@ -1307,7 +1325,7 @@ for(const id of ['l4-01','input-audio-two-voices-2','l4-27','input-screenshot-2'
       assert.ok(time.includes('00:14.06–00:25.82')&&time.endsWith(' A'));
       assert.equal(property('.stamp-card[data-input-kind="audio"] .stamp-claim','display'),'none');
     }
-    if(card.input_kind==='screenshot')assert.equal(find(body,'stamp-frame').dataset.src,'img/inputs/example-post.png');
+    if(card.input_kind==='screenshot')assert.equal(find(body,'stamp-frame').dataset.src,'/img/inputs/example-post.png');
   }
   seek(starts[index]+4.94);
   assert.equal(find(moving[index],'stamp-impression').textContent,language==='en'?(card.verdict==='supported'?'TRUE':'FALSE'):(card.verdict==='supported'?'正確':'錯誤'));
@@ -1331,7 +1349,7 @@ for(const group of [moving,still]) {
     assert.equal(find(media,'stamp-transcript').textContent,config.inputPayload.transcript[config.language||'en']);
     assert.equal(find(media,'stamp-media-time').textContent,config.inputPayload.timestamp);
   } else {
-    assert.equal(find(media,'stamp-frame').dataset.src,config.inputPayload.thumbnail);
+    assert.equal(find(media,'stamp-frame').dataset.src,'/'+config.inputPayload.thumbnail);
     if(expected==='video')assert.equal(find(media,'stamp-media-time').textContent,config.inputPayload.timestamp);
     else assert.equal(find(media,'stamp-media-time'),undefined);
   }

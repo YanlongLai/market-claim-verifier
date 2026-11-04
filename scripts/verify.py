@@ -12,7 +12,7 @@ import sys
 
 
 ROOT = Path(__file__).resolve().parents[1]
-SKIP = {".git", ".venv", ".cache", ".pytest_cache", "__pycache__", "node_modules"}
+SKIP = {".git", ".venv", ".venv-workers", ".wrangler", ".cache", ".pytest_cache", "__pycache__", "node_modules", "python_modules"}
 DATA_OUTPUTS = (
     "docs/explorer/data.json",
     "docs/site/data/site.json",
@@ -49,6 +49,8 @@ def copy_ignored(folder: str, names: list[str]) -> list[str]:
     ignored = [name for name in names if name in SKIP or (Path(folder) / name).is_symlink()]
     if Path(folder) == ROOT / "demo":
         ignored.extend(name for name in names if name in {"cache", "out"})
+    if Path(folder) == ROOT / "workers/live/src":
+        ignored.extend(name for name in names if name in {"claimcheck", "core-hashes.json"})
     return ignored
 
 
@@ -66,7 +68,7 @@ def main() -> int:
     (guard / "offline.cjs").write_text(NODE_GUARD, encoding="utf-8")
     env = {
         key: value for key, value in os.environ.items()
-        if not key.startswith(("CLAIMCHECK_", "BASETEN_", "FIREWORKS_", "MODEL_API_", "OPENAI_"))
+        if not key.startswith(("CLAIMCHECK_", "BASETEN_", "FIREWORKS_", "MODEL_API_", "OPENAI_", "LIVE_"))
         and key not in {"PYTHONPATH", "NODE_OPTIONS"}
     }
     for key in ("MODEL_API_KEY_FILE", "BASETEN_API_KEY_FILE", "FIREWORKS_API_KEY_FILE"):
@@ -94,6 +96,14 @@ def main() -> int:
     run("Checking Node offline guard", "node", "-e", 'try { require("node:net").connect(9); process.exit(1); } catch (e) { if (!e.message.includes("network access is disabled")) throw e; }')
     run("Checking committed SEC test fixture provenance", python, "scripts/build_offline_fixtures.py", "--check")
     run("Checking first-filing iXBRL documents and values", python, "scripts/build_site_filing_fixtures.py", "--check")
+    run("Checking static Traditional Chinese page", python, "scripts/build_zh_page.py", "--check")
+    run("Checking CSS/JS content hashes", python, "scripts/stamp_site_assets.py", "--check")
+    run("Checking saved claim and post envelopes", python, "scripts/build_live_demo.py", "--check")
+    demo_outputs = ("docs/site/data/live-demo.json", "docs/site/data/live-demo-post.json")
+    demo_before = {name: (snapshot / name).read_bytes() for name in demo_outputs}
+    run("Rebuilding saved claim and post envelopes", python, "scripts/build_live_demo.py")
+    if any((snapshot / name).read_bytes() != demo_before[name] for name in demo_outputs):
+        raise RuntimeError("Non-identical rebuilt saved check envelopes")
     run("Product, replay, provider and site tests", python, "-m", "pytest", "-q", "-ra")
     run("Demo pipeline tests (optional FFmpeg tests use their existing skip markers)", str(args.demo_python), "-m", "pytest", "-q", "-ra", demo=True)
     run("Standalone demo JavaScript tests", "node", "--test", "demo/tests/motion.test.mjs", "demo/tests/motion-v3.test.mjs", "demo/tests/motion-v4.test.mjs", "demo/tests/layout.test.mjs", "demo/tests/capture.test.mjs")
@@ -119,6 +129,7 @@ def main() -> int:
         raise RuntimeError("Non-identical rebuilt outputs: " + ", ".join(different))
     run("Checking all Markdown and llms.txt links/anchors", python, "scripts/check_links.py")
     print("\nPASS offline Python and Node suites")
+    print("PASS saved claim and post envelopes: 2 byte-identical outputs")
     print("PASS figure rebuild + --check")
     print("PASS explorer, site data and build summary: 3 byte-identical outputs")
     if wild_required:

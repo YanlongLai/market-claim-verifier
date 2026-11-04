@@ -3,12 +3,12 @@
 
   const $ = (selector) => document.querySelector(selector);
   const $$ = (selector) => Array.from(document.querySelectorAll(selector));
-  const LANGUAGE_KEY = "market-claim-verifier-language";
 
   const COPY = {
     en: {
-      metaTitle: "Market claim verifier · DappGo",
-      metaDescription: "Paste a finance post and check its numbers against SEC filings.",
+      metaTitle: "SEC fact-checks for finance posts · Market claim verifier",
+      metaDescription: "Paste a finance post. Every number is checked against SEC filings, and you get a corrected draft with citations. Held-out text: 90.2% (240/266); false support 1/139. Corrected gold.",
+      metaImageAlt: "Market claim verifier comparing an example finance post with its saved SEC filing, alongside the auditor robot.",
       a11y: {
         skip: "Skip to content",
         home: "Market claim verifier home",
@@ -181,8 +181,9 @@
       }
     },
     zh: {
-      metaTitle: "財經說法查核 · DappGo",
-      metaDescription: "貼上財經貼文，將其中的數字與 SEC 申報文件比對。",
+      metaTitle: "財經貼文查核：用 SEC 申報文件驗證數字 · DappGo",
+      metaDescription: "貼上財經貼文，逐一用 SEC 申報資料核對數字，並產出附出處的修正版草稿。 保留文字測試：90.2% (240/266)；誤判為「支持」1/139。使用修正後參考答案。",
+      metaImageAlt: "財經貼文查核示範：對照貼文與已保存的 SEC 申報文件，旁邊是查核機器人。",
       a11y: {
         skip: "跳到主要內容",
         home: "財經說法查核首頁",
@@ -356,27 +357,691 @@
     }
   };
 
+  COPY.en.nav.live = "Live check";
+  COPY.zh.nav.live = "即時查核";
+  COPY.en.live = {
+    cta: "Try a live check →",
+    title: "Try a live check.",
+    scope: "US equities · SEC financial facts only. No prices, forecasts, crypto or investment advice.",
+    input: "Paste a financial sentence or short post", submit: "Check against SEC", useExample: "Use Apple example",
+    password: "Live-check password",
+    passwordNote: "Judges: password in the submission notes; saved examples need none",
+    privacy: "Text goes to Baseten for this check; we do not save it. Anonymous rate counters expire after 10 minutes. 5 checks / 10 min.",
+    recordedTitle: "Saved checks",
+    savedPost: "Saved check · viral post · 28 Oct 2026", savedClaim: "Saved check · one claim",
+    recordedNote: "Saved run · 28 Oct 2026 · actual model calls and SEC evidence. Available even when the live budget runs out.",
+    loading: "Loading the recorded trace…", loadingFailed: "The saved trace could not load. Try refreshing the page.",
+    pending: "Muse Spark is choosing tools and checking SEC facts…", complete: "Check complete. The program verdict and trace are below.",
+    recorded: "Recorded run", live: "Live check", mock: "Offline replay · saved result for the Apple example only",
+    claims: "Program checks", evidence: "SEC evidence", trace: "Agent trace", model: "Model step", tool_call: "Tool call",
+    tool_result: "Tool result", program_check: "Program check", verdict: "Program verdict", raw: "Inspect data",
+    supported: "Supported", contradicted: "Contradicted", insufficient_evidence: "Insufficient evidence", unchecked: "Unchecked",
+    actual: "Filed / computed", stated: "Stated", tolerance: "Tolerance", period: "Period", strength: "Evidence strength",
+    notRecorded: "Timestamp not recorded", noEvidence: "No matching SEC fact returned.", filing: "Open SEC filing", source: "Original recorded trace",
+    timing: "Run start/end and model-call durations are recorded. Individual tool/check timestamps were not recorded.",
+    honesty: "Meta Muse Spark selects tools and proposes claims. Python checks numbers, periods and evidence IDs. A supported verdict applies only to the assertions extracted; extraction can miss an assertion. Filed evidence can be incomplete or restated. SEC data may be cached for six hours.",
+    bound: "Conservative cost bound", cost: "Model cost", seconds: "s", low: "low", medium: "medium", high: "high",
+    savedExamples: "See the saved examples ↓",
+    correctedDraft: "Corrected draft — only listed assertions checked",
+    correctionScope: "Only the assertions listed below were checked; nothing else in the text was verified.",
+    correctionChanges: "Cited changes", notCorrected: "Not corrected",
+    traceSteps: (count) => `Agent trace (${count} steps)`,
+    derivedQuarter: "Filed quarter = annual − nine months",
+    fiscalAnnual: (year) => `fiscal ${year} (annual)`, fiscalQuarter: (year, quarter) => `fiscal Q${quarter} ${year}`,
+    calendarAnnual: (year) => `calendar ${year} (annual)`, calendarQuarter: (year, quarter) => `calendar Q${quarter} ${year}`,
+    monthsTo: (months, date) => `${["", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven", "twelve"][months]} months to ${date}`,
+    ended: (date) => `period ending ${date}`, unknownPeriod: "Period not recorded",
+    annualComparison: (year, base) => `fiscal ${year} vs ${base}`,
+    metrics: { revenue: "revenue", net_income: "net income", operating_income: "operating income", eps: "EPS" },
+    growth: "growth",
+    budget: {
+      loading: "Loading today's live-check budget…", unavailable: "Today's live-check budget is unavailable. See the saved examples.",
+      mock: "Offline replay budget · no spending",
+      remaining: "Today's live-check budget: {remaining} of {limit} left · resets 00:00 UTC",
+      almost: "Almost used up", budget_exhausted: "Today's budget is used up — see the saved examples. Resets {reset} (00:00 UTC).",
+      total_budget_exhausted: "Live checks paused (total budget). An admin must reset the budget. See the saved examples.",
+      credit_exhausted: "Live checks paused (provider credit). See the saved examples."
+    },
+    errors: {
+      invalid_input: "Enter 1–600 characters.", out_of_scope: "This check covers US equities and SEC financial facts only.",
+      unauthorized: "Enter the live-check password to continue.",
+      auth_rate_limited: "Too many incorrect passwords. Please wait 15 minutes; the saved demo is available below.",
+      budget_exhausted: "Today's budget is used up — see the saved examples. Resets 00:00 UTC.",
+      total_budget_exhausted: "Live checks paused (total budget). See the saved examples.",
+      credit_exhausted: "Live checks paused (provider credit). See the saved examples.",
+      rate_limited: "Five checks per 10 minutes. Please wait 10 minutes; the saved demo is available below.",
+      unavailable: "Live checking is unavailable. Follow the saved demo below.", timeout: "The check reached its time limit. No verdict was issued. Follow the saved demo below.",
+      provider_error: "The model service did not complete this check. No verdict was issued. The saved demo is below.",
+      sec_unavailable: "SEC data is unavailable right now. No verdict was issued. The saved demo is below.",
+      mock_input_only: "Offline mode replays the saved viral post or one-claim example only. Choose “Use Apple example”.",
+      invalid_model_output: "The model did not return a complete claim report. No verdict was issued. The saved demo is below.",
+      incomplete_model: "The model response was incomplete. No verdict was issued. The saved demo is below.",
+      tool_limit: "This post exceeded the short-check limit. Try one sentence about one US issuer."
+    }
+  };
+  COPY.zh.live = {
+    cta: "試試即時查核 →",
+    title: "試試即時查核。",
+    scope: "限美股 SEC 財務事實。不查股價、預測、加密貨幣，也不提供投資建議。",
+    input: "貼上一句財務敘述或短貼文", submit: "比對 SEC 資料", useExample: "使用 Apple 範例",
+    password: "即時查核密碼",
+    passwordNote: "即時查核需要密碼；評審密碼在提交備註中，已儲存範例免密碼。",
+    privacy: "文字會傳至 Baseten 進行查核；本站不儲存文字。匿名限流計數於 10 分鐘後刪除。每 10 分鐘限 5 次。",
+    recordedTitle: "已儲存的查核",
+    savedPost: "已儲存查核 · 熱傳貼文 · 2026 年 10 月 28 日", savedClaim: "已儲存查核 · 單一主張",
+    recordedNote: "已儲存紀錄 · 2026 年 10 月 28 日 · 真實模型呼叫與 SEC 證據。即時預算用完仍可查看。",
+    loading: "正在讀取查核紀錄…", loadingFailed: "無法讀取查核紀錄，請重新整理頁面。",
+    pending: "Muse Spark 正在選擇工具並比對 SEC 事實…", complete: "查核完成。以下是程式裁定與執行過程。",
+    recorded: "已儲存的執行紀錄", live: "即時查核", mock: "離線重播 · 僅回放已儲存的 Apple 範例",
+    claims: "程式檢查", evidence: "SEC 證據", trace: "代理執行過程", model: "模型步驟", tool_call: "工具呼叫",
+    tool_result: "工具回傳", program_check: "程式檢查", verdict: "程式裁定", raw: "檢視資料",
+    supported: "證據支持", contradicted: "證據矛盾", insufficient_evidence: "證據不足", unchecked: "未能檢查",
+    actual: "申報／計算值", stated: "貼文數字", tolerance: "容許誤差", period: "期間", strength: "證據強度",
+    notRecorded: "未記錄時間戳", noEvidence: "未取得符合的 SEC 事實。", filing: "開啟 SEC 申報", source: "原始執行紀錄",
+    timing: "已記錄整次開始／結束時間及各次模型耗時；未記錄個別工具／程式檢查的時間戳。",
+    honesty: "Meta Muse Spark 選擇工具並提出待查敘述；Python 檢查數字、期間與證據 ID。支持裁定僅適用於抽取到的敘述，抽取仍可能遺漏。申報證據可能不完整或經重編。SEC 資料可能快取六小時。",
+    bound: "保守費用上限", cost: "模型費用", seconds: "秒", low: "低", medium: "中", high: "高",
+    savedExamples: "查看已儲存的範例 ↓",
+    correctedDraft: "修正版草稿——僅核對列出的主張",
+    correctionScope: "僅核對下方列出的主張；文中其餘內容均未經查證。",
+    correctionChanges: "修改與引用來源", notCorrected: "未修正",
+    traceSteps: (count) => `代理執行過程（${count} 個步驟）`,
+    derivedQuarter: "申報季度 = 全年 − 前九個月",
+    fiscalAnnual: (year) => `${year} 財年（全年）`, fiscalQuarter: (year, quarter) => `${year} 財年第 ${quarter} 季`,
+    calendarAnnual: (year) => `${year} 曆年（全年）`, calendarQuarter: (year, quarter) => `${year} 曆年第 ${quarter} 季`,
+    monthsTo: (months, date) => `截至 ${date}的 ${months} 個月`,
+    ended: (date) => `截至 ${date} 的期間`, unknownPeriod: "未記錄期間",
+    annualComparison: (year, base) => `${year} 對 ${base} 財年`,
+    metrics: { revenue: "營收", net_income: "淨利", operating_income: "營業利益", eps: "每股盈餘" },
+    growth: "成長",
+    budget: {
+      loading: "正在讀取今日即時查核預算…", unavailable: "暫時無法讀取今日即時查核預算。請查看已儲存的範例。",
+      mock: "離線重播預算 · 不產生費用",
+      remaining: "今日即時查核預算：{limit} 中剩餘 {remaining} · UTC 00:00 重設",
+      almost: "預算即將用完", budget_exhausted: "今日預算已用完，請查看已儲存的範例。於 {reset}（UTC 00:00）重設。",
+      total_budget_exhausted: "即時查核暫停（總預算已用完）。需由管理員重設預算。請查看已儲存的範例。",
+      credit_exhausted: "即時查核暫停（供應商額度已用完）。請查看已儲存的範例。"
+    },
+    errors: {
+      invalid_input: "請輸入 1–600 個字元。", out_of_scope: "此功能僅查核美股的 SEC 財務事實。",
+      unauthorized: "請輸入即時查核密碼以繼續。",
+      auth_rate_limited: "密碼錯誤次數過多，請等候 15 分鐘；下方示範仍可查看。",
+      budget_exhausted: "今日預算已用完，請查看已儲存的範例。於 UTC 00:00 重設。",
+      total_budget_exhausted: "即時查核暫停（總預算已用完）。請查看已儲存的範例。",
+      credit_exhausted: "即時查核暫停（供應商額度已用完）。請查看已儲存的範例。",
+      rate_limited: "每 10 分鐘限 5 次，請等候 10 分鐘；下方示範仍可查看。",
+      unavailable: "即時查核暫時無法使用。請查看下方已儲存的示範。", timeout: "查核已達時間上限，未作出裁定。請查看下方示範。",
+      provider_error: "模型服務未完成查核，未作出裁定。請查看下方示範。", sec_unavailable: "SEC 資料暫時無法取得，未作出裁定。請查看下方示範。",
+      mock_input_only: "離線模式僅重播已儲存的熱傳貼文或單一主張範例，請選擇「使用 Apple 範例」。",
+      invalid_model_output: "模型未回傳完整報告，未作出裁定。請查看下方示範。", incomplete_model: "模型回應不完整，未作出裁定。請查看下方示範。",
+      tool_limit: "此貼文超過簡短查核上限，請改用一家美股公司的一句敘述。"
+    }
+  };
+
+  // Product copy, simplified for review round 2 (2026-11-03).
+  COPY.en.facts = {
+  "title": "Facts",
+  "caption": "Eight answers about the verifier",
+  "question": "Question",
+  "answer": "Answer",
+  "question1": "What it does",
+  "answer1": "Checks financial claims against SEC filings; returns verdicts and cited corrections.",
+  "question2": "Time span",
+  "answer2": "SEC XBRL periods, generally 2009 onward, through the latest filing.",
+  "question3": "Which US stocks",
+  "answer3": "US-GAAP SEC filers: ≈8,000 companies; 23 tested.",
+  "question4": "Inputs",
+  "answer4": "Website: text ≤600 characters. CLI: text, images, PDFs, audio and video.",
+  "question5": "Price",
+  "answer5": "$0.01 per live check; $0.02 per claim in the benchmark.",
+  "question6": "Speed",
+  "answer6": "6 s live; 10 s median in the benchmark.",
+  "question7": "Accuracy",
+  "answer7": "90.2% (240/266) held out; false support 1/139.",
+  "question8": "Fix the article?",
+  "answer8": "Corrects disproved numbers and cites the filing."
+};
+  COPY.en.metaDescription = "Paste a finance post. Every number is checked against SEC filings, and you get a corrected draft with citations. Held-out text: 90.2% (240/266); false support 1/139. Corrected gold.";
+  COPY.en.workflow = {
+  "label": "How it works",
+  "paste": "Paste",
+  "evidence": "Muse finds SEC evidence",
+  "decide": "Python decides + corrected draft"
+};
+  COPY.en.draft = {
+  "title": "Corrected draft",
+  "rule": "A corrected draft replaces disproved numbers with filed values and cites the filing.",
+};
+  COPY.en.evidence = {
+  "title": "Evidence",
+  "benchmark": "Original held-out text benchmark",
+  "accuracy": "Accuracy",
+  "falseSupport": "False support",
+  "cost": "Mean / claim",
+  "speed": "Median / claim",
+  "seconds": "s",
+  "benchmarkNote": "Corrected gold; failures count as wrong.",
+  "report": "Read the benchmark and limits",
+  "realworld": "Real-world coverage",
+  "coverage": "Coverage ≠ accuracy; rechecks are post-hoc.",
+  "wild": "Read the real-world study",
+  "wildNav": "In the wild",
+  "links": "Evidence links",
+  "index": "Evidence index",
+  "tour": "Saved demos and methodology",
+  "origin": "DappGo publishes US-market commentary. An internal fact check found posts with the right number but the wrong period, unit or comparison. The model proposes, the program decides.",
+  "earlier": "Earlier anchors →",
+  "stamps": "Stamp walkthrough"
+};
+  Object.assign(COPY.en.nav, {"try": "Try", "facts": "Facts", "evidence": "Evidence"});
+  Object.assign(COPY.en.hero, {"lede": "Every number is checked against SEC filings, and you get a corrected draft with citations.", "saved": "See a saved check (no password)"});
+  Object.assign(COPY.en.live, {"title": "Try", "cta": "Try live check"});
+  Object.assign(COPY.en.footer, {"explorer": "Results explorer", "disclosure": "DappGo existed before; this verifier, site and evidence were built during the hackathon, from 27 Oct 2026.", "legal": "Project credits", "build": "Build disclosure", "license": "MIT license", "credits": "Credits"});
+  COPY.zh.facts = {
+  "title": "產品事實",
+  "caption": "關於查核器的八個答案",
+  "question": "問題",
+  "answer": "答案",
+  "question1": "功能",
+  "answer1": "用 SEC 申報核對財務主張，提供判定與附出處的修正。",
+  "question2": "可查期間",
+  "answer2": "SEC XBRL 申報期間，大致自 2009 年起至最新申報。",
+  "question3": "支援哪些美股",
+  "answer3": "US-GAAP 美股申報公司：約 8,000 家，已測試 23 家。",
+  "question4": "輸入格式",
+  "answer4": "網站：≤600 字元。CLI：文字、圖片、PDF、音訊與影片。",
+  "question5": "費用",
+  "answer5": "即時查核每次 $0.01；基準測試每題 $0.02。",
+  "question6": "速度",
+  "answer6": "即時 6 秒；基準測試中位數 10 秒。",
+  "question7": "準確率",
+  "answer7": "保留測試 90.2% (240/266)；誤判為支持 1/139。",
+  "question8": "能修正文章嗎？",
+  "answer8": "修正被證明錯誤的數字，並附申報出處。"
+};
+  COPY.zh.metaDescription = "貼上財經貼文，逐一用 SEC 申報資料核對數字，並產出附出處的修正版草稿。 保留文字測試：90.2% (240/266)；誤判為「支持」1/139。使用修正後參考答案。";
+  COPY.zh.workflow = {
+  "label": "查核流程",
+  "paste": "貼上貼文",
+  "evidence": "Muse 尋找 SEC 證據",
+  "decide": "Python 判定並產出修正版草稿"
+};
+  COPY.zh.draft = {
+  "title": "修正版草稿",
+  "rule": "修正版草稿只將被證明錯誤的數字換成申報值，並附出處。",
+};
+  COPY.zh.evidence = {
+  "title": "證據",
+  "benchmark": "原始保留文字測試",
+  "accuracy": "準確率",
+  "falseSupport": "誤判為支持",
+  "cost": "每題平均費用",
+  "speed": "每題中位時間",
+  "seconds": "秒",
+  "benchmarkNote": "採用修正後參考答案；失敗計為錯誤。",
+  "report": "閱讀基準測試與限制",
+  "realworld": "真實貼文涵蓋率",
+  "coverage": "涵蓋率 ≠ 準確率；事後重查未重測 OCR／ASR。",
+  "wild": "閱讀真實貼文研究",
+  "wildNav": "真實貼文",
+  "links": "證據連結",
+  "index": "證據索引",
+  "tour": "已儲存展示與方法",
+  "origin": "DappGo 發布美股評論。內部事實查核發現，數字正確也可能配錯期間、單位或比較方式。模型提出，程式判定。",
+  "earlier": "Earlier anchors →",
+  "stamps": "印章查核導覽"
+};
+  Object.assign(COPY.zh.nav, {"try": "試用", "facts": "事實", "evidence": "證據"});
+  Object.assign(COPY.zh.hero, {"titleLine1": "貼上財經貼文，逐一用 SEC 申報資料核對數字，並產出附出處的修正版草稿。", "lede": "", "saved": "查看已儲存查核（免密碼）"});
+  Object.assign(COPY.zh.live, {"title": "試用", "cta": "試試即時查核"});
+  Object.assign(COPY.zh.footer, {"explorer": "結果瀏覽器", "disclosure": "DappGo 在黑客松前已存在；此查核器、網站與證據從 2026 年 10 月 27 日起於黑客松期間建立。", "legal": "專案出處", "build": "建置揭露", "license": "MIT 授權", "credits": "出處與致謝"});
+
+  // The static page builder imports this same dictionary through Node.
+  // No DOM, provider calls or page initialization run during generation.
+  if (typeof document === "undefined") {
+    if (typeof module === "object") module.exports = COPY;
+    return;
+  }
+
   let pageLanguage = readLanguage();
   let exampleLanguage = pageLanguage;
   let siteData = null;
   let stampConveyor = null;
   let activeFilingClaim = null;
   let filingReturnFocus = null;
+  let savedLiveDemo = null;
+  let savedDemoKind = "post";
+  const savedDemos = {};
+  let liveResult = null;
+  let liveStatus = "";
+  const LIVE_PASSWORD_KEY = "claimcheck.livePassword";
+  let liveBudget = null;
+  let liveBusy = false;
+  let budgetLoaded = false;
+  let budgetRequest = 0;
+  let budgetTimer = null;
+  let budgetDay = "";
 
-  function readLanguage() {
+  function liveCopy(key) { return COPY[pageLanguage].live[key]; }
+
+  function liveNode(tag, text, className) {
+    const node = document.createElement(tag);
+    if (text !== undefined && text !== null) node.textContent = String(text);
+    if (className) node.className = className;
+    return node;
+  }
+
+  function liveNumber(value) {
+    return typeof value === "number" && Number.isFinite(value)
+      ? value.toLocaleString(pageLanguage === "zh" ? "zh-TW" : "en-US", { maximumFractionDigits: 4 }) : "—";
+  }
+
+  // Presentation only: recorded values, spans and verdicts stay in Inspect data.
+  // A known stated scale wins over the magnitude (e.g. $1,024.7M stays in M).
+  function financialNumber(value, unit = "USD", statedText = "") {
+    if (typeof value !== "number" || !Number.isFinite(value)) return "—";
+    const scale = String(statedText).match(/\$[\d,.]+\s*(billion|million|B|M)\b/i)?.[1]?.toLowerCase();
+    if (unit === "USD") {
+      const divisor = scale === "b" || scale === "billion" ? 1e9 : scale === "m" || scale === "million" ? 1e6
+        : Math.abs(value) >= 1e9 ? 1e9 : Math.abs(value) >= 1e6 ? 1e6 : 1;
+      const number = (Math.abs(value) / divisor).toLocaleString("en-US", {
+        minimumFractionDigits: divisor === 1 ? 0 : 1, maximumFractionDigits: divisor === 1 ? 4 : 1
+      });
+      return `${value < 0 ? "−" : ""}$${number}${divisor === 1e9 ? "B" : divisor === 1e6 ? "M" : ""}`;
+    }
+    if (unit === "%" || unit === "percent") return `${value.toFixed(1)}%`;
+    return `${liveNumber(value)}${unit ? ` ${unit}` : ""}`;
+  }
+
+  function draftMoney(text) {
+    return text.replace(/(-?)\$([\d,]+(?:\.\d+)?)\s*(billion|million|B|M)\b/gi, (token, sign, number, scale) =>
+      financialNumber(Number(`${sign}${number.replaceAll(",", "")}`) * (/^b/i.test(scale) ? 1e9 : 1e6), "USD", token));
+  }
+
+  function readableDate(value) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(value || "")) return "";
+    if (pageLanguage === "zh") return formatDate(value);
+    const [year, month, day] = value.split("-").map(Number);
+    return `${day} ${["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][month - 1]} ${year}`;
+  }
+
+  function readablePeriod(fact, context = {}) {
+    const period = String(fact.period || context.period || "");
+    const match = period.match(/^(FY|CY)?(\d{4})(?:Q([1-4]))?$/i);
+    const fiscal = match?.[1]?.toUpperCase() === "FY" || fact.period_basis === "fiscal" || context.period_basis === "fiscal";
+    const year = match?.[2] || fact.fiscal_year || fact.end?.slice(0, 4);
+    if (fact.period_type === "ytd" && fact.start && fact.end) {
+      // SEC's 52/53-week calendars use week-aligned rather than month-aligned dates.
+      const months = Math.round((Date.parse(fact.end) - Date.parse(fact.start) + 86400000) / 86400000 / 30.4375);
+      if (months >= 1 && months <= 12) return liveCopy("monthsTo")(months, readableDate(fact.end));
+    }
+    if (year && (fact.period_type === "annual" || (match && !match[3]))) {
+      return liveCopy(fiscal ? "fiscalAnnual" : "calendarAnnual")(year);
+    }
+    if (match?.[3]) return liveCopy(fiscal ? "fiscalQuarter" : "calendarQuarter")(year, match[3]);
+    return readableDate(fact.end) ? liveCopy("ended")(readableDate(fact.end)) : liveCopy("unknownPeriod");
+  }
+
+  function financialMetric(metric) {
+    return liveCopy("metrics")[metric] || String(metric || "").replaceAll("_", " ");
+  }
+
+  function secLink(urlText, label) {
     try {
-      return localStorage.getItem(LANGUAGE_KEY) === "zh" ? "zh" : "en";
-    } catch (_error) {
-      return "en";
+      const url = new URL(urlText);
+      if (url.protocol === "https:" && url.host === "www.sec.gov" && !url.username && !url.password &&
+          url.pathname.startsWith("/Archives/edgar/data/")) {
+        const link = liveNode("a", label);
+        link.href = url.href;
+        link.rel = "noreferrer";
+        return link;
+      }
+    } catch (_error) { /* Invalid filing URLs remain plain text. */ }
+    return null;
+  }
+
+  function liveRaw(parent, data, primary) {
+    const details = liveNode("details", null, "trace-data");
+    const summary = liveNode("summary");
+    if (primary) {
+      details.classList.toggle("evidence-data", true);
+      summary.append(primary, liveNode("span", ` · ${liveCopy("raw")}`, "evidence-inspect"));
+    } else summary.textContent = liveCopy("raw");
+    details.append(summary, liveNode("pre", JSON.stringify(data, null, 2)));
+    parent.append(details);
+  }
+
+  function liveVerdict(value) {
+    return liveCopy(value) || liveCopy("insufficient_evidence");
+  }
+
+  function renderLiveCorrections(corrections, target, evidence = []) {
+    if (!corrections || typeof corrections.original_text !== "string" ||
+        corrections.span_unit !== "unicode_codepoints") return;
+    const section = liveNode("section", null, "live-corrections");
+    section.append(liveNode("h5", liveCopy("correctedDraft")));
+    // Python offsets count code points. Array.from keeps emoji before an edit
+    // from shifting its span in JavaScript's UTF-16 strings.
+    const original = Array.from(corrections.original_text);
+    const draft = liveNode("p", null, "corrected-draft-text");
+    const changes = liveNode("ol", null, "correction-changes");
+    let cursor = 0;
+    for (const edit of Array.isArray(corrections.edits) ? corrections.edits : []) {
+      if (!Number.isInteger(edit.start) || !Number.isInteger(edit.end) || edit.start < cursor ||
+          edit.end <= edit.start || edit.end > original.length || typeof edit.replacement !== "string" ||
+          original.slice(edit.start, edit.end).join("") !== edit.original) continue;
+      // Keep the draft code-point exact; compact money only in the edit list.
+      draft.append(liveNode("span", original.slice(cursor, edit.start).join("")),
+        liveNode("del", edit.original), document.createTextNode(" → "), liveNode("strong", edit.replacement));
+      cursor = edit.end;
+      const item = liveNode("li");
+      item.append(liveNode("del", draftMoney(edit.original)), document.createTextNode(" → "), liveNode("strong", draftMoney(edit.replacement)));
+      const fact = evidence.find((entry) => edit.evidence_ids?.includes(entry.evidence_id));
+      const components = fact?.components || edit.citations || [];
+      const annual = components.find((entry) => entry.period_type === "annual");
+      const nineMonths = components.find((entry) => entry.period_type === "ytd" &&
+        Math.round((Date.parse(entry.end) - Date.parse(entry.start)) / 86400000 / 30.4375) === 9);
+      if (annual && nineMonths && /Q4$/i.test(edit.period) &&
+          Math.abs(annual.value - nineMonths.value - edit.actual_value) < 0.01) {
+        item.append(liveNode("p", liveCopy("derivedQuarter"), "correction-derivation"));
+      }
+      const citations = liveNode("ul", null, "correction-citations");
+      for (const citation of Array.isArray(edit.citations) ? edit.citations : []) {
+        const row = liveNode("li");
+        const primary = liveNode("p", null, "citation-primary");
+        const value = [financialNumber(citation.value, citation.unit, edit.original), financialMetric(fact?.metric)].filter(Boolean).join(" ");
+        primary.append(liveNode("span", `${[citation.form, readablePeriod(citation, edit), value].filter(Boolean).join(" · ")}`));
+        const link = secLink(citation.url, liveCopy("filing"));
+        if (link) primary.append(document.createTextNode(" · "), link);
+        row.append(primary);
+        citations.append(row);
+      }
+      item.append(citations);
+      liveRaw(item, edit);
+      changes.append(item);
+    }
+    draft.append(liveNode("span", original.slice(cursor).join("")));
+    section.append(draft, liveNode("p", liveCopy("correctionScope"), "correction-scope"));
+    if (changes.children.length) section.append(liveNode("h6", liveCopy("correctionChanges")), changes);
+    if (Array.isArray(corrections.not_corrected) && corrections.not_corrected.length) {
+      const unchanged = liveNode("ol", null, "correction-unchanged");
+      for (const item of corrections.not_corrected) {
+        const row = liveNode("li");
+        row.append(liveNode("p", item.text, "correction-assertion"), liveNode("p", item.reason?.[pageLanguage] || "", "correction-reason"));
+        unchanged.append(row);
+      }
+      section.append(liveNode("h6", liveCopy("notCorrected")), unchanged);
+    }
+    target.append(section);
+    return changes.children.length > 0;
+  }
+
+  function renderLiveTrace(result, target) {
+    if (!target) return;
+    target.replaceChildren();
+    target.hidden = false;
+    const head = liveNode("div", null, "trace-head");
+    head.append(liveNode("p", liveCopy(result.mode === "recorded" ? "recorded" : result.mode === "mock" ? "mock" : "live"), "trace-mode"));
+    if (result.verdict) head.append(liveNode("h4", liveVerdict(result.verdict), `trace-verdict is-${result.verdict}`));
+    const money = Number.isFinite(result.cost_usd) ? cost(result.cost_usd) : "—";
+    const duration = Number.isFinite(result.latency_ms) ? (result.latency_ms / 1000).toFixed(1) : "—";
+    head.append(liveNode("p", `${liveCopy(result.cost_is_bound ? "bound" : "cost")}: ${money} · ${duration} ${liveCopy("seconds")}`, "trace-metrics"));
+    head.append(liveNode("p", result.model || "", "live-small"));
+    if (result.started_at) head.append(liveNode("p", `${result.started_at} → ${result.finished_at}`, "live-small"));
+    if (result.input) head.append(liveNode("blockquote", result.input, "trace-input"));
+    target.append(head);
+    const evidence = (result.evidence || []).filter((fact) => !fact.error);
+    const hasCorrection = renderLiveCorrections(result.corrections, target, evidence);
+    const proof = liveNode("section", null, "live-proof");
+    proof.append(liveNode("h5", liveCopy("evidence")));
+    const rows = liveNode("div", null, "live-evidence");
+    if (!evidence.length) rows.append(liveNode("p", liveCopy("noEvidence")));
+    evidence.forEach((fact) => {
+      const row = liveNode("div", null, "live-evidence-row");
+      const current = fact.current_fact || fact.current;
+      const base = fact.base_fact || fact.base;
+      const growth = typeof fact.pct_change === "number";
+      const stated = (result.claims || []).find((claim) => claim.evidence_ids?.includes(fact.evidence_id))?.text || "";
+      const company = { AMZN: "Amazon", NVDA: "NVIDIA", AAPL: "Apple" }[fact.ticker] || fact.entity || fact.ticker || "";
+      const metric = financialMetric(fact.metric) + (growth ? `${pageLanguage === "zh" ? "" : " "}${liveCopy("growth")}` : "");
+      const subject = [company, metric].filter(Boolean).join(" ");
+      const period = growth && /^FY\d{4}$/.test(fact.period) && /^FY\d{4}$/.test(fact.base_period)
+        ? liveCopy("annualComparison")(fact.period.slice(2), fact.base_period.slice(2))
+        : growth && base ? `${readablePeriod(current || fact)} / ${readablePeriod(base)}` : readablePeriod(fact);
+      const forms = fact.derived ? [...new Set((fact.components || []).map((entry) => entry.form))].join(" − ")
+        : fact.form || current?.form;
+      const primary = liveNode("span", null, "evidence-primary");
+      primary.append(liveNode("span", `${financialNumber(growth ? fact.pct_change : fact.value ?? fact.abs_change,
+        growth ? "%" : fact.unit, stated)} · ${subject} · ${period}`));
+      if (forms) {
+        primary.append(document.createTextNode(" · "), secLink(fact.filing_url, forms) || liveNode("span", forms));
+      }
+      liveRaw(row, fact, primary);
+      rows.append(row);
+    });
+    proof.append(rows);
+    if (result.claims && result.claims.length) {
+      proof.append(liveNode("h5", liveCopy("claims")));
+      const claims = liveNode("ol", null, "live-claims");
+      result.claims.forEach((check) => {
+        const item = liveNode("li");
+        item.append(liveNode("strong", liveVerdict(check.program_verdict), `is-${check.program_verdict}`), liveNode("p", check.text));
+        const source = evidence.find((fact) => check.evidence_ids?.includes(fact.evidence_id));
+        const unit = typeof source?.pct_change === "number" ? "%" : source?.unit || "";
+        item.append(liveNode("p", `${liveCopy("stated")}: ${financialNumber(check.stated_value_used, unit, check.text)} · ${liveCopy("actual")}: ${financialNumber(check.actual_value, unit, check.text)} · ${liveCopy("tolerance")}: ${financialNumber(check.tolerance, unit)}`, "live-small"));
+        item.append(liveNode("p", `${liveCopy("strength")}: ${liveCopy(check.evidence_strength) || "—"}`, "live-small"));
+        liveRaw(item, check);
+        claims.append(item);
+      });
+      proof.append(claims);
+    }
+    target.append(proof);
+    const trace = liveNode("details", null, "live-trace");
+    trace.open = !hasCorrection;
+    trace.append(liveNode("summary", liveCopy("traceSteps")((result.events || []).length), "agent-trace-summary"));
+    const steps = liveNode("ol", null, "agent-trace");
+    (result.events || []).forEach((event, i) => {
+      const step = liveNode("li", null, `trace-step trace-${event.kind}`);
+      const label = liveNode("div", null, "trace-step-label");
+      label.append(liveNode("span", String(i + 1).padStart(2, "0"), "trace-step-number"),
+        liveNode("strong", `${liveCopy(event.kind) || event.kind}${event.step ? ` ${event.step}` : ""}`));
+      step.append(label);
+      step.append(liveNode("small", typeof event.at_ms === "number" ? `+${(event.at_ms / 1000).toFixed(1)} ${liveCopy("seconds")} · ${event.timestamp || ""}` : liveCopy("notRecorded"), "trace-time"));
+      if (event.kind === "model") {
+        step.append(liveNode("p", `${(event.latency_ms / 1000).toFixed(1)} ${liveCopy("seconds")} · ${cost(event.cost_usd)} · ${event.finish_reason || ""}`));
+        liveRaw(step, event);
+      } else if (event.kind === "tool_call") {
+        step.append(liveNode("code", `${event.name}(${JSON.stringify(event.arguments)})`));
+      } else if (event.kind === "tool_result") {
+        const fact = event.result || {};
+        step.append(liveNode("p", `${fact.evidence_id || ""} · ${liveNumber(fact.value ?? fact.pct_change ?? fact.abs_change)} ${fact.unit || ""} · ${fact.period || ""}`));
+        liveRaw(step, fact);
+      } else if (event.kind === "program_check") {
+        const check = event.check || {};
+        step.append(liveNode("p", `${liveVerdict(check.program_verdict)} · ${check.reason || ""}`));
+        liveRaw(step, check);
+      } else if (event.kind === "verdict") {
+        step.append(liveNode("strong", liveVerdict(event.verdict), `is-${event.verdict}`));
+      }
+      steps.append(step);
+    });
+    trace.append(steps, liveNode("p", liveCopy("honesty"), "live-small"));
+    if (result.mode === "recorded" || result.mode === "mock") {
+      trace.append(liveNode("p", liveCopy("timing"), "live-small"));
+      if (typeof result.source === "string" && /^docs\/evidence\/[\w/.-]+\.json$/.test(result.source)) {
+        const link = liveNode("a", liveCopy("source"));
+        link.href = `https://github.com/YanlongLai/market-claim-verifier/blob/main/${result.source}`;
+        trace.append(link);
+      }
+    }
+    target.append(trace);
+  }
+
+  function liveStop() {
+    const stops = ["credit_exhausted", "total_budget_exhausted", "budget_exhausted"];
+    return stops.find(code => liveBudget?.status === code || liveStatus === code) || "";
+  }
+
+  function budgetStopText(stop) {
+    return (liveCopy("budget")[stop] || "").replace("{reset}", liveBudget?.resets_at?.slice(0, 10) || "00:00 UTC");
+  }
+
+  function renderLiveBudget() {
+    const text = $("#live-budget-text"), meter = $("#live-budget-meter"), note = $("#live-budget-note");
+    if (!text) return;
+    const copy = liveCopy("budget"), stop = liveStop();
+    text.textContent = liveBudget?.mode === "mock" ? copy.mock : liveBudget ? copy.remaining.replace("{remaining}", `$${liveBudget.daily_remaining_usd.toFixed(2)}`)
+      .replace("{limit}", `$${liveBudget.daily_limit_usd.toFixed(2)}`) : copy[budgetLoaded ? "unavailable" : "loading"];
+    meter.hidden = !liveBudget;
+    if (liveBudget) {
+      meter.max = Math.max(liveBudget.daily_limit_usd, 0.01);
+      meter.value = liveBudget.daily_remaining_usd;
+      meter.setAttribute("aria-valuetext", text.textContent);
+    }
+    note.textContent = stop ? budgetStopText(stop) : liveBudget?.daily_remaining_usd < 0.10 ? copy.almost : "";
+    note.hidden = !note.textContent;
+    const disabled = liveBusy || !liveBudget || Boolean(stop);
+    $("#live-input").disabled = disabled;
+    $("#live-submit").disabled = disabled;
+    $("#live-example").disabled = disabled;
+    $("#live-password").disabled = liveBusy;
+  }
+
+  async function refreshLiveBudget() {
+    const id = ++budgetRequest;
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 4000);
+    try {
+      const response = await fetch("/api/budget", {
+        cache: "no-store", headers: { "Cache-Control": "no-cache" }, signal: controller.signal
+      });
+      const data = await response.json();
+      if (!response.ok || !["ready", "budget_exhausted", "total_budget_exhausted", "credit_exhausted"].includes(data.status) ||
+          ![data.daily_limit_usd, data.daily_remaining_usd].every(v => typeof v === "number" && Number.isFinite(v) && v >= 0) ||
+          !Number.isFinite(Date.parse(data.resets_at))) throw new Error("budget unavailable");
+      if (id !== budgetRequest) return;
+      if (budgetDay && data.day !== budgetDay && liveStatus === "budget_exhausted") liveStatus = "";
+      if (data.status === "ready" && ["credit_exhausted", "total_budget_exhausted"].includes(liveStatus)) liveStatus = "";
+      budgetDay = data.day;
+      liveBudget = data;
+      clearTimeout(budgetTimer);
+      // Re-read the server at midnight; the browser never resets a counter.
+      budgetTimer = setTimeout(refreshLiveBudget, Math.max(1000, Date.parse(data.resets_at) - Date.now() + 50));
+      budgetTimer?.unref?.();
+    } catch {
+      if (id === budgetRequest) liveBudget = null;
+    } finally {
+      clearTimeout(timeout);
+      if (id === budgetRequest) { budgetLoaded = true; localizeLive(); }
     }
   }
 
-  function saveLanguage(language) {
-    try {
-      localStorage.setItem(LANGUAGE_KEY, language);
-    } catch (_error) {
-      // Private browsing and locked-down embeds can reject storage.
+  function localizeLive() {
+    if (savedLiveDemo) renderLiveTrace(savedLiveDemo, $("#recorded-trace"));
+    if (liveResult) renderLiveTrace(liveResult, $("#live-result"));
+    const status = $("#live-status");
+    if (status) status.textContent = liveStop() ? budgetStopText(liveStop()) : liveStatus === "pending" || liveStatus === "complete"
+      ? liveCopy(liveStatus) : (liveCopy("errors")[liveStatus] || "");
+    renderLiveBudget();
+  }
+
+  async function selectSavedDemo(kind) {
+    savedDemoKind = kind;
+    savedLiveDemo = savedDemos[kind] || null;
+    $$('[data-saved-demo]').forEach((button) => {
+      button.setAttribute("aria-pressed", String(button.dataset.savedDemo === kind));
+    });
+    const loading = $("#recorded-loading");
+    loading.hidden = Boolean(savedLiveDemo);
+    if (!savedLiveDemo) {
+      $("#recorded-trace").replaceChildren();
+      loading.textContent = liveCopy("loading");
     }
+    try {
+      if (!savedDemos[kind]) {
+        const path = kind === "post" ? "/data/live-demo-post.json" : "/data/live-demo.json";
+        const response = await fetch(path, { cache: "no-store" });
+        if (!response.ok) throw new Error("missing trace");
+        savedDemos[kind] = await response.json();
+      }
+      if (savedDemoKind !== kind) return;
+      savedLiveDemo = savedDemos[kind];
+      loading.hidden = true;
+      localizeLive();
+    } catch (_error) {
+      if (savedDemoKind === kind) loading.textContent = liveCopy("loadingFailed");
+    }
+  }
+
+  function setupLive() {
+    const form = $("#live-form");
+    if (!form) return;
+    const input = $("#live-input");
+    const submit = $("#live-submit");
+    const password = $("#live-password");
+    password.value = "";
+    try { password.value = sessionStorage.getItem(LIVE_PASSWORD_KEY) || ""; } catch { /* Storage may be blocked. */ }
+    const count = () => { $("#live-count").textContent = `${Array.from(input.value).length} / 600`; };
+    input.addEventListener("input", count);
+    $("#live-example").addEventListener("click", () => {
+      if (!input.disabled) { input.value = input.getAttribute("placeholder"); count(); input.focus(); }
+    });
+    $$('[data-saved-demo]').forEach((button) => {
+      button.addEventListener("click", () => selectSavedDemo(button.dataset.savedDemo));
+    });
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      if (submit.disabled) return;
+      const attemptedPassword = password.value;
+      if (!attemptedPassword) {
+        liveStatus = "unauthorized"; localizeLive(); password.focus(); return;
+      }
+      if (!input.value.trim() || Array.from(input.value.trim()).length > 600) {
+        liveStatus = "invalid_input"; localizeLive(); return;
+      }
+      liveBusy = true;
+      form.setAttribute("aria-busy", "true");
+      liveResult = null;
+      $("#live-result").hidden = true;
+      liveStatus = "pending";
+      localizeLive();
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 32000);
+      try {
+        const response = await fetch("/api/check", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ text: input.value.trim(), password: attemptedPassword }), signal: controller.signal, cache: "no-store"
+        });
+        const result = await response.json();
+        if (result.budget) liveBudget = result.budget;
+        if (!response.ok || result.error) {
+          liveStatus = result.error || "unavailable";
+          if (response.status === 401) {
+            password.value = "";
+            try { sessionStorage.removeItem(LIVE_PASSWORD_KEY); } catch { /* Storage may be blocked. */ }
+          }
+          if (Array.isArray(result.events) && result.events.length) liveResult = result;
+        } else {
+          liveStatus = "complete";
+          liveResult = result;
+          try { sessionStorage.setItem(LIVE_PASSWORD_KEY, attemptedPassword); } catch { /* Check succeeded without storage. */ }
+        }
+      } catch (error) { liveStatus = error.name === "AbortError" ? "timeout" : "unavailable"; }
+      finally {
+        clearTimeout(timer);
+        await refreshLiveBudget();
+        liveBusy = false;
+        form.setAttribute("aria-busy", "false");
+        localizeLive();
+      }
+    });
+    refreshLiveBudget();
+    document.addEventListener("visibilitychange", () => { if (!document.hidden) refreshLiveBudget(); });
+    selectSavedDemo("post");
+  }
+
+  function readLanguage() {
+    return document.documentElement.lang === "zh-Hant" ? "zh" : "en";
   }
 
   function getCopy(path) {
@@ -404,10 +1069,11 @@
       if (typeof value === "string") element.setAttribute("aria-label", value);
     });
 
-    $$('[data-language]').forEach((button) => {
-      const active = button.dataset.language === pageLanguage;
-      button.classList.toggle("is-active", active);
-      button.setAttribute("aria-pressed", String(active));
+    $$('[data-language]').forEach((link) => {
+      const active = link.dataset.language === pageLanguage;
+      link.classList.toggle("is-active", active);
+      if (active) link.setAttribute("aria-current", "page");
+      else link.removeAttribute("aria-current");
     });
 
     $$('[data-example]').forEach((button) => {
@@ -419,6 +1085,7 @@
     const closeButton = $("#filing-dialog-close");
     if (closeButton) closeButton.setAttribute("aria-label", getCopy("filing.close"));
 
+    localizeLive();
     if (siteData) {
       renderStampScene();
       renderExample(siteData.examples[exampleLanguage]);
@@ -431,7 +1098,7 @@
   }
 
   function renderStampScene() {
-    if (!siteData.stamp_cards || !siteData.stamp_cards.length) return;
+    if (!$("#stamp-scene")?.querySelector(".stamp-stage") || !siteData.stamp_cards || !siteData.stamp_cards.length) return;
     if (!stampConveyor) stampConveyor = createStampConveyor(siteData.stamp_cards);
     stampConveyor.localize();
   }
@@ -631,6 +1298,7 @@
       image.height = height;
       image.loading = "lazy";
       image.decoding = "async";
+      path = path.startsWith("/") ? path : "/" + path;
       image.dataset.src = path;
       // Image slots have fixed dimensions. Re-measure the actual text targets
       // after decoding too, including the intrinsic phone maxima.
@@ -691,11 +1359,11 @@
     }
 
     function paperDetails(parent, isStatic = false) {
-      const grain = polishImage("img/polish/paper-grain.webp", "stamp-paper-grain", 256, 256, isStatic);
+      const grain = polishImage("/img/polish/paper-grain.webp", "stamp-paper-grain", 256, 256, isStatic);
       grain.addEventListener("load", () => parent.classList.toggle("has-paper-grain", true));
       parent.append(grain,
-        polishImage("img/polish/stack-edge.webp", "stamp-stack-edge", 384, 96, isStatic),
-        polishImage("img/polish/paperclip.webp", "stamp-paperclip", 96, 160, isStatic));
+        polishImage("/img/polish/stack-edge.webp", "stamp-stack-edge", 384, 96, isStatic),
+        polishImage("/img/polish/paperclip.webp", "stamp-paperclip", 96, 160, isStatic));
     }
     paperDetails(filingBox);
 
@@ -724,7 +1392,9 @@
       image.alt = "";
       image.width = POSE_CANVAS[0];
       image.height = POSE_CANVAS[1];
-      image.loading = "lazy";
+      // Phone poses must be ready even when a taller translated hero starts
+      // them below the fold. They still paint from the same scene clock.
+      image.loading = phone.matches ? "eager" : "lazy";
       image.decoding = "async";
       image.dataset.pose = name;
       image.dataset.facing = facing[name];
@@ -732,7 +1402,7 @@
         const fallback = poseFallbacks[name];
         if (fallback && image.dataset.asset !== fallback) {
           image.dataset.asset = fallback;
-          image.src = `img/auditor/H/${fallback}.webp`;
+          image.src = `/img/auditor/H/${fallback}.webp`;
           geometryKey = "";
           measure();
         }
@@ -752,19 +1422,19 @@
           geometryKey = "";
           measure();
         });
-        image.src = `img/auditor/H/${name}.webp`;
+        image.src = `/img/auditor/H/${name}.webp`;
       });
       thrusters.forEach(({ frames }) => frames.forEach((image) => {
-        image.src = `img/auditor/H/thruster-${image.dataset.frame}.webp`;
+        image.src = `/img/auditor/H/thruster-${image.dataset.frame}.webp`;
       }));
       // A failed ink texture leaves solid, readable stamp text.
       const ink = element("img", "");
       ink.decoding = "async";
       ink.addEventListener("load", () => scene.classList.toggle("has-stamp-ink", ink.naturalWidth > 0));
       ink.addEventListener("error", () => scene.classList.remove("has-stamp-ink"));
-      ink.src = "img/stamp-ink.webp";
+      ink.src = "/img/stamp-ink.webp";
       Object.entries(fx.sources).forEach(([name, sources]) => {
-        const image = element("img", "stamp-fx-preload"), url = `img/fx/${name}.webp`;
+        const image = element("img", "stamp-fx-preload"), url = `/img/fx/${name}.webp`;
         image.decoding = "async";
         image.dataset.texture = name;
         image.addEventListener("load", () => sources.forEach((node) => node.setAttribute("href", url)));
@@ -786,7 +1456,7 @@
       const dateStamp = element("span", "stamp-filing-date");
       const filedDate = element("time", "");
       filedDate.dateTime = source.filed;
-      dateStamp.append(polishImage("img/polish/ink-ring.webp", "stamp-date-ring", 256, 128, isStatic), filedDate);
+      dateStamp.append(polishImage("/img/polish/ink-ring.webp", "stamp-date-ring", 256, 128, isStatic), filedDate);
       formLine.append(element("p", "stamp-passage-meta", source.type === "release" ? "8-K · Item 2.02 · Ex 99.1" : `FORM ${source.form}`), dateStamp);
       header.append(formLine);
       header.append(element("p", "stamp-passage-company", source.company));
@@ -866,7 +1536,7 @@
       const hash = Array.from(card.id).reduce((value, character) => (value * 31 + character.charCodeAt(0)) >>> 0, 0);
       const angle = (hash % 13) - 6;
       body.style.setProperty("--stamp-angle", `${angle}deg`);
-      if (isStatic) body.href = card.filing_url || card.source_report.replace(/^docs\//, "../");
+      if (isStatic) body.href = card.filing_url || card.source_report.replace(/^docs\//, "/");
       const postHeader = element("div", "stamp-post-header");
       const avatar = element("img", "stamp-avatar");
       avatar.alt = "";
@@ -874,7 +1544,7 @@
       avatar.height = 56;
       avatar.loading = "lazy";
       avatar.decoding = "async";
-      avatar.src = card.persona.avatar;
+      avatar.src = "/" + card.persona.avatar;
       const identity = element("div", "stamp-identity");
       const authorRow = element("div", "stamp-author-row");
       const author = element("strong", "stamp-author");
@@ -917,7 +1587,7 @@
           originalAvatar.height = 56;
           originalAvatar.loading = "lazy";
           originalAvatar.decoding = "async";
-          originalAvatar.src = original.persona.avatar;
+          originalAvatar.src = "/" + original.persona.avatar;
           const identity = element("div", "stamp-identity");
           identity.append(element("strong", "stamp-original-author"), element("p", "stamp-original-byline"));
           const originalDate = element("time", "stamp-post-date", original.post_date);
@@ -929,7 +1599,7 @@
       const article = card.source_kind === "article" && card.article ? element("div", "stamp-article-deck") : null;
       const lead = article ? element("p", "stamp-article-lead") : null;
       if (article) {
-        const masthead = polishImage("img/polish/banana-masthead.webp", "stamp-masthead", 520, 96, isStatic);
+        const masthead = polishImage("/img/polish/banana-masthead.webp", "stamp-masthead", 520, 96, isStatic);
         masthead.addEventListener("error", () => identity.classList.toggle("masthead-unavailable", true));
         identity.prepend(masthead);
         const pictures = element("div", "stamp-article-pictures");
@@ -1668,16 +2338,7 @@
 
   function formatMoneyShort(value) {
     if (typeof value !== "number" || !Number.isFinite(value)) return getCopy("filing.notAvailable");
-    const sign = value < 0 ? "-" : "";
-    const absolute = Math.abs(value);
-    if (pageLanguage === "zh") {
-      if (absolute >= 100000000) return `${sign}${numberText(absolute / 100000000, 0)} 億美元`;
-      if (absolute >= 10000) return `${sign}${numberText(absolute / 10000, 0)} 萬美元`;
-      return `${sign}${numberText(absolute, 0)} 美元`;
-    }
-    if (absolute >= 1000000000) return `${sign}$${numberText(absolute / 1000000000)}B`;
-    if (absolute >= 1000000) return `${sign}$${numberText(absolute / 1000000)}M`;
-    return `${sign}$${numberText(absolute, 0)}`;
+    return financialNumber(value);
   }
 
   function formatPercent(value) {
@@ -2265,11 +2926,11 @@
   }
 
   function cost(value) {
-    return `$${Number(value).toFixed(3)}`;
+    return `$${Number(value).toFixed(2)}`;
   }
 
   function seconds(value) {
-    return `${Number(value).toFixed(1)}s`;
+    return `${Number(value).toFixed(1)} s`;
   }
 
   function providerName(provider) {
@@ -2382,15 +3043,22 @@
   }
 
   function setupControls() {
-    $$('[data-language]').forEach((button) => {
-      button.addEventListener("click", () => {
-        pageLanguage = button.dataset.language === "zh" ? "zh" : "en";
-        exampleLanguage = pageLanguage;
-        saveLanguage(pageLanguage);
-        applyCopy();
+    const revealSavedCheck = () => {
+      const saved = $("#saved-check-details");
+      if (saved && window.location.hash === "#recorded-run") {
+        saved.open = true;
+        if (savedDemoKind !== "post") selectSavedDemo("post");
+      }
+    };
+    $$('a[href="#recorded-run"]').forEach((link) => {
+      link.addEventListener("click", () => {
+        const saved = $("#saved-check-details");
+        if (saved) saved.open = true;
+        if (savedDemoKind !== "post") selectSavedDemo("post");
       });
     });
-
+    window.addEventListener("hashchange", revealSavedCheck);
+    revealSavedCheck();
     $$('[data-example]').forEach((button) => {
       button.addEventListener("click", () => {
         exampleLanguage = button.dataset.example === "zh" ? "zh" : "en";
@@ -2405,8 +3073,11 @@
   }
 
   async function loadData() {
+    // Historical widgets live on the evidence tour. Legacy homepage bookmarks
+    // keep their IDs, but must never become chart or example render targets.
+    if (document.documentElement.dataset.evidenceTour === undefined) return;
     try {
-      const response = await fetch("data/site.json", { cache: "no-store" });
+      const response = await fetch("/data/site.json", { cache: "no-store" });
       if (!response.ok) throw new Error("site data unavailable");
       siteData = await response.json();
       renderStampScene();
@@ -2426,6 +3097,7 @@
     }
   }
 
+  setupLive();
   setupFilingDialog();
   setupControls();
   applyCopy();

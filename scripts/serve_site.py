@@ -25,7 +25,10 @@ def output_path(url, root=ROOT):
     if ".." in Path(path).parts:
         raise ValueError("Path escapes the output tree")
     first = path.split("/", 1)[0]
-    return root / "site" / path if first in COPIED else root / path
+    target = root / "site" / path if first in COPIED else root / path
+    # Match Pages extensionless HTML routes without changing the preview root.
+    html = target.with_name(target.name + ".html")
+    return html if not target.exists() and html.is_file() else target
 
 
 def proxy_origin(value):
