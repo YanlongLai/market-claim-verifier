@@ -49,7 +49,7 @@ def write(path, value, *, exclusive=False):
 
 
 def fetch(origin, path, body=None):
-    request = Request(origin + path, data=body, headers={"Content-Type": "application/json", "Origin": origin,
+    request = Request(origin + path, data=body, headers={"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36 live-check-recorder", "Content-Type": "application/json", "Origin": origin,
                                                       "Cache-Control": "no-cache"})
     try:
         response = build_opener(NoRedirect()).open(request, timeout=TIMEOUT)
