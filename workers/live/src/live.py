@@ -179,7 +179,7 @@ def finish(claim: str, final: dict, runner: ToolRunner) -> dict:
 
 
 class LiveRun:
-    def __init__(self, model, sec, gate, *, provider="baseten", clock=time.monotonic, log_secrets=()):
+    def __init__(self, model, sec, gate, *, provider="baseten", clock=time.monotonic, log_secrets=(), progress=None):
         self.model, self.gate, self.clock = model, gate, clock
         self.provider = validate_provider(provider)
         self.adapter = get_provider(self.provider)
@@ -193,8 +193,11 @@ class LiveRun:
         self.start = clock()
         self.request_id = uuid4().hex
         self.log_secrets = log_secrets
+        self.progress = progress
 
     def log(self, event_kind, **fields):
+        if self.progress:
+            self.progress(self.clock() - self.start, event_kind, fields)
         LOG.info("%s", format_event(f"live id={self.request_id}", self.clock() - self.start,
                                     event_kind, fields, secrets=self.log_secrets))
 
@@ -503,6 +506,7 @@ class ExampleRun(LiveRun):
     async def check_example(self, path):
         from claimcheck.ingest_media import IngestError
         before = self.clock()
+        self.log("preprocessing", phase="running", kind=self.input_info["kind"])
         try:
             text = await asyncio.to_thread(self._ingest_sync, path, asyncio.get_running_loop())
         except IngestError:

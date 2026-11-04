@@ -2,7 +2,7 @@
 
 The owner-selected path is **free Pages Functions → Cloudflare Access + Tunnel → Python 3.12 on the x86_64 DappGo k3s host**. No Workers Paid subscription or Durable Object is required. This is an operator handoff; nothing here has been deployed.
 
-The [HTTP adapter](../server/live/server.py) exposes `GET /api/budget`, `POST /api/check`, `POST /api/check-example`, `POST /api/compare`, `GET /api/history`, `GET /api/history/{id}`, and `GET /healthz` on `0.0.0.0:8080`. Every route, including health and unknown paths, requires `X-Live-Origin-Token`. Missing headers return 401; incorrect tokens return 403, both with `origin_rejected`. Pages maps origin-auth failures to the 503 demo fallback, while wrong review passwords still return 401 / `unauthorized`. Checks and compare additionally require the review password; history reads are public through Pages. Only `X-Live-Client-IP` supplies the rate/auth IP; Pages replaces it with `CF-Connecting-IP` and forwards at most 1,024 User-Agent characters for deterministic browser/device parsing.
+The [HTTP adapter](../server/live/server.py) exposes `GET /api/budget`, `POST /api/check`, `POST /api/check-example`, `POST /api/compare`, `GET /api/history`, `GET /api/history/{id}`, `GET /api/progress/{client_run_id}`, and `GET /healthz` on `0.0.0.0:8080`. Every route, including health and unknown paths, requires `X-Live-Origin-Token`. Missing headers return 401; incorrect tokens return 403, both with `origin_rejected`. Pages maps origin-auth failures to the 503 demo fallback, while wrong review passwords still return 401 / `unauthorized`. Checks and compare additionally require the review password; history reads are public through Pages. Only `X-Live-Client-IP` supplies the rate/auth IP; Pages replaces it with `CF-Connecting-IP` and forwards at most 1,024 User-Agent characters for deterministic browser/device parsing.
 
 ## Configuration and persistence
 
@@ -27,7 +27,33 @@ Pruning runs every 60 seconds and on gate transitions. Expired auth/rate/day/hol
 
 Authenticated, validated attempts (including failures and compare members) store public result envelopes of at most 64 KiB, input text of at most 600 characters, masked IP and parsed device/browser families. History is publicly readable without the review password. Passwords, raw IP/User-Agent, raw provider bodies, private reasoning and secrets are not stored in history or application logs. The SEC disk cache contains public JSON bodies only, valid for six hours. [Exact API and retained-row shapes](../docs/LIVE_CHECK.md#provider-receipts-compare-and-history).
 
-All outbound calls disallow redirects. SEC/verifier calls have a 22-second deadline. The text request/runner deadline is 28 seconds; Pages aborts at 25 seconds. Examples have a 60-second total deadline, individual Meta preprocessing I/O allows 50 seconds, and Pages allows 65 seconds including body consumption. Compare runs 2–3 providers sequentially, checks the budget before every member, and labels/skips members whose provider budget or credit is exhausted, and stops the sequence on rate exhaustion. Pages allows 195 seconds for compare; aiohttp also allows 195 seconds to drain active requests during shutdown, within the pod's 200-second termination grace. Each provider has separate daily/lifetime caps; the global caps additionally bound aggregate spending. Reservations remain charged if a response is lost.
+All outbound calls disallow redirects. SEC calls have a 22-second deadline; verifier and Meta preprocessing I/O allow 85 seconds. The server allows 90 seconds for text and 95 seconds for examples. Pages allows 92/97 seconds per text/example origin response, including body consumption. Compare runs 2–3 providers sequentially, checks the budget before every member, and labels/skips members whose provider budget or credit is exhausted, and stops the sequence on rate exhaustion. Pages allows 290 seconds for compare; aiohttp allows 290 seconds to drain active requests during shutdown. Each provider has separate daily/lifetime caps; the global caps additionally bound aggregate spending. Reservations remain charged if a response is lost.
+
+## Request limits and progress
+
+| Guard | Limit / rejection |
+| --- | --- |
+| Per-IP checks | 5 accepted members / 10 min → 429 `rate_limited` |
+| Password failures | 5 wrong passwords / rolling 15 min → 429 `locked` for 30 min, including correct passwords during lockout |
+| Site-wide runs | 20 accepted authenticated members / rolling 10 min → 429 `busy` |
+| In flight | 2 members in the single process → 429 `busy`, no queue |
+| Origin API burst | 30 requests / IP / rolling 60 s across every `/api/*` route; request 31 → 429 `slow_down` for 10 min |
+| Request body | JSON only; existing streamed 1 KiB ceiling at Pages and origin (stricter than 16 KiB) |
+| Progress | In-memory UUID v4 buffer, 5 min from creation, ≤200 lines / ID, ≤1,000 IDs; no input text, secrets or IP |
+
+Compare counts every member. Admission and burst/password windows are durable in
+the existing SQLite ledger; concurrency and progress are process-local. Keep the
+single-process deployment invariant. On restart, completed paid work remains
+charged, rate/lockout windows persist, and progress disappears (404). No secrets
+are added or changed. The Dockerfile copies the progress module into the origin
+image; deploy Pages Functions and the origin together for the new route.
+
+The browser shares progress network polls at least three seconds apart across
+compare panels; a 700 ms timer updates the clock. Budget/history reads also forward
+Cloudflare's trusted client IP. History summaries include allowlisted saved error codes, so one history refresh never triggers a burst of failed-run detail reads. An optional operator-managed Cloudflare WAF rate
+limit on `/api/*` by IP can add an edge safeguard. Allow ordinary progress polling
+plus budget/history requests; this rule is not required and does not replace the
+origin limits. See [API and progress contract](../docs/LIVE_CHECK.md#live-request-progress).
 
 ## Setting provider caps
 
@@ -73,7 +99,7 @@ kubectl -n dappgo-hackathon get pvc live-check-data
 The manifest's readiness/liveness **exec probes** call the authenticated `/healthz` using the pod's environment token, never a literal secret in YAML. The container runs as UID/GID 10001, drops all capabilities, and has a read-only root filesystem; only `/data` and a small `/tmp` volume are writable. To read the aggregate through the pod without a model or SEC call:
 
 ```sh
-kubectl -n dappgo-hackathon exec deployment/live-check -- python -c 'import os,urllib.request; r=urllib.request.Request("http://127.0.0.1:8080/api/budget",headers={"X-Live-Origin-Token":os.environ["LIVE_ORIGIN_TOKEN"]}); print(urllib.request.urlopen(r,timeout=3).read().decode())'
+kubectl -n dappgo-hackathon exec deployment/live-check -- python -c 'import os,urllib.request; r=urllib.request.Request("http://127.0.0.1:8080/api/budget",headers={"X-Live-Origin-Token":os.environ["LIVE_ORIGIN_TOKEN"],"X-Live-Client-IP":"127.0.0.1"}); print(urllib.request.urlopen(r,timeout=3).read().decode())'
 ```
 
 ## Tunnel and Access
@@ -102,7 +128,7 @@ For a remotely managed tunnel, add the equivalent published application route in
 
 ## Pages configuration and publish
 
-Keep project `market-claim-verifier` and the existing `docs` build output/copy step, including `docs/_headers`, `_redirects`, `_routes.json`, `data/examples/` and **`examples/`** (copy `docs/examples/` alongside the site's other root assets). The route list includes `/api/check`, `/api/check-example`, `/api/compare`, `/api/history`, `/api/history/*` and `/api/budget`. The repository-root Functions remain the proxy. The root [wrangler.toml](../wrangler.toml) has no `[[services]]` binding. Pages never receives `BASETEN_API_KEY`, `FIREWORKS_API_KEY`, `META_MODEL_API_KEY` or the configured review password.
+Keep project `market-claim-verifier` and the existing `docs` build output/copy step, including `docs/_headers`, `_redirects`, `_routes.json`, `data/examples/` and **`examples/`** (copy `docs/examples/` alongside the site's other root assets). The route list includes `/api/check`, `/api/check-example`, `/api/compare`, `/api/history`, `/api/history/*`, `/api/budget` and `/api/progress/*`. The repository-root Functions remain the proxy. The root [wrangler.toml](../wrangler.toml) has no `[[services]]` binding. Pages never receives `BASETEN_API_KEY`, `FIREWORKS_API_KEY`, `META_MODEL_API_KEY` or the configured review password.
 
 In the Pages project's production environment, set `LIVE_ORIGIN_HOST` to the hostname **without** scheme, slash, port or path. Supply the three credentials as secrets. The following commands use interactive prompts; enter values there, never in shell arguments or committed files. A hostname may also be stored as a secret with the same binding name:
 

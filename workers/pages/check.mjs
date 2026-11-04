@@ -78,8 +78,8 @@ export const onBudget = async ({ request, env }) => {
       status: "ready", providers: { baseten: row, fireworks: row, meta: row } }), mode: "mock" }, { headers });
   }
   try {
-    // Only origin credentials enter this request; no visitor headers or IP.
-    const { response, data } = await originFetch(env, "/api/budget");
+    const { response, data } = await originFetch(env, "/api/budget", { headers: clientHeaders(request) });
+    if (response.status === 429 && ["slow_down", "busy", "locked"].includes(data?.error)) return error(data.error, 429);
     // Status only (no body): tells Access (HTML 403), origin auth (JSON 401/403) and tunnel errors apart.
     if (!response.ok) return diagnostic(response.status);
     const budget = publicBudget(data);
@@ -99,7 +99,7 @@ const kinds = ["text", "image", "pdf", "audio", "video"];
 const exampleIds = new Set([...kinds, ...["a", "b", "c"].flatMap(story => kinds.map(kind => `${story}-${kind}`))]);
 const models = { baseten: "meta-models/muse-spark-open-1026", fireworks: "accounts/fireworks/models/muse-spark-open", meta: "muse-spark-1.3" };
 const preprocessingModels = new Set(["native-text", "native-pdf", "muse-spark-1.3", "muse-voice-transcribe-1.0", "muse-voice-transcribe-1.0 + muse-spark-1.3"]);
-const errors = new Set(["invalid_input", "unauthorized", "auth_rate_limited", "out_of_scope", "unavailable",
+const errors = new Set(["invalid_input", "unauthorized", "auth_rate_limited", "locked", "busy", "slow_down", "out_of_scope", "unavailable",
   "unknown_provider", "budget_exhausted", "total_budget_exhausted", "credit_exhausted", "rate_limited", "provider_error",
   "sec_unavailable", "incomplete_model", "tool_limit", "invalid_model_output", "timeout", "unknown_example", "example_unavailable", "preprocessing_failed"]);
 const verdicts = new Set(["supported", "contradicted", "insufficient_evidence"]);
@@ -200,9 +200,10 @@ async function onCheck({ request, env }, action) {
     try { data = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes)); }
     catch { return error("invalid_input", 400); }
     if (!object(data)) return error("invalid_input", 400);
+    if ("client_run_id" in data && (typeof data.client_run_id !== "string" || !runId.test(data.client_run_id))) return error("invalid_input", 400);
     const example = action === "check-example" || compare && "example_id" in data;
     const inputKey = example ? "example_id" : "text";
-    const allowed = new Set([inputKey, "password", compare ? "providers" : "provider"]);
+    const allowed = new Set([inputKey, "password", "client_run_id", compare ? "providers" : "provider"]);
     if (Object.keys(data).some(key => !allowed.has(key)) || (example ? !exampleIds.has(data.example_id) :
       typeof data?.text !== "string" || !data.text.trim() || Array.from(data.text.trim()).length > 600)) return error("invalid_input", 400);
     if (compare ? !Array.isArray(data.providers) || data.providers.length < 2 || data.providers.length > 3 ||
@@ -235,19 +236,20 @@ async function onCheck({ request, env }, action) {
     // The shared deadline also bounds three 97 s example requests to 290 s total.
     const deadline = Date.now() + 290000;
     const runs = [];
-    for (const selected of requestedProviders) {
+    for (const [index, selected] of requestedProviders.entries()) {
       const remaining = deadline - Date.now();
       if (remaining <= 0) return error("timeout", 504);
       const { response, data: result } = await originFetch(env, `/api/${example ? "check-example" : "check"}`, {
         method: "POST", headers: { "Content-Type": "application/json", "X-Live-Client-IP": ip,
           ...(request.headers.get("User-Agent") ? { "User-Agent": request.headers.get("User-Agent").slice(0, 1024) } : {}) },
         body: JSON.stringify({ ...(example ? { example_id: data.example_id } : { text: data.text.trim() }),
+          ...("client_run_id" in data ? { client_run_id: memberId(data.client_run_id, index) } : {}),
           password: typeof data.password === "string" ? data.password : "",
           ...(compare || "provider" in data ? { provider: selected } : {}) }),
       }, Math.min(example ? 97000 : 92000, remaining));
       if (response.status !== 200 && (![400, 401, 422, 429, 503, 504].includes(response.status) || !errors.has(result?.error))) return error("unavailable", 503);
       // Authentication/validation failures have not started a member run.
-      const rejected = ["invalid_input", "unauthorized", "auth_rate_limited", "unknown_provider", "out_of_scope", "unknown_example", "example_unavailable"].includes(result?.error);
+      const rejected = ["invalid_input", "unauthorized", "auth_rate_limited", "locked", "slow_down", "unknown_provider", "out_of_scope", "unknown_example", "example_unavailable"].includes(result?.error);
       const requireReceipt = response.status === 200 || compare && !rejected;
       const publicResult = publicEnvelope(result, requireReceipt);
       if (!publicResult || response.status === 200 && !verdicts.has(publicResult.verdict) ||
@@ -255,7 +257,7 @@ async function onCheck({ request, env }, action) {
             example && publicResult.input.example_id !== data.example_id)) return error("unavailable", 503);
       if (!compare || rejected) return Response.json(publicResult, { status: response.status, headers });
       runs.push(publicResult);
-      if (publicResult.error === "rate_limited") break;
+      if (["rate_limited", "busy", "slow_down", "locked"].includes(publicResult.error)) break;
     }
     return Response.json({ runs }, { headers });
   } catch {
@@ -279,6 +281,10 @@ function publicHistoryRow(row, full = false) {
       ![row.latency_ms, row.cost_usd, row.preprocessing_cost_usd].every(number)) return null;
   const result = pick(row, ["id", "at", "ip_masked", "device", "browser", "kind", "example_id", "story", "input_text",
     "provider", "model", "verdict", "corrections_count", "latency_ms", "cost_usd", "preprocessing_cost_usd"]);
+  if ("error" in row) {
+    if (!errors.has(row.error)) return null;
+    result.error = row.error;
+  }
   if (full) {
     if (new TextEncoder().encode(JSON.stringify(row.envelope)).length > 65536) return null;
     result.envelope = publicEnvelope(row.envelope, true);
@@ -310,7 +316,8 @@ export async function onHistory({ request, env }) {
   }
   if (mockMode(env, url)) return detail ? error("not_found", 404) : Response.json({ rows: [] }, { headers });
   try {
-    const { response, data } = await originFetch(env, path);
+    const { response, data } = await originFetch(env, path, { headers: clientHeaders(request) });
+    if (response.status === 429 && data?.error === "slow_down") return error("slow_down", 429);
     if (response.status === 404 && detail && data?.error === "not_found") return error("not_found", 404);
     if (!response.ok) return error("unavailable", 503);
     if (detail) {
@@ -320,5 +327,37 @@ export async function onHistory({ request, env }) {
     if (!Array.isArray(data?.rows) || data.rows.length > Number(url.searchParams.get("limit") ?? 50)) return error("unavailable", 503);
     const rows = data.rows.map(row => publicHistoryRow(row));
     return rows.every(Boolean) ? Response.json({ rows }, { headers }) : error("unavailable", 503);
+  } catch { return error("unavailable", 503); }
+}
+
+
+const runId = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+const memberId = (id, index) => id.slice(0, -1) + ((parseInt(id.at(-1), 16) + index) % 16).toString(16);
+function clientHeaders(request) {
+  const ip = request.headers.get("CF-Connecting-IP");
+  if (!ip) throw Error("unavailable");
+  return { "X-Live-Client-IP": ip };
+}
+
+export async function onProgress({ request, env }) {
+  const url = new URL(request.url);
+  if (request.method !== "GET") return error("method_not_allowed", 405);
+  if (!sameOrigin(request, url)) return error("origin_rejected", 403);
+  const id = url.pathname.slice("/api/progress/".length);
+  const after = url.searchParams.get("after") ?? "0";
+  if (!url.pathname.startsWith("/api/progress/") || !runId.test(id) ||
+      [...url.searchParams.keys()].some(key => key !== "after") || url.searchParams.getAll("after").length > 1 ||
+      !/^(?:0|[1-9][0-9]{0,8})$/.test(after)) return error("invalid_input", 400);
+  if (mockMode(env, url)) return error("not_found", 404);
+  try {
+    const { response, data } = await originFetch(env, `/api/progress/${id}?after=${after}`,
+      { headers: clientHeaders(request) }, 10000);
+    if (response.status === 404 && data?.error === "not_found") return error("not_found", 404);
+    if (response.status === 429 && data?.error === "slow_down") return error("slow_down", 429);
+    if (!response.ok || !object(data) || !Array.isArray(data.lines) || data.lines.length > 200 ||
+        typeof data.done !== "boolean" || !Number.isSafeInteger(data.next) || data.next < Number(after) ||
+        data.next - Number(after) < data.lines.length || data.lines.some(line => !object(line) || !number(line.t_s) ||
+          typeof line.text !== "string" || line.text.length > 512 || /[\x00-\x1f\x7f]/.test(line.text))) return error("unavailable", 503);
+    return Response.json({ lines: data.lines.map(line => pick(line, ["t_s", "text"])), done: data.done, next: data.next }, { headers });
   } catch { return error("unavailable", 503); }
 }

@@ -228,7 +228,7 @@ def test_missing_wrong_or_unconfigured_password_never_reserves(tmp_path, attempt
         async with running(replace(settings(tmp_path), password=configured)) as (app, services):
             response = await request(app, body={"text": APPLE["claim"], "password": attempted})
             assert response.status == expected
-            assert not {"holds", "days", "lifetime_nanos", "rates"} & state(services).keys()
+            assert all(not state(services).get(key) for key in ("holds", "days", "lifetime_nanos", "rates"))
     asyncio.run(run())
 
 
@@ -259,11 +259,11 @@ def test_client_ip_only_comes_from_origin_header_and_auth_lockout_survives_resta
         async with running(config) as (app, _):
             response = await request(app, ip=None, headers={"CF-Connecting-IP": "192.0.2.1", "X-Forwarded-For": "192.0.2.1"})
             assert response.status == 503
-            for _ in range(5):
-                assert (await request(app, body={"text": APPLE["claim"], "password": "wrong"})).status == 401
+            for index in range(5):
+                assert (await request(app, body={"text": APPLE["claim"], "password": "wrong"})).status == (401 if index < 4 else 429)
         async with running(config) as (app, _):
             response = await request(app)
-            assert response.status == 429 and data(response)["error"] == "auth_rate_limited"
+            assert response.status == 429 and data(response)["error"] == "locked"
     asyncio.run(run())
 
 

@@ -12,6 +12,7 @@ from decimal import Decimal, InvalidOperation, ROUND_CEILING, ROUND_FLOOR
 NANOS = 1_000_000_000
 AUTH_WINDOW = 15 * 60
 AUTH_FAILURES = 5
+AUTH_LOCKOUT = 30 * 60
 PROVIDERS = ("baseten", "fireworks", "meta")
 
 
@@ -40,13 +41,17 @@ def authenticate(state, data, now, secret):
     key = ip_key(state, data["ip"])
     row = failures.get(key)
     if row and row.get("locked_until", 0) > now:
-        return {"error": "auth_rate_limited", "retry_after": math.ceil(row["locked_until"] - now)}, 429
+        return {"error": "locked", "retry_after": math.ceil(row["locked_until"] - now)}, 429
     if password_matches(data.get("password"), secret):
         return {"ok": True}, 200
-    row = failures.setdefault(key, {"count": 0, "expires": now + AUTH_WINDOW})
-    row["count"] += 1
+    row = failures.setdefault(key, {"count": 0, "times": [], "expires": now + AUTH_WINDOW})
+    # Rolling window; retain old-format counters conservatively until expiry.
+    times = [t for t in row.get("times", [now] * row["count"]) if t > now - AUTH_WINDOW]
+    times.append(now)
+    row.update(times=times, count=len(times), expires=now + AUTH_WINDOW)
     if row["count"] >= AUTH_FAILURES:
-        row["locked_until"] = row["expires"] = now + AUTH_WINDOW
+        row["locked_until"] = row["expires"] = now + AUTH_LOCKOUT
+        return {"error": "locked", "retry_after": AUTH_LOCKOUT}, 429
     return {"error": "unauthorized"}, 401
 
 
@@ -100,6 +105,8 @@ def prune(state: dict, now: float):
     # Migration must precede expiry, including alarm/idle cleanup of a v1 DB.
     migrate(state)
     state["auth_failures"] = {k: v for k, v in state.get("auth_failures", {}).items() if v["expires"] > now}
+    state["bursts"] = {k: v for k, v in state.get("bursts", {}).items() if v["expires"] > now}
+    state["site_runs"] = [t for t in state.get("site_runs", []) if t > now - 600]
     state["rates"] = {k: v for k, v in state.get("rates", {}).items() if v["expires"] > now}
     state["holds"] = {k: v for k, v in state.get("holds", {}).items() if v["expires"] > now}
     state["days"] = {k: v for k, v in state.get("days", {}).items() if v["expires"] > now}
@@ -171,6 +178,20 @@ def transition(state: dict, action: str, data: dict, *, now: float, budget: str,
     if action == "budget":
         return public, 200
     day = datetime.fromtimestamp(now, timezone.utc).strftime("%Y-%m-%d")
+    if action == "burst":
+        if not data.get("ip"):
+            return {"error": "unavailable"}, 503
+        key = ip_key(state, data["ip"])
+        row = state["bursts"].setdefault(key, {"times": [], "expires": now + 60})
+        if row.get("blocked_until", 0) > now:
+            return {"error": "slow_down"}, 429
+        row["times"] = [t for t in row["times"] if t > now - 60]
+        row["times"].append(now)
+        row["expires"] = now + 60
+        if len(row["times"]) > 30:
+            row["blocked_until"] = row["expires"] = now + 600
+            return {"error": "slow_down"}, 429
+        return {"ok": True}, 200
     if action == "rate":
         if not data.get("ip"):
             return {"error": "unavailable"}, 503
@@ -180,7 +201,10 @@ def transition(state: dict, action: str, data: dict, *, now: float, budget: str,
         row = state["rates"].setdefault(key, {"count": 0, "expires": now + 600})
         if row["count"] >= 5:
             return {"error": "rate_limited", "retry_after": math.ceil(row["expires"] - now)}, 429
+        if len(state["site_runs"]) >= 20:
+            return {"error": "busy"}, 429
         row["count"] += 1
+        state["site_runs"].append(now)
         return {"ok": True}, 200
     if action == "reserve":
         name = data.get("provider", "baseten")

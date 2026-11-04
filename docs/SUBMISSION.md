@@ -176,11 +176,11 @@ The open weights matter for cost and control: the recorded Baseten benchmark rou
 
 ### Social distribution (for the Most Viral bonus and reach)
 
-The 60-second cut of the demo is posted on X first (its URL goes into the form), then cross-posted through DappGo's Postiz schedule to Threads, the Facebook Page and Instagram/Facebook Reels (9:16 variant). Links are recorded here after posting:
+The 86-second cut of the demo is posted on X first (its URL goes into the form), then the 9:16 punch-in cut is posted as a Reel on Instagram and the DappGo Facebook Page with the same caption:
 
 | Channel | URL |
 | --- | --- |
 | X | https://x.com/dappgoDev/status/2118090023325294888 |
-| Threads | `<URL>` |
-| Facebook Page | `<URL>` |
-| Instagram Reels | `<URL>` |
+| Threads | not posted |
+| Facebook Page (Reel) | https://www.facebook.com/reel/2792686617795349/ |
+| Instagram Reels | https://www.instagram.com/dappgo/reel/DfVbVYUAT31/ |

@@ -106,7 +106,7 @@ test("offline Pages mock is labelled, accepts both recorded inputs, and never fe
   const budget = await onBudget({ request: new Request("http://localhost/api/budget"), env });
   assert.equal((await budget.json()).mode, "mock");
   assert.equal(budget.headers.get("Cache-Control"), "no-store");
-  assert.equal((await onBudget({ request: new Request("https://site.example/api/budget"), env: { LIVE_CHECK_MOCK: "1" } })).status, 503);
+  assert.equal((await onBudget({ request: new Request("https://site.example/api/budget", { headers: { "CF-Connecting-IP": "192.0.2.1" } }), env: { LIVE_CHECK_MOCK: "1" } })).status, 503);
 });
 
 test("production cannot enable the local mock or supply its own forwarded IP; origin gets Access credentials", async t => {
@@ -211,14 +211,14 @@ const budget = { day: "2026-11-02", providers: {
     lifetime_spent: .59, lifetime_remaining: 19.41 },
   resets_at: "2026-11-03T00:00:00Z", status: "ready" };
 
-test("public budget sends only origin credentials, excludes private data, and caches for at most five seconds", async t => {
+test("public budget sends origin credentials and trusted client IP, excludes private data, and caches for at most five seconds", async t => {
   let calls = 0;
   const env = envWithFetch(t, async req => {
     calls++;
     assert.equal(req.url, "https://live-origin.example.com/api/budget");
     assert.equal(req.method, "GET");
     assert.equal(req.redirect, "manual");
-    assert.deepEqual(Object.fromEntries(req.headers), originHeaders);
+    assert.deepEqual(Object.fromEntries(req.headers), { ...originHeaders, "x-live-client-ip": "private" });
     return Response.json({ ...budget, holds: "private", salt: "private", lifetime_nanos: 12345,
       secret: origin.LIVE_ACCESS_CLIENT_SECRET, providers: { ...budget.providers,
         meta: { ...budget.providers.meta, holds: "private", salt: "private" } },
@@ -249,7 +249,7 @@ test("origin/network/Access failures return the uncached 503 demo fallback witho
   const env = envWithFetch(t, req => handler(req));
   for (handler of handlers) {
     for (const budgetRequest of [false, true]) {
-      const response = await (budgetRequest ? onBudget({ request: new Request("https://site.example/api/budget"), env }) :
+      const response = await (budgetRequest ? onBudget({ request: new Request("https://site.example/api/budget", { headers: { "CF-Connecting-IP": "192.0.2.1" } }), env }) :
         onRequest({ request: request(undefined, { "CF-Connecting-IP": "192.0.2.1" }), env }));
       assert.equal(response.status, 503);
       assert.equal(response.headers.get("Cache-Control"), "no-store");
@@ -278,7 +278,7 @@ test("25 second abort covers fetch and body consumption for check and budget", a
   });
   for (bodyWait of [false, true]) {
     assert.equal((await onRequest({ request: request(undefined, { "CF-Connecting-IP": "192.0.2.1" }), env })).status, 503);
-    assert.equal((await onBudget({ request: new Request("https://site.example/api/budget"), env })).status, 503);
+    assert.equal((await onBudget({ request: new Request("https://site.example/api/budget", { headers: { "CF-Connecting-IP": "192.0.2.1" } }), env })).status, 503);
   }
   assert.equal(timers, 4); assert.equal(cleared, 4);
 });
@@ -300,7 +300,7 @@ test("dashboard-pasted values with trailing newlines still reach the origin as c
     return Response.json({ ...budget, day: "2026-11-03", resets_at: "2026-11-04T00:00:00Z" });
   });
   const env = Object.fromEntries(Object.entries(origin).map(([k, v]) => [k, `${v}\n`]));
-  const response = await onBudget({ request: new Request("https://hackathon.dappgo.com/api/budget"), env });
+  const response = await onBudget({ request: new Request("https://hackathon.dappgo.com/api/budget", { headers: { "CF-Connecting-IP": "192.0.2.1" } }), env });
   assert.equal(response.status, 200);
   assert.equal((await response.json()).daily_remaining_usd, 89.41);
 });

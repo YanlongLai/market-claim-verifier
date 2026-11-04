@@ -406,6 +406,9 @@
     errors: {
       invalid_input: "Enter 1–600 characters.", out_of_scope: "This check covers US equities and SEC financial facts only.",
       unauthorized: "Enter the live-check password to continue.",
+      locked: "Too many incorrect passwords. Locked for 30 minutes.",
+      busy: "The server is busy. Please try again shortly.",
+      slow_down: "Too many requests. Please wait 10 minutes.",
       auth_rate_limited: "Too many incorrect passwords. {reset} The saved demo is available below.",
       budget_exhausted: "Today's budget is used up — see the saved examples. Resets 00:00 UTC.",
       total_budget_exhausted: "This provider is paused (lifetime cap). See the saved examples.",
@@ -467,6 +470,9 @@
     errors: {
       invalid_input: "請輸入 1–600 個字元。", out_of_scope: "此功能僅查核美股的 SEC 財務事實。",
       unauthorized: "請輸入即時查核密碼以繼續。",
+      locked: "密碼錯誤次數過多，已鎖定 30 分鐘。",
+      busy: "伺服器忙碌中，請稍後再試。",
+      slow_down: "請求過於頻繁，請等候 10 分鐘。",
       auth_rate_limited: "密碼錯誤次數過多。{reset} 下方示範仍可查看。",
       budget_exhausted: "今日預算已用完，請查看已儲存的範例。於 UTC 00:00 重設。",
       total_budget_exhausted: "此供應商暫停（累計預算已用完）。請查看已儲存的範例。",
@@ -646,7 +652,7 @@
     expectedC: "Contradicted · $164,501B → $164.5B · forecast and opinion not judged", reset: "Reset example", openInput: "Open input file",
     fireworksNote: "Fireworks responses are slow today (provider-side); Baseten is fastest.",
     historyErrors: { provider_error: "Provider error", timeout: "Timeout", budget_exhausted: "Budget", total_budget_exhausted: "Budget",
-      credit_exhausted: "Credit limit", rate_limited: "Rate limit", sec_unavailable: "SEC unavailable", preprocessing_failed: "Input error",
+      credit_exhausted: "Credit limit", rate_limited: "Rate limit", busy: "Server busy", locked: "Locked", slow_down: "Too many requests", sec_unavailable: "SEC unavailable", preprocessing_failed: "Input error",
       invalid_model_output: "Invalid response", incomplete_model: "Incomplete", tool_limit: "Tool limit", unavailable: "Unavailable", unknown: "Failed" },
     compareAll: "Compare on all", compareNote: "Sequential runs · separate provider budgets", run: "Run check", runCompare: "Compare providers",
     privacy: "Authenticated runs and their input text are public in history for 14 days. OCR/ASR uses the Meta Model API; SEC checks use your chosen provider. 5 checks / 10 min per IP; a shared office IP shares this limit. A rate-limited request shows the reset time.",
@@ -669,7 +675,7 @@
     expectedC: "證據矛盾 · $164,501B → $164.5B · 預測與意見不予判定", reset: "重設範例", openInput: "開啟輸入檔案",
     fireworksNote: "Fireworks 今日回應較慢（供應商端）；Baseten 最快。",
     historyErrors: { provider_error: "供應商錯誤", timeout: "逾時", budget_exhausted: "預算上限", total_budget_exhausted: "預算上限",
-      credit_exhausted: "額度上限", rate_limited: "頻率上限", sec_unavailable: "SEC 暫不可用", preprocessing_failed: "輸入錯誤",
+      credit_exhausted: "額度上限", rate_limited: "頻率上限", busy: "伺服器忙碌", locked: "已鎖定", slow_down: "請求過於頻繁", sec_unavailable: "SEC 暫不可用", preprocessing_failed: "輸入錯誤",
       invalid_model_output: "回應無效", incomplete_model: "回應不完整", tool_limit: "工具次數上限", unavailable: "暫不可用", unknown: "失敗" },
     compareAll: "比較全部供應商", compareNote: "依序執行 · 各供應商獨立預算", run: "執行查核", runCompare: "比較供應商",
     privacy: "通過密碼驗證的查核與輸入文字會公開於歷史紀錄，保留 14 天。OCR／ASR 使用 Meta Model API；SEC 查核使用所選供應商。每個 IP 每 10 分鐘限 5 次；共用辦公室 IP 也共用此額度。達到限制時會顯示重設時間。",
@@ -1570,14 +1576,6 @@
       if (!Array.isArray(rows)) throw Error("invalid history");
       if (request !== historyRequest) return;
       historyRows = rows.filter(row => row && validId(String(row.id))).slice(0, 50);
-      await Promise.all(historyRows.filter(row => !row.verdict && !row.error).map(async row => {
-        try {
-          const detail = await fetch(`/api/history/${encodeURIComponent(row.id)}`, { cache: "no-store", signal: controller.signal });
-          if (!detail.ok) return;
-          const saved = await detail.json();
-          row.error = (saved.envelope || saved).error;
-        } catch { /* Keep the row and its recorded cost when the detail is unavailable. */ }
-      }));
       if (request !== historyRequest) return;
       historyState = historyRows.length ? "" : "historyEmpty";
     } catch { if (request === historyRequest) historyState = "historyUnavailable"; }
@@ -1792,6 +1790,83 @@
     }
   }
 
+  function openLiveTerminals(ids, memberProviders) {
+    const zh = pageLanguage === "zh";
+    const copy = zh ? { title: "即時 · 本次請求的伺服器紀錄", log: n => `伺服器紀錄（${n} 行）`,
+      stages: ["已送出", "模型", "SEC 工具", "模型", "程式檢查", "判定"], seconds: "秒" } :
+      { title: "Live · server log of this request", log: n => `Server log (${n} lines)`,
+        stages: ["Sent", "Model", "SEC tools", "Model", "Program checks", "Verdict"], seconds: "s" };
+    const host = $("#live-progress");
+    host.replaceChildren();
+    host.hidden = false;
+    const started = Date.now();
+    let stopped = false, polling = false, timer = null, lastPoll = -Infinity, pending = Promise.resolve();
+    const panels = ids.map((id, index) => {
+      const panel = liveNode("details", "", "live-terminal");
+      panel.open = true;
+      const summary = liveNode("summary", copy.title + (ids.length > 1 ? ` · ${providerLabel(memberProviders[index])}` : ""));
+      const clock = liveNode("span", "0.0 " + copy.seconds, "terminal-clock");
+      const stages = liveNode("div", "", "terminal-stages");
+      const chips = copy.stages.map((label, stage) => {
+        const chip = liveNode("span", label); chip.dataset.active = String(stage === 0); stages.append(chip); return chip;
+      });
+      const lines = liveNode("pre", "", "terminal-lines");
+      // Raw protocol tokens are server records; UI labels follow the reading language.
+      lines.setAttribute("translate", "no");
+      panel.append(summary, clock, stages, lines); host.append(panel);
+      return { id, panel, summary, clock, chips, lines, next: 0, done: false, count: 0, stage: 0, sawTools: false };
+    });
+    const append = (panel, data) => {
+      if (!Array.isArray(data.lines) || typeof data.done !== "boolean" || !Number.isSafeInteger(data.next)) return;
+      for (const line of data.lines) {
+        if (!Number.isFinite(line.t_s) || typeof line.text !== "string") continue;
+        const text = line.text;
+        if (text.startsWith("tool_")) { panel.stage = 2; panel.sawTools = true; }
+        else if (text.startsWith("model")) panel.stage = panel.sawTools ? 3 : 1;
+        else if (text.startsWith("program_check")) panel.stage = 4;
+        else if (text.startsWith("verdict")) panel.stage = 5;
+        panel.lines.append(document.createTextNode(`+${line.t_s.toFixed(1)} s  ${text}\n`));
+        panel.count++;
+      }
+      panel.next = data.next; panel.done = data.done;
+      panel.chips.forEach((chip, index) => { chip.dataset.active = String(index === panel.stage); });
+      panel.lines.scrollTop = panel.lines.scrollHeight;
+    };
+    const poll = async panel => {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 8000);
+      try {
+        const response = await fetch(`/api/progress/${panel.id}?after=${panel.next}`, { cache: "no-store", signal: controller.signal });
+        if (response.ok) append(panel, await response.json());
+        else if (response.status !== 404) panel.done = true;
+      } catch { panel.done = true; }
+      finally { clearTimeout(timeout); }
+    };
+    const tick = () => {
+      if (stopped) return;
+      panels.forEach(panel => { panel.clock.textContent = `${((Date.now() - started) / 1000).toFixed(1)} ${copy.seconds}`; });
+      const panel = panels.find(item => !item.done);
+      // Shared network cadence keeps compare + budget/history below 30/IP/min.
+      // The clock/stage UI ticks every 700 ms; no overlapping progress fetches.
+      if (panel && !polling && Date.now() - lastPoll >= 3000) {
+        lastPoll = Date.now(); polling = true;
+        pending = poll(panel);
+        pending.finally(() => { lastPoll = Date.now(); polling = false; });
+      }
+      timer = setTimeout(tick, 700);
+    };
+    timer = setTimeout(tick, 700);
+    return async finalRead => {
+      stopped = true; clearTimeout(timer);
+      await pending;
+      if (finalRead) await Promise.allSettled(panels.map(panel => poll(panel)));
+      panels.forEach((panel, index) => {
+        panel.panel.open = false;
+        panel.summary.textContent = copy.log(panel.count) + (ids.length > 1 ? ` · ${providerLabel(memberProviders[index])}` : "");
+      });
+    };
+  }
+
   function setupLive() {
     const form = $("#live-form");
     if (!form) return;
@@ -1836,6 +1911,12 @@
       if (!exampleId && (!sentText || Array.from(sentText).length > 600)) { liveStatus = "invalid_input"; localizeLive(); return; }
       const compare = $("#compare-all").checked;
       const provider = selectedProvider;
+      const clientRunId = crypto.randomUUID();
+      const memberProviders = compare ? Object.keys(providers) : [provider];
+      const runIds = memberProviders.map((_, index) => clientRunId.slice(0, -1) +
+        ((parseInt(clientRunId.slice(-1), 16) + index) % 16).toString(16));
+      const finishTerminals = openLiveTerminals(runIds, memberProviders);
+      let postComplete = false;
       const request = ++resultRequest;
       rateLimitReset = null;
       liveBusy = true;
@@ -1850,10 +1931,11 @@
       try {
         const response = await fetch(compare ? "/api/compare" : exampleId ? "/api/check-example" : "/api/check", {
           method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ ...(exampleId ? { example_id: exampleId } : { text: sentText }), password: attemptedPassword,
+          body: JSON.stringify({ ...(exampleId ? { example_id: exampleId } : { text: sentText }), password: attemptedPassword, client_run_id: clientRunId,
             ...(compare ? { providers: Object.keys(providers) } : { provider }) }), signal: controller.signal, cache: "no-store"
         });
         const result = await response.json();
+        postComplete = !!(result.receipt || result.events?.length || result.runs?.length);
         if (request !== resultRequest) return;
         if (["rate_limited", "auth_rate_limited"].includes(result.error) && Number.isFinite(result.retry_after) && result.retry_after >= 0)
           rateLimitReset = Date.now() + result.retry_after * 1000;
@@ -1888,6 +1970,7 @@
       } catch (error) { if (request === resultRequest) liveStatus = error.name === "AbortError" ? "timeout" : "unavailable"; }
       finally {
         clearTimeout(timer);
+        await finishTerminals(postComplete);
         await Promise.allSettled([refreshLiveBudget(), refreshHistory()]);
         liveBusy = false;
         form.setAttribute("aria-busy", "false");

@@ -4,9 +4,9 @@ Implementation and operator handoff, updated 2026-11-04. The owner-selected runt
 
 ## Architecture and verdict identity
 
-The browser posts `{ "text": "…", "password": "…", "provider": "baseten" }` to same-origin `/api/check`; provider is optional and defaults to Baseten. The [Pages Function](../functions/api/check.ts) validates the request and forwards only these fields, trusted `CF-Connecting-IP` as `X-Live-Client-IP`, and at most 1,024 User-Agent characters for history parsing to `https://${LIVE_ORIGIN_HOST}/api/check`. It supplies `CF-Access-Client-Id`, `CF-Access-Client-Secret` and `X-Live-Origin-Token` from server-side configuration. Visitor cookies, Authorization and other browser headers are not forwarded. Redirects are disabled; the Pages abort is 92 seconds for text and 97 seconds for examples, including response-body reading. Invalid origin responses fail closed to the saved demo; public result fields and budget counters are allowlisted.
+The browser posts `{ "text": "…", "password": "…", "provider": "baseten", "client_run_id": "UUID v4" }` to same-origin `/api/check`; provider is optional and defaults to Baseten. The [Pages Function](../functions/api/check.ts) validates the request and forwards only these fields, trusted `CF-Connecting-IP` as `X-Live-Client-IP`, and at most 1,024 User-Agent characters for history parsing to `https://${LIVE_ORIGIN_HOST}/api/check`. It supplies `CF-Access-Client-Id`, `CF-Access-Client-Secret` and `X-Live-Origin-Token` from server-side configuration. Visitor cookies, Authorization and other browser headers are not forwarded. Redirects are disabled; the Pages abort is 92 seconds for text and 97 seconds for examples, including response-body reading. Invalid origin responses fail closed to the saved demo; public result fields and budget counters are allowlisted.
 
-The [self-hosted adapter](../server/live/server.py) authenticates **every route**, including `/healthz`, against `LIVE_ORIGIN_TOKEN` using a fixed-size constant-time digest comparison. Missing tokens return 401; wrong tokens return 403. It then authenticates check/compare passwords before budgets, rate limits, SEC or model I/O. Routes are `GET /api/budget`, `POST /api/check`, `POST /api/check-example`, `POST /api/compare`, `GET /api/history`, `GET /api/history/{id}`, and `GET /healthz`. History and budget reads need no review password. The browser receives no provider key.
+The [self-hosted adapter](../server/live/server.py) authenticates **every route**, including `/healthz`, against `LIVE_ORIGIN_TOKEN` using a fixed-size constant-time digest comparison. Missing tokens return 401; wrong tokens return 403. It then authenticates check/compare passwords before paid-run budget/rate admission, SEC or model I/O (the API burst guard precedes password authentication). Routes are `GET /api/budget`, `POST /api/check`, `POST /api/check-example`, `POST /api/compare`, `GET /api/history`, `GET /api/history/{id}`, `GET /api/progress/{client_run_id}`, and `GET /healthz`. History and budget reads need no review password. The browser receives no provider key.
 
 The adapter imports the [gate](../workers/live/src/gate.py), [runner](../workers/live/src/live.py) and claimcheck Python modules directly. The [image](../server/live/Dockerfile) copies these sources, not a TypeScript port. Fact selection, fiscal normalization, calculations, evidence IDs, strict JSON parsing and final evaluation remain Python. A model proposal cannot override a program verdict: any contradiction → `contradicted`; every extracted assertion supported → `supported`; otherwise → `insufficient_evidence`. Individual checks may remain `unchecked`. Missing explicit dated periods abstain without a model call. Extraction can miss assertions; a supported result applies to the assertions actually extracted. SEC evidence can be incomplete or restated.
 
@@ -19,12 +19,13 @@ The site orders providers as Meta Model API (`meta`), Baseten (`baseten`), and F
 JSON POST bodies are at most 1 KiB, including chunked bodies. Extra request keys, query strings and cross-origin browser requests are rejected. Routes accept exactly:
 
 ```text
-POST /api/check         {text, password, provider?}
-POST /api/check-example {example_id, password, provider?}
-POST /api/compare       {text, password, providers:[provider, provider, provider?]}
-                    or {example_id, password, providers:[provider, provider, provider?]}
+POST /api/check         {text, password, provider?, client_run_id?}
+POST /api/check-example {example_id, password, provider?, client_run_id?}
+POST /api/compare       {text, password, providers:[provider, provider, provider?], client_run_id?}
+                    or {example_id, password, providers:[provider, provider, provider?], client_run_id?}
 GET  /api/history?limit=50
 GET  /api/history/{id}
+GET  /api/progress/{client_run_id}?after=0
 ```
 
 Pages implements compare with sequential, separate `/api/check` or `/api/check-example` origin fetches, each bounded to 92 or 97 seconds. A shared 290-second deadline includes all members; the final fetch receives only the remaining time. No origin fetch uses `/api/compare`, so each response stays below Cloudflare’s 100-second origin-response limit. The origin’s direct compare route remains available for non-Pages callers.
@@ -50,7 +51,7 @@ Every live run envelope, including a failed attempt, adds these fields (numeric 
 
 `input` is `{kind, example_id?, story?, text_read}`. `kind` is `text|image|pdf|audio|video`, and `story` is `a|b|c`. Original unprefixed IDs (`text` through `video`) mean story A; prefixed IDs (`a-text` through `c-video`) are supported when packaged as ready, hash-matching entries. W1 does not create the other stories' assets. Example inputs also retain the existing `input.preprocessing: {model, provider, latency_ms, cost_usd}` for compatibility; receipt preprocessing has exactly the three fields above. Media `text_read` may contain at most 12,000 characters; the public row keeps only its first 600.
 
-`GET /api/history` returns `{ "rows": [row, …] }`, newest first. `limit` defaults to 50 and accepts a single integer from 1 to 50; duplicate/unknown query keys are rejected. Summary rows have exactly this shape:
+`GET /api/history` returns `{ "rows": [row, …] }`, newest first. `limit` defaults to 50 and accepts a single integer from 1 to 50; duplicate/unknown query keys are rejected. Successful summary rows have this shape; failed rows additionally contain an allowlisted `error` code:
 
 ```json
 {
@@ -73,7 +74,7 @@ Every live run envelope, including a failed attempt, adds these fields (numeric 
 }
 ```
 
-`GET /api/history/{id}` returns the same row plus `envelope`, the retained public run envelope (≤65,536 serialized bytes). Unknown, expired or pruned IDs return 404 / `not_found`; malformed IDs return 400. Failed attempts have `verdict: null` and normally zero corrections. `corrections_count` counts edits in the original result. When an envelope is too large, `history_truncated: true` marks removal of trailing trace/evidence/claim items; the receipt and input are retained, with input limited to 600 characters if needed and corrections omitted as a last resort. Such a reopened result is partial. History responses are `no-store` and pass strict row/receipt/input allowlists, including on detail reads.
+`GET /api/history/{id}` returns the same row plus `envelope`, the retained public run envelope (≤65,536 serialized bytes). Unknown, expired or pruned IDs return 404 / `not_found`; malformed IDs return 400. Failed attempts have `verdict: null` and normally zero corrections. Summary errors are read locally from the retained envelope, including legacy rows; the browser does not fan out detail requests for failed rows. `corrections_count` counts edits in the original result. When an envelope is too large, `history_truncated: true` marks removal of trailing trace/evidence/claim items; the receipt and input are retained, with input limited to 600 characters if needed and corrections omitted as a last resort. Such a reopened result is partial. History responses are `no-store` and pass strict row/receipt/input allowlists, including on detail reads.
 
 History resides in `/data/ledger.sqlite3` on the existing PVC. Only authenticated, validated attempts are stored, including paid failures, budget/rate stops and each compare member; authentication and input-validation rejections create no row. Retention is 14 days and at most 5,000 rows, enforced on insert and by the existing 60-second periodic prune. Reads immediately exclude expired rows. IPv4 retains only its first two octets and an eight-hex keyed hash; IPv6 uses its first two hextets, and invalid/missing addresses become `unknown`. The private hash salt persists across restarts. User-Agent is reduced to deterministic browser family plus OS/device class by a small parser, with no external UA library; raw IP and UA are never retained. [Provider/history tests](../tests/test_live_providers_history.py) and [Pages contract tests](../tests/node/live-v3-boundary.test.mjs) use fake transports and temporary SQLite, not fresh provider or OCR/ASR execution.
 
@@ -99,17 +100,21 @@ Its [retained trace](evidence/posts-2026-10-28/demo-thread-baseten/traces/202610
 | --- | --- |
 | Input | 1–600 Unicode characters after trimming; 1 KiB JSON body ceiling, including chunked bodies |
 | Password | `LIVE_CHECK_PASSWORD` from env/file; missing/empty disables checks with 503; missing/wrong input returns 401 before reservation/model I/O |
-| Failed passwords | Five failures per IP per 15 minutes, then 429 for 15 minutes from the fifth failure; correct passwords remain blocked during lockout; other IPs independent |
+| Failed passwords | Five wrong passwords in a rolling 15-minute window → 429 `locked` on the fifth failure, for 30 minutes; correct passwords remain blocked; other IPs independent. Before any paid work. |
 | Scope | US SEC issuers and companyfacts; at most three issuers; no prices, investment advice, crypto, forecasts, non-GAAP or issuer-release verification |
 | Calls | At most four model calls, 2,000 output tokens each; at most six tool calls; no automatic provider retry |
 | Time | Runner: 85-second text check. Server: 90-second text / 95-second example; 85-second model/preprocessing and 22-second SEC I/O. Pages: 92-second text / 97-second example origin fetches, sequential compare ≤290 seconds. Browser: 100-second single / 290-second compare abort. Status guidance: 6–90 s by provider, not an observed extreme or an SLA. |
-| Rate | Five accepted checks per IP per ten minutes; raw IP never stored |
+| Rate | Five accepted checks per IP per ten minutes (`rate_limited`); compare counts each member; raw IP never stored |
+| Site runs | At most 20 authenticated accepted runs in a rolling ten-minute window across all IPs; compare counts each member; 429 `busy` |
+| Concurrent runs | At most two members in flight across the single origin process; 429 `busy`, no queue; released on success, error, cancellation or timeout |
+| API burst | Every origin `/api/*` request, including budget, history and progress: at most 30 per IP in a rolling 60 seconds; the 31st returns 429 `slow_down` and blocks that IP for ten minutes. Uses the trusted Pages client-IP header and durable salted buckets. |
+| Progress | UUID v4 capability ID; memory only, five-minute TTL from creation, at most 200 lines per run / 1,000 buffers. Shared network polls at least three seconds apart; UI timer 700 ms. |
 | Daily spend | `META_DAILY_BUDGET_USD`, `BASETEN_DAILY_BUDGET_USD`, `FIREWORKS_DAILY_BUDGET_USD`; default $30 each per UTC day. `DAILY_BUDGET_USD` is an additional aggregate ceiling (default $3). |
 | Lifetime spend | `META_LIFETIME_BUDGET_USD`, `BASETEN_LIFETIME_BUDGET_USD`, `FIREWORKS_LIFETIME_BUDGET_USD`; default $20 each. `TOTAL_BUDGET_USD` is an additional aggregate ceiling (default $20). Operator supplies real caps before rollout; zero disables calls, invalid/negative/nonfinite values fail closed. |
 | Provider credit | 402, or 403/429 with credit/payment/quota exhaustion wording, durably pauses only the affected provider; ordinary auth/rate errors do not latch a credit stop |
 | SEC cache | Six-hour memory/disk cache of successful JSON bodies only; HTTPS host allowlist `www.sec.gov` / `data.sec.gov`; redirects disabled |
 
-SEC requests use exactly `User-Agent: DappGo market-claim-verifier admin@dappgo.com`. Tool arguments cannot supply fetch URLs. [Pages routes](_routes.json) include `/api/check`, `/api/check-example`, `/api/compare`, `/api/history`, `/api/history/*` and `/api/budget`. The [CSP](_headers), language switch, color schemes, cache-busted assets and reduced-motion behavior remain in use.
+SEC requests use exactly `User-Agent: DappGo market-claim-verifier admin@dappgo.com`. Tool arguments cannot supply fetch URLs. [Pages routes](_routes.json) include `/api/check`, `/api/check-example`, `/api/compare`, `/api/history`, `/api/history/*`, `/api/budget` and `/api/progress/*`. The [CSP](_headers), language switch, color schemes, cache-busted assets and reduced-motion behavior remain in use.
 
 Provider errors, incomplete/model-invalid responses, SEC failures and timeouts issue no financial verdict. Reserved costs remain accounted for and available partial steps are shown. Daily exhaustion returns 429 / `budget_exhausted`; lifetime/provider stops return 503 / `total_budget_exhausted` or `credit_exhausted`. Rate limits return 429; timeouts return 504 / `timeout` from Python. Missing origin configuration, unavailable counters or absent keys fail closed to the saved demo.
 
@@ -133,7 +138,7 @@ One Python process and one replica use a PVC-backed SQLite ledger with one JSON 
 
 All caps use integer nano-USD: holds round up and caps round down. Reconciliation updates the reservation's provider and aggregate UTC start day and lifetime counters atomically. Meta OCR/ASR always charges Meta; verifier calls charge the selected provider. Missing/invalid usage, failed fetches and cancellation retain the entire ceiling. Settlement is idempotent. Usage above the reservation latches the affected provider's lifetime stop; aggregate actual spend is still reconciled against the sum guard. A provider daily reservation shortfall pauses that provider until UTC midnight without inflating its recorded spend. A global daily shortfall can still leave room for a cheaper member. A lifetime stop remains latched even if a later settlement refunds reserved cost. Increasing a limit or restarting cannot clear it.
 
-There is **no reset endpoint or reset setting** in the self-hosted adapter. `BUDGET_RESET_ID` is ignored. Never replace/delete the PVC or reset lifetime counters to bypass a stop. Periodic pruning runs every 60 seconds; transitions also prune expired buckets. Day/hold rows expire after 48 hours, accepted-rate buckets after ten minutes and failed-auth buckets after 15 minutes. Lifetime totals, pause flags and the HMAC salt remain.
+There is **no reset endpoint or reset setting** in the self-hosted adapter. `BUDGET_RESET_ID` is ignored. Never replace/delete the PVC or reset lifetime counters to bypass a stop. Periodic pruning runs every 60 seconds; transitions also prune expired buckets. Day/hold rows expire after 48 hours, accepted-rate buckets after ten minutes and failed-auth buckets after 15 minutes unless locked for 30 minutes from the fifth failure. Burst request windows last 60 seconds, with ten-minute blocks; the site-run window lasts ten minutes. Lifetime totals, pause flags and the HMAC salt remain.
 
 The schema-v2 migration runs in the existing SQLite transaction before pruning, including on idle cleanup. V1 stored only aggregate daily/lifetime totals and untagged holds: an exact historical provider split cannot be recovered. Its recorded spend and stop flags are conservatively inherited by **each provider**, while the original aggregate remains unchanged. Existing history rows, holds and aggregate lifetime totals are retained; `provider_migration` privately records the carried lifetime amount. Legacy hold reconciliation adjusts all inherited copies once. New holds bind exactly one provider, and provider lifetime totals survive day/hold/history pruning and restarts. This can pause a provider earlier than its actual credit balance; never treat expiring public history as an audited lifetime ledger. See [setting caps](../deploy/README.md#setting-provider-caps).
 
@@ -149,7 +154,7 @@ The Try section contains five self-made inputs of the [saved Big Tech post](site
 
 The [existing ingest code](../src/claimcheck/ingest_media.py) extracts PDF text locally, reads images with **`muse-spark-1.3`** and transcribes audio with **`muse-voice-transcribe-1.0`**, both via **provider `meta` / the Meta Model API**. Video uses ASR plus all three existing frame samples (1/6, 1/2, 5/6 of duration). OCR/ASR text is untrusted input, not SEC evidence. The text enters the unchanged live claim runner and deterministic `corrections` builder. Fixed video inputs may contain multiple readings; the 12,000-character post-ingest ceiling does not change arbitrary pasted-text limits.
 
-The envelope adds `input: {example_id, kind, preprocessing: {model, provider, cost_usd, latency_ms}, text_read}`. Top-level cost/latency include preprocessing; preprocessing metrics are a subset, not an additional charge. Native extraction uses provider `local` and costs zero. Every OCR/ASR attempt reserves against the **same SQLite ledger before external I/O**; missing usage/errors/timeouts retain holds. OCR adds an image-patch ceiling; ASR uses rounded-second pricing. The sync ingest functions receive bridges to the async transport/gate. Cancellation aborts pending I/O and seals the bridge, so a still-decoding thread cannot start a late paid call. No automatic provider retry is enabled by the live adapter. The whole example request has **60 s**, Pages allows **65 s** including the body, and the browser allows **70 s**. The 28/25/32 s text path is unchanged.
+The envelope adds `input: {example_id, kind, preprocessing: {model, provider, cost_usd, latency_ms}, text_read}`. Top-level cost/latency include preprocessing; preprocessing metrics are a subset, not an additional charge. Native extraction uses provider `local` and costs zero. Every OCR/ASR attempt reserves against the **same SQLite ledger before external I/O**; missing usage/errors/timeouts retain holds. OCR adds an image-patch ceiling; ASR uses rounded-second pricing. The sync ingest functions receive bridges to the async transport/gate. Cancellation aborts pending I/O and seals the bridge, so a still-decoding thread cannot start a late paid call. No automatic provider retry is enabled by the live adapter. The server allows **95 s** per example, Pages allows **97 s** including the body, and the browser allows **100 s** for a single run. Text uses 90/92/100 s at server/Pages/browser; compare has a 290 s shared Pages/browser deadline.
 
 The bilingual renderer uses text nodes for the read text and preprocessing fields. Order: **What the model read → verdict → corrected draft → SEC evidence → agent trace (collapsed)**. Saved buttons need no password and remain available at budget stops. All five ready live cards require the same password and share the five-check/ten-minute limit. Media playback needs no password. Root-relative paths work on `/zh/`; the site CSP allows media from the same origin only.
 
@@ -224,3 +229,35 @@ Open `http://127.0.0.1:8788/#live-check`, choose **Use Apple example**, enter a 
 Use the [host operator commands and Tunnel/Access/Pages setup](../deploy/README.md#host-operator-commands), followed by a budget-only smoke check. This handoff does not authorize a fresh paid model call. Keep the PVC and the same spend history across upgrades and rollback.
 
 Retained receipts: [original live check](evidence/live-check-2026-11-02/REPORT.md), [budget](evidence/live-budget-2026-11-02/REPORT.md), [password](evidence/live-password-2026-11-02/REPORT.md), and [self-hosted adapter](evidence/live-selfhost-2026-11-03/REPORT.md).
+
+## Live request progress
+
+The browser supplies a UUID v4 `client_run_id` in the check/example/compare POST body.
+It is validated by Pages and the origin; older clients may omit it and receive no
+progress buffer. A known ID cannot overwrite another run. Authentication and input
+validation precede creation. Never reuse an ID across requests.
+
+`GET /api/progress/<client_run_id>?after=0` returns only
+`{lines:[{t_s,text}],done,next}`. `after` is the previous `next` (an absolute line
+cursor); when old lines are evicted, only the retained suffix is returned. Unknown
+or expired IDs return 404 `not_found`. Responses are never cached. Anyone with the
+unguessable ID can read these short-lived, redacted protocol records; they contain
+no input text, IP, credentials, provider bodies or model reasoning. The pod log and
+terminal consume the same event stream and safe field projection. The terminal
+shows start/preprocessing, model step and cost, SEC tool arguments and evidence,
+program checks, verdict/cost/duration, and allowlisted error codes.
+
+Compare remains sequential through Pages. For member index 0–2, the last hex nibble
+of the supplied UUID increases by that index modulo 16 (all other digits stay
+unchanged). Each member has its own buffer and terminal panel. The browser shares
+one polling scheduler across the panels. Its clock ticks every 700 ms and network
+polls are at least three seconds apart, leaving room under the API burst limit for
+POST, budget and history requests. After the POST completes it reads the remaining
+lines once and collapses each panel into a retained server-log disclosure.
+
+The existing 1 KiB streaming JSON ceiling is stricter than the required 16 KiB
+maximum. Non-JSON and oversized bodies are rejected by Pages before origin I/O.
+No secret settings change. An operator may optionally add a Cloudflare WAF rate
+limit for `/api/*` by client IP as an additional edge safeguard; keep its threshold
+above the normal progress/history/budget traffic. It is not required for these
+origin guards, and does not replace them.

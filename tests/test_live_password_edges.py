@@ -10,8 +10,8 @@ from test_site_stamps_runtime import ROOT
 @pytest.mark.parametrize("attempted", ["\ud800", "\udfff", "prefix-\ud800-suffix"])
 def test_lone_json_surrogates_are_counted_as_failed_passwords(attempted):
     state = {}
-    for _ in range(5):
-        assert auth(state, attempted)[1] == 401
+    for index in range(5):
+        assert auth(state, attempted)[1] == (401 if index < 4 else 429)
     assert auth(state, PASSWORD)[1] == 429
     assert next(iter(state["auth_failures"].values()))["count"] == 5
 

@@ -164,7 +164,8 @@ test("history summaries and detail never forward raw IP/UA or unknown fields", a
   let detail = false;
   t.mock.method(globalThis, "fetch", async req => {
     assert.equal(req.url, `https://live-origin.example.com/api/history${detail ? "/" + "a".repeat(32) : "?limit=1"}`);
-    for (const name of ["Cookie", "User-Agent", "X-Live-Client-IP", "Authorization"]) assert.equal(req.headers.get(name), null);
+    for (const name of ["Cookie", "User-Agent", "Authorization"]) assert.equal(req.headers.get(name), null);
+    assert.equal(req.headers.get("X-Live-Client-IP"), "192.0.2.1");
     const value = row({ ip: "192.0.2.1", raw_ip: "192.0.2.1", ua: "raw UA", user_agent: "raw UA", password: "drop",
       envelope: { ...envelope(), raw_ip: "192.0.2.1", user_agent: "raw UA", receipt: { ...receipt(), raw_ua: "drop" } } });
     return Response.json(detail ? value : { rows: [value], internal: "drop" });
@@ -192,18 +193,18 @@ test("history query and method limits, raw metadata substitution, 64 KiB and ext
   for (output of [{ rows: [row({ ip_masked: "192.0.2.1" })] }, { rows: [row({ browser: "Mozilla raw UA" })] },
     { rows: [row({ model: "private-model" })] }, { rows: [row({ id: ["a".repeat(32)] })] },
     { rows: [row({ at: "1" })] }, { rows: [row(), row()] }]) {
-    assert.equal((await onHistory({ request: new Request("https://site.example/api/history?limit=1"), env })).status, 503);
+    assert.equal((await onHistory({ request: new Request("https://site.example/api/history?limit=1", { headers: { "CF-Connecting-IP": "192.0.2.1" } }), env })).status, 503);
   }
   output = row({ envelope: envelope("baseten", { events: [{ kind: "tool_result", result: "x".repeat(65537) }] }) });
-  assert.equal((await onHistory({ request: new Request("https://site.example/api/history/" + "a".repeat(32)), env })).status, 503);
+  assert.equal((await onHistory({ request: new Request("https://site.example/api/history/" + "a".repeat(32), { headers: { "CF-Connecting-IP": "192.0.2.1" } }), env })).status, 503);
   output = { error: "not_found", secret: "drop" }; code = 404;
-  assert.equal((await onHistory({ request: new Request("https://site.example/api/history/" + "a".repeat(32)), env })).status, 404);
+  assert.equal((await onHistory({ request: new Request("https://site.example/api/history/" + "a".repeat(32), { headers: { "CF-Connecting-IP": "192.0.2.1" } }), env })).status, 404);
 });
 
 test("history detail validates row identity and preserves failed or truncated attempts", async t => {
   let output;
   t.mock.method(globalThis, "fetch", () => Response.json(output));
-  const request = () => new Request("https://site.example/api/history/" + "a".repeat(32));
+  const request = () => new Request("https://site.example/api/history/" + "a".repeat(32), { headers: { "CF-Connecting-IP": "192.0.2.1" } });
   for (output of [row({ envelope: envelope("meta") }), row({ input_text: "different", envelope: envelope() }),
     row({ story: "b", envelope: envelope() }), row({ corrections_count: 1, envelope: envelope() })]) {
     assert.equal((await onHistory({ request: request(), env })).status, 503);

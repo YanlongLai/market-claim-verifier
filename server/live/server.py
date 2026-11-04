@@ -25,6 +25,7 @@ import httpx
 
 from workers.live.src.gate import prune, transition
 from claimcheck.providers import get_provider
+from server.live.progress import ProgressBuffer, RUN_ID, member_id
 from workers.live.src.live import (ExampleRun, LiveError, LiveRun, SEC_AGENT, provider_credit_exhausted,
                                    validate_provider, validate_text)
 
@@ -226,9 +227,19 @@ class SpendGate:
                 if not hit:
                     raise LiveError("not_found", 404)
                 return {**json.loads(hit[0]), "envelope": json.loads(hit[1])}
-            hits = self.db.execute("SELECT body FROM history WHERE created_at > ? "
+            hits = self.db.execute("SELECT body, envelope FROM history WHERE created_at > ? "
                                    "ORDER BY created_at DESC, rowid DESC LIMIT ?", (self.clock() - HISTORY_TTL, limit))
-            return {"rows": [json.loads(hit[0]) for hit in hits]}
+            rows = []
+            for body, envelope in hits:
+                row = json.loads(body)
+                # Legacy rows have no summary error. Read it locally instead of
+                # making every browser fetch up to 50 detail endpoints.
+                if row.get("verdict") is None:
+                    error = json.loads(envelope).get("error")
+                    if isinstance(error, str):
+                        row["error"] = error
+                rows.append(row)
+            return {"rows": rows}
 
     async def update(self, action, data=None):
         async with GATE_LOCK:
@@ -267,6 +278,8 @@ class Services:
         self.cache_dir = settings.data_dir / "sec-cache"
         self.cache_dir.mkdir(exist_ok=True)
         self.cache = {}
+        self.progress = ProgressBuffer(clock)
+        self.in_flight = 0
 
     async def gate(self, action, data):
         return await self.ledger.update(action, data)
@@ -360,6 +373,7 @@ class Services:
     async def prune(self):
         await self.ledger.update("prune")
         now = self.clock()
+        self.progress.prune()
         self.cache = {url: hit for url, hit in self.cache.items() if hit[0] > now}
         for path in self.cache_dir.glob("*.json"):
             if path.stat().st_mtime + TTL <= now:
@@ -383,7 +397,7 @@ def failure_envelope(run, error):
             **({"budget": error.budget} if error.budget else {})}
 
 
-async def execute(services, request, provider, *, claim=None, example=None):
+async def execute(services, request, provider, *, claim=None, example=None, client_run_id=None):
     async def model(payload):
         return await services.model(payload, provider=provider)
 
@@ -397,8 +411,14 @@ async def execute(services, request, provider, *, claim=None, example=None):
     else:
         run = LiveRun(model, services.sec, services.gate, provider=provider, log_secrets=log_secrets)
         run.input_info["text_read"] = claim
+    if client_run_id:
+        if not services.progress.create(client_run_id):
+            raise LiveError("invalid_input", 400)
+        run.progress = lambda elapsed, kind, fields: services.progress.event(
+            client_run_id, elapsed, kind, fields, log_secrets)
     run.log_start(len(claim) if claim is not None else 0)
     status = 200
+    admitted = False
     try:
         async with asyncio.timeout(EXAMPLE_TIMEOUT if example else 90):
             # Check this member's provider and any paid Meta preprocessing.
@@ -412,14 +432,27 @@ async def execute(services, request, provider, *, claim=None, example=None):
             if not services.provider_key(provider) or (example and example[2] in {"image", "audio", "video"}
                                                        and not services.settings.meta_api_key):
                 raise LiveError("unavailable")
+            # No queue: increment without yielding, before the atomic ledger admission.
+            if services.in_flight >= 2:
+                raise LiveError("busy", 429)
+            services.in_flight += 1
+            admitted = True
             await services.gate("rate", {"ip": request.headers.get("X-Live-Client-IP")})
             result = await run.check_example(example[1]) if example else await run.bounded(claim)
     except (LiveError, TimeoutError) as error:
         if isinstance(error, TimeoutError):
             error = LiveError("timeout", 504)
         result, status = failure_envelope(run, error), error.status
+    except asyncio.CancelledError:
+        run.log("error", code="timeout", cost_usd=run.cost, cost_is_bound=run.cost_is_bound)
+        raise
     except Exception:
         result, status = failure_envelope(run, LiveError("unavailable")), 503
+    finally:
+        if admitted:
+            services.in_flight -= 1
+        if client_run_id:
+            services.progress.finish(client_run_id)
     # Authentication and input validation have succeeded. Retain failed and
     # partial attempts too; neither the password nor raw visitor metadata enter
     # the runner, ledger, envelope or history table.
@@ -436,6 +469,21 @@ async def handle(request):
                                  hashlib.sha256(expected.encode()).digest())
     if not supplied or not expected or not matches:
         return reply({"error": "origin_rejected", "demo": "data/live-demo.json"}, 401 if not supplied else 403)
+    if request.path.startswith("/api/"):
+        try:
+            await services.gate("burst", {"ip": request.headers.get("X-Live-Client-IP")})
+        except LiveError as error:
+            return reply({"error": error.code}, error.status)
+        except Exception:
+            return reply({"error": "unavailable"}, 503)
+    if request.method == "GET" and request.path.startswith("/api/progress/"):
+        run_id = request.path.removeprefix("/api/progress/")
+        if (not RUN_ID.fullmatch(run_id) or set(request.query) - {"after"} or
+                len(request.query.getall("after", [])) > 1 or
+                not re.fullmatch(r"0|[1-9][0-9]{0,8}", request.query.get("after", "0"))):
+            return reply({"error": "invalid_input"}, 400)
+        result = services.progress.read(run_id, int(request.query.get("after", "0")))
+        return reply(result) if result is not None else reply({"error": "not_found"}, 404)
     if request.method == "GET" and request.path in {"/api/budget", "/healthz"}:
         try:
             budget = await services.gate("budget", {})
@@ -483,7 +531,10 @@ async def handle(request):
             compare = request.path == "/api/compare"
             is_example = request.path == "/api/check-example" or (compare and "example_id" in data)
             key = "example_id" if is_example else "text"
-            if not {key} <= set(data) <= {key, "providers" if compare else "provider"}:
+            if not {key} <= set(data) <= {key, "providers" if compare else "provider", "client_run_id"}:
+                raise LiveError("invalid_input", 400)
+            client_run_id = data.get("client_run_id")
+            if "client_run_id" in data and (not isinstance(client_run_id, str) or not RUN_ID.fullmatch(client_run_id)):
                 raise LiveError("invalid_input", 400)
             if compare:
                 providers = data.get("providers")
@@ -500,12 +551,13 @@ async def handle(request):
                 example = (data["example_id"], path, kind)
             claim = None if is_example else validate_text(data.get("text"))
         runs = []
-        for provider in providers:
-            result, status = await execute(services, request, provider, claim=claim, example=example)
+        for index, provider in enumerate(providers):
+            result, status = await execute(services, request, provider, claim=claim, example=example,
+                                          client_run_id=member_id(client_run_id, index) if client_run_id else None)
             if not compare:
                 return reply(result, status)
             runs.append(result)
-            if result.get("error") == "rate_limited":
+            if result.get("error") in {"rate_limited", "busy", "slow_down"}:
                 break
         return reply({"runs": runs})
     except (LiveError, TimeoutError) as error:
