@@ -84,6 +84,7 @@ def live_copy_supported(result):
 
 def live_cue_events(scene, receipt):
     """Resolve ordered phase-local offsets from this take's picture clock."""
+    receipt=with_phase_aliases(receipt)
     phases = {t["phase"]: t["at_s"] for t in receipt["timings"]}
     # Tool-call reveal marks carry the event index of their take; the storyboard binds
     # to the first and second shown tool calls (named tool_call_2/4_reveal historically).
@@ -107,7 +108,27 @@ def live_cue_events(scene, receipt):
     return events
 
 
+
+def with_phase_aliases(receipt):
+    """Return a copy whose timings/named checks also carry the storyboard's ordinal tool-call names.
+
+    Tool-call reveal marks are named by the event index of their take (tool_call_3_reveal, ...);
+    the storyboard binds the first and second shown tool calls as tool_call_2/4_reveal.
+    """
+    import copy
+    out = copy.deepcopy(receipt)
+    shown = [t for t in out.get("timings", []) if re.fullmatch(r"tool_call_\d+_reveal", t["phase"])]
+    names = {t["phase"] for t in out.get("timings", [])}
+    for alias, ordinal in (("tool_call_2_reveal", 0), ("tool_call_4_reveal", 1)):
+        if alias not in names and len(shown) > ordinal:
+            out["timings"].append({**shown[ordinal], "phase": alias, "alias_of": shown[ordinal]["phase"]})
+            for check in list(out.get("named_element_checks", [])):
+                if check.get("phase") == shown[ordinal]["phase"]:
+                    out["named_element_checks"].append({**check, "phase": alias})
+    return out
+
 def check_choreography(receipt):
+    receipt=with_phase_aliases(receipt)
     proof=receipt.get('choreography',{});result=receipt.get('result',{})
     calls=[i for i,e in enumerate(result.get('events',[])) if e.get('kind')=='tool_call']
     shown=proof.get('trace_steps_shown',[]);derived=proof.get('apple_derivation',{})
