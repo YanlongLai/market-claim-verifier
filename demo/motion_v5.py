@@ -180,10 +180,16 @@ def compile_data(root=ROOT,story=None,voices=None,*,preview=False):
         shot=dict(id=scene['id'],start=scene['target_start_s'],end=scene['target_end_s'],voice_start=scene['target_start_s'],voice_end=scene['target_start_s']+duration,voice_s=duration)
         local=[];events=[];segments=[]
         if scene['cue_events']:
+            previous_speech_end=None
             for event,at,length,source in cue_spans(scene,voice):
                 onset=at+(source['speech_start_s'] if source else 0)
                 end=at+(source['speech_end_s'] if source else length)
+                # Lead the sentence by 0.2 s, but never take the picture from the previous
+                # sentence before its last word (+0.05 s); the lead then shrinks to the gap.
                 picture=max(0,onset-.2)
+                if previous_speech_end is not None:
+                    picture=max(picture,min(onset-.1,previous_speech_end+.05))
+                previous_speech_end=end
                 event['picture_at_scene_s']=picture
                 native=next((c for c in (live_receipt or {}).get('named_element_checks',[]) if c['phase']==event.get('receipt_phase')),None)
                 if voice and native and (onset<native['at_s'] or end>native.get('visible_until_s',-1)):
