@@ -66,6 +66,22 @@ const fs = require('node:fs');
     await page.locator('#example-saved').waitFor({state:'visible'});
     await page.waitForFunction(() => document.querySelector('#example-saved')?.disabled === false);
     if (await storyA.getAttribute('aria-pressed') !== 'true') throw Error('Story A is not selected');
+    const providerOrder = await page.locator('input[name="provider"]').evaluateAll(nodes => nodes.map(node => node.value));
+    if (providerOrder.join(',') !== 'meta,baseten,fireworks') throw Error('Provider order is stale');
+    if (!await page.locator('input[name="provider"][value="baseten"]').isChecked()) throw Error('Default provider is not Baseten');
+    await page.waitForFunction(() => ['meta','baseten','fireworks'].every(id => {
+      const meter = document.querySelector(`#budget-${id}-meter`);
+      return meter && !meter.hidden && document.querySelector(`#budget-${id}-text`)?.textContent;
+    }));
+    const passwordNote = await page.locator('#live-password-note').innerText();
+    if (passwordNote !== 'Judges: the password is our team name; saved examples need none.')
+      throw Error('Judge password note is stale');
+    const section = await page.locator('#live-check').boundingBox();
+    for (const selector of ['#budget-meta-meter','#budget-baseten-meter','#budget-fireworks-meter','#live-password-note']) {
+      const box = await page.locator(selector).boundingBox();
+      if (!box || box.x < section.x || box.y < section.y || box.x+box.width > section.x+section.width ||
+          box.y+box.height > section.y+section.height) throw Error(`Try capture excludes ${selector}`);
+    }
     // Capture the real section at the 1600 px viewport; no DOM/CSS restyling.
     await page.locator('#live-check').screenshot({path:`${directory}/try-story-a.png`,animations:'disabled'});
     await page.locator('#example-saved').click();
@@ -83,6 +99,7 @@ const fs = require('node:fs');
     if (errors.length) throw Error(`Browser errors: ${errors.join('; ')}`);
     fs.writeFileSync(`${directory}/browser.json`,JSON.stringify({viewport:[1600,1100],
       story:'A',kind:'text',provider:'baseten',mode:'recorded',api:'blocked with 503',
+      providerOrder,providerMeters:['meta','baseten','fireworks'],passwordNote,
       externalRequests:'blocked',blockedOrigins:[...new Set(blocked)],pageErrors:errors,
       savedResult:'/data/examples/text.json',browserVersion:browser.version()},null,2));
   } finally { await browser.close(); }
@@ -96,6 +113,8 @@ def optimize(source: Path, target: Path) -> dict:
         image = image.convert('RGB')
         if image.width != 1600:
             raise ValueError(f'Capture width must be 1600, got {image.width}')
+        if target.name == 'corrected-draft.png' and image.height > 1500:
+            raise ValueError(f'Corrected draft capture exceeds 1500 px: {image.height}')
         image.save(target, optimize=True)
         palette = None
         for colors in (256, 192, 128, 96, 64):
@@ -146,6 +165,10 @@ def main():
                   for name in ('try-story-a.png', 'corrected-draft.png')]
         receipt = json.loads((Path(temp) / 'browser.json').read_text())
         receipt['images'] = images
+        receipt['source_sha256'] = {name: hashlib.sha256((ROOT / name).read_bytes()).hexdigest()
+                                    for name in ('docs/site/index.html', 'docs/site/styles.css',
+                                                 'docs/site/script.js', 'docs/site/data/site.json',
+                                                 'scripts/capture_readme_shots.py')}
         receipt['saved_result_sha256'] = hashlib.sha256((ROOT / 'docs/site/data/examples/text.json').read_bytes()).hexdigest()
         (records / 'receipt.json').write_text(json.dumps(receipt, indent=2)+'\n')
         for readme in ('README.md', 'README.zh-TW.md'):

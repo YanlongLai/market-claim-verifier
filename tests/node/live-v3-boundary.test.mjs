@@ -61,17 +61,73 @@ test("all POST endpoints reject extra keys, unknown providers and bodies over 1 
   }
 });
 
-test("compare forwards one sequential request and returns only run envelopes through a budget stop", async t => {
+test("compare fetches members sequentially and keeps public envelopes through a budget stop", async t => {
   const stopped = envelope("fireworks", { verdict: undefined, error: "budget_exhausted", receipt: { ...receipt("fireworks"), cost_usd: 0 } });
+  const seen = [];
+  let active = 0;
   t.mock.method(globalThis, "fetch", async req => {
-    assert.equal(req.url, "https://live-origin.example.com/api/compare");
-    assert.deepEqual(await req.json(), { text, password: "x", providers: ["meta", "fireworks", "baseten"] });
-    return Response.json({ runs: [{ ...envelope("meta"), password: "drop" }, stopped, envelope("baseten")], raw_ip: "drop" });
+    assert.equal(++active, 1, "members must never overlap");
+    assert.equal(req.url, "https://live-origin.example.com/api/check");
+    const body = await req.json();
+    seen.push(body.provider);
+    assert.deepEqual(body, { text, password: "x", provider: ["meta", "fireworks", "baseten"][seen.length - 1] });
+    assert.equal(req.headers.get("X-Live-Client-IP"), "192.0.2.1");
+    const result = body.provider === "fireworks" ? stopped : { ...envelope(body.provider), password: "drop", raw_ip: "drop" };
+    const response = Response.json(result, { status: body.provider === "fireworks" ? 429 : 200 });
+    const read = response.json.bind(response);
+    response.json = async () => { const data = await read(); active--; return data; };
+    return response;
   });
   const response = await onCompare({ request: post("compare", { text, password: "x", providers: ["meta", "fireworks", "baseten"] }), env });
   assert.equal(response.status, 200);
   const expected = JSON.parse(JSON.stringify({ runs: [envelope("meta"), stopped, envelope("baseten")] }));
   assert.deepEqual(await response.json(), expected);
+  assert.deepEqual(seen, ["meta", "fireworks", "baseten"]);
+});
+
+test("compare gives each example its own sub-100 s fetch and shares a 290 s deadline", async t => {
+  let now = 0;
+  const durations = [], cleared = [], seen = [];
+  t.mock.method(Date, "now", () => now);
+  t.mock.method(globalThis, "setTimeout", (fn, ms) => { durations.push(ms); return durations.length; });
+  t.mock.method(globalThis, "clearTimeout", id => cleared.push(id));
+  t.mock.method(globalThis, "fetch", async req => {
+    assert.equal(req.url, "https://live-origin.example.com/api/check-example");
+    const body = await req.json();
+    assert.deepEqual(body, { example_id: "a-text", password: "x", provider: ["meta", "baseten", "fireworks"][seen.length] });
+    seen.push(body.provider);
+    now += durations.at(-1);
+    return Response.json(envelope(body.provider, { input: { kind: "text", example_id: "a-text", story: "a", text_read: text } }));
+  });
+  const response = await onCompare({ request: post("compare", { example_id: "a-text", password: "x", providers: ["meta", "baseten", "fireworks"] }), env });
+  assert.equal(response.status, 200);
+  assert.deepEqual((await response.json()).runs.map(run => run.receipt.provider), seen);
+  assert.deepEqual(durations, [97000, 97000, 96000]);
+  assert.deepEqual(cleared, [1, 2, 3]);
+  assert.equal(now, 290000);
+});
+
+test("compare continues after provider timeouts and stops after a rate limit", async t => {
+  const seen = [];
+  t.mock.method(globalThis, "fetch", async req => {
+    const { provider } = await req.json();
+    seen.push(provider);
+    return Response.json(envelope(provider, { verdict: undefined, error: provider === "meta" ? "timeout" : "rate_limited" }),
+      { status: provider === "meta" ? 504 : 429 });
+  });
+  const response = await onCompare({ request: post("compare", { text, providers: ["meta", "baseten", "fireworks"] }), env });
+  assert.equal(response.status, 200);
+  assert.deepEqual((await response.json()).runs.map(run => run.error), ["timeout", "rate_limited"]);
+  assert.deepEqual(seen, ["meta", "baseten"]);
+});
+
+test("compare returns authentication rejection without starting another member", async t => {
+  let calls = 0;
+  t.mock.method(globalThis, "fetch", () => { calls++; return Response.json({ error: "unauthorized" }, { status: 401 }); });
+  const response = await onCompare({ request: post("compare", { text, password: "wrong", providers: ["meta", "baseten"] }), env });
+  assert.equal(response.status, 401);
+  assert.deepEqual(await response.json(), { error: "unauthorized" });
+  assert.equal(calls, 1);
 });
 
 test("new story example IDs and preprocessing receipts survive the proxy allowlist", async t => {

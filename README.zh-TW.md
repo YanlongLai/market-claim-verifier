@@ -11,7 +11,7 @@
 | 步驟 | 開啟 | 檢視內容 |
 | --- | --- | --- |
 | 觀看 | [示範影片待發布](#demo-video) | 依序看貼文、申報文件、判定與修正版草稿。 |
-| 試用 | [即時查核](https://hackathon.dappgo.com/zh/#live-check) | 評審密碼在提交備註；選擇故事、輸入與平台。 |
+| 試用 | [即時查核](https://hackathon.dappgo.com/zh/#live-check) | 評審密碼是我們的隊名；選擇故事、輸入與平台。 |
 | 重播 | [已儲存查核](https://hackathon.dappgo.com/zh/#recorded-run) | 不需密碼；展開 SEC 證據與代理軌跡。這是已記錄執行。 |
 | 審核 | [保留測試報告](docs/evidence/eval-v2-2026-10-27/REPORT.zh-TW.md#評測指標) | 分母、失敗、費用與標準答案修正揭露。 |
 
@@ -80,9 +80,9 @@ Python 將主張綁定回傳證據，計算比較，
 
 | 路徑 | 固定查核模型 | 媒體前處理 |
 | --- | --- | --- |
+| Meta Model API | `muse-spark-1.3` | Meta OCR／ASR |
 | Baseten | `meta-models/muse-spark-open-1026` | Meta OCR／ASR |
 | Fireworks | `accounts/fireworks/models/muse-spark-open` | Meta OCR／ASR |
-| Meta Model API | `muse-spark-1.3` | Meta OCR／ASR |
 
 開放與封閉 Spark 版本是不同模型。供應商列出某種輸入格式，
 不代表本專案使用該平台原生的圖片、音訊或影片端點。
@@ -100,7 +100,7 @@ Python 將主張綁定回傳證據，計算比較，
 <!-- readme-shot:try-story-a -->
 ![選取故事 A 的試用區](docs/site/img/readme/try-story-a.png)
 
-選擇 Baseten、Fireworks 或 Meta Model API。「全部比較」會依序執行各平台，
+選擇 Meta Model API、Baseten 或 Fireworks，預設選取 Baseten。「全部比較」會依序執行各平台，
 各自使用獨立的每日與累計預算；額度用完的供應商會標示並略過。輸入評審密碼可執行新查核；
 「查看已儲存結果」不需密碼，並保留歷史收據。
 
@@ -169,13 +169,13 @@ Citations: both component SEC filings retained in the report
 
 ### 模型與金鑰
 
-以 `--provider baseten`、`--provider fireworks` 或 `--provider meta` 選擇供應商；未指定時讀取 `CLAIMCHECK_PROVIDER`，CLI 預設為 `meta`。查核使用的都是 Meta Muse 模型。
+以 `--provider meta`、`--provider baseten` 或 `--provider fireworks` 選擇供應商；未指定時讀取 `CLAIMCHECK_PROVIDER`，CLI 預設為 `meta`。查核使用的都是 Meta Muse 模型。
 
 | 供應商 | 金鑰環境變數 | 金鑰檔設定與預設位置 | 預設模型識別碼 |
 | --- | --- | --- | --- |
+| Meta Model API | `MODEL_API_KEY` | `MODEL_API_KEY_FILE`；`~/.config/dappgo/meta-model-api.env`，使用 `MODEL_API_KEY=your-key` 一行 | `muse-spark-1.3` |
 | Baseten | `BASETEN_API_KEY` | `BASETEN_API_KEY_FILE`；`~/secret/baseten_api_key.txt`，只放金鑰 | `meta-models/muse-spark-open-1026` |
 | Fireworks | `FIREWORKS_API_KEY` | `FIREWORKS_API_KEY_FILE`；`~/secret/fireworks-api-key.txt`，只放金鑰 | `accounts/fireworks/models/muse-spark-open` |
-| Meta Model API | `MODEL_API_KEY` | `MODEL_API_KEY_FILE`；`~/.config/dappgo/meta-model-api.env`，使用 `MODEL_API_KEY=your-key` 一行 | `muse-spark-1.3` |
 
 非空的環境金鑰優先於檔案。金鑰檔放在儲存庫外，權限設為 `chmod 600`；不要放進指令參數、錄影或提交紀錄中。
 
@@ -187,9 +187,9 @@ Citations: both component SEC filings retained in the report
 
 | 供應商 | 線上網站 | 本機 CLI |
 | --- | --- | --- |
+| Meta Model API | 伺服器 `META_MODEL_API_KEY`，供查核與 OCR／ASR 使用 | 自己的 `MODEL_API_KEY` 或 Meta 環境檔；`--provider meta` |
 | Baseten | 伺服器 `BASETEN_API_KEY`；固定預設模型 | 自己的 `BASETEN_API_KEY` 或純金鑰檔；`--provider baseten` |
 | Fireworks | 伺服器 `FIREWORKS_API_KEY`；固定預設模型 | 自己的 `FIREWORKS_API_KEY` 或純金鑰檔；`--provider fireworks` |
-| Meta Model API | 伺服器 `META_MODEL_API_KEY`，供查核與 OCR／ASR 使用 | 自己的 `MODEL_API_KEY` 或 Meta 環境檔；`--provider meta` |
 
 ## 費用與速度
 
@@ -199,7 +199,7 @@ Citations: both component SEC filings retained in the report
 
 | 工作 | 估計費用（美元） | 耗時 | 證據與邊界 |
 | --- | --- | --- | --- |
-| 即時文字查核 | 依輸入大小約 $0.01–0.04 | 6–25 秒 | [規劃區間與正式環境收據](docs/evidence/readme-v3-2026-11-04/REPORT.md#cost-and-speed)；一筆正式環境主張支持四捨五入的 $0.01／6 秒主要數字。 |
+| 即時文字查核 | 依輸入大小約 $0.01–0.04 | 依供應商約需 6–90 秒 | [規劃區間與正式環境收據](docs/evidence/readme-v3-2026-11-04/REPORT.md#cost-and-speed)；一筆正式環境主張支持四捨五入的 $0.01／6 秒主要數字。 |
 | 即時媒體範例 | 文字查核加 OCR／ASR 前處理 | 查核加前處理耗時 | [媒體報告](docs/evidence/media-examples-2026-11-03/REPORT.md)；沒有固定加價，Meta 前處理在收據逐項列出。 |
 | Baseten 基準主張 | 每題 $0.02 | 中位數 10 秒；p95 21 秒 | [保留文字測試報告](docs/evidence/eval-v2-2026-10-27/REPORT.md#metrics)；已完成案例費用與延遲的四捨五入。 |
 | 各供應商即時預算 | Meta、Baseten、Fireworks 各自設每日與累計上限；程式預設各每日 $30、累計 $20 | 每日 UTC 午夜重設 | [設定上限](deploy/README.md#setting-provider-caps)；部署者上線前依真實額度設定，另有全體總額上限。 |
@@ -223,12 +223,12 @@ Citations: both component SEC filings retained in the report
 
 | 平台／方法 | 全部 357 題 | 保留 266 題 | 報告 |
 | --- | --- | --- | --- |
+| Meta Model API · 代理加 SEC 工具 | 83.2%（297/357） | 82.0%（218/266） | [原始報告](docs/evidence/eval-v2-2026-10-27/REPORT.zh-TW.md#評測指標) |
+| Meta Model API · 單次回答 | 44.3%（158/357） | 41.7%（111/266） | [原始報告](docs/evidence/eval-v2-2026-10-27/REPORT.zh-TW.md#評測指標) |
 | Baseten · 代理加 SEC 工具 | 90.5%（323/357） | 90.2%（240/266） | [原始報告](docs/evidence/eval-v2-2026-10-27/REPORT.zh-TW.md#評測指標) |
 | Baseten · 單次回答 | 20.7%（74/357） | 21.1%（56/266） | [原始報告](docs/evidence/eval-v2-2026-10-27/REPORT.zh-TW.md#評測指標) |
 | Fireworks · 代理加 SEC 工具 | 90.5%（323/357） | 89.1%（237/266） | [原始報告](docs/evidence/eval-v2-2026-10-27/REPORT.zh-TW.md#評測指標) |
 | Fireworks · 單次回答 | 19.9%（71/357） | 19.2%（51/266） | [原始報告](docs/evidence/eval-v2-2026-10-27/REPORT.zh-TW.md#評測指標) |
-| Meta · 代理加 SEC 工具 | 83.2%（297/357） | 82.0%（218/266） | [原始報告](docs/evidence/eval-v2-2026-10-27/REPORT.zh-TW.md#評測指標) |
-| Meta · 單次回答 | 44.3%（158/357） | 41.7%（111/266） | [原始報告](docs/evidence/eval-v2-2026-10-27/REPORT.zh-TW.md#評測指標) |
 
 全部題目欄包含開發集；只有保留測試欄供應主要數字。
 主張於執行前凍結。兩個標準答案事後修正；

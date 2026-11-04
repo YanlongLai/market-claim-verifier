@@ -39,9 +39,9 @@ On the same [held-out claims](eval-v2-2026-10-27/REPORT.md#metrics), **Muse Spar
 
 | Platform / model | Verifier correct | No-tool baseline correct | False support¹ | Mean verifier cost | Evidence |
 | --- | ---: | ---: | ---: | ---: | --- |
+| Meta Model API · Muse Spark 1.3 | 218/266 · **82.0%** | 111/266 · 41.7% | 4/139 | $0.025880 | [Recorded results](eval-v2-2026-10-27/REPORT.md) |
 | Baseten · Muse Spark Open | 240/266 · **90.2%** | 56/266 · 21.1% | 1/139 | $0.019880 | [Recorded results](eval-v2-2026-10-27/REPORT.md) |
 | Fireworks · Muse Spark Open | 237/266 · **89.1%** | 51/266 · 19.2% | 1/139 | $0.019973 | [Recorded results](eval-v2-2026-10-27/REPORT.md) |
-| Meta · Muse Spark 1.3 | 218/266 · **82.0%** | 111/266 · 41.7% | 4/139 | $0.025880 | [Recorded results](eval-v2-2026-10-27/REPORT.md) |
 
 ¹ False support means accepting a claim whose reference label is contradicted or insufficient. This table uses only the [266 held-out claims](eval-v2-2026-10-27/REPORT.md#metrics); failures count as wrong.
 

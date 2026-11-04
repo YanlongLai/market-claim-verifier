@@ -342,7 +342,7 @@ class LiveRun:
 
     async def bounded(self, claim: str) -> dict:
         try:
-            return await asyncio.wait_for(self.run(claim), timeout=50)
+            return await asyncio.wait_for(self.run(claim), timeout=85)
         except TimeoutError:
             raise LiveError("timeout", 504) from None
 

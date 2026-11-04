@@ -4,7 +4,7 @@ Implementation and operator handoff, updated 2026-11-04. The owner-selected runt
 
 ## Architecture and verdict identity
 
-The browser posts `{ "text": "…", "password": "…", "provider": "baseten" }` to same-origin `/api/check`; provider is optional and defaults to Baseten. The [Pages Function](../functions/api/check.ts) validates the request and forwards only these fields, trusted `CF-Connecting-IP` as `X-Live-Client-IP`, and at most 1,024 User-Agent characters for history parsing to `https://${LIVE_ORIGIN_HOST}/api/check`. It supplies `CF-Access-Client-Id`, `CF-Access-Client-Secret` and `X-Live-Origin-Token` from server-side configuration. Visitor cookies, Authorization and other browser headers are not forwarded. Redirects are disabled; a 25-second abort includes response-body reading. Invalid origin responses fail closed to the saved demo; public result fields and budget counters are allowlisted.
+The browser posts `{ "text": "…", "password": "…", "provider": "baseten" }` to same-origin `/api/check`; provider is optional and defaults to Baseten. The [Pages Function](../functions/api/check.ts) validates the request and forwards only these fields, trusted `CF-Connecting-IP` as `X-Live-Client-IP`, and at most 1,024 User-Agent characters for history parsing to `https://${LIVE_ORIGIN_HOST}/api/check`. It supplies `CF-Access-Client-Id`, `CF-Access-Client-Secret` and `X-Live-Origin-Token` from server-side configuration. Visitor cookies, Authorization and other browser headers are not forwarded. Redirects are disabled; the Pages abort is 92 seconds for text and 97 seconds for examples, including response-body reading. Invalid origin responses fail closed to the saved demo; public result fields and budget counters are allowlisted.
 
 The [self-hosted adapter](../server/live/server.py) authenticates **every route**, including `/healthz`, against `LIVE_ORIGIN_TOKEN` using a fixed-size constant-time digest comparison. Missing tokens return 401; wrong tokens return 403. It then authenticates check/compare passwords before budgets, rate limits, SEC or model I/O. Routes are `GET /api/budget`, `POST /api/check`, `POST /api/check-example`, `POST /api/compare`, `GET /api/history`, `GET /api/history/{id}`, and `GET /healthz`. History and budget reads need no review password. The browser receives no provider key.
 
@@ -14,7 +14,7 @@ The adapter imports the [gate](../workers/live/src/gate.py), [runner](../workers
 
 ## Provider receipts, compare and history
 
-Provider IDs are exactly `baseten`, `fireworks`, and `meta`. The runner reuses the [existing adapters and pricing](../src/claimcheck/providers.py) with fixed models `meta-models/muse-spark-open-1026`, `accounts/fireworks/models/muse-spark-open`, and `muse-spark-1.3`, respectively. Unknown providers return 400 / `unknown_provider` before reservation. Meta OCR/ASR preprocessing is independent of the verifier choice; each paid call reserves from its own provider's durable budget and the global sum guard before network I/O. Missing/invalid usage retains the conservative hold, reflected by `cost_is_bound`.
+The site orders providers as Meta Model API (`meta`), Baseten (`baseten`), and Fireworks (`fireworks`); Baseten remains selected by default. The runner reuses the [existing adapters and pricing](../src/claimcheck/providers.py) with fixed models `muse-spark-1.3`, `meta-models/muse-spark-open-1026`, and `accounts/fireworks/models/muse-spark-open`, respectively. Unknown providers return 400 / `unknown_provider` before reservation. Meta OCR/ASR preprocessing is independent of the verifier choice; each paid call reserves from its own provider's durable budget and the global sum guard before network I/O. Missing/invalid usage retains the conservative hold, reflected by `cost_is_bound`.
 
 JSON POST bodies are at most 1 KiB, including chunked bodies. Extra request keys, query strings and cross-origin browser requests are rejected. Routes accept exactly:
 
@@ -26,6 +26,8 @@ POST /api/compare       {text, password, providers:[provider, provider, provider
 GET  /api/history?limit=50
 GET  /api/history/{id}
 ```
+
+Pages implements compare with sequential, separate `/api/check` or `/api/check-example` origin fetches, each bounded to 92 or 97 seconds. A shared 290-second deadline includes all members; the final fetch receives only the remaining time. No origin fetch uses `/api/compare`, so each response stays below Cloudflare’s 100-second origin-response limit. The origin’s direct compare route remains available for non-Pages callers.
 
 Compare requires 2–3 distinct providers and returns `{ "runs": [envelope, …] }` in request order. Each member checks budget before starting and reserves before each paid call. A daily, lifetime or credit stop produces a labeled error envelope for that member and comparison continues with the next provider. A rate stop ends the sequence. Completed and failed members are retained separately. Other provider failures allow the next provider to run. The shared per-IP rate counter counts each member. Compare authentication/validation errors use the ordinary error response; an accepted comparison returns HTTP 200 even when a member fails.
 
@@ -100,7 +102,7 @@ Its [retained trace](evidence/posts-2026-10-28/demo-thread-baseten/traces/202610
 | Failed passwords | Five failures per IP per 15 minutes, then 429 for 15 minutes from the fifth failure; correct passwords remain blocked during lockout; other IPs independent |
 | Scope | US SEC issuers and companyfacts; at most three issuers; no prices, investment advice, crypto, forecasts, non-GAAP or issuer-release verification |
 | Calls | At most four model calls, 2,000 output tokens each; at most six tool calls; no automatic provider retry |
-| Time | 28-second text / 60-second example run; 22-second verifier/SEC and 50-second Meta preprocessing I/O; Pages: 25-second text / 65-second example / 195-second compare; browser timing belongs to the site; no measured production SLA |
+| Time | Runner: 85-second text check. Server: 90-second text / 95-second example; 85-second model/preprocessing and 22-second SEC I/O. Pages: 92-second text / 97-second example origin fetches, sequential compare ≤290 seconds. Browser: 100-second single / 290-second compare abort. Status guidance: 6–90 s by provider, not an observed extreme or an SLA. |
 | Rate | Five accepted checks per IP per ten minutes; raw IP never stored |
 | Daily spend | `META_DAILY_BUDGET_USD`, `BASETEN_DAILY_BUDGET_USD`, `FIREWORKS_DAILY_BUDGET_USD`; default $30 each per UTC day. `DAILY_BUDGET_USD` is an additional aggregate ceiling (default $3). |
 | Lifetime spend | `META_LIFETIME_BUDGET_USD`, `BASETEN_LIFETIME_BUDGET_USD`, `FIREWORKS_LIFETIME_BUDGET_USD`; default $20 each. `TOTAL_BUDGET_USD` is an additional aggregate ceiling (default $20). Operator supplies real caps before rollout; zero disables calls, invalid/negative/nonfinite values fail closed. |
@@ -113,7 +115,7 @@ Provider errors, incomplete/model-invalid responses, SEC failures and timeouts i
 
 ## Public remaining-budget display
 
-`GET /api/budget` uses [the budget Function](../functions/api/budget.ts) and the same persistent ledger as checks. Visitors need no review password; Pages still authenticates to Access and the origin. The [boundary](../workers/pages/check.mjs) allowlists `day`, `providers`, `status` and `resets_at`. Each of `providers.baseten`, `providers.fireworks` and `providers.meta` has exactly these counters (illustrative values):
+`GET /api/budget` uses [the budget Function](../functions/api/budget.ts) and the same persistent ledger as checks. Visitors need no review password; Pages still authenticates to Access and the origin. The [boundary](../workers/pages/check.mjs) allowlists `day`, `providers`, `status` and `resets_at`. Each of `providers.meta`, `providers.baseten` and `providers.fireworks` has exactly these counters (illustrative values):
 
 ```json
 {"daily_limit":30,"daily_spent":0.59,"daily_remaining":29.41,"lifetime_limit":20,"lifetime_spent":2.59,"lifetime_remaining":17.41,"status":"ready"}
@@ -180,6 +182,8 @@ Offline mock mode also accepts these IDs via `/api/check-example`, but replays o
 ## Privacy
 
 Authenticated, validated runs publish their input and public result in the bounded history described above, including failed/partial attempts. This is an intentional change from the original response-only storage policy. There is no application request-body/exception log. The selected verifier receives the post and necessary SEC tool results; Meta receives media for OCR/ASR regardless of verifier choice. Providers have their own policies. Spending state retains totals, stop flags, reservation IDs/amounts/status, expiries and salted HMAC IP buckets; history is a separate table in the same SQLite file. The SEC cache stores public JSON bodies only. Access/hosting metadata is outside application history storage; do not enable body tracing or diagnostic credential dumps.
+
+The site hint says the review password is our team name; saved examples need none. The password value is never embedded in site HTML or JavaScript.
 
 The review password travels only in the POST body, is removed before the runner and is never sent to a provider, persisted in the ledger/history, echoed or logged. After successful authentication/check only, the UI stores it in `sessionStorage` for that tab; reload restores it and a 401 clears it. Blocked browser storage still permits checks. It never enters localStorage, cookies, URLs or rendered results. The password input remains masked with autocomplete off, and the form declares POST.
 

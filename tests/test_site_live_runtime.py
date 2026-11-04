@@ -493,7 +493,7 @@ let remaining=3,budgetReads=0;
 const budget=()=>(budgetFixture({day:'2026-11-02',daily_limit_usd:3,daily_remaining_usd:remaining,daily_spent_usd:3-remaining,
   resets_at:'2099-11-03T00:00:00Z',status:remaining===0?'budget_exhausted':'ready'}));
 // Keep rollover timers inert in this DOM test; the real browser owns them.
-context.setTimeout=(fn,ms)=>ms>32000?0:setTimeout(fn,ms);context.clearTimeout=clearTimeout;
+context.setTimeout=(fn,ms)=>ms>100000?0:setTimeout(fn,ms);context.clearTimeout=clearTimeout;
 context.fetch=async (url,opts)=>{
   if(publicFixture(url))return publicFixture(url);
   if(url==='/data/examples/index.json')return {ok:true,json:async()=>JSON.parse(readFileSync(root+'/docs/site/data/examples/index.json','utf8'))};
@@ -564,7 +564,9 @@ assert.equal(password.value,'');assert.equal(password.getAttribute('type'),'pass
 assert.equal(password.getAttribute('autocomplete'),'off');assert.equal(form.getAttribute('method'),'post');
 assert.ok(tree.querySelector('#recorded-trace').textContent.includes('FY2025Q4'));
 assert.ok(tree.querySelector('#budget-baseten-text').textContent.includes('$3'));
-assert.ok(/submission notes|需要密碼/.test(tree.querySelector('#live-password-note').textContent));
+assert.equal(tree.querySelector('#live-password-note').textContent,config.language==='zh'?
+  '評審：密碼是我們的隊名；已儲存範例免密碼。':
+  'Judges: the password is our team name; saved examples need none.');
 await form.events.submit({preventDefault(){}});assert.equal(requests.length,0);
 password.value=credential;
 const denied=form.events.submit({preventDefault(){}});

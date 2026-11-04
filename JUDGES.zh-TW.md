@@ -9,7 +9,7 @@
 | 步驟 | 開啟 | 檢視 |
 | --- | --- | --- |
 | 觀看 | [示範影片待發布](#demo-video-todo) | 貼文、證據、程式判定、修正版草稿。 |
-| 試用 | [即時查核](https://hackathon.dappgo.com/zh/#live-check) | 選故事、輸入與平台；評審密碼在提交備註。 |
+| 試用 | [即時查核](https://hackathon.dappgo.com/zh/#live-check) | 選故事、輸入與平台；評審密碼是我們的隊名。 |
 | 重播 | [已儲存查核](https://hackathon.dappgo.com/zh/#recorded-run) | 不需密碼；開啟修正版草稿、SEC 引用與代理軌跡。 |
 | 審核 | [原始基準](docs/evidence/eval-v2-2026-10-27/REPORT.zh-TW.md#評測指標) | 閱讀保留結果、失敗及標準答案修正揭露。 |
 
@@ -26,8 +26,8 @@ Muse Spark 選擇 SEC 工具；Python 綁定證據、計算判定並產生附出
 | 功能 | 擷取主張、查核 SEC 證據，回傳判定、修正版草稿、軌跡與收據。[修正報告](docs/evidence/corrected-draft-2026-11-03/REPORT.md)。 |
 | 範圍 | US-GAAP SEC 公司約 8,000 家；深入測試 23 家。SEC XBRL 期間大致從 2009 年起直到最新申報，含年度、季度及成長比較。[範圍報告](docs/evidence/REVIEW_GUIDE.md#facts-in-detail)。 |
 | 輸入 | 網站：600 字內文字與 3 個故事 × 5 種範例輸入。CLI：文字、圖片、PDF、音訊與影片。[網站報告](docs/evidence/try-v3-site-2026-11-03/REPORT.md)、[格式報告](docs/evidence/input-formats-2026-10-30/REPORT.md)。 |
-| 平台 | Baseten、Fireworks、Meta Model API，均為 Meta 查核模型；媒體使用 Meta OCR／ASR。[已記錄模型](docs/evidence/eval-v2-2026-10-27/manifest.json)。 |
-| 費用與速度 | 即時主要數字為 $0.01／6 秒。依輸入大小的規劃區間為 $0.01–0.04／6–25 秒，另加媒體前處理。基準每題 $0.02，中位數 10 秒，p95 21 秒。[收據與範圍](docs/evidence/readme-v3-2026-11-04/REPORT.md#cost-and-speed)。 |
+| 平台 | Meta Model API、Baseten、Fireworks，均為 Meta 查核模型；媒體使用 Meta OCR／ASR。[已記錄模型](docs/evidence/eval-v2-2026-10-27/manifest.json)。 |
+| 費用與速度 | 即時主要數字為 $0.01／6 秒。規劃費用約 $0.01–0.04；依供應商約需 6–90 秒，另加媒體前處理。基準每題 $0.02，中位數 10 秒，p95 21 秒。[收據與範圍](docs/evidence/readme-v3-2026-11-04/REPORT.md#cost-and-speed)。 |
 | 準確率 | 保留測試 90.2%（240/266）；矛盾／證據不足參考主張的錯誤支持為 1/139。失敗算錯。[原始報告](docs/evidence/eval-v2-2026-10-27/REPORT.zh-TW.md#評測指標)。 |
 | 修正 | 刪除被否定數字、填入程式值、引用組成申報。僅修改唯一綁定的已查核主張；並非文章核准。[保留 Apple 範例](docs/evidence/corrected-draft-2026-11-03/REPORT.md#retained-apple-example)。 |
 | 即時限制 | 各供應商有獨立每日與累計上限；每 IP 每 10 分鐘 5 次。已認證輸入／結果公開 14 天。[上限設定與遷移](deploy/README.md#setting-provider-caps)。 |

@@ -81,7 +81,7 @@ test("example timeout is 65 s including the body, and malformed input envelopes 
     req.signal.addEventListener("abort", () => reject(Error("aborted"))); callback();
   }) }));
   assert.equal((await onExample({ request: exampleRequest(), env })).status, 503);
-  assert.equal(duration, 65000);
+  assert.equal(duration, 97000);
   for (const input of [undefined, { ...exampleInput, example_id: "text" }, { ...exampleInput, text_read: {} },
     { ...exampleInput, preprocessing: { ...exampleInput.preprocessing, cost_usd: -1 } }]) {
     t.mock.method(globalThis, "fetch", async () => Response.json({ verdict: "supported", input }));
@@ -266,7 +266,7 @@ test("origin/network/Access failures return the uncached 503 demo fallback witho
 test("25 second abort covers fetch and body consumption for check and budget", async t => {
   let timers = 0, cleared = 0, bodyWait = false;
   t.mock.method(globalThis, "setTimeout", (callback, ms) => {
-    assert.equal(ms, 55000); timers++; queueMicrotask(callback); return timers;
+    assert.equal(ms, 92000); timers++; queueMicrotask(callback); return timers;
   });
   t.mock.method(globalThis, "clearTimeout", () => cleared++);
   const env = envWithFetch(t, req => {

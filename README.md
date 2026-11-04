@@ -11,7 +11,7 @@
 | Step | Open | What to inspect |
 | --- | --- | --- |
 | Watch | [Demo video — publication pending](#demo-video) | The post, filing, verdict and corrected draft in one walkthrough. |
-| Try | [Live check](https://hackathon.dappgo.com/#live-check) | Judges: password in the submission notes. Choose a story, input and provider. |
+| Try | [Live check](https://hackathon.dappgo.com/#live-check) | Password: the team name (dappgo). Choose a story, input and provider. |
 | Replay | [Saved check](https://hackathon.dappgo.com/#recorded-run) | No password. Expand the SEC evidence and agent trace. This is a recorded run. |
 | Audit | [Held-out benchmark report](docs/evidence/eval-v2-2026-10-27/REPORT.md#metrics) | Denominators, failures, costs and the corrected-gold disclosure. |
 
@@ -82,9 +82,9 @@ All verifier routes use Meta models; the hosting provider and model variant are 
 
 | Route | Pinned verifier model | Media preprocessing |
 | --- | --- | --- |
+| Meta Model API | `muse-spark-1.3` | Meta OCR/ASR |
 | Baseten | `meta-models/muse-spark-open-1026` | Meta OCR/ASR |
 | Fireworks | `accounts/fireworks/models/muse-spark-open` | Meta OCR/ASR |
-| Meta Model API | `muse-spark-1.3` | Meta OCR/ASR |
 
 Open and closed Spark variants are different models. A vendor modality listing does not mean
 this repository uses that provider's native image, audio or video endpoint.
@@ -104,7 +104,7 @@ Read the selected input before running it; unavailable saved media results are l
 <!-- readme-shot:try-story-a -->
 ![Try section with story A selected](docs/site/img/readme/try-story-a.png)
 
-Choose Baseten, Fireworks or Meta Model API. **Compare on all** runs the providers sequentially and charges each provider’s own daily and lifetime budget; exhausted members are labeled and skipped. Enter the judge password to run a new check;
+Choose Meta Model API, Baseten or Fireworks. Baseten is selected by default. **Compare on all** runs the providers sequentially and charges each provider’s own daily and lifetime budget; exhausted members are labeled and skipped. Enter the judge password to run a new check;
 **See saved result** requires none and preserves the historical receipt.
 
 <!-- readme-shot:corrected-draft -->
@@ -171,13 +171,13 @@ Citations: both component SEC filings retained in the report
 
 ### Models & keys
 
-Choose `--provider baseten`, `--provider fireworks` or `--provider meta`; otherwise `CLAIMCHECK_PROVIDER` applies (CLI default: `meta`). All verifier models are Meta Muse models.
+Choose `--provider meta`, `--provider baseten` or `--provider fireworks`; otherwise `CLAIMCHECK_PROVIDER` applies (CLI default: `meta`). All verifier models are Meta Muse models.
 
 | Provider | Key environment variable | Key-file override and default | Default model ID |
 | --- | --- | --- | --- |
+| Meta Model API | `MODEL_API_KEY` | `MODEL_API_KEY_FILE`; `~/.config/dappgo/meta-model-api.env` (a `MODEL_API_KEY=your-key` line) | `muse-spark-1.3` |
 | Baseten | `BASETEN_API_KEY` | `BASETEN_API_KEY_FILE`; `~/secret/baseten_api_key.txt` (raw key) | `meta-models/muse-spark-open-1026` |
 | Fireworks | `FIREWORKS_API_KEY` | `FIREWORKS_API_KEY_FILE`; `~/secret/fireworks-api-key.txt` (raw key) | `accounts/fireworks/models/muse-spark-open` |
-| Meta Model API | `MODEL_API_KEY` | `MODEL_API_KEY_FILE`; `~/.config/dappgo/meta-model-api.env` (a `MODEL_API_KEY=your-key` line) | `muse-spark-1.3` |
 
 A nonempty environment key wins over its file. Keep key files outside the repository with `chmod 600`; never put keys in command arguments, recordings or commits.
 
@@ -189,9 +189,9 @@ Override the verifier with `--model ID` or `CLAIMCHECK_MODEL=ID` (flag wins). Us
 
 | Provider | Online (site) | Local (CLI) |
 | --- | --- | --- |
+| Meta Model API | Server `META_MODEL_API_KEY` for verification and OCR/ASR | Your `MODEL_API_KEY` or Meta env file; `--provider meta` |
 | Baseten | Server `BASETEN_API_KEY`; fixed default model | Your `BASETEN_API_KEY` or raw-key file; `--provider baseten` |
 | Fireworks | Server `FIREWORKS_API_KEY`; fixed default model | Your `FIREWORKS_API_KEY` or raw-key file; `--provider fireworks` |
-| Meta Model API | Server `META_MODEL_API_KEY` for verification and OCR/ASR | Your `MODEL_API_KEY` or Meta env file; `--provider meta` |
 
 ## Cost & speed
 
@@ -201,7 +201,7 @@ These are rounded recorded observations. The planning band below is not a measur
 
 | Workload | Estimated cost (USD) | Duration | Evidence and boundary |
 | --- | --- | --- | --- |
-| Live text check | $0.01–0.04 by input size | 6–25 s | [Planning band and production receipt](docs/evidence/readme-v3-2026-11-04/REPORT.md#cost-and-speed); one production claim supports the rounded $0.01 / 6 s headline. |
+| Live text check | $0.01–0.04 by input size | 6–90 s by provider | [Planning band and production receipt](docs/evidence/readme-v3-2026-11-04/REPORT.md#cost-and-speed); one production claim supports the rounded $0.01 / 6 s headline. |
 | Live media example | Text verification + OCR/ASR preprocessing | Verification + preprocessing time | [Media report](docs/evidence/media-examples-2026-11-03/REPORT.md); no fixed surcharge. Meta preprocessing is itemized on the receipt. |
 | Baseten benchmark claim | $0.02 per claim | 10 s median; p95 21 s | [Held-out text report](docs/evidence/eval-v2-2026-10-27/REPORT.md#metrics); rounded completed-case cost and latency. |
 | Provider live budgets | Separate daily/lifetime caps for Meta, Baseten and Fireworks; code defaults $30/day and $20 lifetime each | Daily reset at UTC midnight | [Cap configuration](deploy/README.md#setting-provider-caps); operator sets real caps before rollout. Global ceilings additionally bound the sum. |
@@ -226,12 +226,12 @@ Failures and missing results count as wrong. This is text-benchmark accuracy, no
 
 | Provider / method | All 357 claims | Held-out 266 claims | Report |
 | --- | --- | --- | --- |
+| Meta Model API · agent + SEC tools | 83.2% (297/357) | 82.0% (218/266) | [Original report](docs/evidence/eval-v2-2026-10-27/REPORT.md#metrics) |
+| Meta Model API · single-shot | 44.3% (158/357) | 41.7% (111/266) | [Original report](docs/evidence/eval-v2-2026-10-27/REPORT.md#metrics) |
 | Baseten · agent + SEC tools | 90.5% (323/357) | 90.2% (240/266) | [Original report](docs/evidence/eval-v2-2026-10-27/REPORT.md#metrics) |
 | Baseten · single-shot | 20.7% (74/357) | 21.1% (56/266) | [Original report](docs/evidence/eval-v2-2026-10-27/REPORT.md#metrics) |
 | Fireworks · agent + SEC tools | 90.5% (323/357) | 89.1% (237/266) | [Original report](docs/evidence/eval-v2-2026-10-27/REPORT.md#metrics) |
 | Fireworks · single-shot | 19.9% (71/357) | 19.2% (51/266) | [Original report](docs/evidence/eval-v2-2026-10-27/REPORT.md#metrics) |
-| Meta · agent + SEC tools | 83.2% (297/357) | 82.0% (218/266) | [Original report](docs/evidence/eval-v2-2026-10-27/REPORT.md#metrics) |
-| Meta · single-shot | 44.3% (158/357) | 41.7% (111/266) | [Original report](docs/evidence/eval-v2-2026-10-27/REPORT.md#metrics) |
 
 The all-claim column includes the development split; only the held-out column supplies the headline.
 Claims were frozen before execution. Two gold answers were corrected afterward;

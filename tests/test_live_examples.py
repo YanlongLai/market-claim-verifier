@@ -183,13 +183,13 @@ def test_missing_meta_key_and_pending_assets_do_not_spend(tmp_path):
     asyncio.run(run())
 
 
-def test_media_timeout_is_60_seconds_cancels_io_keeps_hold_and_seals_bridge(tmp_path, monkeypatch):
+def test_media_timeout_is_95_seconds_cancels_io_keeps_hold_and_seals_bridge(tmp_path, monkeypatch):
     timeout = asyncio.timeout
     limits, calls, contexts = [], [], []
     def short(seconds):
         limits.append(seconds)
-        context = timeout(None if seconds == 60 else seconds)
-        if seconds == 60:
+        context = timeout(None if seconds == 95 else seconds)
+        if seconds == 95:
             contexts.append(context)
         return context
     monkeypatch.setattr(server.asyncio, "timeout", short)
@@ -208,8 +208,8 @@ def test_media_timeout_is_60_seconds_cancels_io_keeps_hold_and_seals_bridge(tmp_
             assert len(calls) == 1
     asyncio.run(run())
     # Body/auth parsing has its own short deadline; media execution keeps the
-    # separate 60-second deadline and cancellation bridge.
-    assert 60 in limits
+    # separate 95-second deadline and cancellation bridge.
+    assert 95 in limits
 
 
 def test_missing_ocr_usage_retains_bound_in_total_and_preprocessing_cost(tmp_path):
@@ -241,8 +241,8 @@ def test_timeout_while_decoding_never_starts_a_late_paid_call(tmp_path, monkeypa
     timeout = asyncio.timeout
     contexts = []
     def delayed_timeout(seconds):
-        context = timeout(None if seconds == 60 else seconds)
-        if seconds == 60:
+        context = timeout(None if seconds == 95 else seconds)
+        if seconds == 95:
             contexts.append(context)
         return context
     monkeypatch.setattr(server.asyncio, "timeout", delayed_timeout)

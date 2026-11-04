@@ -1477,7 +1477,7 @@ window.MOTION_PREVIEW = {
       "provenance": {
         "demo/data/demo-thread.json": "ea571b5aca2475293215e72e2698b19bb22bde3756fa49d36dfad6f2ce69adef",
         "docs/evidence/posts-2026-10-28/tw-social-post-meta/report.json": "74cf3acdf3a8ae6daac797123255babafed2850342bd6ab763b321fc5499d922",
-        "docs/site/data/site.json": "6b81aded03ec5db01bce08c5c2f9bc8d01e8f2201d108ba7e249ea8a912babb8",
+        "docs/site/data/site.json": "9af43a155835756727edb2da3ca834719ae994d0395be64cf8fa20f651d8c4b5",
         "docs/evidence/eval-v2-2026-10-27/summary.json": "27bbf13fe62f887cb0e81e7eadf6f2257f59ffc7bee73fe35b414159636cd675",
         "examples/posts/tw-social-post.zh-TW.txt": "9cca0dcfa0e0ccc056f015ec3d425fd257e59d9cc6279ce03feef0707a6be052",
         "docs/evidence/posts-2026-10-28/demo-thread-baseten/report.json": "6a3d9f1cf8e955b1f75028ba808125f9b15045855721fdd007ade2e9f24ee201",
@@ -2415,7 +2415,7 @@ window.MOTION_PREVIEW = {
     "provenance": {
       "demo/data/demo-thread.json": "ea571b5aca2475293215e72e2698b19bb22bde3756fa49d36dfad6f2ce69adef",
       "docs/evidence/posts-2026-10-28/tw-social-post-meta/report.json": "74cf3acdf3a8ae6daac797123255babafed2850342bd6ab763b321fc5499d922",
-      "docs/site/data/site.json": "6b81aded03ec5db01bce08c5c2f9bc8d01e8f2201d108ba7e249ea8a912babb8",
+      "docs/site/data/site.json": "9af43a155835756727edb2da3ca834719ae994d0395be64cf8fa20f651d8c4b5",
       "docs/evidence/eval-v2-2026-10-27/summary.json": "27bbf13fe62f887cb0e81e7eadf6f2257f59ffc7bee73fe35b414159636cd675",
       "examples/posts/tw-social-post.zh-TW.txt": "9cca0dcfa0e0ccc056f015ec3d425fd257e59d9cc6279ce03feef0707a6be052",
       "docs/evidence/posts-2026-10-28/demo-thread-baseten/report.json": "6a3d9f1cf8e955b1f75028ba808125f9b15045855721fdd007ade2e9f24ee201",
@@ -2461,7 +2461,7 @@ window.MOTION_PREVIEW = {
       "docs/site/img/fx/beam-pool.webp": "32c517dea8f06c1aff761782e81259b331a52faa4e8b9cfb21458de08b865cff",
       "docs/site/img/fx/lens-flare.webp": "29706263cec22a41cdb3eebd938acda906bfe71514cce6ad040a9d54fae61d73",
       "docs/site/img/stamp-paper.webp": "4dc3df2ae96c1f945b5c4a80fb0e9b9c3efbcaa9f45bb1de75a2f86b1baec906",
-      "docs/site/script.js": "d3350d6ad767f77929a8e74b6588f068f0b055092ce7a42629917e83954f5202",
+      "docs/site/script.js": "ebd9b48fcf5c93c22325b28a61aadf328a488a4c18901cc885c7e7d04ff48ea9",
       "tests/fixtures/multimodal/example-post.png": "06fc3980cd17a30c665ae86eaedd501805e8e4ad25267dc0b7bb57e3bc43b557",
       "tests/fixtures/multimodal/generation.json": "bbfb8be8d07ce2b9689ef3fe90dcb4d7c45332377cb074a819ca7d57de953efa",
       "tests/fixtures/multimodal/release-reading.wav": "06dc5144bc0f3d3ebdf0509a679cb53ab76d523ec104a29c68d62997a991c122",

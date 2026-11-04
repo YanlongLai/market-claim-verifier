@@ -30,7 +30,7 @@ from workers.live.src.live import (ExampleRun, LiveError, LiveRun, SEC_AGENT, pr
 
 GATE_LOCK = asyncio.Lock()  # One process, one critical section, including pruning.
 TTL = 6 * 60 * 60
-EXAMPLE_TIMEOUT = 60
+EXAMPLE_TIMEOUT = 95
 EXAMPLES = {"text": "post.txt", "image": "post.png", "pdf": "post.pdf", "audio": "post.mp3", "video": "post.mp4"}
 HISTORY_TTL = 14 * 86400
 HISTORY_MAX_ROWS = 5000
@@ -319,12 +319,12 @@ class Services:
     async def model(self, payload, *, provider="baseten"):
         adapter = get_provider(validate_provider(provider))
         try:
-            async with asyncio.timeout(22):
+            async with asyncio.timeout(85):
                 async with self.client.stream("POST", adapter.base_url + ("/chat/completions" if adapter.chat_completions else "/responses"),
                                                headers={"Authorization": "Bearer " + self.provider_key(provider),
                                                         "Content-Type": "application/json"},
                                                content=json.dumps(payload), follow_redirects=False,
-                                               timeout=22) as response:
+                                               timeout=85) as response:
                     if not response.is_success:
                         # Latch 402 before reading a possibly broken/private body.
                         body = "" if response.status_code == 402 else (await response.aread()).decode("utf-8", errors="replace")
@@ -344,7 +344,7 @@ class Services:
         try:
             async with self.client.stream("POST", META_BASE_URL + ("/responses" if operation == "ocr" else "/asr/transcribe"),
                     headers={"Authorization": "Bearer " + self.settings.meta_api_key, "Accept": "application/json"},
-                    **options, follow_redirects=False, timeout=50) as response:
+                    **options, follow_redirects=False, timeout=85) as response:
                 if not response.is_success:
                     body = "" if response.status_code == 402 else (await response.aread()).decode("utf-8", errors="replace")
                     if provider_credit_exhausted(response.status_code, body):
@@ -400,7 +400,7 @@ async def execute(services, request, provider, *, claim=None, example=None):
     run.log_start(len(claim) if claim is not None else 0)
     status = 200
     try:
-        async with asyncio.timeout(EXAMPLE_TIMEOUT if example else 55):
+        async with asyncio.timeout(EXAMPLE_TIMEOUT if example else 90):
             # Check this member's provider and any paid Meta preprocessing.
             # Each external paid call still requires an atomic reservation.
             budget = await services.gate("budget", {})
@@ -464,7 +464,7 @@ async def handle(request):
         return reply({"error": "not_found"}, 404)
     fallback = LiveRun(services.model, services.sec, services.gate)
     try:
-        async with asyncio.timeout(55):
+        async with asyncio.timeout(90):
             if request.content_type != "application/json" or request.query:
                 raise LiveError("invalid_input", 400)
             raw = bytearray()
@@ -560,4 +560,4 @@ if __name__ == "__main__":
     except (OSError, ValueError):
         raise SystemExit("live check configuration unavailable") from None
     web.run_app(create_app(settings), host="0.0.0.0", port=8080, access_log=None, print=None,
-                shutdown_timeout=195)
+                shutdown_timeout=290)

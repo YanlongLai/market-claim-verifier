@@ -281,6 +281,21 @@ def test_budget_failure_prevents_model_and_failed_model_keeps_hold():
     asyncio.run(run())
 
 
+def test_runner_has_an_85_second_deadline_and_translates_cancellation(monkeypatch):
+    async def bounded_wait(awaitable, timeout):
+        assert timeout == 85
+        awaitable.close()
+        raise TimeoutError
+    monkeypatch.setattr(asyncio, 'wait_for', bounded_wait)
+    async def never(*args):
+        pytest.fail('Deadline test must not perform I/O')
+    async def run():
+        with pytest.raises(LiveError) as error:
+            await LiveRun(never, never, never).bounded(APPLE['claim'])
+        assert error.value.code == 'timeout' and error.value.status == 504
+    asyncio.run(run())
+
+
 def test_missing_period_uses_cli_abstention_without_model_or_sec_io():
     async def run():
         async def never(*args):
