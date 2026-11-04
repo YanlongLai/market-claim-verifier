@@ -61,7 +61,7 @@ def test_budget_remaining_progress_low_warning_midnight_and_stops(language, view
 
 
 def test_pages_boundary_without_provider_key_or_network():
-    result = subprocess.run(["node", "--test", "tests/node/live-boundary.test.mjs"],
+    result = subprocess.run(["node", "--test", "tests/node/live-boundary.test.mjs", "tests/node/live-v3-boundary.test.mjs"],
                             cwd=ROOT, capture_output=True, text=True)
     assert result.returncode == 0, result.stdout + result.stderr
 

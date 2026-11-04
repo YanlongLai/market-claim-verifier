@@ -4,19 +4,82 @@ Implementation and operator handoff, updated 2026-11-03. The owner-selected runt
 
 ## Architecture and verdict identity
 
-The browser posts `{ "text": "…", "password": "…" }` to same-origin `/api/check`. The [Pages Function](../functions/api/check.ts) validates the request and forwards only these fields and trusted `CF-Connecting-IP` as `X-Live-Client-IP` to `https://${LIVE_ORIGIN_HOST}/api/check`. It supplies `CF-Access-Client-Id`, `CF-Access-Client-Secret` and `X-Live-Origin-Token` from server-side configuration. No visitor cookies, Authorization or other browser headers are forwarded. Redirects are disabled; a 25-second abort includes response-body reading. Invalid origin responses fail closed to the saved demo; public result fields and budget counters are allowlisted.
+The browser posts `{ "text": "…", "password": "…", "provider": "baseten" }` to same-origin `/api/check`; provider is optional and defaults to Baseten. The [Pages Function](../functions/api/check.ts) validates the request and forwards only these fields, trusted `CF-Connecting-IP` as `X-Live-Client-IP`, and at most 1,024 User-Agent characters for history parsing to `https://${LIVE_ORIGIN_HOST}/api/check`. It supplies `CF-Access-Client-Id`, `CF-Access-Client-Secret` and `X-Live-Origin-Token` from server-side configuration. Visitor cookies, Authorization and other browser headers are not forwarded. Redirects are disabled; a 25-second abort includes response-body reading. Invalid origin responses fail closed to the saved demo; public result fields and budget counters are allowlisted.
 
-The [self-hosted adapter](../server/live/server.py) authenticates **every route**, including `/healthz`, against `LIVE_ORIGIN_TOKEN` using a fixed-size constant-time digest comparison. Missing tokens return 401; wrong tokens return 403. It then authenticates check passwords before budgets, rate limits, SEC or model I/O. Only `GET /api/budget`, `POST /api/check` and `GET /healthz` are exposed. It calls Baseten's OpenAI-compatible endpoint with **`meta-models/muse-spark-open-1026`**. The browser receives no provider key.
+The [self-hosted adapter](../server/live/server.py) authenticates **every route**, including `/healthz`, against `LIVE_ORIGIN_TOKEN` using a fixed-size constant-time digest comparison. Missing tokens return 401; wrong tokens return 403. It then authenticates check/compare passwords before budgets, rate limits, SEC or model I/O. Routes are `GET /api/budget`, `POST /api/check`, `POST /api/check-example`, `POST /api/compare`, `GET /api/history`, `GET /api/history/{id}`, and `GET /healthz`. History and budget reads need no review password. The browser receives no provider key.
 
 The adapter imports the [gate](../workers/live/src/gate.py), [runner](../workers/live/src/live.py) and claimcheck Python modules directly. The [image](../server/live/Dockerfile) copies these sources, not a TypeScript port. Fact selection, fiscal normalization, calculations, evidence IDs, strict JSON parsing and final evaluation remain Python. A model proposal cannot override a program verdict: any contradiction → `contradicted`; every extracted assertion supported → `supported`; otherwise → `insufficient_evidence`. Individual checks may remain `unchecked`. Missing explicit dated periods abstain without a model call. Extraction can miss assertions; a supported result applies to the assertions actually extracted. SEC evidence can be incomplete or restated.
 
 [Recorded replay tests](../tests/test_live_check.py) reproduce the three Apple Baseten responses, including malformed JSON/repair, and compare all **357 v2 Baseten saved tool transcripts** through live finish and CLI evaluation. Those old companyfacts-only records explicitly treat unavailable earnings-release fallback evidence as unavailable; they do not fetch or synthesize L4 evidence. This is a frozen-response recheck, not a new model evaluation, OCR/ASR test or accuracy measurement. [Server adapter tests](../tests/test_live_server.py) replay Apple through fake HTTP transports and real SQLite.
 
+## Provider receipts, compare and history
+
+Provider IDs are exactly `baseten`, `fireworks`, and `meta`. The runner reuses the [existing adapters and pricing](../src/claimcheck/providers.py) with fixed models `meta-models/muse-spark-open-1026`, `accounts/fireworks/models/muse-spark-open`, and `muse-spark-1.3`, respectively. Unknown providers return 400 / `unknown_provider` before reservation. Meta OCR/ASR preprocessing is independent of the verifier choice; each paid call reserves from the same durable ledger before network I/O. Missing/invalid usage retains the conservative hold, reflected by `cost_is_bound`.
+
+JSON POST bodies are at most 1 KiB, including chunked bodies. Extra request keys, query strings and cross-origin browser requests are rejected. Routes accept exactly:
+
+```text
+POST /api/check         {text, password, provider?}
+POST /api/check-example {example_id, password, provider?}
+POST /api/compare       {text, password, providers:[provider, provider, provider?]}
+                    or {example_id, password, providers:[provider, provider, provider?]}
+GET  /api/history?limit=50
+GET  /api/history/{id}
+```
+
+Compare requires 2–3 distinct providers and returns `{ "runs": [envelope, …] }` in request order. Each member checks budget before starting and reserves before each paid call. A budget, lifetime, credit or rate stop ends the sequence; the final attempted member is an error envelope. Completed and failed members are retained separately. Other provider failures allow the next provider to run. The shared per-IP rate counter counts each member. Compare authentication/validation errors use the ordinary error response; an accepted comparison returns HTTP 200 even when a member fails.
+
+Every live run envelope, including a failed attempt, adds these fields (numeric values below are illustrative, not measurements):
+
+```json
+{
+  "receipt": {
+    "provider": "baseten",
+    "model": "meta-models/muse-spark-open-1026",
+    "latency_ms": 6300,
+    "cost_usd": 0.0099,
+    "preprocessing": null
+  },
+  "input": {"kind": "text", "text_read": "Apple FY2025 revenue was $416.2B."}
+}
+```
+
+`receipt.cost_usd` and `receipt.latency_ms` cover verification. Media examples have `preprocessing: {"model":"muse-voice-transcribe-1.0","latency_ms":1200,"cost_usd":0.001}` (model depends on input kind). Native text/PDF examples use `native-text` / `native-pdf` with zero preprocessing cost. Pasted text uses `null`. Top-level `cost_usd` and `latency_ms` include preprocessing; their values equal the sum of the two receipt portions. Costs are USD estimates or retained upper bounds, not provider invoice amounts.
+
+`input` is `{kind, example_id?, story?, text_read}`. `kind` is `text|image|pdf|audio|video`, and `story` is `a|b|c`. Original unprefixed IDs (`text` through `video`) mean story A; prefixed IDs (`a-text` through `c-video`) are supported when packaged as ready, hash-matching entries. W1 does not create the other stories' assets. Example inputs also retain the existing `input.preprocessing: {model, provider, latency_ms, cost_usd}` for compatibility; receipt preprocessing has exactly the three fields above. Media `text_read` may contain at most 12,000 characters; the public row keeps only its first 600.
+
+`GET /api/history` returns `{ "rows": [row, …] }`, newest first. `limit` defaults to 50 and accepts a single integer from 1 to 50; duplicate/unknown query keys are rejected. Summary rows have exactly this shape:
+
+```json
+{
+  "id": "0123456789abcdef0123456789abcdef",
+  "at": "2026-11-04T01:00:00.000Z",
+  "ip_masked": "192.0.*.*#1234abcd",
+  "device": "Windows / desktop",
+  "browser": "Edge",
+  "kind": "text",
+  "example_id": null,
+  "story": null,
+  "input_text": "Apple FY2025 revenue was $416.2B.",
+  "provider": "baseten",
+  "model": "meta-models/muse-spark-open-1026",
+  "verdict": "supported",
+  "corrections_count": 0,
+  "latency_ms": 6300,
+  "cost_usd": 0.0099,
+  "preprocessing_cost_usd": 0
+}
+```
+
+`GET /api/history/{id}` returns the same row plus `envelope`, the retained public run envelope (≤65,536 serialized bytes). Unknown, expired or pruned IDs return 404 / `not_found`; malformed IDs return 400. Failed attempts have `verdict: null` and normally zero corrections. `corrections_count` counts edits in the original result. When an envelope is too large, `history_truncated: true` marks removal of trailing trace/evidence/claim items; the receipt and input are retained, with input limited to 600 characters if needed and corrections omitted as a last resort. Such a reopened result is partial. History responses are `no-store` and pass strict row/receipt/input allowlists, including on detail reads.
+
+History resides in `/data/ledger.sqlite3` on the existing PVC. Only authenticated, validated attempts are stored, including paid failures, budget/rate stops and each compare member; authentication and input-validation rejections create no row. Retention is 14 days and at most 5,000 rows, enforced on insert and by the existing 60-second periodic prune. Reads immediately exclude expired rows. IPv4 retains only its first two octets and an eight-hex keyed hash; IPv6 uses its first two hextets, and invalid/missing addresses become `unknown`. The private hash salt persists across restarts. User-Agent is reduced to deterministic browser family plus OS/device class by a small parser, with no external UA library; raw IP and UA are never retained. [Provider/history tests](../tests/test_live_providers_history.py) and [Pages contract tests](../tests/node/live-v3-boundary.test.mjs) use fake transports and temporary SQLite, not fresh provider or OCR/ASR execution.
+
 ## Corrected draft
 
 Successful checks also return `corrections`, generated by the pure Python [correction builder](../src/claimcheck/correction.py). The site labels it **Corrected draft — only listed assertions checked / 修正版草稿——僅核對列出的主張**. This is a partial draft, never article approval. No extra model call is made and no model rewrite, summary or proposed replacement supplies its numbers.
 
-The envelope contains `original_text`, `span_unit: "unicode_codepoints"`, ordered `edits`, and `not_corrected` records with English/繁中 reasons. Supported assertions get `supported` (no edit needed), unchecked opinions/out-of-scope assertions get `not_judged`, and insufficient evidence gets `insufficient_evidence` (not corrected). Single-assertion inputs and the [saved Apple demo](site/data/live-demo.json) also include this envelope. Each edit includes `start`, `end`, `original`, `replacement`, program `actual_value`, evidence `unit`, `period`, optional `base_period`, `evidence_ids` and `citations`. The replacement preserves the original scale, precision and grouping, using decimal half-up rounding. Examples include `$416.2B` → `$102.5B` and `4162億美元` → `1025億美元`.
+The corrections object contains `original_text`, `span_unit: "unicode_codepoints"`, ordered `edits`, and `not_corrected` records with English/繁中 reasons. Supported assertions get `supported` (no edit needed), unchecked opinions/out-of-scope assertions get `not_judged`, and insufficient evidence gets `insufficient_evidence` (not corrected). Single-assertion inputs and the [saved Apple demo](site/data/live-demo.json) also include this object. Each edit includes `start`, `end`, `original`, `replacement`, program `actual_value`, evidence `unit`, `period`, optional `base_period`, `evidence_ids` and `citations`. The replacement preserves the original scale, precision and grouping, using decimal half-up rounding. Examples include `$416.2B` → `$102.5B` and `4162億美元` → `1025億美元`.
 
 Directly below the draft, the site states: “Only the assertions listed below were checked; nothing else in the text was verified.” / 「僅核對下方列出的主張；文中其餘內容均未經查證。」
 
@@ -26,25 +89,25 @@ For derived results without a top-level `filing_url`, the builder recursively ci
 
 > Apple pulled in ~~$416.2 billion~~ → **$102.5 billion** of revenue in fiscal Q4 2025 alone.
 
-Its [retained trace](evidence/posts-2026-10-28/demo-thread-baseten/traces/20261029T023240Z-12ac28b8.json) records $416.161B annual minus $313.695B nine-month revenue, yielding $102.466B. Both recorded component filings are cited; this offline recheck does not revalidate them against today's SEC data. [Correction tests and validation records](evidence/corrected-draft-2026-11-03/REPORT.md) cover the retained case, span binding, units/periods, citations and hostile-text rendering. The site uses text nodes, `<del>` and `<strong>` and converts code-point offsets explicitly, including emoji. Pages passes the new field through its existing public allowlist. The gate, budgets, authentication and HTTP adapter are unchanged.
+Its [retained trace](evidence/posts-2026-10-28/demo-thread-baseten/traces/20261029T023240Z-12ac28b8.json) records $416.161B annual minus $313.695B nine-month revenue, yielding $102.466B. Both recorded component filings are cited; this offline recheck does not revalidate them against today's SEC data. [Correction tests and validation records](evidence/corrected-draft-2026-11-03/REPORT.md) cover the retained case, span binding, units/periods, citations and hostile-text rendering. The site uses text nodes, `<del>` and `<strong>` and converts code-point offsets explicitly, including emoji. Pages passes corrections through its public allowlist. No separate model rewrite or budget action is needed for corrections.
 
 ## Limits and failure behavior
 
 | Limit | Behavior |
 | --- | --- |
-| Input | 1–600 Unicode characters after trimming; 4 KiB body ceiling, including chunked bodies |
+| Input | 1–600 Unicode characters after trimming; 1 KiB JSON body ceiling, including chunked bodies |
 | Password | `LIVE_CHECK_PASSWORD` from env/file; missing/empty disables checks with 503; missing/wrong input returns 401 before reservation/model I/O |
 | Failed passwords | Five failures per IP per 15 minutes, then 429 for 15 minutes from the fifth failure; correct passwords remain blocked during lockout; other IPs independent |
-| Scope | US SEC issuers and companyfacts; at most two issuers; no prices, investment advice, crypto, forecasts, non-GAAP or issuer-release verification |
+| Scope | US SEC issuers and companyfacts; at most three issuers; no prices, investment advice, crypto, forecasts, non-GAAP or issuer-release verification |
 | Calls | At most four model calls, 2,000 output tokens each; at most six tool calls; no automatic provider retry |
-| Time | 28-second request/runner deadline; 22-second outbound deadline; 25-second Pages timeout; 32-second browser deadline; no measured production SLA |
+| Time | 28-second text / 60-second example run; 22-second verifier/SEC and 50-second Meta preprocessing I/O; Pages: 25-second text / 65-second example / 195-second compare; browser timing belongs to the site; no measured production SLA |
 | Rate | Five accepted checks per IP per ten minutes; raw IP never stored |
 | Daily spend | `DAILY_BUDGET_USD`, default $3 per UTC day; zero disables calls; invalid/negative/nonfinite values fail closed |
 | Lifetime spend | `TOTAL_BUDGET_USD`, default $20 across all days; lack of reservation room latches a stop |
 | Provider credit | 402, or 403/429 with credit/payment/quota exhaustion wording, durably pauses calls; ordinary auth/rate errors do not latch a credit stop |
 | SEC cache | Six-hour memory/disk cache of successful JSON bodies only; HTTPS host allowlist `www.sec.gov` / `data.sec.gov`; redirects disabled |
 
-SEC requests use exactly `User-Agent: DappGo market-claim-verifier admin@dappgo.com`. Tool arguments cannot supply fetch URLs. [Pages routes](_routes.json) invoke Functions only for `/api/check` and `/api/budget`. The [CSP](_headers), language switch, color schemes, cache-busted assets and reduced-motion behavior remain in use.
+SEC requests use exactly `User-Agent: DappGo market-claim-verifier admin@dappgo.com`. Tool arguments cannot supply fetch URLs. [Pages routes](_routes.json) include `/api/check`, `/api/check-example`, `/api/compare`, `/api/history`, `/api/history/*` and `/api/budget`. The [CSP](_headers), language switch, color schemes, cache-busted assets and reduced-motion behavior remain in use.
 
 Provider errors, incomplete/model-invalid responses, SEC failures and timeouts issue no financial verdict. Reserved costs remain accounted for and available partial steps are shown. Daily exhaustion returns 429 / `budget_exhausted`; lifetime/provider stops return 503 / `total_budget_exhausted` or `credit_exhausted`. Rate limits return 429; timeouts return 504 / `timeout` from Python. Missing origin configuration, unavailable counters or absent keys fail closed to the saved demo.
 
@@ -112,9 +175,9 @@ Offline mock mode also accepts these IDs via `/api/check-example`, but replays o
 
 ## Privacy
 
-Posts, model responses and tool results stay in request memory and the response to that visitor. There is no application transcript/request-body/exception log. Baseten receives the post and necessary SEC tool results; providers have their own policies. The ledger stores only totals, stop flags, reservation IDs/amounts/status, expiries and salted HMAC IP buckets. The SEC cache stores public JSON bodies, never posts or provider responses. Access/hosting metadata is outside application transcript storage; do not enable body tracing or diagnostic credential dumps.
+Authenticated, validated runs publish their input and public result in the bounded history described above, including failed/partial attempts. This is an intentional change from the original response-only storage policy. There is no application request-body/exception log. The selected verifier receives the post and necessary SEC tool results; Meta receives media for OCR/ASR regardless of verifier choice. Providers have their own policies. Spending state retains totals, stop flags, reservation IDs/amounts/status, expiries and salted HMAC IP buckets; history is a separate table in the same SQLite file. The SEC cache stores public JSON bodies only. Access/hosting metadata is outside application history storage; do not enable body tracing or diagnostic credential dumps.
 
-The review password travels only in the POST body, is removed before the runner and is never sent to Baseten, persisted in the ledger, echoed or logged. After successful authentication/check only, the UI stores it in `sessionStorage` for that tab; reload restores it and a 401 clears it. Blocked browser storage still permits checks. It never enters localStorage, cookies, URLs or rendered results. The password input remains masked with autocomplete off, and the form declares POST.
+The review password travels only in the POST body, is removed before the runner and is never sent to a provider, persisted in the ledger/history, echoed or logged. After successful authentication/check only, the UI stores it in `sessionStorage` for that tab; reload restores it and a 401 clears it. Blocked browser storage still permits checks. It never enters localStorage, cookies, URLs or rendered results. The password input remains masked with autocomplete off, and the form declares POST.
 
 The [saved Apple view](site/data/live-demo.json) derives from the original [R06 result](evidence/eval-v2-2026-10-27/R06--agent@baseten.json) and [raw trace](evidence/eval-v2-2026-10-27/traces/20261028T061222Z-6f6be742.json), retaining recorded timestamps, cost and latency. Unrecorded event timestamps remain null; private reasoning is omitted. Follow the [test-record policy](TEST_RECORDS.md); do not archive arbitrary visitor posts as test cases.
 
@@ -131,8 +194,8 @@ The verifier installs locked dependencies, strips all `LIVE_*` credentials/setti
 For focused tests in a dependency-equipped environment:
 
 ```sh
-python -m pytest -q tests/test_live_server.py tests/test_live_check.py tests/test_live_budget.py tests/test_live_password.py tests/test_live_password_edges.py tests/test_site_live_runtime.py
-node --test tests/node/live-boundary.test.mjs
+python -m pytest -q tests/test_live_server.py tests/test_live_examples.py tests/test_live_providers_history.py tests/test_live_check.py tests/test_live_budget.py tests/test_live_password.py tests/test_live_password_edges.py tests/test_site_live_runtime.py
+node --test tests/node/live-boundary.test.mjs tests/node/live-v3-boundary.test.mjs
 python scripts/build_live_demo.py --check
 ```
 

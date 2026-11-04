@@ -42,7 +42,7 @@ async def running(config, transport=no_network, clock=lambda: NOW):
 
 
 async def request(app, path="/api/check", *, method="POST", body=None, raw=None, token=TOKEN, ip="192.0.2.1", headers=None):
-    fields = {"X-Live-Origin-Token": token, **(headers or {})}
+    fields = {"X-Live-Origin-Token": token, "Content-Type": "application/json", **(headers or {})}
     if token is None:
         fields.pop("X-Live-Origin-Token")
     if ip is not None:
@@ -89,8 +89,8 @@ def test_replay_through_real_http_adapter_preserves_python_verdict_cost_and_priv
             assert result["cost_usd"] == pytest.approx(TRACE["cost_usd"])
             assert (await services.gate("budget", {}))["daily_spent_usd"] == pytest.approx(TRACE["cost_usd"], abs=3e-9)
             stored = json.dumps(state(services))
-            # The corrected draft intentionally echoes the original to its
-            # caller. It must still never persist the post or expose secrets.
+            # Public history now retains the original and corrected draft;
+            # spending state must still contain no post or credentials.
             assert APPLE["claim"] not in stored
             assert result["corrections"]["original_text"] == APPLE["claim"]
             assert result["corrections"]["edits"] == []
@@ -337,12 +337,12 @@ def test_overall_timeout_keeps_reservation_and_returns_same_504_shape(tmp_path, 
 def test_env_and_file_secrets_have_defaults_without_reading_host_credentials(tmp_path, monkeypatch):
     monkeypatch.setattr(os, "environ", {})
     assert server.Settings.from_env() == server.Settings()
-    for name in ("BASETEN_API_KEY", "LIVE_CHECK_PASSWORD", "LIVE_ORIGIN_TOKEN", "META_MODEL_API_KEY"):
+    for name in ("BASETEN_API_KEY", "LIVE_CHECK_PASSWORD", "LIVE_ORIGIN_TOKEN", "META_MODEL_API_KEY", "FIREWORKS_API_KEY"):
         path = tmp_path / name
         path.write_text("file-marker\n")
         monkeypatch.setenv(name + "_FILE", str(path))
     config = server.Settings.from_env()
-    assert config.api_key == config.password == config.origin_token == config.meta_api_key == "file-marker"
+    assert config.api_key == config.password == config.origin_token == config.meta_api_key == config.fireworks_api_key == "file-marker"
     monkeypatch.setenv("LIVE_CHECK_PASSWORD", "")
     assert server.Settings.from_env().password == ""
     monkeypatch.setenv("LIVE_ORIGIN_TOKEN_FILE", str(tmp_path / "missing"))

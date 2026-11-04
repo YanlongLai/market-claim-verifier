@@ -1,4 +1,4 @@
-"""Single-process HTTP adapter for the unchanged live runner and spend gate."""
+"""Single-process HTTP adapter, shared spend gate and bounded public history."""
 from __future__ import annotations
 
 import asyncio
@@ -6,24 +6,35 @@ from contextlib import suppress
 from dataclasses import dataclass
 import hashlib
 import hmac
+import ipaddress
 import json
 import os
 from pathlib import Path
+import re
+import secrets
 import sqlite3
 import tempfile
 import time
+from datetime import datetime, timezone
 from urllib.parse import urlparse
+from uuid import uuid4
 
 from aiohttp import web
 import httpx
 
 from workers.live.src.gate import prune, transition
-from workers.live.src.live import ExampleRun, LiveError, LiveRun, SEC_AGENT, provider_credit_exhausted, validate_text
+from claimcheck.providers import get_provider
+from workers.live.src.live import (ExampleRun, LiveError, LiveRun, SEC_AGENT, provider_credit_exhausted,
+                                   validate_provider, validate_text)
 
 GATE_LOCK = asyncio.Lock()  # One process, one critical section, including pruning.
 TTL = 6 * 60 * 60
 EXAMPLE_TIMEOUT = 60
 EXAMPLES = {"text": "post.txt", "image": "post.png", "pdf": "post.pdf", "audio": "post.mp3", "video": "post.mp4"}
+HISTORY_TTL = 14 * 86400
+HISTORY_MAX_ROWS = 5000
+HISTORY_ENVELOPE_BYTES = 64 * 1024
+HISTORY_ID = re.compile(r"[0-9a-f]{32}")
 
 
 def secret(env, name):
@@ -43,6 +54,7 @@ class Settings:
     total_budget: str = "20"
     meta_api_key: str = ""
     examples_dir: Path = Path("/app/examples")
+    fireworks_api_key: str = ""
 
     @classmethod
     def from_env(cls):
@@ -50,26 +62,101 @@ class Settings:
         return cls(Path(env.get("LIVE_DATA_DIR", "/data")), secret(env, "BASETEN_API_KEY"),
                    secret(env, "LIVE_CHECK_PASSWORD"), secret(env, "LIVE_ORIGIN_TOKEN"),
                    env.get("DAILY_BUDGET_USD", "3"), env.get("TOTAL_BUDGET_USD", "20"),
-                   secret(env, "META_MODEL_API_KEY"), Path(env.get("LIVE_EXAMPLES_DIR", "/app/examples")))
+                   secret(env, "META_MODEL_API_KEY"), Path(env.get("LIVE_EXAMPLES_DIR", "/app/examples")),
+                   secret(env, "FIREWORKS_API_KEY"))
 
 
 def load_example(folder, example_id):
-    """Only the five packaged, hash-checked inputs; never accept a visitor path."""
-    if not isinstance(example_id, str) or example_id not in EXAMPLES:
+    """Only packaged, hash-checked inputs; IDs never become visitor paths."""
+    if not isinstance(example_id, str) or not re.fullmatch(r"(?:[abc]-)?(?:text|image|pdf|audio|video)", example_id):
         raise LiveError("unknown_example", 400)
     try:
         rows = json.loads((folder / "manifest.json").read_text())
         row = next(row for row in rows if row["id"] == example_id)
-        if row["kind"] != example_id or row["status"] != "ready" or row["file"] != EXAMPLES[example_id]:
+        kind = row["kind"]
+        story, _, suffix = example_id.partition("-")
+        expected_kind = suffix if suffix else story
+        filename = row["file"]
+        if (kind != expected_kind or kind not in EXAMPLES or row["status"] != "ready" or
+                not isinstance(filename, str) or not re.fullmatch(r"[a-zA-Z0-9_./-]{1,100}", filename) or
+                Path(filename).is_absolute() or ".." in Path(filename).parts or
+                Path(filename).suffix != Path(EXAMPLES[kind]).suffix):
             raise ValueError
-        path = folder / row["file"]
-        if path.is_symlink() or not 0 < path.stat().st_size <= 2_000_000 or row["size_bytes"] != path.stat().st_size:
+        path = folder / filename
+        if (any(parent.is_symlink() for parent in [path, *path.parents] if parent != folder.parent) or
+                not path.resolve().is_relative_to(folder.resolve()) or not path.is_file() or
+                not 0 < path.stat().st_size <= 2_000_000 or row["size_bytes"] != path.stat().st_size):
             raise ValueError
         if hashlib.sha256(path.read_bytes()).hexdigest() != row["sha256"]:
             raise ValueError
-        return path, row["kind"]
+        return path, kind
     except (OSError, ValueError, TypeError, KeyError, StopIteration):
         raise LiveError("example_unavailable") from None
+
+
+def masked_ip(value, salt):
+    """Retain a coarse prefix and keyed short hash, never the source address."""
+    try:
+        address = ipaddress.ip_address(value)
+    except (ValueError, TypeError):
+        return "unknown"
+    if isinstance(address, ipaddress.IPv6Address) and address.ipv4_mapped:
+        address = address.ipv4_mapped
+    digest = hmac.new(salt, address.packed, hashlib.sha256).hexdigest()[:8]
+    prefix = (".".join(str(address).split(".")[:2]) + ".*.*" if address.version == 4 else
+              ":".join(address.exploded.split(":")[:2]) + ":*")
+    return prefix + "#" + digest
+
+
+def parse_user_agent(value):
+    """Small deterministic families; versions and raw UA are never retained."""
+    ua = value[:1024] if isinstance(value, str) else ""
+    browser = next((name for pattern, name in (
+        (r"(?:EdgA?|EdgiOS|Edge)/", "Edge"), (r"(?:OPR|Opera)/", "Opera"),
+        (r"SamsungBrowser/", "Samsung Internet"), (r"(?:Firefox|FxiOS)/", "Firefox"),
+        (r"(?:Chrome|CriOS|Chromium)/", "Chrome"), (r"Version/.*Safari/", "Safari"),
+        (r"(?:MSIE |Trident/)", "Internet Explorer")) if re.search(pattern, ua, re.I)), "Other")
+    if re.search(r"iPad|Macintosh.*Mobile/", ua, re.I):
+        device = "iPadOS / tablet"
+    elif re.search(r"iPhone|iPod", ua, re.I):
+        device = "iOS / mobile"
+    elif "Android" in ua:
+        device = "Android / " + ("mobile" if "Mobile" in ua else "tablet")
+    elif "CrOS" in ua:
+        device = "ChromeOS / desktop"
+    elif "Windows" in ua:
+        device = "Windows / desktop"
+    elif "Macintosh" in ua or "Mac OS X" in ua:
+        device = "macOS / desktop"
+    elif "Linux" in ua:
+        device = "Linux / desktop"
+    else:
+        device = "Unknown / unknown"
+    return device, browser
+
+
+def compact_json(value):
+    return json.dumps(value, ensure_ascii=True, separators=(",", ":"), allow_nan=False)
+
+
+def retained_envelope(envelope):
+    """Keep every attempt, with an explicit marker if a trace exceeds 64 KiB."""
+    saved = json.loads(compact_json(envelope))
+    if len(compact_json(saved).encode()) <= HISTORY_ENVELOPE_BYTES:
+        return saved
+    saved["history_truncated"] = True
+    # Long tool traces are the usual source of excess bytes. Retain the result,
+    # corrections, receipt and input before reducing the evidence/claim detail.
+    for field in ("events", "evidence", "claims"):
+        while saved.get(field) and len(compact_json(saved).encode()) > HISTORY_ENVELOPE_BYTES:
+            saved[field].pop()
+    if len(compact_json(saved).encode()) > HISTORY_ENVELOPE_BYTES:
+        saved.pop("corrections", None)
+        saved["input"]["text_read"] = saved["input"]["text_read"][:600]
+        saved["summary"] = str(saved.get("summary", ""))[:600]
+    if len(compact_json(saved).encode()) > HISTORY_ENVELOPE_BYTES:
+        raise LiveError("unavailable")
+    return saved
 
 
 class SpendGate:
@@ -80,6 +167,53 @@ class SpendGate:
         self.db.execute("PRAGMA journal_mode=WAL")
         self.db.execute("PRAGMA synchronous=FULL")
         self.db.execute("CREATE TABLE IF NOT EXISTS ledger (id INTEGER PRIMARY KEY CHECK (id = 1), body TEXT NOT NULL)")
+        self.db.execute("CREATE TABLE IF NOT EXISTS history (id TEXT PRIMARY KEY, created_at REAL NOT NULL, "
+                        "body TEXT NOT NULL, envelope TEXT NOT NULL CHECK(length(CAST(envelope AS BLOB)) <= 65536))")
+        self.db.execute("CREATE INDEX IF NOT EXISTS history_created ON history(created_at, id)")
+        self.db.execute("CREATE TABLE IF NOT EXISTS history_meta (id INTEGER PRIMARY KEY CHECK(id = 1), salt TEXT NOT NULL)")
+        self.db.execute("INSERT OR IGNORE INTO history_meta(id, salt) VALUES(1, ?)", (secrets.token_hex(32),))
+        self.history_salt = bytes.fromhex(self.db.execute("SELECT salt FROM history_meta WHERE id = 1").fetchone()[0])
+
+    def prune_history(self):
+        self.db.execute("DELETE FROM history WHERE created_at <= ?", (self.clock() - HISTORY_TTL,))
+        self.db.execute("DELETE FROM history WHERE id IN (SELECT id FROM history "
+                        "ORDER BY created_at DESC, rowid DESC LIMIT -1 OFFSET ?)", (HISTORY_MAX_ROWS,))
+
+    async def record(self, envelope, ip, user_agent):
+        saved = retained_envelope(envelope)
+        receipt, source = saved["receipt"], saved["input"]
+        device, browser = parse_user_agent(user_agent)
+        now = self.clock()
+        row = {"id": uuid4().hex, "at": datetime.fromtimestamp(now, timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z"),
+               "ip_masked": masked_ip(ip, self.history_salt), "device": device, "browser": browser,
+               "kind": source["kind"], "example_id": source.get("example_id"), "story": source.get("story"),
+               "input_text": source["text_read"][:600], "provider": receipt["provider"], "model": receipt["model"],
+               "verdict": envelope.get("verdict"), "corrections_count": len(envelope.get("corrections", {}).get("edits", [])),
+               "latency_ms": receipt["latency_ms"], "cost_usd": receipt["cost_usd"],
+               "preprocessing_cost_usd": (receipt["preprocessing"] or {}).get("cost_usd", 0.0)}
+        async with GATE_LOCK:
+            self.db.execute("BEGIN IMMEDIATE")
+            try:
+                self.db.execute("INSERT INTO history(id, created_at, body, envelope) VALUES (?, ?, ?, ?)",
+                                (row["id"], now, compact_json(row), compact_json(saved)))
+                self.prune_history()
+                self.db.execute("COMMIT")
+            except BaseException:
+                self.db.execute("ROLLBACK")
+                raise
+        return row["id"]
+
+    async def history(self, *, limit=50, record_id=None):
+        async with GATE_LOCK:
+            if record_id is not None:
+                hit = self.db.execute("SELECT body, envelope FROM history WHERE id = ? AND created_at > ?",
+                                      (record_id, self.clock() - HISTORY_TTL)).fetchone()
+                if not hit:
+                    raise LiveError("not_found", 404)
+                return {**json.loads(hit[0]), "envelope": json.loads(hit[1])}
+            hits = self.db.execute("SELECT body FROM history WHERE created_at > ? "
+                                   "ORDER BY created_at DESC, rowid DESC LIMIT ?", (self.clock() - HISTORY_TTL, limit))
+            return {"rows": [json.loads(hit[0]) for hit in hits]}
 
     async def update(self, action, data=None):
         async with GATE_LOCK:
@@ -89,6 +223,7 @@ class SpendGate:
                 state = json.loads(row[0]) if row else {}
                 if action == "prune":
                     prune(state, self.clock())
+                    self.prune_history()
                     result, status = {"ok": True}, 200
                 else:
                     result, status = transition(state, action, data, now=self.clock(),
@@ -161,11 +296,16 @@ class Services:
         except (httpx.HTTPError, TimeoutError, ValueError, OSError):
             raise LiveError("sec_unavailable") from None
 
-    async def model(self, payload):
+    def provider_key(self, provider):
+        return {"baseten": self.settings.api_key, "fireworks": self.settings.fireworks_api_key,
+                "meta": self.settings.meta_api_key}[provider]
+
+    async def model(self, payload, *, provider="baseten"):
+        adapter = get_provider(validate_provider(provider))
         try:
             async with asyncio.timeout(22):
-                async with self.client.stream("POST", "https://inference.baseten.co/v1/chat/completions",
-                                               headers={"Authorization": "Bearer " + self.settings.api_key,
+                async with self.client.stream("POST", adapter.base_url + ("/chat/completions" if adapter.chat_completions else "/responses"),
+                                               headers={"Authorization": "Bearer " + self.provider_key(provider),
                                                         "Content-Type": "application/json"},
                                                content=json.dumps(payload), follow_redirects=False,
                                                timeout=22) as response:
@@ -214,10 +354,52 @@ SERVICES = web.AppKey("services", Services)
 
 
 def reply(value, status=200, *, public=False):
-    return web.Response(text=json.dumps(value, ensure_ascii=False), status=status, headers={
+    return web.Response(text=compact_json(value), status=status, headers={
         "Content-Type": "application/json; charset=utf-8",
         "Cache-Control": "public, max-age=0, s-maxage=5, must-revalidate" if public else "no-store",
         "X-Content-Type-Options": "nosniff"})
+
+
+def failure_envelope(run, error):
+    return {**run.envelope(), "error": error.code, "demo": "data/live-demo.json",
+            **({"budget": error.budget} if error.budget else {})}
+
+
+async def execute(services, request, provider, *, claim=None, example=None):
+    async def model(payload):
+        return await services.model(payload, provider=provider)
+
+    if example:
+        example_id, path, kind = example
+        run = ExampleRun(model, services.sec, services.gate, services.media, example_id, kind,
+                         provider=provider, story=example_id.split("-")[0] if "-" in example_id else "a")
+    else:
+        run = LiveRun(model, services.sec, services.gate, provider=provider)
+        run.input_info["text_read"] = claim
+    status = 200
+    try:
+        async with asyncio.timeout(EXAMPLE_TIMEOUT if example else 28):
+            # Every compare member checks the same durable shared budget. The
+            # runner also reserves atomically before *each* external paid call.
+            budget = await services.gate("budget", {})
+            if budget["status"] != "ready":
+                raise LiveError(budget["status"], 429 if budget["status"] == "budget_exhausted" else 503, budget)
+            if not services.provider_key(provider) or (example and example[2] in {"image", "audio", "video"}
+                                                       and not services.settings.meta_api_key):
+                raise LiveError("unavailable")
+            await services.gate("rate", {"ip": request.headers.get("X-Live-Client-IP")})
+            result = await run.check_example(example[1]) if example else await run.bounded(claim)
+    except (LiveError, TimeoutError) as error:
+        if isinstance(error, TimeoutError):
+            error = LiveError("timeout", 504)
+        result, status = failure_envelope(run, error), error.status
+    except Exception:
+        result, status = failure_envelope(run, LiveError("unavailable")), 503
+    # Authentication and input validation have succeeded. Retain failed and
+    # partial attempts too; neither the password nor raw visitor metadata enter
+    # the runner, ledger, envelope or history table.
+    await services.ledger.record(result, request.headers.get("X-Live-Client-IP"), request.headers.get("User-Agent", ""))
+    return result, status
 
 
 async def handle(request):
@@ -235,17 +417,35 @@ async def handle(request):
             return reply(budget, public=True) if request.path == "/api/budget" else reply({"ok": True})
         except Exception:
             return reply({"error": "unavailable"}, 503)
-    if request.method != "POST" or request.path not in {"/api/check", "/api/check-example"}:
+    if request.method == "GET" and (request.path == "/api/history" or request.path.startswith("/api/history/")):
+        try:
+            if request.path == "/api/history":
+                if (set(request.query) - {"limit"} or len(request.query.getall("limit", [])) > 1 or
+                        not re.fullmatch(r"[1-9][0-9]?", request.query.get("limit", "50"))):
+                    raise LiveError("invalid_input", 400)
+                limit = int(request.query.get("limit", "50"))
+                if limit > 50:
+                    raise LiveError("invalid_input", 400)
+                return reply(await services.ledger.history(limit=limit))
+            record_id = request.path.removeprefix("/api/history/")
+            if not HISTORY_ID.fullmatch(record_id) or request.query:
+                raise LiveError("invalid_input", 400)
+            return reply(await services.ledger.history(record_id=record_id))
+        except LiveError as error:
+            return reply({"error": error.code}, error.status)
+        except Exception:
+            return reply({"error": "unavailable"}, 503)
+    if request.method != "POST" or request.path not in {"/api/check", "/api/check-example", "/api/compare"}:
         return reply({"error": "not_found"}, 404)
-    is_example = request.path == "/api/check-example"
-    limit = 1024 if is_example else 4096
-    run = None
+    fallback = LiveRun(services.model, services.sec, services.gate)
     try:
-        async with asyncio.timeout(EXAMPLE_TIMEOUT if is_example else 28):
+        async with asyncio.timeout(28):
+            if request.content_type != "application/json" or request.query:
+                raise LiveError("invalid_input", 400)
             raw = bytearray()
-            async for chunk in request.content.iter_chunked(4096):
+            async for chunk in request.content.iter_chunked(1024):
                 raw.extend(chunk)
-                if len(raw) > limit:
+                if len(raw) > 1024:
                     raise LiveError("invalid_input", 400)
             try:
                 data = json.loads(raw.decode("utf-8"))
@@ -255,36 +455,45 @@ async def handle(request):
                 raise LiveError("invalid_input", 400)
             await services.gate("authenticate", {"ip": request.headers.get("X-Live-Client-IP"),
                                                   "password": data.pop("password", None)})
-            if is_example:
-                if set(data) != {"example_id"}:
+            compare = request.path == "/api/compare"
+            is_example = request.path == "/api/check-example" or (compare and "example_id" in data)
+            key = "example_id" if is_example else "text"
+            if not {key} <= set(data) <= {key, "providers" if compare else "provider"}:
+                raise LiveError("invalid_input", 400)
+            if compare:
+                providers = data.get("providers")
+                if not isinstance(providers, list) or not 2 <= len(providers) <= 3:
                     raise LiveError("invalid_input", 400)
-                path, kind = load_example(services.settings.examples_dir, data["example_id"])
-                if kind in {"image", "audio", "video"} and not services.settings.meta_api_key:
-                    raise LiveError("unavailable")
-            if not services.settings.api_key:
-                raise LiveError("unavailable")
-            claim = None if is_example else validate_text(data.get("text"))
-            budget = await services.gate("budget", {})
-            if budget["status"] != "ready":
-                raise LiveError(budget["status"], 429 if budget["status"] == "budget_exhausted" else 503, budget)
-            await services.gate("rate", {"ip": request.headers.get("X-Live-Client-IP")})
+                providers = [validate_provider(value) for value in providers]
+                if len(set(providers)) != len(providers):
+                    raise LiveError("invalid_input", 400)
+            else:
+                providers = [validate_provider(data.get("provider", "baseten"))]
+            example = None
             if is_example:
-                run = ExampleRun(services.model, services.sec, services.gate, services.media, data["example_id"], kind)
-                return reply(await run.check_example(path))
-            run = LiveRun(services.model, services.sec, services.gate)
-            return reply(await run.bounded(claim))
+                path, kind = load_example(services.settings.examples_dir, data["example_id"])
+                example = (data["example_id"], path, kind)
+            claim = None if is_example else validate_text(data.get("text"))
+        runs = []
+        for provider in providers:
+            result, status = await execute(services, request, provider, claim=claim, example=example)
+            if not compare:
+                return reply(result, status)
+            runs.append(result)
+            if result.get("error") in {"budget_exhausted", "total_budget_exhausted", "credit_exhausted", "rate_limited"}:
+                break
+        return reply({"runs": runs})
     except (LiveError, TimeoutError) as error:
         if isinstance(error, TimeoutError):
             error = LiveError("timeout", 504)
-        return reply({**(run.envelope() if run else {}), "error": error.code, "demo": "data/live-demo.json",
-                      **({"budget": error.budget} if error.budget else {})}, error.status)
+        return reply(failure_envelope(fallback, error), error.status)
     except Exception:
         # Do not log exceptions, request text, provider bodies or credentials.
-        return reply({**(run.envelope() if run else {}), "error": "unavailable", "demo": "data/live-demo.json"}, 503)
+        return reply(failure_envelope(fallback, LiveError("unavailable")), 503)
 
 
 def create_app(settings, *, client=None, clock=time.time):
-    app = web.Application(client_max_size=4096)
+    app = web.Application(client_max_size=1024)
 
     async def lifecycle(app):
         transport = client if client is not None else httpx.AsyncClient(trust_env=False)
@@ -321,4 +530,5 @@ if __name__ == "__main__":
         settings = Settings.from_env()
     except (OSError, ValueError):
         raise SystemExit("live check configuration unavailable") from None
-    web.run_app(create_app(settings), host="0.0.0.0", port=8080, access_log=None, print=None)
+    web.run_app(create_app(settings), host="0.0.0.0", port=8080, access_log=None, print=None,
+                shutdown_timeout=195)

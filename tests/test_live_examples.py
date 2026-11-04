@@ -207,7 +207,9 @@ def test_media_timeout_is_60_seconds_cancels_io_keeps_hold_and_seals_bridge(tmp_
             await asyncio.sleep(.02)
             assert len(calls) == 1
     asyncio.run(run())
-    assert 60 in limits and 28 not in limits
+    # Body/auth parsing has its own short deadline; media execution keeps the
+    # separate 60-second deadline and cancellation bridge.
+    assert 60 in limits
 
 
 def test_missing_ocr_usage_retains_bound_in_total_and_preprocessing_cost(tmp_path):

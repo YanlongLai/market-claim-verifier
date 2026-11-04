@@ -13,6 +13,9 @@ const origin = { LIVE_ORIGIN_HOST: "live-origin.example.com", LIVE_ACCESS_CLIENT
   LIVE_ACCESS_CLIENT_SECRET: "access-secret-marker", LIVE_ORIGIN_TOKEN: "origin-token-marker" };
 const originHeaders = { "cf-access-client-id": origin.LIVE_ACCESS_CLIENT_ID,
   "cf-access-client-secret": origin.LIVE_ACCESS_CLIENT_SECRET, "x-live-origin-token": origin.LIVE_ORIGIN_TOKEN };
+const receipt = { provider: "baseten", model: "meta-models/muse-spark-open-1026", latency_ms: 100, cost_usd: .01, preprocessing: null };
+const textInput = { kind: "text", text_read: demo.input };
+const live = value => ({ receipt, input: textInput, ...value });
 function envWithFetch(t, fetch) { t.mock.method(globalThis, "fetch", fetch); return { ...origin }; }
 
 const exampleRequest = (body = { example_id: "image", password: "offline-password" }, more = {}) =>
@@ -27,15 +30,15 @@ test("example proxy forwards JSON only, trusted IP and allowlisted input/preproc
     assert.deepEqual(await req.json(), { example_id: "image", password: "offline-password" });
     assert.equal(req.headers.get("X-Live-Client-IP"), "192.0.2.1");
     assert.equal(req.headers.get("Authorization"), null);
-    return Response.json({ verdict: "contradicted", mode: "live", corrections: { edits: [] },
+    return Response.json(live({ verdict: "contradicted", mode: "live", corrections: { edits: [] },
       input: { ...exampleInput, private_path: "/tmp/private", password: "drop",
         preprocessing: { ...exampleInput.preprocessing, api_key: "drop", raw_response: "drop" } },
-      private: "drop" });
+      private: "drop" }));
   });
-  const response = await onExample({ request: exampleRequest({ example_id: "image", password: "offline-password", file: "/private" },
+  const response = await onExample({ request: exampleRequest({ example_id: "image", password: "offline-password" },
     { "X-Live-Client-IP": "spoofed", Authorization: "private" }), env });
   assert.equal(response.status, 200);
-  assert.deepEqual(await response.json(), { verdict: "contradicted", mode: "live", corrections: { edits: [] }, input: exampleInput });
+  assert.deepEqual(await response.json(), { verdict: "contradicted", mode: "live", corrections: { edits: [] }, receipt, input: exampleInput });
   assert.equal(response.headers.get("Cache-Control"), "no-store");
 });
 
@@ -115,15 +118,15 @@ test("production cannot enable the local mock or supply its own forwarded IP; or
     assert.deepEqual(Object.fromEntries(req.headers), { ...originHeaders,
       "content-type": "application/json", "x-live-client-ip": "192.0.2.1" });
     assert.deepEqual(await req.json(), { text: demo.input, password: "offline-password" });
-    return Response.json({ verdict: "supported", mode: "live", secret: origin.LIVE_ORIGIN_TOKEN },
+    return Response.json(live({ verdict: "supported", mode: "live", secret: origin.LIVE_ORIGIN_TOKEN }),
       { headers: { "Set-Cookie": "private", "X-Private": origin.LIVE_ACCESS_CLIENT_SECRET } });
   }), LIVE_CHECK_MOCK: "1", ASSETS: assets };
-  const response = await onRequest({ request: request({ text: demo.input, password: "offline-password", secret: "drop" }, {
+  const response = await onRequest({ request: request({ text: demo.input, password: "offline-password" }, {
     "CF-Connecting-IP": "192.0.2.1", "X-Live-Client-IP": "spoofed", Cookie: "private", Authorization: "private",
     "CF-Access-Client-Secret": "spoofed", "X-Live-Origin-Token": "spoofed"
   }, "hackathon.dappgo.com"), env });
   assert.equal(response.status, 200);
-  assert.deepEqual(await response.json(), { verdict: "supported", mode: "live" });
+  assert.deepEqual(await response.json(), live({ verdict: "supported", mode: "live" }));
   assert.equal(response.headers.get("Set-Cookie"), null);
   assert.equal(response.headers.get("X-Private"), null);
   assert.equal(calls, 1);
@@ -135,13 +138,13 @@ test("Pages forwards deterministic corrections in its public result allowlist", 
     edits: [{ start: 7, end: 14, original: "$416.2B", replacement: "$102.5B", evidence_ids: ["E1"],
       citations: [{ url: "https://www.sec.gov/Archives/edgar/data/320193/000032019325000079/" }] }],
     not_corrected: [] };
-  const env = envWithFetch(t, async () => Response.json({ verdict: "contradicted", mode: "live", corrections,
-    private_internal: "drop", password: "drop", secret: "drop" }));
+  const env = envWithFetch(t, async () => Response.json(live({ verdict: "contradicted", mode: "live", corrections,
+    private_internal: "drop", password: "drop", secret: "drop" })));
   const response = await onRequest({ request: request({ text: "Apple: $416.2B" }, {
     "CF-Connecting-IP": "192.0.2.1"
   }, "hackathon.dappgo.com"), env });
   assert.equal(response.status, 200);
-  assert.deepEqual(await response.json(), { verdict: "contradicted", mode: "live", corrections });
+  assert.deepEqual(await response.json(), live({ verdict: "contradicted", mode: "live", corrections }));
 });
 
 test("password goes only in the private request body, with no browser headers or URL forwarding", async t => {
