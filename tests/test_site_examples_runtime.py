@@ -37,7 +37,7 @@ def test_public_history_opens_full_envelope_then_edits_text_and_provider(languag
 
 
 @pytest.mark.parametrize("language", ["en", "zh"])
-def test_failed_history_keeps_cost_and_reads_error_from_saved_envelope(language):
+def test_failed_history_keeps_cost_and_uses_summary_error_without_detail_fanout(language):
     run_check(SETUP + FAILED_HISTORY, language=language)
 
 
@@ -109,12 +109,13 @@ context.fetch=async (url,opts={})=>{
   if(url==='/data/live-demo-post.json')return {ok:true,json:async()=>saved};
   if(url==='/api/budget')return {ok:true,json:async()=>(budgetFixture({day:'2026-11-03',daily_limit_usd:3,
     daily_remaining_usd:budgetStatus==='ready'?3:0,resets_at:'2099-11-04T00:00:00Z',status:budgetStatus}))};
+  if(url.startsWith('/api/progress/'))return {ok:true,json:async()=>({lines:[],done:true,next:0})};
   if(url==='/api/history?limit=50')return {ok:!historyFail,json:async()=>({rows:historyData})};
   if(url.startsWith('/api/history/'))return {ok:true,json:async()=>historyDetails[url.split('/').pop()]};
   if(url.startsWith('/data/examples/'))return url==='/data/examples/a-text.json'
     ?{ok:true,json:async()=>({...envelope(),mode:'recorded'})}:{ok:false,status:404};
   assert.ok(['/api/check','/api/check-example','/api/compare'].includes(url),url);
-  const body=JSON.parse(opts.body);paid.push({url,body,opts});
+  const {client_run_id,...body}=JSON.parse(opts.body);assert.match(client_run_id,/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);paid.push({url,body,opts,client_run_id});
   if(responseFactory)return responseFactory(url,body);
   return {ok:true,status:200,json:async()=>envelope(body.example_id||'a-text',body.provider)};
 };
@@ -207,7 +208,7 @@ assert.equal(tree.querySelector('.compare-table caption').textContent,config.lan
 FAILED_HISTORY = r"""
 historyData=['provider_error','timeout','budget_exhausted','new_error'].map((error,i)=>({
  id:`failed-${i}`,at:'2026-11-03T17:05:00Z',provider:'fireworks',kind:'text',
- verdict:null,cost_usd:.04,latency_ms:60000,...(i===1?{}:{error})}));
+ verdict:null,cost_usd:.04,latency_ms:60000,error}));
 historyDetails['failed-1']={envelope:{error:'timeout'}};
 await click('#history-refresh');
 const chips=tree.querySelectorAll('#history-rows .history-verdict');
@@ -215,7 +216,7 @@ assert.deepEqual(chips.map(chip=>chip.textContent),config.language==='zh'
  ?['供應商錯誤','逾時','預算上限','失敗']:['Provider error','Timeout','Budget','Failed']);
 assert.ok(chips.every(chip=>chip.className.includes('is-unchecked')));
 assert.equal(tree.querySelector('#history-rows').textContent.split('$0.04').length-1,4);
-assert.equal(reads.filter(url=>url.startsWith('/api/history/')).length,1);
+assert.equal(reads.filter(url=>url.startsWith('/api/history/')).length,0);
 assert.equal(paid.length,0);
 assert.equal(tree.querySelector('#fireworks-note').hidden,true);
 const radio=tree.querySelector('input[name="provider"][value="fireworks"]');
@@ -346,7 +347,7 @@ context.clearTimeout=id=>cleared.push(id);
 let finish;
 responseFactory=()=>new Promise(resolve=>finish=resolve);
 const running=submit();
-assert.equal(durations[0],config.compare?290000:100000);
+assert.ok(durations.includes(config.compare?290000:100000));assert.ok(durations.includes(700));
 finish({ok:true,status:200,json:async()=>config.compare?{runs:['meta','baseten','fireworks'].map(id=>envelope('a-text',id))}:envelope()});
 await running;
 assert.ok(cleared.includes(1));
@@ -365,6 +366,7 @@ context.fetch=async(url,options={})=>{
   if(url==='/data/live-demo-post.json')return {ok:true,json:async()=>JSON.parse(readFileSync(root+'/docs/site/data/live-demo-post.json','utf8'))};
   if(url==='/api/budget')return {ok:true,json:async()=>(budgetFixture({day:'2026-11-03',daily_limit_usd:3,daily_remaining_usd:3,
     resets_at:'2099-11-04T00:00:00Z',status:'ready'}))};
+  if(url.startsWith('/api/progress/'))return {ok:true,json:async()=>({lines:[],done:true,next:0})};
   if(url==='/api/history?limit=50')return {ok:true,json:async()=>({rows:[]})};
   const saved=catalogue.find(row=>row.saved_result===url);
   if(!saved)return {ok:false,status:404};

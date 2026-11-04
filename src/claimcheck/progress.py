@@ -39,7 +39,7 @@ def safe_fields(kind, fields):
                       "total_budget_exhausted", "rate_limited", "invalid_model_output", "incomplete_model",
                       "tool_limit", "out_of_scope", "sec_unavailable", "preprocessing_failed",
                       "example_unavailable", "invalid_input", "unknown_example", "unknown_provider",
-                      "unauthorized", "auth_rate_limited", "not_found", "failed"}
+                      "unauthorized", "auth_rate_limited", "locked", "busy", "slow_down", "not_found", "failed"}
         if isinstance(fields.get("code"), str) and fields["code"] in from_codes:
             out["code"] = fields["code"]
     for key in ("chars", "step", "claims", "claim_index", "status", "count",

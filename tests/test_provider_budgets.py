@@ -43,7 +43,7 @@ def test_http_budget_exposes_each_configured_cap_without_password_or_provider_ke
             fireworks_daily_budget="30", fireworks_lifetime_budget="25")
         async with running(config) as (app, services):
             await services.gate("reserve", {"provider": "meta", "id": "m", "amount": .25})
-            response = await request(app, "/api/budget", method="GET", ip=None)
+            response = await request(app, "/api/budget", method="GET")
             budget = data(response)
             assert response.status == 200 and "s-maxage=5" in response.headers["Cache-Control"]
             assert budget["providers"]["meta"] == {

@@ -52,14 +52,14 @@ def test_authentication_never_touches_spending_or_request_rate_and_never_resets_
 def test_failure_window_lockout_and_other_ip_success_do_not_extend_lockout():
     state = {}
     for offset in range(5):
-        assert auth(state, "wrong", now=1000 + offset)[1] == 401
-    assert auth(state, PASSWORD, now=1005) == ({"error": "auth_rate_limited", "retry_after": 899}, 429)
+        assert auth(state, "wrong", now=1000 + offset)[1] == (401 if offset < 4 else 429)
+    assert auth(state, PASSWORD, now=1005) == ({"error": "locked", "retry_after": 1799}, 429)
     assert auth(state, PASSWORD, now=1006, ip="192.0.2.2")[1] == 200
-    assert auth(state, "wrong", now=1903)[1] == 429
-    assert auth(state, PASSWORD, now=1904)[1] == 200
+    assert auth(state, "wrong", now=2803)[1] == 429
+    assert auth(state, PASSWORD, now=2804)[1] == 200
     assert state["auth_failures"] == {}
-    assert auth(state, "wrong", now=2000)[1] == 401
-    assert auth(state, "wrong", now=2900)[1] == 401
+    assert auth(state, "wrong", now=3000)[1] == 401
+    assert auth(state, "wrong", now=3900)[1] == 401
     assert next(iter(state["auth_failures"].values()))["count"] == 1
 
 
@@ -134,10 +134,10 @@ def test_concurrent_failures_lock_across_sqlite_restart_then_alarm_expires_them(
         gate, call, storage = durable(adapter, password=PASSWORD)
         app, actions = worker(adapter, call)
         responses = await asyncio.gather(*(app.fetch(request("wrong-marker")) for _ in range(20)))
-        assert sum(r.status == 401 for r in responses) == 5
-        assert sum(r.status == 429 for r in responses) == 15
+        assert sum(r.status == 401 for r in responses) == 4
+        assert sum(r.status == 429 for r in responses) == 16
         assert set(actions) == {"authenticate"}
-        assert storage.alarms[-1] == (86399 + 900) * 1000
+        assert storage.alarms[-1] == (86399 + 1800) * 1000
         restarted, again, _ = durable(adapter, storage=storage, password=PASSWORD)
         app, actions = worker(adapter, again)
         assert (await app.fetch(request(PASSWORD))).status == 429
@@ -147,7 +147,7 @@ def test_concurrent_failures_lock_across_sqlite_restart_then_alarm_expires_them(
         serialized = json.dumps(state)
         assert all(value not in serialized for value in [PASSWORD, "wrong-marker", "192.0.2.1",
                                                         hashlib.sha256(PASSWORD.encode()).hexdigest()])
-        monkeypatch.setattr(adapter.time, "time", lambda: 86399 + 900)
+        monkeypatch.setattr(adapter.time, "time", lambda: 86399 + 1800)
         await restarted.alarm()
         assert restarted.load()["auth_failures"] == {}
         assert (await (await again("authenticate", {"ip": "192.0.2.1", "password": PASSWORD})).json()) == {"ok": True}

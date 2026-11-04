@@ -27,6 +27,7 @@ const publicFixture = url => {
   if(url==='/examples/manifest.json' || url==='/data/examples/index.json')return {ok:true,json:async()=>JSON.parse(readFileSync(root+'/docs/examples/manifest.json','utf8'))};
   if(/^\/examples\/[a-z-]+\.txt$/.test(url))return {ok:true,text:async()=>readFileSync(root+'/docs'+url,'utf8')};
   if(/^\/data\/examples\/[a-z-]+\.json$/.test(url))return {ok:false,status:404};
+  if(url.startsWith('/api/progress/'))return {ok:true,json:async()=>({lines:[],done:true,next:0})};
   if(url==='/api/history?limit=50')return {ok:true,json:async()=>({rows:[]})};
   return null;
 };
@@ -116,7 +117,7 @@ def test_provider_meters_switch_compare_midnight_and_independent_stops(language,
 
 
 def test_pages_boundary_without_provider_key_or_network():
-    result = subprocess.run(["node", "--test", "tests/node/live-boundary.test.mjs", "tests/node/live-v3-boundary.test.mjs"],
+    result = subprocess.run(["node", "--test", "tests/node/live-boundary.test.mjs", "tests/node/live-v3-boundary.test.mjs", "tests/node/live-progress.test.mjs"],
                             cwd=ROOT, capture_output=True, text=True)
     assert result.returncode == 0, result.stdout + result.stderr
 
@@ -510,7 +511,8 @@ tree.querySelector('#live-password').value='offline-password';
 const pending=form.events.submit({preventDefault(){}});
 assert.equal(submit.disabled,true);assert.equal(form.getAttribute('aria-busy'),'true');
 assert.equal(requests.length,1);assert.equal(requests[0].url,'/api/check');
-assert.deepEqual(JSON.parse(requests[0].opts.body),{text:demo.input,password:'offline-password',provider:'baseten'});
+const sent=JSON.parse(requests[0].opts.body);assert.match(sent.client_run_id,/^[0-9a-f-]{36}$/);
+delete sent.client_run_id;assert.deepEqual(sent,{text:demo.input,password:'offline-password',provider:'baseten'});
 remaining=2.41;
 finish({ok:true,json:async()=>({...demo,mode:'live'})});await pending;
 assert.equal(budgetReads,2);
@@ -584,7 +586,8 @@ assert.equal(password.disabled,false);
 assert.deepEqual(writes,config.blocked?[]:[{key,value:credential}]);
 for(const {url,opts} of requests){
   assert.equal(url,'/api/check');assert.ok(!JSON.stringify(opts.headers).includes(credential));
-  assert.deepEqual(JSON.parse(opts.body),{text:demo.input,password:credential,provider:'baseten'});
+  const sent=JSON.parse(opts.body);assert.match(sent.client_run_id,/^[0-9a-f-]{36}$/);delete sent.client_run_id;
+  assert.deepEqual(sent,{text:demo.input,password:credential,provider:'baseten'});
 }
 assert.ok(!JSON.stringify(context.liveTest.state()).includes(credential));
 assert.ok(!tree.textContent.includes(credential));

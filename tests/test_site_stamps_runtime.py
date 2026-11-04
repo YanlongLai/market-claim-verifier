@@ -417,7 +417,7 @@ const motion = { matches: !!config.reduced, addEventListener: (_key,fn) => { onM
 const narrow = { matches: phone, addEventListener() {} };
 const callbacks = new Map(); let nextFrame = 0;
 const context = vm.createContext({
-  document, URLSearchParams,
+  document, URLSearchParams, crypto: globalThis.crypto,
   window: { matchMedia: query => query.includes('max-width') ? narrow : motion,
     IntersectionObserver: true, ResizeObserver: true, location: { search: config.query || '' } },
   localStorage: { getItem: () => config.language || 'en' },
