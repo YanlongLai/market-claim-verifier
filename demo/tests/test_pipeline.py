@@ -9,7 +9,7 @@ from pipeline import (BuildError, append_build_log, cache_key, cached, changed_s
 def test_cache_keys_are_unambiguous_stable_and_content_sensitive():
     assert cache_key({"a": 1, "b": 2}) == cache_key({"b": 2, "a": 1})
     assert cache_key("ab", "c") != cache_key("a", "bc")
-    assert cache_key("中文") != cache_key("English")
+    assert cache_key("\u4e2d\u6587") != cache_key("English")
     assert len(cache_key("x")) == 64
     base = voice_key("breeze-tts-2", "calm", 1234, "Hello,\n  world.")
     assert base == voice_key("breeze-tts-2", "calm", 1234, "Hello, world.")
@@ -39,7 +39,7 @@ def test_cache_receipt_rejects_missing_corrupt_and_modified_artifacts(tmp_path):
     'Ask a language model on its own, and it guesses. "Is this right?" We check every number.',
     'With tools and program checks, accuracy rises to eighty-three percent on the Meta Model API, '
     'and ninety point five percent with open-weight Muse Spark on Baseten and Fireworks.',
-    '中文單位也能檢查，包括「億」。 Every number, every claim, every original filing.',
+    '\u4e2d\u6587\u55ae\u4f4d\u4e5f\u80fd\u6aa2\u67e5，\u5305\u62ec\u300c\u5104\u300d\u3002 Every number, every claim, every original filing.',
     'x'*170,
 ])
 def test_subtitles_never_exceed_two_lines_or_42_characters(text):

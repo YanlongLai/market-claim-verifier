@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-"""Compile the binding 178-second v5 timeline; default is an explicitly unmeasured preview."""
+"""Compile the binding 178-second v5 timeline, reusing retained measured metadata offline."""
 from __future__ import annotations
 import argparse,copy,json,math,re
 from pathlib import Path
+import xml.etree.ElementTree as ET
 import yaml
 from motion_cues import map_sentences,sentence_subtitles
 from pipeline import BuildError,file_hash,read_json,to_srt,subtitle_chunks
@@ -61,8 +62,34 @@ def cue_spans(scene,voice=None):
             raise BuildError(f"{scene['id']} / {event['event']}: measured voice {duration:.3f} s exceeds {limit-a:.3f} s visual budget. Retain the take; no speech is cut or accelerated.")
         yield event,a,duration,spans[i] if voice else None
 
+def voice_input(story):
+    return dict(voice=story['voice'],scenes=[dict(id=s['id'],narration=s['narration'],cue_events=[
+        dict(event=e['event'],narration=e['narration']) for e in s['cue_events']]) for s in story['scenes']])
+
+def measured_metadata(voices):
+    if not voices:return None
+    return [dict(voice_s=v['voice_s'],key=v['key'],artifacts={'audio':{'sha256':v['artifacts']['audio']['sha256']}},
+        **({'cue_spans':[{k:s[k] for k in ('event','source_start_s','source_end_s')} for s in v['cue_spans']]} if v.get('cue_spans') else {})) for v in voices]
+
+def architecture(root,on_screen):
+    """Reuse the diagram, with its rendered headline bound to the storyboard."""
+    ET.register_namespace('','http://www.w3.org/2000/svg')
+    svg=ET.fromstring((root/'demo/assets/architecture-v4.svg').read_text())
+    ns={'s':'http://www.w3.org/2000/svg'}
+    svg.find('s:title',ns).text=on_screen
+    svg.find('s:desc',ns).text='Post, Muse Spark, SEC facts, Python verdict and corrected draft. Twelve seconds.'
+    heading=next(el for el in svg.findall('.//s:text',ns) if el.get('y')=='192')
+    heading.text=on_screen;heading.set('data-on-screen','v504')
+    next(el for el in svg.findall('.//s:text',ns) if el.get('y')=='780').set('y','750')
+    return ET.tostring(svg,encoding='unicode')
+
 def compile_data(root=ROOT,story=None,voices=None):
     story=copy.deepcopy(story or yaml.safe_load((root/'demo/storyboard-v5.yaml').read_text()));validate(story)
+    saved=read_json(root/OUT/'inputs.json') if (root/OUT/'inputs.json').is_file() else {}
+    if voices is None and saved.get('voices'):
+        if saved.get('voice_input')!=voice_input(story):raise BuildError('Measured voice metadata is stale for the narration; host voice/measured step required')
+        voices=saved['voices']
+    portable=dict(version=1,voice_input=voice_input(story),voices=measured_metadata(voices),recordings={})
     baseline=yaml.safe_load((root/'demo/storyboard-v4.yaml').read_text())
     if story['voice']!=baseline['voice'] or story['music']!=baseline['music']:raise BuildError('Locked voice/music changed')
     live=story['scenes'][5];live_receipt=None
@@ -71,12 +98,31 @@ def compile_data(root=ROOT,story=None,voices=None):
     except RecordingError as e:raise BuildError(str(e)) from e
     if live.get('recording'):
         recording=live['recording'];path=root/recording['receipt']
-        if not path.is_file() or file_hash(path)!=recording['receipt_sha256']:raise BuildError('Wired live receipt missing or changed')
-        live_receipt=read_json(path)
+        retained=saved.get('recordings',{}).get(live['id'],{})
+        if path.is_file():
+            if file_hash(path)!=recording['receipt_sha256']:raise BuildError('Wired live receipt changed')
+            live_receipt=read_json(path)
+        elif retained.get('recording')==recording:live_receipt=retained['receipt']
+        else:raise BuildError('Wired live receipt missing; no matching portable metadata')
         resolved=live_cue_events(live,live_receipt)
         if resolved!=live['cue_events']:raise BuildError('Live cues are stale for their receipt; rewire on host')
     else:
         for event in live['cue_events']:event['at_scene_s']=event['preview_at_scene_s']
+    for scene in story['scenes']:
+        if not scene.get('recording'):continue
+        recording=scene['recording'];path=root/recording['receipt']
+        if path.is_file():
+            if file_hash(path)!=recording['receipt_sha256']:raise BuildError('Wired live receipt changed')
+            receipt=read_json(path)
+            fields=('capture_version','timings','geometry_checks','startup_cover','named_element_checks','ending_frame')
+            summary={k:receipt[k] for k in fields if k in receipt}
+            summary['result']={k:receipt['result'][k] for k in ('cost_usd','latency_ms','model')}
+            summary['result']['events']=[{'kind':e['kind']} for e in receipt['result']['events']]
+            portable['recordings'][scene['id']]=dict(recording=recording,asset_sha256=receipt['mp4']['sha256'],receipt=summary)
+        else:
+            retained=saved.get('recordings',{}).get(scene['id'],{})
+            if retained.get('recording')!=recording:raise BuildError('Live preview metadata differs from storyboard wiring')
+            portable['recordings'][scene['id']]=retained
     shots=[];cues={'_version':1,'_methods':{},'_analysis':{},'_events':{}}
     for i,scene in enumerate(story['scenes']):
         voice=voices[i] if voices else None
@@ -111,27 +157,33 @@ def compile_data(root=ROOT,story=None,voices=None):
     sources=set(metric_sources+['demo/storyboard-v5.yaml','demo/storyboard-v4.yaml','demo/assets/architecture-v4.svg','demo/assets/examples-v5/receipt.json','demo/assets/examples-v5/a.txt','demo/data/scale-v4.json',story['music']['beats']])
     for s in story['scenes']:sources.update(s['evidence'])
     for item in asset_receipt['inputs']+asset_receipt['derived']:sources.add(item['path'])
-    for name in ('beat3','beat6'):
-        path=f'demo/assets/terminal-v5/{name}.json';record=read_json(root/path)
-        if file_hash(root/record['path'])!=record['sha256'] or file_hash(root/record['source'])!=record['source_sha256']:raise BuildError('Terminal source or re-cut changed since receipt')
-        sources.update([path,record['path'],record['source']])
-    if live_receipt:sources.add(live['recording']['receipt']);sources.add(live['recording']['asset'])
+    from terminal_v5 import compile_replays
+    terminal,terminal_sources=compile_replays(root);sources.update(terminal_sources)
+    sources.update(story['brand_motion']['poses'].values());sources.add(story['brand_motion']['source_script'])
+    provenance={p:file_hash(root/p) for p in sorted(sources)}
+    for retained in portable['recordings'].values():
+        recording=retained['recording']
+        provenance[recording['receipt']]=recording['receipt_sha256'];provenance[recording['asset']]=retained['asset_sha256']
     keyframes=[dict(t=t,shot=f'v50{i}',cue='beat boundary') for i,t in enumerate(BOUNDARIES[:-1])]
     keyframes.extend(dict(t=s['start']+(s['end']-s['start'])/2,shot=s['id'],cue='midpoint') for s in shots)
     keyframes.extend(dict(t=e['t']+.15,shot=s['id'],cue=e['event']) for s in shots for e in cues['_events'][s['id']])
+    keyframes.extend(dict(t=e['t'],shot=s['id'],cue=e['event']+' onset') for s in shots for e in cues['_events'][s['id']])
+    if live_receipt:keyframes.extend(dict(t=58+c['at_s'],shot='v505',cue=c['phase']+' named element audit') for c in live_receipt.get('named_element_checks',[]))
+    keyframes.extend(dict(t=170+t,shot='v509',cue='hero stamp motion') for t in (0,.3,.6,1.1,1.6))
     for shot in shots:
         for n,cue in enumerate(cues[shot['id']]):
             keyframes.append(dict(t=cue['start'],shot=shot['id'],cue=f'sentence {n+1} start'))
             keyframes.append(dict(t=max(cue['start'],cue['end']-1/30),shot=shot['id'],cue=f'sentence {n+1} end'))
     keyframes.append(dict(t=178-1/30,shot='v509',cue='last encoded frame'))
     for index in (0,2,5,7,9):keyframes.append(dict(t=BOUNDARIES[index]+1,shot=f'v50{index}',cue='chapter sample'))
-    data=dict(timing=timing,cues=cues,beats={'beats_s':[t-story['music']['music_offset_s'] for t in read_json(root/story['music']['beats'])['beats_s'] if t>=story['music']['music_offset_s']]},scenes=story['scenes'],chapter_bar=story['chapter_bar'],brand=story['brand'],keyframes=sorted(keyframes,key=lambda f:f['t']),subtitles=[dict(start=c.start,end=c.end,text=c.text) for c in captions],metrics=values,post_text=(root/'demo/assets/examples-v5/a.txt').read_text().strip(),inputs=inputs,waveform=waveform,architecture_svg=(root/'demo/assets/architecture-v4.svg').read_text().replace('fourteen seconds','twelve seconds').replace('y="780"','y="750"'),live_receipt=dict(cost_usd=live_receipt['result']['cost_usd'],latency_ms=live_receipt['result']['latency_ms'],model=live_receipt['result']['model'],tool_calls=len([e for e in live_receipt['result']['events'] if e['kind']=='tool_call'])) if live_receipt else None,batch_labels={'run':'Saved replay · Post → Claims → Calls → Verdicts','ocr':'Saved replay · Screenshot → Muse OCR','asr':'Saved replay · Audio → Muse Voice Transcribe','median':'Saved Threads posts · measured median','projection':'Sequential projection · one worker'},provenance={p:file_hash(root/p) for p in sorted(sources)},asset_status={'live':'new v5 capture wired' if live_receipt else 'host capture pending','voice':'measured' if voices else 'unmeasured layout preview','terminal':'retained r5 terminal re-cut; no new OCR/ASR','broll':'none'})
+    data=dict(timing=timing,cues=cues,beats={'beats_s':[t-story['music']['music_offset_s'] for t in read_json(root/story['music']['beats'])['beats_s'] if t>=story['music']['music_offset_s']]},scenes=story['scenes'],chapter_bar=story['chapter_bar'],brand=story['brand'],brand_motion=story['brand_motion'],keyframes=sorted(keyframes,key=lambda f:f['t']),subtitles=[dict(start=c.start,end=c.end,text=c.text) for c in captions],metrics=values,post_text=(root/'demo/assets/examples-v5/a.txt').read_text().strip(),inputs=inputs,waveform=waveform,architecture_svg=architecture(root,story['scenes'][4]['on_screen']),live_receipt=dict(cost_usd=live_receipt['result']['cost_usd'],latency_ms=live_receipt['result']['latency_ms'],model=live_receipt['result']['model'],tool_calls=len([e for e in live_receipt['result']['events'] if e['kind']=='tool_call'])) if live_receipt else None,terminal_replays=terminal,batch_labels=story['terminal_captions'],live_named_elements=live_receipt.get('named_element_checks',[]) if live_receipt else [],ending_named_elements=portable['recordings'].get('v508',{}).get('receipt',{}).get('ending_frame',{}).get('named_elements',[]),portable_inputs=portable,provenance=provenance,asset_status={'live':('new v7 capture wired' if live_receipt.get('capture_version')==7 else 'host re-record required: legacy take has no audited startup cover') if live_receipt else 'host capture pending','voice':'measured' if voices else 'unmeasured layout preview','terminal':'literal saved PTY ranges; no new OCR/ASR','broll':'none'})
     english_only(json.dumps(data,ensure_ascii=False),'compiled motion data')
     return data
 
 def artifacts(data,root=ROOT):
     outputs={f'{OUT}/{k}.json':json.dumps(data[k],indent=2,ensure_ascii=False)+'\n' for k in ('timing','cues','beats','keyframes')}
     outputs[f'{OUT}/data.js']='window.MOTION_DATA = '+json.dumps(data,ensure_ascii=False,sort_keys=True).replace('</','<\\/')+';\n'
+    outputs[f'{OUT}/inputs.json']=json.dumps(data['portable_inputs'],indent=2)+'\n'
     from pipeline import Subtitle
     outputs[f'{OUT}/subtitles.srt']=to_srt([Subtitle(**c) for c in data['subtitles']])
     scripts=[]

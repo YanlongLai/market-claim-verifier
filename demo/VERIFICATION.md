@@ -145,7 +145,7 @@ caption/audio/mastering checks on synthetic fixtures; they do not render a demo 
 | Review stills command | `build.py review-frames` requests only stills, every shot midpoint plus every cue event +0.3 s. Real-cache preparation produced `out/review-v2/plan.json`: **45 frames**. Unit tests verify PNG/time/shot receipt checks, index rows and failures; stale completed indices are invalidated. `index.json` is written only after real PNGs validate. |
 
 Within-sentence word timing uses character offsets inside the mapped sentence, not forced alignment.
-m02's values, m03's 21% and m09's 億 are not literally spoken; their semantic cue choices are documented
+m02's values, m03's 21% and m09's yi are not literally spoken; their semantic cue choices are documented
 in README. Narration, clone-B cache keys, reference voice, music/beat grid, source numbers and original
 approved PNGs are preserved.
 

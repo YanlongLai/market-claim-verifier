@@ -2,8 +2,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import vm from 'node:vm';
-import {stateAt,boundaries,chapterState,repostCascade,overlayAt} from '../motion/v5/plan.js';
-import {installCaptureDOM,validateGeometry,hasCJK,presentation,showTraceAndFiling,validateLiveResult,redact,endingExpectedLinks} from '../record_v5.mjs';
+import {stateAt,boundaries,chapterState,repostCascade,overlayAt,terminalAt,outroStampAt} from '../motion/v5/plan.js';
+import {labelPositions} from '../motion/v5/chapters.js';
+import {assertNamedClearance,checkV5Layout} from '../motion/v5/layout-checks.mjs';
+import {installCaptureDOM,validateGeometry,hasCJK,presentation,showTraceAndFiling,validateLiveResult,redact,endingExpectedLinks,coverDocument,captureCoverCSS,revealCaptureDOM,namedSelectors} from '../record_v5.mjs';
 import {parseArgs} from '../motion/render.mjs';
 const ctx={window:{}};vm.runInNewContext(readFileSync(new URL('../motion/v5/data.js',import.meta.url),'utf8'),ctx);
 const data=JSON.parse(JSON.stringify(ctx.window.MOTION_DATA)),scenes=data.scenes,segments=data.chapter_bar.segments;
@@ -81,7 +83,7 @@ function traceFixture(){
  const result={evidence:[fact],events:[{kind:'tool_call',name:'a'},{kind:'tool_call',name:'b'},{kind:'tool_call',name:'c'},{kind:'tool_call',name:'d'},{kind:'verdict'}]};
  const pre={id:'pre',innerText:async()=>JSON.stringify(fact),evaluate:async()=>300};
  const details={evaluate:async()=>open.inspect,locator:()=>pre};
- const steps={nth:index=>({id:`step-${index}`,isVisible:async()=>open.trace,evaluate:async()=>true})};
+ const steps={nth:index=>({id:`step-${index}`,isVisible:async()=>open.trace,evaluate:async()=>[180,80,1740,520]})};
  const page={locator:s=>s.endsWith('.live-trace')?{evaluate:async()=>open.trace}:s.endsWith('.trace-step')?steps:{nth:()=>({locator:()=>details})}};
  return {page,result,report,mark:s=>actions.push(s),frame:async()=>{},click:async s=>{if(s.includes('live-trace'))open.trace=true;else open.inspect=true;},hold:async()=>{},actions};
 }
@@ -101,4 +103,89 @@ test('ending validates the two correction citations from the actual response env
  const result={corrections:{edits:[{original:'$416.2 billion',replacement:'$102.5 billion',citations:[{form:'10-K',url:'https://www.sec.gov/Archives/annual/'},{form:'10-Q',url:'https://www.sec.gov/Archives/nine-months/'}]}]}};
  assert.deepEqual(endingExpectedLinks(result),['https://www.sec.gov/Archives/annual/','https://www.sec.gov/Archives/nine-months/']);
  result.corrections.edits[0].citations.pop();assert.throws(()=>endingExpectedLinks(result));
+});
+
+test('first document bytes hide the page until an audited zoomed layout is installed',()=>{
+ const html=coverDocument('<html><head><script>site()</script></head><body>Product page</body></html>');
+ assert(html.indexOf('capture-boot-cover')<html.indexOf('<script>'));
+ assert(html.includes(`>${captureCoverCSS}</style>`));assert.throws(()=>coverDocument('<body>page</body>'));
+ const document={documentElement:{style:{zoom:'1.95'},dataset:{}},body:{},querySelector:()=>({})};
+ const fixture={document,getComputedStyle:(_el,pseudo)=>pseudo?{backgroundColor:'rgb(247, 245, 239)',visibility:'visible',display:'block'}:{visibility:'hidden'}};
+ vm.runInNewContext(`(${revealCaptureDOM.toString()})()`,fixture);
+ assert.equal(document.documentElement.dataset.captureReady,'true');
+ document.documentElement.style.zoom='1';delete document.documentElement.dataset.captureReady;
+ assert.throws(()=>vm.runInNewContext(`(${revealCaptureDOM.toString()})()`,fixture));
+ assert.equal(document.documentElement.dataset.captureReady,undefined);
+ document.documentElement.style.zoom='1.95';document.querySelector=()=>null;
+ assert.throws(()=>vm.runInNewContext(`(${revealCaptureDOM.toString()})()`,fixture));
+});
+
+test('all chapter labels keep 24 px on either side, including Results / Fix / DappGo',()=>{
+ assert.deepEqual(segments.slice(-3).map(s=>s.label),['Results','Fix','DappGo']);
+ const widths=[78,74,101,68,73,65,96,124,49,132],centres=labelPositions(segments,widths);
+ for(let i=0;i<centres.length;i++){
+  assert(centres[i]-widths[i]/2>=24);assert(centres[i]+widths[i]/2<=1896);
+  if(i)assert(centres[i]-widths[i]/2-(centres[i-1]+widths[i-1]/2)>=48);
+ }
+ assert.throws(()=>labelPositions(segments,Array(10).fill(190)));
+});
+
+test('rendered on_screen nodes equal their storyboard strings, including changed copy',()=>{
+ const stage={innerHTML:'',querySelector:()=>null,querySelectorAll:()=>[]};
+ const element=()=>({style:{},getBoundingClientRect:()=>({width:100}),classList:{toggle(){}},querySelector:()=>({style:{}})});
+ const context={window:{MOTION_DATA:structuredClone(data)},document:{querySelector:s=>s==='#stage'?stage:s==='#chapter-layer'?{}:s.startsWith('[data-')||s.startsWith('#node-')||s.startsWith('#link-')?element():null}};
+ vm.runInNewContext(readFileSync(new URL('../motion/v5/bundle.js',import.meta.url),'utf8')+'\nglobalThis.sceneBody=body;',context);
+ const decode=s=>s.replaceAll('&lt;','<').replaceAll('&gt;','>').replaceAll('&quot;','"').replaceAll('&amp;','&');
+ let count=0;
+ for(let i=0;i<10;i++){
+  const html=context.sceneBody(stateAt(boundaries[i],scenes,segments));
+  for(const match of html.matchAll(/<[^>]+data-on-screen="(v50\d)"[^>]*>([^<]*)<\//g)){
+   assert.equal(decode(match[2]),scenes.find(s=>s.id===match[1]).on_screen);count++;
+  }
+ }
+ assert.equal(count,2);
+ context.window.MOTION_DATA.scenes[0].on_screen='Changed & exact <storyboard> copy.';
+ assert(context.sceneBody(state(0)).includes('Changed &amp; exact &lt;storyboard&gt; copy.'));
+ assert(!context.sceneBody(state(170)).includes('disclosure'));
+});
+
+test('every frame of the batch run shows saved CoreWeave verdicts and no failure panel',()=>{
+ for(let f=0;f<5*30;f++){
+  const picture=terminalAt(f/30,data.terminal_replays.beat6),text=picture.rows.map(r=>r.text).join('\n');
+  assert.equal(picture.block,'run');assert(text.includes('FY2024 · SUPPORTED'));assert(text.includes('$51.31B → $5.131B'));assert(text.includes('FY2023 · CONTRADICTED'));
+  assert(!/FAILED|INSUFFICIENT|UNCHECKED/.test(text));assert(picture.rows.every(r=>r.row!==12));
+ }
+ assert(terminalAt(4.99,data.terminal_replays.beat6).rows.some(r=>r.text==='$2.29B → $229M'));
+ assert.equal(terminalAt(5,data.terminal_replays.beat6).block,'ocr');
+});
+
+test('overlay audit rejects any intersection with named evidence, verdict, correction, trace or receipt',()=>{
+ const overlay={left:80,right:1840,top:558,bottom:784};
+ for(const name of ['verdict','corrected number','SEC evidence row','trace tool call','receipt']){
+  const check={phase:name,elements:[{name,left:180,right:1000,top:80,bottom:548}]};
+  assertNamedClearance([overlay],[check]);check.elements[0].bottom=560;
+  assert.throws(()=>assertNamedClearance([overlay],[check]),/covers/);
+ }
+ assert(namedSelectors('tool_call_4_reveal',{}).some(s=>s[2]===3));
+ assert(namedSelectors('evidence_reveal',{evidence:[{ticker:'AAPL',derived:true}]}).some(s=>s[1].includes('nth-child(1)')));
+});
+
+test('outro uses the site stamp / stamp-down / approve poses and settles within 1.6 s',()=>{
+ assert.equal(outroStampAt(0).pose,'stamp');assert.equal(outroStampAt(.3).pose,'stamp-down');assert.equal(outroStampAt(.8).pose,'approve');
+ assert(outroStampAt(.36).dip>outroStampAt(.6).dip);assert.equal(outroStampAt(1.6).settled,true);
+ assert.deepEqual(outroStampAt(1.6),outroStampAt(7));
+ assert(Object.values(data.brand_motion.poses).every(p=>p.startsWith('docs/site/img/auditor/H/')));
+});
+
+test('actual-frame audit rejects a translucent band, cramped labels and scene text in the rail lane',async()=>{
+ const current=state(116),widths=Array(10).fill(90),centres=labelPositions(segments,widths);
+ const actual={cjk:false,inserts:0,bar:{height:12,width:1920,top:844},band:{left:0,right:1920,top:790,bottom:1080,colour:'rgb(17, 26, 32)',opacity:'1'},
+  labels:centres.map((c,i)=>({font:32,left:c-45,right:c+45,bottom:834,current:i===6})),
+  segments:current.chapters.map(s=>({width:1920*s.duration_s/178,fill:s.fill})),onScreen:[],
+  textBoxes:[{text:'Saved replay',bottom:748}],terminalCaption:{font:56,bottom:748},namedChecks:[],overlay:null,video:null};
+ await checkV5Layout({evaluate:async()=>actual},current);
+ await assert.rejects(()=>checkV5Layout({evaluate:async()=>({...actual,captureVersion:6})},state(58)),/v7 take/);
+ for(const mutate of [a=>a.band.colour='rgba(17, 26, 32, 0.96)',a=>a.labels[9].left=a.labels[8].right+12,a=>a.terminalCaption.bottom=800,a=>a.textBoxes[0].bottom=844]){
+  const changed=structuredClone(actual);mutate(changed);await assert.rejects(()=>checkV5Layout({evaluate:async()=>changed},current));
+ }
 });

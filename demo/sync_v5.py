@@ -18,7 +18,7 @@ VISUALS={
          'heldout':'Held-out text result: 240/266 (90.2%)'},
  'v504':{'model':'Muse Spark node, claim extraction and SEC lookup path',
          'program':'Python arithmetic and verdict nodes',
-         'principle':'The model proposes; the program decides'},
+         'principle':'Model proposes; program decides.'},
  'v505':{'paste':'The real English post in the centred live workspace',
          'tools':'A real in-progress check against SEC; live status visible',
          'verdict':'The native CONTRADICTED verdict',
@@ -26,14 +26,14 @@ VISUALS={
          'evidence':'The native SEC filing evidence; annual minus nine-month equation',
          'trace':'Expanded native agent trace; four actual tool calls, model and program verdict',
          'receipt':'The actual native receipt; measured cost and elapsed time'},
- 'v506':{'run':'Saved post to claims, tool calls and verdicts terminal blocks',
+ 'v506':{'run':'Saved CoreWeave T03 excerpt: SUPPORTED / CONTRADICTED $51.31B to $5.131B / CONTRADICTED',
          'ocr':'Saved Muse OCR terminal block',
          'asr':'Saved Muse Voice Transcribe terminal block',
          'median':'Measured 6.8-second saved Threads-post median',
          'projection':'Sequential 1,000-post projection, about two hours on one worker'},
  'v507':'The four sourced results: 90.2%, 1/139, $0.02 and 10 seconds',
  'v508':'The corrected result and both native SEC component filing links, continuously held',
- 'v509':'hackathon.dappgo.com, Meta Muse Spark, Baseten and the DappGo wordmark',
+ 'v509':'Site robot stamp motion, hackathon.dappgo.com, Meta Muse Spark, Baseten and the DappGo wordmark',
 }
 
 def ledger_rows(timing,cues,index):

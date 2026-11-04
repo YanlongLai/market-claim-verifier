@@ -30,6 +30,9 @@ FFMPEG = Path("/opt/homebrew/bin/ffmpeg")
 FFPROBE = Path("/opt/homebrew/bin/ffprobe")
 ORIGIN = "https://hackathon.dappgo.com"
 BEATS = {"v505": ("beat6", 58.0), "v508": ("beat9", 16.0)}
+CAPTURE_VERSION = 7
+LIVE_PHASES = ('use_apple_example', 'check_against_sec', 'verdict_reveal', 'draft_reveal',
+               'evidence_reveal', 'agent_trace_expand', 'hover_receipt')
 
 
 class RecordingError(RuntimeError):
@@ -74,7 +77,8 @@ def check_choreography(receipt):
     shown=proof.get('trace_steps_shown',[]);derived=proof.get('apple_derivation',{})
     geometry=receipt.get('geometry_checks',[]);language=receipt.get('language_checks',[])
     ending=receipt.get('ending_frame',{})
-    if (receipt.get('capture_version')!=6 or receipt.get('zoom')!=1.95
+    check_startup_cover(receipt)
+    if (receipt.get('capture_version')!=CAPTURE_VERSION or receipt.get('zoom')!=1.95
         or not proof.get('trace_details_open') or not proof.get('apple_inspect_open')
         or not proof.get('program_verdict_shown') or len(calls)!=4
         or [s['index'] for s in shown if s['kind']=='tool_call' and s.get('visible')]!=calls
@@ -90,13 +94,44 @@ def check_choreography(receipt):
     for g in geometry:
         if (not all(type(g.get(k)) in (int,float) and math.isfinite(g[k]) for k in ('source_width','left_margin','right_margin','horizontal_overflow'))
             or g.get('source_width',0)<1500 or min(g.get('left_margin',0),g.get('right_margin',0))<60
-            or abs(g['left_margin']-g['right_margin'])>4 or g.get('horizontal_overflow',math.inf)>1):
+            or abs(g['left_margin']-g['right_margin'])>4 or g.get('horizontal_overflow',math.inf)>1 or g.get('zoom')!=1.95):
             raise RecordingError('v5 workspace must span >=1500 px with equal >=60 px margins')
     if any(c.get('text_nodes',1) or c.get('attributes',1) or c.get('language_switches',1) for c in language):
         raise RecordingError('v5 capture DOM contains non-English glyphs or a language switch')
     phases={t['phase'] for t in receipt['timings']}
-    if not {'use_apple_example','check_against_sec','verdict_reveal','draft_reveal','evidence_reveal','agent_trace_expand','hover_receipt'}<=phases:
+    if not set(LIVE_PHASES)<=phases:
         raise RecordingError('v5 live overlay phases are incomplete')
+    check_named_elements(receipt)
+
+
+def check_startup_cover(receipt):
+    """Only a pre-content cover released after a passing audit can enter the film."""
+    cover=receipt.get('startup_cover',{});geometry=receipt.get('geometry_checks',[])
+    index=cover.get('release_geometry_index');released=cover.get('released_at_s')
+    if (receipt.get('capture_version')!=CAPTURE_VERSION or not cover.get('injected_before_content')
+        or cover.get('colour')!='#f7f5ef' or not cover.get('cover_present') or not cover.get('cover_opaque') or not cover.get('layout_installed')
+        or cover.get('zoom')!=1.95 or type(index) is not int or not 0<=index<len(geometry)
+        or type(released) not in (int,float) or not math.isfinite(released)
+        or not 0<=geometry[index].get('at_s',math.inf)<=released<58):
+        raise RecordingError('v7 audited startup cover required: no un-zoomed opening may enter the film; re-record on the host')
+
+
+def check_named_elements(receipt):
+    phases={t['phase']:t['at_s'] for t in receipt['timings']}
+    expected=set(LIVE_PHASES)|{p for p in phases if p.startswith('tool_call_') and p.endswith('_reveal')}|{'program_verdict_reveal'}
+    checks=receipt.get('named_element_checks',[])
+    if {c.get('phase') for c in checks}!=expected or len(checks)!=len(expected):
+        raise RecordingError('Named element rectangles required at every live cue onset and trace step')
+    for check in checks:
+        if check.get('at_s')!=phases[check['phase']] or not check.get('elements'):
+            raise RecordingError('Named element rectangles must use the exact recorded phase onset')
+        for r in check['elements']:
+            if (not all(type(r.get(k)) in (int,float) and math.isfinite(r[k]) for k in ('left','right','top','bottom'))
+                or not 60<=r['left']<r['right']<=1860 or not 0<=r['top']<r['bottom']<=558):
+                raise RecordingError('Named live element must be fully visible above the chapter lane')
+    ending=receipt.get('ending_frame',{}).get('named_elements',[])
+    if len(ending)!=2 or any(not 60<=r.get('left',0)<r.get('right',0)<=1860 or not 80<=r.get('top',0)<r.get('bottom',0)<=586 for r in ending):
+        raise RecordingError('Ending draft and citation rectangles required for overlay review')
 
 
 def probe(path):
@@ -313,12 +348,13 @@ def main():
             supported = live_copy_supported(session["result"])
             receipt = {**run, "status": "ready" if supported else "needs-director-review", "scene_id": scene_id, "scene_duration_s": minimum,
                        "locked_live_copy_supported": supported,
-                       "capture_version": 6,
+                       "capture_version": CAPTURE_VERSION,
                        "viewport": [1920, 1080], "deviceScaleFactor": 1, "zoom": 1.95,
                        "result": session["result"], "timings": session["timings"],
                        "presentation": session["presentation"],
                        "readability": session["readability"],
                        "geometry_checks": session["geometry_checks"], "language_checks": session["language_checks"],
+                       "startup_cover": session["startup_cover"], "named_element_checks": session["named_element_checks"],
                        "live_checks": session["live_checks"], "ending_frame": session["ending_frame"],
                        "choreography": {k: session[k] for k in ("trace_details_open", "trace_steps_shown", "tool_calls_shown",
                            "program_verdict_shown", "apple_inspect_open", "apple_derivation", "after_click_s", "beat6_actions_end_s")},

@@ -164,7 +164,7 @@ def test_product_data_matches_reports_and_full_preregistered_eval():
     assert d['chinese_claim']['verdict']=='contradicted'
     assert d['chinese_claim']['program_checks'][0]['program_verdict']=='contradicted'
     assert d['chinese_claim']['ticker']=='KO' and d['chinese_claim']['index']==3
-    assert d['chinese_claim']['quote']=='可口可樂 2024 年營收突破 500 億美元。'
+    assert d['chinese_claim']['quote']=='\u53ef\u53e3\u53ef\u6a02 2024 \u5e74\u71df\u6536\u7a81\u7834 500 \u5104\u7f8e\u5143\u3002'
     assert len(d['chinese_claim']['program_checks'])==1
     assert d['chinese_claim']['program_checks'][0]['comparator']=='gt'
     assert d['chinese_claim']['evidence'][0]['value']==47_061_000_000

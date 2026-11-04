@@ -1,38 +1,48 @@
 #!/usr/bin/env python3
-"""Re-cut retained r5 terminal footage to the v5 narration blocks. No new PTY/model run."""
+"""Replay exact retained PTY rows on the v5 clock. No new PTY/model/media run."""
 from pathlib import Path
-import argparse, hashlib, json, subprocess
+import argparse, hashlib, json
 ROOT=Path(__file__).resolve().parents[1]
 OUT=ROOT/'demo/assets/terminal-v5'
 def sha(path):return hashlib.sha256(path.read_bytes()).hexdigest()
-# Each source range includes the real typed key line. Extra time is a last-frame hold.
+# The source clock is the retained asciicast clock, not an encoded MP4 seek.
+# Start just after the panel's clear/title event. Extra time holds its final rows.
 CUTS={'beat3':{'source':'beat4','duration_s':14.,'blocks':[
-    ('single',0.,3.3,3.5),('agent',4.,8.8,5.5),('heldout',9.,15.8,5.)]},
+    ('single',0.,3.3,3.5),('agent',4.02,8.8,5.5),('heldout',9.02,15.8,5.)]},
  'beat6':{'source':'beat7','duration_s':22.,'blocks':[
-    ('post',0.,.9,.9),('claims',1.,2.,1.),('calls',2.5,3.8,1.3),('verdicts',4.,5.8,1.8),
-    ('ocr',21.,22.5,3.),('asr',22.5,23.95,3.),
-    ('median',6.,10.5,4.5),('projection',10.5,17.,6.5)]}}
-def build():
- OUT.mkdir(parents=True,exist_ok=True)
+    ('run',4.02,5.8,5.),('ocr',21.02,22.49,3.),('asr',22.52,23.95,3.),
+    ('median',6.02,10.5,4.5),('projection',10.5,17.,6.5)]}}
+
+def compile_replays(root=ROOT):
+ """Decode the strict ANSI subset; preserve every typed character and timestamp."""
+ from replay_v4 import TerminalScreen
+ outputs={};sources=[]
  for name,cut in CUTS.items():
-    src=ROOT/f"demo/assets/terminal-v4-r5/{cut['source']}.mp4";target=OUT/f'{name}.mp4';receipt=OUT/f'{name}.json'
-    source_hash=sha(src)
-    if target.exists():
-        if not receipt.is_file():raise SystemExit('Unreceipted terminal output exists; retain it before rebuilding.')
-        prior=json.loads(receipt.read_text())
-        if prior['source_sha256']==source_hash and prior['cuts']==[list(x) for x in cut['blocks']] and prior['sha256']==sha(target):continue
-        raise SystemExit('Terminal output differs; retain this revision before rebuilding.')
-    filters=[];blocks=[];at=0
-    for i,(label,a,b,duration) in enumerate(cut['blocks']):
-        filters.append(f'[0:v]trim=start={a}:end={min(b,a+duration)},setpts=PTS-STARTPTS,tpad=stop_mode=clone:stop_duration={duration},trim=duration={duration},fps=30[v{i}]')
-        blocks.append(dict(block=label,at_s=round(at,6),end_s=round(at+duration,6),source_start_s=a,source_end_s=min(b,a+duration),freeze_padding_s=max(0,duration-(b-a))));at+=duration
-    assert round(at,6)==cut['duration_s']
-    filters.append(''.join(f'[v{i}]' for i in range(len(blocks)))+f'concat=n={len(blocks)}:v=1:a=0[out]')
-    command=['ffmpeg','-v','error','-n','-i',str(src),'-filter_complex',';'.join(filters),'-map','[out]','-an','-c:v','libx264','-crf','18','-pix_fmt','yuv420p','-r','30','-movflags','+faststart',str(target)]
-    subprocess.run(command,check=True,capture_output=True)
-    probe=json.loads(subprocess.check_output(['ffprobe','-v','error','-show_streams','-of','json',str(target)]))['streams'][0]
-    assert [probe['width'],probe['height']]==[1920,1080] and probe['r_frame_rate']=='30/1'
-    assert int(probe['nb_frames'])==int(cut['duration_s']*30)
-    receipt.write_text(json.dumps(dict(source=src.relative_to(ROOT).as_posix(),source_sha256=source_hash,path=target.relative_to(ROOT).as_posix(),sha256=sha(target),duration_s=cut['duration_s'],cuts=cut['blocks'],blocks=blocks,command=command,note='Re-cut of saved evidence playback; literal retained terminal pixels. No new OCR/ASR, inference or batch run.'),indent=2)+'\n')
- print('PASS terminal v5: 14 s comparison, 22 s sentence-bound batch; source takes untouched')
-if __name__=='__main__':build()
+    base=f"demo/assets/terminal-v4-r5/{cut['source']}"
+    cast=root/f'{base}.cast';receipt=json.loads((root/f'{base}.json').read_text())
+    if sha(cast)!=receipt['cast_sha256']:raise ValueError('Saved PTY bytes differ from their receipt')
+    events=[e for e in map(json.loads,cast.read_text().splitlines()[1:]) if e[1]=='o']
+    screen=TerminalScreen();snapshots=[]
+    for t,_,chunk in events:
+        screen.feed(chunk)
+        snapshots.append({'source_at_s':t,'rows':[
+            dict(row=row,text=text,principal=row==10 or (name=='beat3' and row==5 and '/' in text) or (name=='beat6' and row==6 and text.startswith('median ')))
+            for row,text in screen.lines().items() if text and row!=12]})
+    blocks=[];at=0
+    for label,a,b,duration in cut['blocks']:
+        first=next(s for s in reversed(snapshots) if s['source_at_s']<=a)
+        frames=[dict(at_s=at,rows=first['rows'])]
+        frames.extend(dict(at_s=round(at+s['source_at_s']-a,9),rows=s['rows']) for s in snapshots if a<s['source_at_s']<=min(b,a+duration))
+        blocks.append(dict(block=label,at_s=at,end_s=at+duration,source_start_s=a,source_end_s=b,frames=frames));at+=duration
+    assert at==cut['duration_s']
+    outputs[name]=dict(source=f'{base}.cast',source_sha256=sha(cast),receipt=f'{base}.json',duration_s=at,blocks=blocks,
+        note='Literal saved PTY text and typing times, reflowed above the rail. Source ranges are editorial playback; no new execution or OCR/ASR.')
+    sources.extend([f'{base}.cast',f'{base}.json'])
+ return outputs,sources
+def main():
+ parser=argparse.ArgumentParser(description=__doc__)
+ parser.add_argument('--check',action='store_true',help='Validate retained source hashes/ranges without rendering')
+ parser.parse_args()
+ replays,_=compile_replays()
+ print('PASS terminal v5: 14 s comparison; 22 s saved replay; CoreWeave T03 verdicts at run; no media rendered')
+if __name__=='__main__':main()

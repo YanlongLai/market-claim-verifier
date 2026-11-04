@@ -16,6 +16,12 @@ class BuildError(RuntimeError):
     """An actionable build failure, without an internal traceback."""
 
 
+def escape_cjk_source(text: str) -> str:
+    """Keep legacy JSON/JS values lossless without literal CJK in demo sources."""
+    return re.sub(r'[\u2e80-\u9fff\uac00-\ud7af\uf900-\ufaff\U00020000-\U000323af]',
+                  lambda match: json.dumps(match[0], ensure_ascii=True)[1:-1], text)
+
+
 def collapse(text: str) -> str:
     return " ".join(text.split())
 

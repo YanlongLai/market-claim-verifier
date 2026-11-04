@@ -6,6 +6,14 @@ import {fileURLToPath} from 'node:url';
 
 export const presentation={viewport:[1920,1080],deviceScaleFactor:1,css_zoom:1.95,
   body_font_px:30,column_css_px:800,cursor:'hidden except click indicator',playback_scale:1};
+export const captureVersion=7;
+// Delivered in the document's first head bytes, before site CSS or scripts can paint.
+// Hiding the body preserves layout, so geometry can be audited under the cover.
+export const captureCoverCSS='html{background:#f7f5ef!important}body{visibility:hidden!important}html::after{content:"";position:fixed;inset:0;background:#f7f5ef!important;z-index:2147483647;visibility:visible!important}html[data-capture-ready="true"] body{visibility:visible!important}html[data-capture-ready="true"]::after{display:none!important}';
+export function coverDocument(html){
+  if(!/<head(?:\s[^>]*)?>/i.test(html))throw new Error('capture_document_head_missing');
+  return html.replace(/<head(?:\s[^>]*)?>/i,head=>`${head}<style id="capture-boot-cover">${captureCoverCSS}</style>`);
+}
 export const captureCSS=`
   *,*::before,*::after{cursor:none!important}html{scroll-behavior:auto!important}
   .language-switch,[data-language],[hreflang^="zh"],[lang^="zh"]{display:none!important}
@@ -56,11 +64,54 @@ export function installCaptureDOM({presentation,captureCSS}){
   const observer=new MutationObserver(sanitize);observer.observe(document,{subtree:true,childList:true,characterData:true,attributes:true,attributeFilter:['title','alt','placeholder','aria-label']});
   document.addEventListener('DOMContentLoaded',()=>{
     document.documentElement.lang='en';document.documentElement.style.zoom=String(presentation.css_zoom);
-    const style=document.createElement('style');style.textContent=captureCSS;document.head.append(style);
+    const style=document.createElement('style');style.id='capture-layout';style.textContent=captureCSS;document.head.append(style);
     const dot=document.createElement('div');dot.id='record-click';dot.setAttribute('aria-hidden','true');
     dot.style.cssText='position:fixed;z-index:2147483647;pointer-events:none;width:14px;height:14px;border:2px solid #e97628;border-radius:50%;display:none;transform:translate(-50%,-50%)';
     document.body.append(dot);sanitize();
   },{once:true});
+}
+export function revealCaptureDOM(){
+  const cover=getComputedStyle(document.documentElement,'::after');
+  if(!document.querySelector('#capture-boot-cover')||!document.querySelector('#capture-layout')||
+      Number(document.documentElement.style.zoom)!==1.95||getComputedStyle(document.body).visibility!=='hidden'||
+      cover.backgroundColor!=='rgb(247, 245, 239)'||cover.visibility!=='visible'||cover.display==='none')
+    throw new Error('capture_cover_or_layout_missing');
+  document.documentElement.dataset.captureReady='true';
+  return {cover_present:true,cover_opaque:true,layout_installed:true,zoom:Number(document.documentElement.style.zoom)};
+}
+
+export function namedSelectors(phase,result){
+  const primary='#live-result ';
+  const fixed={
+    use_apple_example:[['post','#live-input']],
+    check_against_sec:[['Run check','#live-submit']],
+    verdict_reveal:[['verdict',primary+'.trace-verdict']],
+    draft_reveal:[['corrected number',primary+'.corrected-draft-text strong']],
+    agent_trace_expand:[['trace model and receipt',primary+'.live-receipt']],
+    hover_receipt:[['receipt',primary+'.live-receipt']],
+  };
+  if(phase==='evidence_reveal'){
+    const index=(result?.evidence||[]).filter(e=>!e.error).findIndex(e=>e.ticker==='AAPL'&&e.derived);
+    if(index<0)throw new Error('named_apple_evidence_missing');
+    return [['SEC evidence row',`${primary}.live-evidence-row:nth-child(${index+1}) .evidence-primary`]];
+  }
+  const step=/^tool_call_(\d+)_reveal$/.exec(phase);
+  if(step)return [[`trace tool call ${step[1]}`,`${primary}.trace-step`,Number(step[1])-1]];
+  if(phase==='program_verdict_reveal')return [['program verdict',`${primary}.trace-step`,result.events.findIndex(e=>e.kind==='verdict')]];
+  return fixed[phase]||[];
+}
+export async function captureNamedElements(page,phase,result,at_s){
+  const specs=namedSelectors(phase,result);
+  if(!specs.length)return null;
+  const elements=await page.evaluate(specs=>specs.map(([name,selector,index=0])=>{
+    const el=document.querySelectorAll(selector)[index];
+    if(!el)throw new Error('named_element_missing');
+    const r=el.getBoundingClientRect();
+    if(r.width<=0||r.height<=0||r.left<60||r.right>1860||r.top<0||r.bottom>558)
+      throw new Error('named_element_outside_picture');
+    return {name,selector,index,left:r.left,right:r.right,top:r.top,bottom:r.bottom};
+  }),specs);
+  return {phase,at_s,elements};
 }
 export function validateGeometry(g){
   if(!['source_width','left_margin','right_margin','horizontal_overflow'].every(k=>Number.isFinite(g[k]))||g.source_width<1500||g.left_margin<60||g.right_margin<60||Math.abs(g.left_margin-g.right_margin)>4||g.horizontal_overflow>1)throw new Error('workspace_must_be_full_width_and_centred');
@@ -168,11 +219,15 @@ function playwright() {
 export async function record(config) {
   const report={status:'started',page_url:config.page_url,timings:[],live_check_limit:1,
     recording:'Playwright recordVideo, one continuous page; beat9 is its continuous final segment',
-    presentation,geometry_checks:[],language_checks:[],
+    capture_version:captureVersion,presentation,geometry_checks:[],language_checks:[],named_element_checks:[],
     privacy:'No screenshot, request-body log, HAR, browser trace or storage export'};
   let browser,context,page,video,secret='',stage='password_file';
   let began=performance.now();
-  const mark=label=>{stage=label;report.timings.push({phase:label,at_s:(performance.now()-began)/1000});};
+  const namedPending=[];
+  const mark=label=>{
+    stage=label;const at_s=(performance.now()-began)/1000;report.timings.push({phase:label,at_s});
+    if(page)namedPending.push(captureNamedElements(page,label,report.result,at_s).then(check=>{if(check)report.named_element_checks.push(check);}).catch(()=>{report.named_element_failure=label;}));
+  };
   try {
     secret=(await readFile(process.env.LIVE_CHECK_PASSWORD_FILE,'utf8')).replace(/[\r\n]+$/g,'');
     if (!secret || /[\r\n]/.test(secret)) throw new Error('password_file_invalid');
@@ -191,6 +246,12 @@ export async function record(config) {
       if (url.pathname==='/api/check' || url.pathname==='/api/check-example') {
         if (request.method()!=='POST' || ++checks>1) return route.abort('blockedbyclient');
       }
+      if(request.resourceType()==='document'&&url.pathname==='/'){
+        const response=await route.fetch();
+        const html=coverDocument(await response.text());
+        report.startup_cover={injected_before_content:true,colour:'#f7f5ef',release_geometry_index:null};
+        return route.fulfill({response,body:html});
+      }
       return route.continue();
     });
     await context.routeWebSocket('**/*',socket=>socket.close());
@@ -201,7 +262,7 @@ export async function record(config) {
       if(scan.text_nodes||scan.attributes||scan.language_switches)throw new Error('capture_language_purity');
       report.language_checks.push({at_s:(performance.now()-began)/1000,...scan});
       const g=await page.locator('.live-workspace').first().evaluate(el=>{
-        const r=el.getBoundingClientRect();return {source_width:r.width,left_margin:r.left,right_margin:innerWidth-r.right,column_center_x:(r.left+r.right)/2,horizontal_overflow:Math.max(0,document.documentElement.scrollWidth-document.documentElement.clientWidth)};
+        const r=el.getBoundingClientRect();return {source_width:r.width,left_margin:r.left,right_margin:innerWidth-r.right,column_center_x:(r.left+r.right)/2,horizontal_overflow:Math.max(0,document.documentElement.scrollWidth-document.documentElement.clientWidth),zoom:Number(document.documentElement.style.zoom)};
       });
       validateGeometry(g);report.geometry_checks.push({at_s:(performance.now()-began)/1000,...g});
     };
@@ -242,6 +303,8 @@ export async function record(config) {
     await page.goto(config.page_url,{waitUntil:'load',timeout:20000});
     await page.evaluate(()=>document.fonts.ready);
     await audit();
+    const release=await page.evaluate(revealCaptureDOM);
+    report.startup_cover={...report.startup_cover,...release,release_geometry_index:report.geometry_checks.length-1,released_at_s:(performance.now()-began)/1000};
     report.readability={...report.geometry_checks.at(-1),playback_body_px:presentation.body_font_px*presentation.css_zoom/4};
     await hold(500);
     await page.waitForFunction(()=>!document.querySelector('#live-input')?.disabled &&
@@ -327,17 +390,25 @@ export async function record(config) {
     const expected=endingExpectedLinks(result);
     if(expected.some(url=>!links.some(l=>l.href===url&&l.left>=60&&l.right<=1860&&l.top>=80&&l.bottom<=586)))throw new Error('both_component_filing_links_required');
     report.ending_frame.both_links=expected.length;report.ending_frame.links=links;
+    report.ending_frame.named_elements=await page.evaluate(({draft,citation})=>[draft,citation].map(selector=>{
+      const r=document.querySelector(selector).getBoundingClientRect();
+      return {name:selector,selector,left:r.left,right:r.right,top:r.top,bottom:r.bottom};
+    }),{draft,citation});
     report.ending_frame.visible_together=true;
     await audit();
     report.beat9_footer_at_s=null;
     report.beat9_span_s=(performance.now()-beat9Start)/1000;
     report.live_checks=checks;
     if(checks!==1)throw new Error('exactly_one_live_check');
+    await Promise.all(namedPending);
+    if(report.named_element_failure)throw new Error('named_element_audit_failed');
+    report.named_element_checks.sort((a,b)=>a.at_s-b.at_s);
     report.status='captured';
   } catch {
     report.status='failed';report.failure_stage=stage;
     report.failure='Attempt retained; no automatic retry. No raw exception or credential is logged.';
   } finally {
+    await Promise.allSettled(namedPending);
     try {await context?.close();}catch{}
     try {await browser?.close();}catch{}
     if(video){

@@ -273,7 +273,7 @@ test('Chinese claim is Coca-Cola with a separate $50B conversion and $47.1B file
   window.seek(events.convert+.001);assert.equal(styles(stage.innerHTML,'chinese-conversion')[0].opacity,'1');
   window.seek(events.chineseVerdict+.001);
   const text=plain(stage.innerHTML);
-  for(const phrase of ['可口可樂 2024 年營收突破 500 億美元。','500 億 = $50.0B','Filed: $47.1B','FALSE','FY2024'])assert(text.includes(phrase),phrase);
+  for(const phrase of ['\u53ef\u53e3\u53ef\u6a02 2024 \u5e74\u71df\u6536\u7a81\u7834 500 \u5104\u7f8e\u5143\u3002','500 \u5104 = $50.0B','Filed: $47.1B','FALSE','FY2024'])assert(text.includes(phrase),phrase);
   assert(!/623|62\.3|Units converted/.test(text));
   assert.equal(window.MOTION_DATA.product.chinese_claim.ticker,'KO');
   assert.equal(window.MOTION_DATA.product.claim_numbers.chinese_filed_b,47.061);

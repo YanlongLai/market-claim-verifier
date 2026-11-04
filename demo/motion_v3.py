@@ -22,7 +22,7 @@ from realworld import MAX_VOICE_S, OUTPUT as REALWORLD, SCENE as REALWORLD_SCENE
 from motion_cues import cue_document, detect_silences, map_sentences
 from motion_data import product_data
 from motion_timing import narration_start, next_beat, presentation_timing, video_beats
-from pipeline import BuildError, file_hash, read_json
+from pipeline import BuildError, file_hash, read_json, escape_cjk_source
 
 ROOT = Path(__file__).resolve().parents[1]
 STORY = 'demo/storyboard-v3.yaml'
@@ -33,7 +33,7 @@ OUT = 'demo/motion/v3'
 
 
 def json_text(value):
-    return json.dumps(value, ensure_ascii=False, indent=2, allow_nan=False) + '\n'
+    return escape_cjk_source(json.dumps(value, ensure_ascii=False, indent=2, allow_nan=False)) + '\n'
 
 
 def hover_source(repo: Path) -> str:

@@ -27,7 +27,7 @@
   }
   function chrome(scene,index) {
     const labels=['Check before you share','Finance posts','Model alone','1 · Extract claims',
-      '2 · Check claims','3 · SEC proof','Program checks','Pre-registered results','English · 中文','Try the live demo'];
+      '2 · Check claims','3 · SEC proof','Program checks','Pre-registered results','English · \u4e2d\u6587','Try the live demo'];
     return `<div class="label">${esc(labels[index])}</div><div class="brand">Market Claim Verifier</div><div class="rule"></div>`;
   }
   function open(t,s,e) {
@@ -159,8 +159,8 @@
   }
   function chinese(t,s,e) {
     return box(64,188,1792,124,'Same checks. In Chinese, too.','headline')
-      +box(64,328,1792,302,`<div class="card-name">可口可樂 · Coca-Cola</div><div class="quote body" style="margin-top:24px;font-size:72px">${quote(P.chinese_claim.quote)}</div>`,'panel','padding:28px 32px')
-      +box(64,660,1000,116,num(P.claim_numbers.chinese_yi+' 億 = $'+P.claim_numbers.chinese_b.toFixed(1)+'B','font-size:104px'),'amber chinese-conversion',`opacity:${visible(t,e.convert)}`)
+      +box(64,328,1792,302,`<div class="card-name">\u53ef\u53e3\u53ef\u6a02 · Coca-Cola</div><div class="quote body" style="margin-top:24px;font-size:72px">${quote(P.chinese_claim.quote)}</div>`,'panel','padding:28px 32px')
+      +box(64,660,1000,116,num(P.claim_numbers.chinese_yi+' \u5104 = $'+P.claim_numbers.chinese_b.toFixed(1)+'B','font-size:104px'),'amber chinese-conversion',`opacity:${visible(t,e.convert)}`)
       +box(1100,660,756,116,`Filed: ${num('$'+P.claim_numbers.chinese_filed_b.toFixed(1)+'B')}`,'body coral chinese-filed',`font-size:64px;opacity:${visible(t,e.chineseVerdict)}`)
       +box(64,798,1000,66,'FY2024 · audited 10-K','body muted','font-size:56px')
       +box(1100,794,756,70,verdictWord(P.chinese_claim.verdict),'verdict coral',`opacity:${visible(t,e.chineseVerdict)}`);

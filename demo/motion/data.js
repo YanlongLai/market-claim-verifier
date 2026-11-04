@@ -1735,8 +1735,8 @@ window.MOTION_DATA = {
       "target_s": 8,
       "target_bars": 3,
       "narration": "It works in Chinese too.",
-      "on_screen": "English · 中文",
-      "director_notes": "Chinese Coca-Cola claim 3: 「可口可樂 2024 年營收突破 500 億美元。」 Show “500 億 = $50.0B” on the Chinese cue, then coral “Filed: $47.1B” and FALSE. The FY2024 10-K reports $47.061B (= 470.6 億), below the claimed threshold. Keep the claim and conversion separate from the filed comparison.",
+      "on_screen": "English · \u4e2d\u6587",
+      "director_notes": "Chinese Coca-Cola claim 3: \u300c\u53ef\u53e3\u53ef\u6a02 2024 \u5e74\u71df\u6536\u7a81\u7834 500 \u5104\u7f8e\u5143\u3002\u300d Show “500 \u5104 = $50.0B” on the Chinese cue, then coral “Filed: $47.1B” and FALSE. The FY2024 10-K reports $47.061B (= 470.6 \u5104), below the claimed threshold. Keep the claim and conversion separate from the filed comparison.",
       "visual": {
         "kind": "motion"
       }
@@ -1789,7 +1789,7 @@ window.MOTION_DATA = {
     "claim_count": 357,
     "max_gain_points": 70.5,
     "english_post": "Big Tech earnings recap 🧵\n\n1/ Amazon's revenue hit $143.1 billion in calendar Q3 2023. Retail is back.\n\n2/ NVIDIA's fiscal 2024 revenue was $60.9 billion, more than double the year before.\n\n3/ Apple pulled in $416.2 billion of revenue in fiscal Q4 2025 alone. Insane quarter.\n\n4/ My take: NVDA at 30x sales is still cheap.\n",
-    "chinese_post": "美股財報懶人包 📊\n微軟 2024 財年營收 2,451 億美元，年增 16%！\nMeta 2024 年淨利 623 億美元，比前一年多了快一倍。\n可口可樂 2024 年營收突破 500 億美元。\n個人覺得明年 AI 股還會再漲 30%，大家自己判斷。\n",
+    "chinese_post": "\u7f8e\u80a1\u8ca1\u5831\u61f6\u4eba\u5305 📊\n\u5fae\u8edf 2024 \u8ca1\u5e74\u71df\u6536 2,451 \u5104\u7f8e\u5143，\u5e74\u589e 16%！\nMeta 2024 \u5e74\u6de8\u5229 623 \u5104\u7f8e\u5143，\u6bd4\u524d\u4e00\u5e74\u591a\u4e86\u5feb\u4e00\u500d\u3002\n\u53ef\u53e3\u53ef\u6a02 2024 \u5e74\u71df\u6536\u7a81\u7834 500 \u5104\u7f8e\u5143\u3002\n\u500b\u4eba\u89ba\u5f97\u660e\u5e74 AI \u80a1\u9084\u6703\u518d\u6f32 30%，\u5927\u5bb6\u81ea\u5df1\u5224\u65b7\u3002\n",
     "english_claims": [
       {
         "quote": "Amazon's revenue hit $143.1 billion in calendar Q3 2023.",
@@ -1830,7 +1830,7 @@ window.MOTION_DATA = {
     ],
     "chinese_claim": {
       "index": 3,
-      "quote": "可口可樂 2024 年營收突破 500 億美元。",
+      "quote": "\u53ef\u53e3\u53ef\u6a02 2024 \u5e74\u71df\u6536\u7a81\u7834 500 \u5104\u7f8e\u5143\u3002",
       "ticker": "KO",
       "verdict": "contradicted",
       "summary": "Coca-Cola FY2024 revenue was $47.061B per 10-K, contradicting claim it exceeded $50B.",

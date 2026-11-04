@@ -13,7 +13,20 @@ export function repostCascade(local){
  });
 }
 export function overlayAt(local,events){
- return [...events].reverse().find(e=>local>=e.at_scene_s)||null;
+ // Adding then subtracting a scene offset can lose a few floating-point bits.
+ return [...events].reverse().find(e=>local+1e-9>=e.at_scene_s)||null;
+}
+export function terminalAt(local,replay){
+ const block=[...replay.blocks].reverse().find(b=>local+1e-9>=b.at_s)||replay.blocks[0];
+ const frame=[...block.frames].reverse().find(f=>local+1e-9>=f.at_s)||block.frames[0];
+ return {block:block.block,rows:frame.rows};
+}
+// Site hero WINDUP -> STRIKE -> REACT, reduced to a single 1.6-second sign-off.
+export function outroStampAt(local){
+ const strike=.3,react=.8,duration=1.6;
+ const dip=local<strike?0:local<strike+.06?14*clamp((local-strike)/.06):14*(1-clamp((local-strike-.06)/.16));
+ return {pose:local<strike?'stamp':local<react?'stamp-down':'approve',dip,
+  lean:local<strike?-4*(1-clamp(local/strike)):0,ink:clamp((local-strike)/.18),settled:local>=duration};
 }
 export function stateAt(t,scenes,chapters){
  if(!Number.isFinite(t)||t<0||t>178)throw new Error('v5 time must be in 0..178');

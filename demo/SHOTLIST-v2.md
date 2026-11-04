@@ -1,12 +1,12 @@
 # Demo v2 shot list — v004 visual revision
 
 Brief (Owner's template, filled in):
-「Use the Market Claim Verifier hackathon material to make a **16:9 (1920×1080)** motion video for **hackathon judges
+"Use the Market Claim Verifier hackathon material to make a **16:9 (1920×1080)** motion video for **hackathon judges
 and people on X / Discord**. Goal: **make them understand the product's highlights** (catches wrong finance numbers,
 shows the SEC proof, the program decides, measured accuracy). CTA: **Try the live demo** at
 https://yanlonglai.github.io/market-claim-verifier/site/ (plus star the GitHub repo). Animation written in HTML + CSS + JavaScript,
 frame-addressable (any second can be rendered), Playwright screenshots every frame, ffmpeg assembles the MP4 with
-music; motion is cut to the music's beat.」
+music; motion is cut to the music's beat."
 
 ## Production method (v2 replaces v001's live-site recordings)
 
@@ -45,7 +45,7 @@ music; motion is cut to the music's beat.」
 | 6 | 1:13–1:34 | 8 | Step 3. Use the authorized two-column SEC 10-Q close-up: Total net sales; Three months ended Sep 30; 2023: 143,083 highlighted, 2024: 158,877. Fixed 500/576/576 px columns have 48 px gutters; values are right-aligned 128 px tabular numerals. The amber sweep covers the full 143,083 cell. Nine-month values 404,824 / 450,167 remain in source data and the linked original filing. Period/source/link labels are at least 56 px. | "Every verdict links to proof: the exact table row in the 10-K or 10-Q, number highlighted, one click to the original filing." | 3 · See the SEC proof |
 | 7 | 1:34–1:57 | 9 | Two large lanes fill over 60% of the safe area. MODEL: Plan SEC lookups → Cite E1, E2. PROGRAM: Number ±0.05B → Fiscal ↔ calendar → Evidence. A fake E9 receives a coral ✕ at “rejects”. Short labels are at least 56 px and numeric/evidence tokens at least 96 px. | "The key design: the model proposes, the program decides. Code re-reads the number and its precision, checks fiscal and calendar years, and rejects any evidence the model made up." | Model proposes · program decides |
 | 8 | 1:57–2:20 | 9 | A full-width results board fills over 60% of the safe area: Meta Model API 44→83%, Baseten 21→90.5%, Fireworks 20→90.5%. Show Meta with “83 percent” and both 90.5% rows with “90.5 percent”. A contained badge reads “Up to +70.5 points”. Provider names are 72 px, results at least 104 px; context says pre-registered / 357 claims / Muse Spark. | "We committed the answers before running anything. With tools and program checks: 83 percent on the Meta Model API, and 90.5 percent with open-weight Muse Spark on Baseten and Fireworks." | Pre-registered · 357 claims |
-| 9 | 2:20–2:28 | 3 | Chinese Coca-Cola claim 3: 「可口可樂 2024 年營收突破 500 億美元。」 Show “500 億 = $50.0B” on the Chinese cue, then coral “Filed: $47.1B” and FALSE. The FY2024 10-K reports $47.061B (= 470.6 億), below the claimed threshold. Keep the claim and conversion separate from the filed comparison. | "It works in Chinese too." | English · 中文 |
+| 9 | 2:20–2:28 | 3 | Chinese Coca-Cola claim 3: "Coca-Cola's 2024 revenue exceeded $50 billion." Show “500 yi = $50.0B” on the Chinese cue, then coral “Filed: $47.1B” and FALSE. The FY2024 10-K reports $47.061B (= 470.6 yi), below the claimed threshold. Keep the claim and conversion separate from the filed comparison. | "It works in Chinese too." | English · Chinese |
 | 10 | 2:28–2:40 | 4 | CTA. Large live-demo URL https://yanlonglai.github.io/market-claim-verifier/site/ and matching QR, GitHub repo, the explicit 56 px line “Built during the Meta Global AI Developer Hackathon”, and “Muse Spark · Meta open weights”. Music resolves; 2 s fade. | "Built this week for the Meta hackathon. Try the live demo, and check the number before you share it." | Try the live demo · https://yanlonglai.github.io/market-claim-verifier/site/ |
 
 ## Host review gates
