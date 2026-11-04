@@ -16,7 +16,7 @@ from claimcheck.tools import ToolRunner
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "workers/live/src"))
-from live import LiveError, LiveRun, finish, reservation_for, usage_cost, validate_text  # noqa: E402
+from live import MAX_OUTPUT, LiveError, LiveRun, finish, reservation_for, usage_cost, validate_text  # noqa: E402
 from gate import transition  # noqa: E402
 from scripts.build_live_demo import build as build_demo  # noqa: E402
 from scripts.build_live_demo import build_post  # noqa: E402
@@ -229,13 +229,13 @@ def test_scope_is_explicit_before_a_model_call(text):
 
 def test_budget_pricing_and_missing_usage_follow_cli_with_a_larger_public_hold():
     for text in ("Apple revenue " * 20, "蘋果營收" * 100):
-        payload = {"model": BASETEN_DEFAULT_MODEL, "messages": [{"role": "user", "content": text}], "max_tokens": 2000}
+        payload = {"model": BASETEN_DEFAULT_MODEL, "messages": [{"role": "user", "content": text}], "max_tokens": MAX_OUTPUT}
         hold = reservation_for(payload)
-        cli = Ledger(persist=False, provider="baseten").estimate(payload, model=BASETEN_DEFAULT_MODEL, max_output_tokens=2000)
+        cli = Ledger(persist=False, provider="baseten").estimate(payload, model=BASETEN_DEFAULT_MODEL, max_output_tokens=MAX_OUTPUT)
         assert hold["cli_estimate"] == cli.amount
         assert hold["estimated_input_tokens"] == cli.estimated_input_tokens
         assert hold["amount"] >= cli.amount
-        assert hold["amount"] == hold["input_ceiling"] * BASETEN_PRICING["input"] + 2000 * BASETEN_PRICING["output"]
+        assert hold["amount"] == hold["input_ceiling"] * BASETEN_PRICING["input"] + MAX_OUTPUT * BASETEN_PRICING["output"]
         usage = {"prompt_tokens": 1200, "completion_tokens": 400, "prompt_tokens_details": {"cached_tokens": 1000}}
         assert usage_cost(payload, usage) == Ledger(persist=False, provider="baseten").reconcile(cli, usage)
         for bad in (None, {}, {"prompt_tokens": -1, "completion_tokens": 0}):

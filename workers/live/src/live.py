@@ -25,7 +25,7 @@ from claimcheck.tools import TOOL_DEFINITIONS, ToolRunner
 
 MODEL = BASETEN_DEFAULT_MODEL
 MAX_CALLS = 8  # a four-assertion post needs more model turns than a single claim
-MAX_OUTPUT = 2000
+MAX_OUTPUT = 6000  # multi-assertion posts need room for the final claim report
 MAX_TOOLS = 14
 MAX_ISSUERS = 4
 SCOPE = "US equities with SEC companyfacts only; no prices, forecasts, crypto, non-GAAP or investment advice."
