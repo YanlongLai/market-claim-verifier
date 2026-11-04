@@ -8,7 +8,7 @@
 
 | Step | Open | Inspect |
 | --- | --- | --- |
-| Watch | [Demo video — publication pending](#demo-video-todo) | Post → evidence → program verdict → corrected draft. |
+| Watch | [3-minute demo video](https://youtu.be/qIZTElkqpZc) | Post → evidence → program verdict → corrected draft. |
 | Try | [Live check](https://hackathon.dappgo.com/#live-check) | Choose a story, input and provider. Password: the team name (dappgo). |
 | Replay | [Saved check](https://hackathon.dappgo.com/#recorded-run) | No password; open the corrected draft, SEC citations and agent trace. |
 | Audit | [Original benchmark](docs/evidence/eval-v2-2026-10-27/REPORT.md#metrics) | Read held-out results, failures and the corrected-gold disclosure. |
@@ -73,6 +73,6 @@ DappGo existed before the hackathon; the verifier, site and evidence were built 
 [Build disclosure](BUILD_LOG.md#build-log) · [MIT](LICENSE) · [Credits](CREDITS.md) · [Traditional Chinese](JUDGES.zh-TW.md).
 
 <a id="demo-video-todo"></a>
-Demo video publication is pending; the saved check and raw traces are available now.
+Demo video (3 min): https://youtu.be/qIZTElkqpZc
 
 <a id="60-second-path"></a><a id="bonus-categories"></a><a id="controlled-format-study"></a><a id="cost-accounting"></a><a id="four-equally-weighted-criteria"></a><a id="historical-results-and-failure-review"></a><a id="in-the-wild-todo"></a><a id="input-and-source-boundaries"></a><a id="limits-to-keep-in-view"></a><a id="live-check-todo"></a><a id="media-studies"></a><a id="original-text-evaluation"></a><a id="publication-links--todo-claude"></a><a id="real-company-materials-what-improved-what-remains-unresolved"></a><a id="verify-without-model-calls"></a><a id="what-is-new-during-the-hackathon"></a>

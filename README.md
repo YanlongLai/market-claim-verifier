@@ -10,13 +10,13 @@
 
 | Step | Open | What to inspect |
 | --- | --- | --- |
-| Watch | [Demo video — publication pending](#demo-video) | The post, filing, verdict and corrected draft in one walkthrough. |
+| Watch | [3-minute demo video](https://youtu.be/qIZTElkqpZc) | The post, filing, verdict and corrected draft in one walkthrough. |
 | Try | [Live check](https://hackathon.dappgo.com/#live-check) | Password: the team name (dappgo). Choose a story, input and provider. |
 | Replay | [Saved check](https://hackathon.dappgo.com/#recorded-run) | No password. Expand the SEC evidence and agent trace. This is a recorded run. |
 | Audit | [Held-out benchmark report](docs/evidence/eval-v2-2026-10-27/REPORT.md#metrics) | Denominators, failures, costs and the corrected-gold disclosure. |
 
 <a id="demo-video"></a>
-The demo video URL will be added after publication. The site, saved checks and raw traces are available now.
+Demo video (3 min): https://youtu.be/qIZTElkqpZc
 
 <a id="agentic-muse-chooses-the-next-check-python-checks-the-answer"></a><a id="l4-earnings-release-evidence"></a>
 

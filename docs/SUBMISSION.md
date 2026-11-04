@@ -84,7 +84,7 @@ Implemented work includes the SEC tool loop, claim-aware program checks, provide
 | Public site / saved demo | [hackathon.dappgo.com](https://hackathon.dappgo.com/) |
 | Public repository | [YanlongLai/market-claim-verifier](https://github.com/YanlongLai/market-claim-verifier) |
 | Results explorer | [Saved per-claim results](https://hackathon.dappgo.com/explorer/) |
-| Demo video | `VIDEO_URL_PENDING` — Owner replaces with a public YouTube or Vimeo URL after checking the final upload against the [video checklist](SUBMIT_CHECKLIST.md#video) and [opening disclosure](../demo/JUDGE_INTRO.md). |
+| Demo video | https://youtu.be/qIZTElkqpZc (public; checked against the [video checklist](SUBMIT_CHECKLIST.md#video) and [opening disclosure](../demo/JUDGE_INTRO.md). |
 | Submission form | [Cerebral Valley submission](https://cerebralvalley.ai/e/meta-ai-developer-hackathon/hackathon/submit) |
 
 ## Field-by-field form draft
@@ -107,7 +107,7 @@ Use the matching field when present; check the authenticated form's labels and l
 | Limitations | Copy the [limits](#limits); retain the distinction between recorded evaluation, post-hoc fixes, development probes, and planned work. |
 | Project / demo website | https://hackathon.dappgo.com/ |
 | Public source repository | https://github.com/YanlongLai/market-claim-verifier |
-| Demo video URL | `VIDEO_URL_PENDING` — replace after public upload and [video checks](SUBMIT_CHECKLIST.md#video). |
+| Demo video URL | https://youtu.be/qIZTElkqpZc |
 | Team / teammates | Solo; no additional teammates. |
 | Submitter name / email / profile | `OWNER_NAME_PENDING` / `OWNER_EMAIL_PENDING` / Owner's participating account profile. |
 
@@ -126,7 +126,7 @@ Copy each answer into the matching field. Character limits are the form's.
 | Which problem statement did you build towards? | **Build for Your World** (DappGo publishes US-market commentary; this addresses a fact-checking problem found in that product.) |
 | Most Viral Track — X post link | `<X post URL>` (post the X cut first, then paste the link) |
 | Public GitHub Repository | https://github.com/YanlongLai/market-claim-verifier |
-| 3-Minute Demo Video | `<YouTube URL>` |
+| 3-Minute Demo Video | https://youtu.be/qIZTElkqpZc |
 | Partner technologies feedback (≤150) | Baseten: fast Muse Spark Open and reliable tool calling. Fireworks: integrated, but held-out agent p95 was 226 s. Credits and docs were sufficient. |
 | How likely to build with Meta Model API? | Very likely |
 | Overall opinion of Meta Model API | Very favorable |

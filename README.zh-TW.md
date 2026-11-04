@@ -10,13 +10,13 @@
 
 | 步驟 | 開啟 | 檢視內容 |
 | --- | --- | --- |
-| 觀看 | [示範影片待發布](#demo-video) | 依序看貼文、申報文件、判定與修正版草稿。 |
+| 觀看 | [三分鐘示範影片](https://youtu.be/qIZTElkqpZc) | 依序看貼文、申報文件、判定與修正版草稿。 |
 | 試用 | [即時查核](https://hackathon.dappgo.com/zh/#live-check) | 評審密碼是我們的隊名；選擇故事、輸入與平台。 |
 | 重播 | [已儲存查核](https://hackathon.dappgo.com/zh/#recorded-run) | 不需密碼；展開 SEC 證據與代理軌跡。這是已記錄執行。 |
 | 審核 | [保留測試報告](docs/evidence/eval-v2-2026-10-27/REPORT.zh-TW.md#評測指標) | 分母、失敗、費用與標準答案修正揭露。 |
 
 <a id="demo-video"></a>
-影片發布後會補上網址。網站、已儲存查核及原始軌跡現在即可查閱。
+示範影片（3 分鐘）：https://youtu.be/qIZTElkqpZc
 
 ## 構想
 

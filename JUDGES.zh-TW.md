@@ -8,7 +8,7 @@
 
 | 步驟 | 開啟 | 檢視 |
 | --- | --- | --- |
-| 觀看 | [示範影片待發布](#demo-video-todo) | 貼文、證據、程式判定、修正版草稿。 |
+| 觀看 | [三分鐘示範影片](https://youtu.be/qIZTElkqpZc) | 貼文、證據、程式判定、修正版草稿。 |
 | 試用 | [即時查核](https://hackathon.dappgo.com/zh/#live-check) | 選故事、輸入與平台；評審密碼是我們的隊名。 |
 | 重播 | [已儲存查核](https://hackathon.dappgo.com/zh/#recorded-run) | 不需密碼；開啟修正版草稿、SEC 引用與代理軌跡。 |
 | 審核 | [原始基準](docs/evidence/eval-v2-2026-10-27/REPORT.zh-TW.md#評測指標) | 閱讀保留結果、失敗及標準答案修正揭露。 |
@@ -64,4 +64,4 @@ DappGo 在黑客松前已存在；查核器、網站與證據於黑客松期間�
 [建置揭露](BUILD_LOG.md#build-log) · [MIT](LICENSE) · [致謝](CREDITS.md) · [英文](JUDGES.md)。
 
 <a id="demo-video-todo"></a>
-示範影片待發布；已儲存查核與原始軌跡現在可查閱。
+示範影片（3 分鐘）：https://youtu.be/qIZTElkqpZc
