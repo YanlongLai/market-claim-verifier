@@ -6,7 +6,8 @@ Host command (from the repo root, with Chromium installed for Playwright):
     uv run python scripts/capture_readme_gif.py
 
 Omit PLAYWRIGHT_MODULE if Node can resolve playwright. The committed GIF is a
-static placeholder until this command succeeds. Frames and a receipt are kept
+static placeholder until this command succeeds. A successful capture also
+refreshes the adjacent static PNG fallback. Frames and a receipt are kept
 under /tmp by default; --record-dir selects a persistent host record directory.
 """
 
@@ -115,8 +116,12 @@ def main():
     else:
         raise SystemExit(f"Capture exceeds 3 MB; frames retained at {records}")
     args.output.write_bytes(candidate.read_bytes())
+    poster = args.output.with_suffix(".png")
+    frames[len(frames) * 7 // 10].save(poster, optimize=True)
     receipt = dict(width=720, duration_ms=7000, bytes=args.output.stat().st_size,
                    sha256=hashlib.sha256(args.output.read_bytes()).hexdigest(),
+                   poster_bytes=poster.stat().st_size,
+                   poster_sha256=hashlib.sha256(poster.read_bytes()).hexdigest(),
                    source_sha256=hashlib.sha256((ROOT / "docs/site/script.js").read_bytes()).hexdigest(),
                    method="Playwright screenshots of saved local scene; one 8 s scene cycle in a 7 s GIF",
                    no_model_or_sec_calls=True, frames=str(records))

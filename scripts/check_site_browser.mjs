@@ -3,7 +3,9 @@
 // SITE_URL=http://127.0.0.1:8765 SHOTS_DIR=/tmp/site-shots PLAYWRIGHT_MODULE=/tmp/og-tools/node_modules/playwright-core/index.mjs node scripts/check_site_browser.mjs
 import assert from 'node:assert/strict';
 import { mkdir, writeFile } from 'node:fs/promises';
+import { createRequire } from 'node:module';
 import { resolve } from 'node:path';
+const COPY = createRequire(import.meta.url)('../docs/site/script.js');
 const { chromium } = await import(process.env.PLAYWRIGHT_MODULE || 'playwright-core');
 const base = process.env.SITE_URL || 'http://127.0.0.1:8765';
 const out = resolve(process.env.SHOTS_DIR || '/tmp/hk-polish-shots');
@@ -55,7 +57,7 @@ async function targets(page) {
 
 async function run(width, language, explorer) {
   const label = `${explorer ? 'explorer' : 'home'}-${width}-${language}`;
-  const ctx = await browser.newContext({ viewport: { width, height: width === 375 ? 812 : 900 }, colorScheme: 'light', deviceScaleFactor: 1 });
+  const ctx = await browser.newContext({ viewport: { width, height: width === 375 ? 812 : 900 }, colorScheme: 'light', reducedMotion: 'no-preference', deviceScaleFactor: 1 });
   const page = await ctx.newPage();
   const errors = [], failed = [], violations = [], resources = new Set();
   await page.exposeFunction('__recordCSP', violation => violations.push(violation));
@@ -128,14 +130,55 @@ async function run(width, language, explorer) {
   }
   if (!explorer) {
     assert.ok(first.firstScene.post && first.firstScene.filing, `${label} first scene is populated`);
+    await page.evaluate(() => document.fonts.ready);
+    result.presentation = await page.evaluate(() => {
+      const scene = document.querySelector('#stamp-scene');
+      const rect = selector => {
+        const { top, right, bottom, left, width, height } = document.querySelector(selector).getBoundingClientRect();
+        return { top, right, bottom, left, width, height };
+      };
+      // All text nodes count, including inactive cards and the reduced-motion
+      // list. Names, bylines and attribution must not escape the language test.
+      const text = document.createTreeWalker(scene, NodeFilter.SHOW_TEXT), chinese = [];
+      while (text.nextNode()) if (/[\u3400-\u9fff]/u.test(text.currentNode.textContent)) chinese.push(text.currentNode.textContent);
+      for (const node of [scene, ...scene.querySelectorAll('*')]) for (const key of ['alt', 'aria-label', 'title']) {
+        if (/[\u3400-\u9fff]/u.test(node.getAttribute(key) || '')) chinese.push(`${key}: ${node.getAttribute(key)}`);
+      }
+      const facts = [...document.querySelectorAll('.fact-section')].map(article => ({
+        titles: article.querySelectorAll('h3').length, tables: article.querySelectorAll('table').length,
+        lines: [...article.querySelectorAll('.fact-detail,.fact-line')].map(node => ({
+          text: node.textContent.trim(),
+          count: Math.round(node.getBoundingClientRect().height / parseFloat(getComputedStyle(node).lineHeight)),
+        })),
+      }));
+      return { chinese, facts, stage: rect('.stamp-stage'), controls: rect('.stamp-strip'),
+        cards: [...document.querySelectorAll('.follow-step')].map(node => {
+          const { top, bottom, left, right } = node.getBoundingClientRect();
+          return { top, bottom, left, right };
+        }) };
+    });
+    if (language === 'en') assert.deepEqual(result.presentation.chinese, [], `${label} every stamp text node and label is English`);
+    assert.ok(result.presentation.controls.top >= result.presentation.stage.bottom - 1, `${label} playback controls sit beneath the scene`);
+    assert.equal(result.presentation.facts.length, 6);
+    for (const fact of result.presentation.facts) {
+      assert.equal(fact.titles, 1); assert.equal(fact.tables, 0); assert.equal(fact.lines.length, 2);
+      for (const line of fact.lines) assert.ok(line.count >= 1 && line.count <= 2, `${label} Facts ≤2 lines: ${line.text} (${line.count})`);
+    }
+    if (width === 375) for (let index = 0; index < result.presentation.cards.length; index++) {
+      const card = result.presentation.cards[index];
+      assert.ok(card.left >= 0 && card.right <= width, `${label} step card stays inside the viewport`);
+      if (index) assert.ok(card.top >= result.presentation.cards[index - 1].bottom, `${label} step cards stack`);
+    }
+    await page.locator('#how').screenshot({ path: `${out}/${label}-how.png` });
+    await page.locator('#facts').screenshot({ path: `${out}/${label}-facts.png` });
     for (let step = 1; step <= 4; step++) {
       await page.locator('.stamp-step').nth(step - 1).click();
       assert.equal(await page.evaluate(() => window.__stampScene.getState().step), step);
       assert.equal(await page.locator('#stamp-pause').getAttribute('aria-pressed'), 'true');
     }
-    await page.locator('#stamp-pause').click();
+    await page.locator('#stamp-pause').press('Space');
     assert.equal(await page.locator('#stamp-scene').getAttribute('data-running'), 'true');
-    await page.locator('#stamp-pause').click();
+    await page.locator('#stamp-pause').press('Space');
     const paused = await page.evaluate(() => window.__stampScene.getState().seconds);
     await page.waitForTimeout(100);
     assert.equal(await page.evaluate(() => window.__stampScene.getState().seconds), paused);
@@ -177,7 +220,7 @@ async function run(width, language, explorer) {
     const other = language === 'en' ? 'zh' : 'en';
     await page.locator(`[data-language="${other}"]`).click();
     await page.waitForURL(base + (other === 'zh' ? '/zh/' : '/'));
-    assert.equal(await page.title(), other === 'en' ? 'SEC fact-checks for finance posts · Market claim verifier' : '財經貼文查核：用 SEC 申報文件驗證數字 · DappGo');
+    assert.equal(await page.title(), COPY[other].metaTitle);
   } else {
     await page.locator('#f-q').fill('G0119');
     await page.waitForFunction(() => document.querySelector('#count').textContent.startsWith('1 / 357'));

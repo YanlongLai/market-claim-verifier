@@ -74,6 +74,10 @@ assert.ok(panel.querySelector('.follow-verdict').className.includes('is-contradi
 tabs[2].events.keydown({key:'Home',preventDefault(){}});
 assert.equal(panel.getAttribute('aria-labelledby'),'follow-step-1');
 assert.equal(tabs.filter(tab=>tab.getAttribute('tabindex')==='0').length,1);
+tabs[0].events.keydown({key:'ArrowDown',preventDefault(){}});
+assert.equal(tabs[1].getAttribute('aria-selected'),'true');assert.ok(tabs[1].focused);
+tabs[1].events.keydown({key:'ArrowUp',preventDefault(){}});
+assert.equal(tabs[0].getAttribute('aria-selected'),'true');assert.ok(tabs[0].focused);
 assert.equal(JSON.stringify(record),before,'presentation never mutates saved evidence');
 """
 

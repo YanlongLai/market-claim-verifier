@@ -1,7 +1,7 @@
 # Market Claim Verifier
 
-![Auditor robot comparing a post with a filing](docs/site/img/readme-robot.gif)
-<!-- Placeholder still; host capture: python3 scripts/capture_readme_gif.py -->
+![Auditor robot comparing a post with a filing and stamping the program verdict](docs/site/img/readme-robot.gif)
+[Static PNG](docs/site/img/readme-robot.png) <!-- Host capture: python3 scripts/capture_readme_gif.py -->
 
 **Paste a finance post. Every number is checked against SEC filings, and you get a corrected draft with citations.**
 
@@ -91,7 +91,7 @@ bash scripts/verify.sh
 
 The local preview serves committed files. Verification uses a disposable copy, removes credentials and blocks network access during tests and builders. After the dependency cache is populated, `UV_OFFLINE=1 bash scripts/verify.sh` also sets up dependencies offline. [Verification guide](AGENTS.md) · [Retained test records](docs/TEST_RECORDS.md) · [CLI details](docs/evidence/TECHNICAL_GUIDE.md#run-it)
 
-To replace the GIF placeholder with a 720 px, 6–8 s capture under 3 MB, see [the capture script](scripts/capture_readme_gif.py). It uses Playwright on the host and reads only the local saved scene.
+To replace the GIF placeholder with a 720 px, 6–8 s capture under 3 MB, see [the capture script](scripts/capture_readme_gif.py). It refreshes the static PNG too, uses Playwright on the host and reads only the local saved scene.
 
 ## Licence
 

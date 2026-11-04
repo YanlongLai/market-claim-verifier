@@ -1,7 +1,7 @@
 # 財經主張查核器
 
-![稽核機器人比對貼文與申報文件](docs/site/img/readme-robot.gif)
-<!-- 此為靜態佔位圖；請於主機執行擷取指令後替換。 -->
+![稽核機器人比對貼文與申報文件，蓋上程式判定章](docs/site/img/readme-robot.gif)
+[靜態圖片](docs/site/img/readme-robot.png) <!-- 主機擷取指令會保留同一動圖路徑。 -->
 
 **貼上財經貼文，逐一用美國證管會申報資料核對數字，並產出附出處的修正版草稿。**
 
@@ -91,7 +91,7 @@ bash scripts/verify.sh
 
 本機預覽使用已提交檔案。驗證在可拋棄副本中執行，移除金鑰並禁止測試及建置器連網。快取備妥後，可用 `UV_OFFLINE=1 bash scripts/verify.sh` 離線安裝相依套件。[驗證指南](AGENTS.md) · [保留測試紀錄](docs/TEST_RECORDS.md) · [命令列細節](docs/evidence/TECHNICAL_GUIDE.md#run-it)
 
-請在主機執行[擷取腳本](scripts/capture_readme_gif.py)，將佔位圖替換為寬 720 像素、6–8 秒、低於 3 百萬位元組的循環動圖；擷取只讀取本機已儲存場景。
+請在主機執行[擷取腳本](scripts/capture_readme_gif.py)，將佔位圖替換為寬 720 像素、6–8 秒、低於 3 百萬位元組的循環動圖，並更新靜態備用圖片；擷取只讀取本機已儲存場景。
 
 ## 授權
 

@@ -8,6 +8,8 @@ from pathlib import Path
 
 import pytest
 
+from test_site_stamps_runtime import run_check
+
 ROOT = Path(__file__).resolve().parents[1]
 SURFACES = ("README.md", "README.zh-TW.md", "JUDGES.md", "JUDGES.zh-TW.md", "llms.txt",
             "docs/llms.txt", "docs/site/index.html", "docs/zh/index.html", "docs/site/script.js")
@@ -62,6 +64,30 @@ def test_english_presentation_contains_no_chinese(relative):
     assert not re.search(r"[\u3400-\u9fff]", (ROOT / relative).read_text()), relative
 
 
+@pytest.mark.parametrize("viewport", (375, 1440))
+@pytest.mark.parametrize("reduced", (False, True))
+def test_english_stamp_scene_contains_no_chinese_in_any_text_node_or_label(viewport, reduced):
+    # Exercise the shipped data and renderer, including hidden/static cards,
+    # bylines, repost attribution, media labels, captions and accessible names.
+    # Do not strip tokens or limit this to prose elements.
+    run_check(r"""
+function check(node) {
+  assert.ok(!/[\u3400-\u9fff]/u.test(node.textContent), node.textContent);
+  for (const key of ['alt', 'aria-label', 'title']) {
+    const value = node.getAttribute(key) || '';
+    assert.ok(!/[\u3400-\u9fff]/u.test(value), `${key}: ${value}`);
+  }
+  node.children.forEach(check);
+}
+for (let index = 0; index < cards.length; index++) {
+  for (const age of [.1, 1.8, 2.95, 4.1, 4.94]) {
+    seek(api.timing.starts[index] + age);
+    check(scene);
+  }
+}
+""", viewport=viewport, reduced=reduced, language="en", page="docs/site/index.html")
+
+
 @pytest.mark.parametrize("relative", ("docs/zh/index.html", "README.zh-TW.md", "JUDGES.zh-TW.md"))
 def test_chinese_presentation_contains_no_english_prose(relative):
     source = (ROOT / relative).read_text()
@@ -82,7 +108,7 @@ def load_copy():
 
 
 @pytest.mark.parametrize("language", ("en", "zh"))
-def test_six_fact_answers_and_evidence_match_site_readme_and_judge_guide(language):
+def test_six_facts_have_one_title_compact_copy_and_the_shared_evidence(language):
     copy = load_copy()[language]["facts"]
     suffix = "" if language == "en" else ".zh-TW"
     readme, judges = [(ROOT / f"{name}{suffix}.md").read_text() for name in ("README", "JUDGES")]
@@ -98,12 +124,16 @@ def test_six_fact_answers_and_evidence_match_site_readme_and_judge_guide(languag
     for i, (row, article) in enumerate(zip(rows, articles), 1):
         answer = copy[f"answer{i}"]
         assert answer in row
-        assert f'data-i18n="facts.answer{i}">{html.escape(answer, quote=False)}</span>' in article
+        for key in (f"question{i}", f"detail{i}", f"summary{i}", "label", "source"):
+            assert article.count(f'data-i18n="facts.{key}"') == 1
+            assert f'>{html.escape(copy[key], quote=False)}<' in article
         target = re.search(r'\]\((docs/evidence/[^)]+)\)', row)[1]
         assert (ROOT / target.split("#")[0]).is_file()
         assert f'/blob/main/{target}"' in article
         assert 'lang="en"' not in article and 'lang="zh-Hant"' not in article
-        assert article.count('<tr>') == 1
+        assert '<table' not in article and '<th' not in article
+        assert article.count('<h3') == 1 and article.count('<p') == 2
+        assert 'class="fact-line"' in article and 'class="fact-reference"> · <a' in article
 
 
 def test_complete_mirrors_have_the_same_sections_and_unique_ids():
@@ -119,6 +149,9 @@ def test_readmes_open_with_the_robot_and_stay_within_180_lines():
         lines = (ROOT / relative).read_text().splitlines()
         assert len(lines) <= 180
         assert "readme-robot.gif" in lines[2]
+        assert re.search(r'!\[[^\]]+\]\(docs/site/img/readme-robot.gif\)', lines[2])
+        assert re.search(r'\[[^\]]+\]\(docs/site/img/readme-robot.png\)', lines[3])
+        assert (ROOT / "docs/site/img/readme-robot.png").read_bytes().startswith(b"\x89PNG\r\n\x1a\n")
         assert lines[5].startswith("**")
         assert any(line.startswith("## ") for line in lines[:12])
 

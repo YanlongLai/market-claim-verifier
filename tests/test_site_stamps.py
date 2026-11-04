@@ -56,7 +56,9 @@ def test_repost_and_news_reuse_the_original_claim_and_entire_assessment(cards):
                       "severity", "score", "gap", "gap_kind", "direction_wrong", "gap_relation", "excerpt",
                       "date_basis", "filed_value_display", "stated_value_display"):
             assert variant[field] == original[field], field
-    assert by_id["market-recap-repost"]["reposted_from"] == "美股懶人包"
+    assert by_id["market-recap-repost"]["reposted_from"] == {
+        "en": "US Stocks in 1 Minute", "zh": "美股懶人包",
+    }
     assert by_id["market-recap-repost"]["text"] == by_id["tw-social-post-meta-3"]["text"]
     assert by_id["banana-news-article"]["text"] == {
         "en": "Amazon reports $143.1B in Q3 2023 revenue.", "zh": "亞馬遜 2023 年第 3 季營收達 1,431 億美元。",

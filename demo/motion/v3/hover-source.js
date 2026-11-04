@@ -1,5 +1,5 @@
 // Generated from docs/site/script.js; run demo/motion_v3.py to refresh.
-// Site SHA-256: 5e36243df263d41b86cbb26036e0d779167f10b1f8f148732be760c49cfaf876
+// Site SHA-256: fb7fa748d16e333534a28376c1ce6ed094bcc5b4721f84e6523324f60389a73f
 (function(root) {
 "use strict";
 const emptyBox = { x: 0, y: 0, width: 0, height: 0 };

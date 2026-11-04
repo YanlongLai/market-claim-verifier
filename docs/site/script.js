@@ -688,24 +688,31 @@
   "question": "Fact",
   "answer": "Recorded scope",
   "caption": "Six answers about the verifier",
-  "source": "Evidence",
+  "source": "Evidence ↗",
+  "label": "Fact:",
   "question1": "What it checks",
-  "detail1": "A number needs a company, period and unit. The model selects tools; the program checks the evidence.",
+  "detail1": "The model selects SEC evidence. Python checks periods, units and values.",
+  "summary1": "Cited verdicts + corrections",
   "answer1": "Checks financial claims against SEC filings; returns verdicts and cited corrections.",
   "question2": "Coverage",
-  "detail2": "Annual, quarterly and growth comparisons use reported periods. Foreign filers and funds have limited support.",
+  "detail2": "US-GAAP SEC XBRL periods: generally 2009 onward, through the latest filing.",
+  "summary2": "≈8,000 companies · 23 tested",
   "answer2": "US-GAAP SEC filers: ≈8,000 companies; 23 tested. SEC XBRL periods, generally 2009 onward, through the latest filing.",
   "question3": "Inputs",
-  "detail3": "Choose a prepared example or paste your own text on the site. The command line also accepts local media.",
+  "detail3": "The CLI accepts text, images, PDFs, audio and video.",
+  "summary3": "Website: ≤600 characters",
   "answer3": "Website: text ≤600 characters. CLI: text, images, PDFs, audio and video.",
   "question4": "Cost & speed",
-  "detail4": "Live observations vary with input size. Benchmark measurements are per claim, not a promise for every post.",
+  "detail4": "Benchmark: $0.02 per claim; 10 s median. Live samples: 1–4 assertions.",
+  "summary4": "$0.01 per live check · 6–20 s live",
   "answer4": "$0.01 per live check; 6–20 s live (one claim → four-assertion post). $0.02 per claim; 10 s median in the benchmark. $10/day; $60 lifetime.",
   "question5": "Accuracy",
-  "detail5": "Held-out text measures verdict accuracy. Real-world coverage is reported separately; coverage ≠ accuracy.",
+  "detail5": "Held-out text, corrected gold. False support: 1/139; coverage ≠ accuracy.",
+  "summary5": "90.2% (240/266) held out",
   "answer5": "90.2% (240/266) held out; false support 1/139.",
   "question6": "Corrections",
-  "detail6": "Only disproved numbers change. Opinions, unchecked assertions and the rest of the post keep their original wording.",
+  "detail6": "Only disproved numbers change; the rest of the post keeps its wording.",
+  "summary6": "Cited corrections; no article approval",
   "answer6": "Corrects disproved numbers and cites the filing. Never labels an article approved."
 };
   COPY.en.language = {
@@ -756,24 +763,31 @@
   "question": "項目",
   "answer": "已記錄範圍",
   "caption": "關於查核器的六個答案",
-  "source": "查閱證據",
+  "source": "證據 ↗",
+  "label": "事實：",
   "question1": "查核內容",
-  "detail1": "每個數字都需要公司、期間與單位。模型選擇工具，程式核對證據。",
+  "detail1": "模型選擇申報證據，程式核對期間、單位與數值。",
+  "summary1": "附出處的判定與修正",
   "answer1": "以美國證管會申報核對財務主張，提供判定與附出處的修正。",
   "question2": "涵蓋範圍",
-  "detail2": "依申報期間核對年度、季度與成長比較。外國申報公司與基金的支援有限。",
+  "detail2": "美國會計準則公司，結構化申報期間大致自 2009 年起至最新申報。",
+  "summary2": "約 8,000 家 · 已測試 23 家",
   "answer2": "美國會計準則申報公司：約 8,000 家，已測試 23 家。結構化申報期間大致自 2009 年起至最新申報。",
   "question3": "輸入格式",
-  "detail3": "網站可選擇預製範例或貼上自己的文字。命令列也能讀取本機媒體。",
+  "detail3": "命令列可讀文字、圖片、文字型文件、音訊與影片。",
+  "summary3": "網站 ≤600 字元",
   "answer3": "網站：≤600 字元。命令列：文字、圖片、文字型文件、音訊與影片。",
   "question4": "費用與速度",
-  "detail4": "即時實測耗時隨輸入大小而異。基準數字以每題計算，不保證每篇貼文的表現。",
+  "detail4": "基準每題 $0.02，中位數 10 秒；即時實測從單一到四項主張。",
+  "summary4": "即時每次 $0.01 · 6–20 秒",
   "answer4": "即時查核每次 $0.01；即時 6–20 秒（單一主張 → 含四項主張的貼文）。基準測試每題 $0.02；中位數 10 秒。每日 $10；累計 $60。",
   "question5": "準確率",
-  "detail5": "保留文字測試衡量判定準確率。真實貼文的涵蓋率另列；涵蓋率 ≠ 準確率。",
+  "detail5": "保留文字測試、修正後答案；誤判為支持 1/139，涵蓋率 ≠ 準確率。",
+  "summary5": "保留測試 90.2% (240/266)",
   "answer5": "保留測試 90.2% (240/266)；誤判為支持 1/139。",
   "question6": "修正範圍",
-  "detail6": "只修改被證明錯誤的數字。觀點、未查核主張與其他文字保留原樣。",
+  "detail6": "只改被證明錯誤的數字，其餘文字保留原樣。",
+  "summary6": "附申報出處；不核准整篇文章",
   "answer6": "修正被證明錯誤的數字，並附申報出處。絕不標示整篇文章已核准。"
 };
   COPY.zh.language = {
@@ -2431,7 +2445,7 @@
         if (item.lead) item.lead.textContent = card.article.lead[pageLanguage];
         item.example.textContent = getCopy("stamps.example");
         item.example.title = getCopy("stamps.exampleDetail");
-        if (item.reposted) item.reposted.textContent = `${getCopy("stamps.repostedFrom")} ${card.reposted_from}`;
+        if (item.reposted) item.reposted.textContent = `${getCopy("stamps.repostedFrom")} ${card.reposted_from[pageLanguage]}`;
         item.period.textContent = checkable(card) ? `${getCopy("stamps.claim")}: ${compact(card.stated_value_display)} · ${card.period[pageLanguage]}` : getCopy("stamps.noClaim");
         if (item.unavailable) {
           item.unavailable.querySelector(".stamp-no-number-title").textContent = getCopy("stamps.noNumber");
@@ -3824,7 +3838,7 @@
     tabs.forEach((tab, index) => {
       tab.addEventListener("click", () => select(tab));
       tab.addEventListener("keydown", event => {
-        const next = event.key === "Home" ? 0 : event.key === "End" ? 2 : event.key === "ArrowRight" ? (index + 1) % 3 : event.key === "ArrowLeft" ? (index + 2) % 3 : null;
+        const next = event.key === "Home" ? 0 : event.key === "End" ? 2 : ["ArrowRight", "ArrowDown"].includes(event.key) ? (index + 1) % 3 : ["ArrowLeft", "ArrowUp"].includes(event.key) ? (index + 2) % 3 : null;
         if (next !== null) { event.preventDefault(); select(tabs[next]); tabs[next].focus(); }
       });
     });
