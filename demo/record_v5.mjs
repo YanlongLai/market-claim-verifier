@@ -288,7 +288,7 @@ export async function record(config) {
       await wheelTo(target);
       // Reserve the opaque card band before exposing any named state. Range
       // rectangles include surrounding labels, not only the selected proof.
-      for(let attempt=0;attempt<3;attempt++){
+      for(let attempt=0;attempt<6;attempt++){
         const surroundings=await page.evaluate(readCardFrame);
         const specs=phase?namedSelectors(phase,report.result):null;
         const elements=specs?await page.evaluate(specs=>specs.map(([,selector,index=0])=>{
@@ -296,9 +296,26 @@ export async function record(config) {
         }),specs):[await locator.evaluate(el=>{const r=el.getBoundingClientRect();return {left:r.left,right:r.right,top:r.top,bottom:r.bottom};})];
         const [scroll,maxScroll]=await page.evaluate(()=>[scrollY,Math.max(0,document.documentElement.scrollHeight-innerHeight)]);
         const verdict=typeof selector==='string'&&selector.includes('.trace-verdict');
-        const delta=cardScrollDelta(surroundings,elements,scroll,maxScroll,{verdict});
-        if(Math.abs(delta)<.1)return;
+        let delta;
+        // Rects are delivery pixels (CSS zoom 1.95); scroll offsets are CSS pixels.
+        const zoom=presentation.css_zoom;
+        try{delta=cardScrollDelta(surroundings,elements,scroll,maxScroll,{verdict});}
+        catch(error){
+          // Geometry only (delivery pixels); retained so a host can see why no band fit.
+          report.card_band_failure={stage,selector:typeof selector==='string'?selector:'locator',elements,scroll,maxScroll,
+            lines:surroundings.lines.filter(r=>r.bottom>0&&r.top<1080).map(r=>[Math.round(r.left),Math.round(r.top),Math.round(r.right),Math.round(r.bottom),r.text||'']),
+            controls:surroundings.controls.map(r=>[Math.round(r.left),Math.round(r.top),Math.round(r.right),Math.round(r.bottom)])};
+          throw error;
+        }
+        (report.card_band_attempts??=[]).push({stage,attempt,scroll,delta:Math.round(delta*10)/10,elements:elements.map(r=>[Math.round(r.top),Math.round(r.bottom)]),crossing:[...surroundings.lines,...surroundings.controls].filter(r=>r.left<1840&&r.right>80&&r.top<558&&r.bottom>558).map(r=>[Math.round(r.top),Math.round(r.bottom),r.text||'ctl'])});
+        if(Math.abs(delta)<1)return;
+        // Measured: rects and scrollY move 1:1 here, so the delta applies directly.
         await wheelTo(scroll+delta);
+        const moved=await page.evaluate(()=>scrollY);
+        if(Math.abs(moved-scroll)<.5){
+          // A wheel event can be swallowed right after a programmatic frame; fall back to an instant scroll.
+          await page.evaluate(y=>scrollTo(0,y),scroll+delta);await hold(120);
+        }
       }
       throw new Error('card_band_did_not_settle');
     };
@@ -433,8 +450,10 @@ export async function record(config) {
     if(report.named_element_failure)throw new Error('named_element_audit_failed');
     report.named_element_checks.sort((a,b)=>a.at_s-b.at_s);
     report.status='captured';
-  } catch {
+  } catch (error) {
     report.status='failed';report.failure_stage=stage;
+    // Only this recorder's own short error codes are retained; never a stack, URL or secret.
+    report.failure_code=/^[a-z0-9_]{1,60}$/.test(String(error?.message))?String(error.message):'unclassified';
     report.failure='Attempt retained; no automatic retry. No raw exception or credential is logged.';
   } finally {
     await Promise.allSettled(namedPending);
