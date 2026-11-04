@@ -98,19 +98,19 @@ Python 將主張綁定回傳證據，計算比較，
 執行前先讀取所選輸入；尚無已儲存結果的媒體會明確標示待補。
 
 <!-- readme-shot:try-story-a -->
-*截圖待主機擷取 — [scripts/capture_readme_shots.py](scripts/capture_readme_shots.py).*
+![選取故事 A 的試用區](docs/site/img/readme/try-story-a.png)
 
 選擇 Baseten、Fireworks 或 Meta Model API。「全部比較」會依序執行各平台，
 費用使用同一共用預算。輸入評審密碼可執行新查核；
 「查看已儲存結果」不需密碼，並保留歷史收據。
 
 <!-- readme-shot:corrected-draft -->
-*截圖待主機擷取 — [scripts/capture_readme_shots.py](scripts/capture_readme_shots.py).*
+![已儲存結果的修正版草稿與申報引用](docs/site/img/readme/corrected-draft.png)
 
 展開「SEC 證據」與「代理軌跡」檢視判定。公開歷史可重開完整結果；
 「編輯並重跑」會還原故事、輸入與平台。已認證輸入及結果
 公開保留 [14 天](docs/evidence/readme-v3-2026-11-04/REPORT.md#scope-and-limits)。
-主機截圖會在本機呈現保留資料，不會執行新的正式環境查核。
+截圖是保留資料的本機呈現，不是新的正式環境執行。
 [擷取腳本](scripts/capture_readme_shots.py) · [截圖來源](docs/evidence/readme-v3-2026-11-04/REPORT.md#screenshots)
 
 ### CLI 快速開始

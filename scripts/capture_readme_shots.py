@@ -53,6 +53,8 @@ const fs = require('node:fs');
     await page.route('**/*', route => {
       const target = new URL(route.request().url());
       if (target.origin !== origin) { blocked.push(target.origin); return route.abort(); }
+      // Read-only budget/history come through the preview proxy; every check route is refused.
+      if (target.pathname === '/api/budget' || target.pathname === '/api/history') return route.continue();
       if (target.pathname.startsWith('/api/')) return route.fulfill({status:503,
         contentType:'application/json',body:'{"error":"offline_capture"}'});
       return route.continue();
@@ -77,7 +79,7 @@ const fs = require('node:fs');
     const box = await result.boundingBox();
     const scrollY = await page.evaluate(() => window.scrollY);
     await page.screenshot({path:`${directory}/corrected-draft.png`,animations:'disabled',fullPage:true,
-      clip:{x:0,y:box.y+scrollY,width:1600,height:box.height}});
+      clip:{x:0,y:box.y+scrollY,width:1600,height:Math.min(box.height,1500)}});
     if (errors.length) throw Error(`Browser errors: ${errors.join('; ')}`);
     fs.writeFileSync(`${directory}/browser.json`,JSON.stringify({viewport:[1600,1100],
       story:'A',kind:'text',provider:'baseten',mode:'recorded',api:'blocked with 503',
@@ -120,6 +122,9 @@ def main():
         preview = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(preview)
         server = ThreadingHTTPServer(('127.0.0.1', 0), preview.Handler)
+        # Budget and public history come from the production API so the captured Try
+        # section shows what a judge sees; saved results still render from retained data.
+        server.docs_root, server.proxy_api = preview.ROOT, os.environ.get('README_SHOT_API', 'https://hackathon.dappgo.com')
         threading.Thread(target=server.serve_forever, daemon=True).start()
         try:
             result = subprocess.run(['node', '-e', DRIVER, f'http://127.0.0.1:{server.server_port}/', temp],

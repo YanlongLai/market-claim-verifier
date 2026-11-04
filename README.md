@@ -102,19 +102,19 @@ choose the wrong-period post (story A), an all-correct story or a mixed story.
 Read the selected input before running it; unavailable saved media results are labelled pending.
 
 <!-- readme-shot:try-story-a -->
-*Screenshot pending host capture — [scripts/capture_readme_shots.py](scripts/capture_readme_shots.py).*
+![Try section with story A selected](docs/site/img/readme/try-story-a.png)
 
 Choose Baseten, Fireworks or Meta Model API. **Compare on all** runs the providers sequentially
 and spends from the same shared budget. Enter the judge password to run a new check;
 **See saved result** requires none and preserves the historical receipt.
 
 <!-- readme-shot:corrected-draft -->
-*Screenshot pending host capture — [scripts/capture_readme_shots.py](scripts/capture_readme_shots.py).*
+![Rendered saved result with the corrected draft and filing citations](docs/site/img/readme/corrected-draft.png)
 
 Expand **SEC evidence** and **Agent trace** to inspect the verdict. Public history reopens a full
 result; **Edit & re-run** restores its story, input and provider. Authenticated inputs and results
 are public for [14 days](docs/evidence/readme-v3-2026-11-04/REPORT.md#scope-and-limits).
-The host captures will render retained data locally; they do not run a new production check.
+The screenshots show local rendering of retained data, not a new production run.
 [Capture script](scripts/capture_readme_shots.py) · [Screenshot provenance](docs/evidence/readme-v3-2026-11-04/REPORT.md#screenshots)
 
 ### CLI quickstart
