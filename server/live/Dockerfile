@@ -15,7 +15,7 @@ COPY src/claimcheck/ /app/src/claimcheck/
 COPY prompts/ /app/prompts/
 COPY workers/live/src/gate.py workers/live/src/live.py /app/workers/live/src/
 COPY server/live/server.py /app/server/live/server.py
-COPY docs/site/examples/ /app/examples/
+COPY docs/examples/ /app/examples/
 USER 10001:10001
 EXPOSE 8080
 CMD ["python", "-m", "server.live.server"]

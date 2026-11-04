@@ -14,14 +14,14 @@ import subprocess
 import textwrap
 
 ROOT = Path(__file__).resolve().parents[1]
-EXAMPLES = ROOT / "docs/site/examples"
+EXAMPLES = ROOT / "docs/examples"
 KINDS = {"text": "txt", "image": "png", "pdf": "pdf", "audio": "mp3", "video": "mp4"}
 CONTAINS = {
-    "text": {"en": "The saved Big Tech post, including the wrong Apple quarter.", "zh": "已保存的科技股貼文，含 Apple 季度數字錯誤。"},
-    "image": {"en": "The same post as a screenshot. Muse reads the visible text.", "zh": "同一篇貼文的截圖，由 Muse 讀取畫面文字。"},
-    "pdf": {"en": "A one-page post with native text, read without OCR.", "zh": "單頁原生文字 PDF，直接讀取文字，不經 OCR。"},
-    "audio": {"en": "The post read by the locked Breeze narrator. Muse transcribes it.", "zh": "由鎖定的 Breeze 旁白朗讀貼文，再由 Muse 轉錄。"},
-    "video": {"en": "The screenshot with narration. Muse reads three frames and the audio.", "zh": "截圖搭配旁白；Muse 讀取三個影格並轉錄音軌。"},
+    "text": {"en": "Big Tech post; wrong Apple quarter.", "zh": "科技股貼文，含 Apple 季度錯誤。"},
+    "image": {"en": "Muse reads this screenshot.", "zh": "Muse 讀取貼文截圖。"},
+    "pdf": {"en": "One page of selectable text.", "zh": "單頁 PDF，可直接擷取文字。"},
+    "audio": {"en": "Breeze voice; Muse transcription.", "zh": "Breeze 旁白，由 Muse 轉錄。"},
+    "video": {"en": "Muse reads frames and narration.", "zh": "Muse 讀取影格與旁白。"},
 }
 REF_TEXT = ("This is Market Claim Verifier. Paste a finance post, and every number is checked against the company's "
             "own SEC filings, with a link to the exact line that proves it.")
@@ -97,10 +97,12 @@ def synthesize(video_repo, breeze):
     subprocess.run(["ffmpeg", "-v", "error", "-nostdin", "-y", "-i", str(record / "source.wav"),
                     "-map_metadata", "-1", "-ac", "1", "-ar", "24000", "-c:a", "libmp3lame", "-b:a", "64k",
                     str(EXAMPLES / "post.mp3")], check=True)
+    duration = float(subprocess.check_output(["ffprobe", "-v", "error", "-show_entries", "format=duration",
+                                             "-of", "default=nw=1:nk=1", str(EXAMPLES / "post.mp3")]))
     subprocess.run(["ffmpeg", "-v", "error", "-nostdin", "-y", "-loop", "1", "-i", str(EXAMPLES / "post.png"),
                     "-i", str(EXAMPLES / "post.mp3"), "-vf", "scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2:color=0xf7f6f0,setsar=1",
-                    "-c:v", "libx264", "-preset", "slow", "-crf", "32", "-tune", "stillimage", "-r", "10",
-                    "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "64k", "-shortest", "-movflags", "+faststart",
+                    "-c:v", "libx264", "-preset", "slow", "-crf", "32", "-tune", "stillimage", "-r", "50",
+                    "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "64k", "-t", str(duration + 0.5), "-movflags", "+faststart",
                     "-map_metadata", "-1", str(EXAMPLES / "post.mp4")], check=True)
     if (EXAMPLES / "post.mp4").stat().st_size > 2_000_000:
         raise SystemExit("Video exceeds 2 MB; retain the attempt and lower the encode bitrate before publishing")
@@ -111,6 +113,8 @@ def build(*, check=False, refresh_media=False):
     expected = {"post.txt": post.encode(), "post.pdf": post_pdf(post)}
     prior = json.loads((EXAMPLES / "manifest.json").read_text()) if (EXAMPLES / "manifest.json").exists() else []
     for kind in ("audio", "video"):
+        if (EXAMPLES / f"post.{KINDS[kind]}").is_file():
+            continue
         filename = f"post.{KINDS[kind]}.pending.txt"
         expected[filename] = (f"PENDING {kind.upper()}: locked Breeze narration has not been synthesized.\n"
             "Host: python3 scripts/build_examples.py --synthesize --video-repo /Users/yan/git/market-claim-verifier-video\n"
@@ -143,7 +147,7 @@ def build(*, check=False, refresh_media=False):
                 raise ValueError("Ready media needs a measured duration <=60 s; use --refresh-media")
         if ready and kind == "video" and path.stat().st_size > 2_000_000:
             raise ValueError("Video exceeds 2 MB")
-        manifest.append({"id": kind, "kind": kind, "file": path.name, "target_file": target,
+        manifest.append({"id": kind, "kind": kind, "file": path.name, "url": f"/examples/{path.name}", "target_file": target,
                          "status": "ready" if ready else "pending", "sha256": digest(path.read_bytes()),
                          "size_bytes": path.stat().st_size, "duration_s": duration,
                          "contains": CONTAINS[kind]})

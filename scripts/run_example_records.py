@@ -64,10 +64,10 @@ def main():
         parser.error("--origin must be a plain HTTPS origin")
     if len(set(args.ids)) != len(args.ids) or not 0 < args.max_spend_usd <= 20:
         parser.error("IDs must be unique; budget must be finite and in (0, 20]")
-    assets = {row["id"]: row for row in json.loads((ROOT / "docs/site/examples/manifest.json").read_text())}
+    assets = {row["id"]: row for row in json.loads((ROOT / "docs/examples/manifest.json").read_text())}
     for example_id in args.ids:
         asset = assets[example_id]
-        path = ROOT / "docs/site/examples" / asset["file"]
+        path = ROOT / "docs/examples" / asset["file"]
         if asset["status"] != "ready" or hashlib.sha256(path.read_bytes()).hexdigest() != asset["sha256"]:
             parser.error(f"{example_id}: build/verify the real asset before recording")
     if not args.execute:

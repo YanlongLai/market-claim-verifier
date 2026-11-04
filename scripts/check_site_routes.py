@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Crawl local href/src links against the actual Pages output (never SPA fallback)."""
 
+import json
 import posixpath
 import re
 from collections import deque
@@ -32,7 +33,8 @@ class Links(HTMLParser):
 
 def crawl():
     queue = deque([("/", "entry"), ("/zh/", "entry"), ("/explorer/", "entry"),
-                   ("/explorer/index.zh.html", "entry"), ("/llms.txt", "entry")])
+                   ("/explorer/index.zh.html", "entry"), ("/llms.txt", "entry"),
+                   ("/examples/manifest.json", "entry")])
     visited = set()
     missing = []
     external = set()
@@ -60,6 +62,8 @@ def crawl():
             continue
         print(f"OK {path} -> docs/{file.relative_to(ROOT)}")
         links = []
+        if path == "/examples/manifest.json":
+            links += [row["url"] for row in json.loads(file.read_text())]
         if file.suffix == ".html":
             parser = Links()
             parser.feed(file.read_text())
