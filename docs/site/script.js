@@ -385,6 +385,15 @@
     correctedDraft: "Corrected draft — only listed assertions checked",
     correctionScope: "Only the assertions listed below were checked; nothing else in the text was verified.",
     correctionChanges: "Cited changes", notCorrected: "Not corrected",
+    traceSteps: (count) => `Agent trace (${count} steps)`,
+    derivedQuarter: "Filed quarter = annual − nine months",
+    fiscalAnnual: (year) => `fiscal ${year} (annual)`, fiscalQuarter: (year, quarter) => `fiscal Q${quarter} ${year}`,
+    calendarAnnual: (year) => `calendar ${year} (annual)`, calendarQuarter: (year, quarter) => `calendar Q${quarter} ${year}`,
+    monthsTo: (months, date) => `${["", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven", "twelve"][months]} months to ${date}`,
+    ended: (date) => `period ending ${date}`, unknownPeriod: "Period not recorded",
+    annualComparison: (year, base) => `fiscal ${year} vs ${base}`,
+    metrics: { revenue: "revenue", net_income: "net income", operating_income: "operating income", eps: "EPS" },
+    growth: "growth",
     budget: {
       loading: "Loading today's live-check budget…", unavailable: "Today's live-check budget is unavailable. See the saved examples.",
       mock: "Offline replay budget · no spending",
@@ -436,6 +445,15 @@
     correctedDraft: "修正版草稿——僅核對列出的主張",
     correctionScope: "僅核對下方列出的主張；文中其餘內容均未經查證。",
     correctionChanges: "修改與引用來源", notCorrected: "未修正",
+    traceSteps: (count) => `代理執行過程（${count} 個步驟）`,
+    derivedQuarter: "申報季度 = 全年 − 前九個月",
+    fiscalAnnual: (year) => `${year} 財年（全年）`, fiscalQuarter: (year, quarter) => `${year} 財年第 ${quarter} 季`,
+    calendarAnnual: (year) => `${year} 曆年（全年）`, calendarQuarter: (year, quarter) => `${year} 曆年第 ${quarter} 季`,
+    monthsTo: (months, date) => `截至 ${date}的 ${months} 個月`,
+    ended: (date) => `截至 ${date} 的期間`, unknownPeriod: "未記錄期間",
+    annualComparison: (year, base) => `${year} 對 ${base} 財年`,
+    metrics: { revenue: "營收", net_income: "淨利", operating_income: "營業利益", eps: "每股盈餘" },
+    growth: "成長",
     budget: {
       loading: "正在讀取今日即時查核預算…", unavailable: "暫時無法讀取今日即時查核預算。請查看已儲存的範例。",
       mock: "離線重播預算 · 不產生費用",
@@ -661,9 +679,78 @@
       ? value.toLocaleString(pageLanguage === "zh" ? "zh-TW" : "en-US", { maximumFractionDigits: 4 }) : "—";
   }
 
-  function liveRaw(parent, data) {
+  // Presentation only: recorded values, spans and verdicts stay in Inspect data.
+  // A known stated scale wins over the magnitude (e.g. $1,024.7M stays in M).
+  function financialNumber(value, unit = "USD", statedText = "") {
+    if (typeof value !== "number" || !Number.isFinite(value)) return "—";
+    const scale = String(statedText).match(/\$[\d,.]+\s*(billion|million|B|M)\b/i)?.[1]?.toLowerCase();
+    if (unit === "USD") {
+      const divisor = scale === "b" || scale === "billion" ? 1e9 : scale === "m" || scale === "million" ? 1e6
+        : Math.abs(value) >= 1e9 ? 1e9 : Math.abs(value) >= 1e6 ? 1e6 : 1;
+      const number = (Math.abs(value) / divisor).toLocaleString("en-US", {
+        minimumFractionDigits: divisor === 1 ? 0 : 1, maximumFractionDigits: divisor === 1 ? 4 : 1
+      });
+      return `${value < 0 ? "−" : ""}$${number}${divisor === 1e9 ? "B" : divisor === 1e6 ? "M" : ""}`;
+    }
+    if (unit === "%" || unit === "percent") return `${value.toFixed(1)}%`;
+    return `${liveNumber(value)}${unit ? ` ${unit}` : ""}`;
+  }
+
+  function draftMoney(text) {
+    return text.replace(/(-?)\$([\d,]+(?:\.\d+)?)\s*(billion|million|B|M)\b/gi, (token, sign, number, scale) =>
+      financialNumber(Number(`${sign}${number.replaceAll(",", "")}`) * (/^b/i.test(scale) ? 1e9 : 1e6), "USD", token));
+  }
+
+  function readableDate(value) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(value || "")) return "";
+    if (pageLanguage === "zh") return formatDate(value);
+    const [year, month, day] = value.split("-").map(Number);
+    return `${day} ${["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][month - 1]} ${year}`;
+  }
+
+  function readablePeriod(fact, context = {}) {
+    const period = String(fact.period || context.period || "");
+    const match = period.match(/^(FY|CY)?(\d{4})(?:Q([1-4]))?$/i);
+    const fiscal = match?.[1]?.toUpperCase() === "FY" || fact.period_basis === "fiscal" || context.period_basis === "fiscal";
+    const year = match?.[2] || fact.fiscal_year || fact.end?.slice(0, 4);
+    if (fact.period_type === "ytd" && fact.start && fact.end) {
+      // SEC's 52/53-week calendars use week-aligned rather than month-aligned dates.
+      const months = Math.round((Date.parse(fact.end) - Date.parse(fact.start) + 86400000) / 86400000 / 30.4375);
+      if (months >= 1 && months <= 12) return liveCopy("monthsTo")(months, readableDate(fact.end));
+    }
+    if (year && (fact.period_type === "annual" || (match && !match[3]))) {
+      return liveCopy(fiscal ? "fiscalAnnual" : "calendarAnnual")(year);
+    }
+    if (match?.[3]) return liveCopy(fiscal ? "fiscalQuarter" : "calendarQuarter")(year, match[3]);
+    return readableDate(fact.end) ? liveCopy("ended")(readableDate(fact.end)) : liveCopy("unknownPeriod");
+  }
+
+  function financialMetric(metric) {
+    return liveCopy("metrics")[metric] || String(metric || "").replaceAll("_", " ");
+  }
+
+  function secLink(urlText, label) {
+    try {
+      const url = new URL(urlText);
+      if (url.protocol === "https:" && url.host === "www.sec.gov" && !url.username && !url.password &&
+          url.pathname.startsWith("/Archives/edgar/data/")) {
+        const link = liveNode("a", label);
+        link.href = url.href;
+        link.rel = "noreferrer";
+        return link;
+      }
+    } catch (_error) { /* Invalid filing URLs remain plain text. */ }
+    return null;
+  }
+
+  function liveRaw(parent, data, primary) {
     const details = liveNode("details", null, "trace-data");
-    details.append(liveNode("summary", liveCopy("raw")), liveNode("pre", JSON.stringify(data, null, 2)));
+    const summary = liveNode("summary");
+    if (primary) {
+      details.classList.toggle("evidence-data", true);
+      summary.append(primary, liveNode("span", ` · ${liveCopy("raw")}`, "evidence-inspect"));
+    } else summary.textContent = liveCopy("raw");
+    details.append(summary, liveNode("pre", JSON.stringify(data, null, 2)));
     parent.append(details);
   }
 
@@ -671,7 +758,7 @@
     return liveCopy(value) || liveCopy("insufficient_evidence");
   }
 
-  function renderLiveCorrections(corrections, target) {
+  function renderLiveCorrections(corrections, target, evidence = []) {
     if (!corrections || typeof corrections.original_text !== "string" ||
         corrections.span_unit !== "unicode_codepoints") return;
     const section = liveNode("section", null, "live-corrections");
@@ -686,32 +773,34 @@
       if (!Number.isInteger(edit.start) || !Number.isInteger(edit.end) || edit.start < cursor ||
           edit.end <= edit.start || edit.end > original.length || typeof edit.replacement !== "string" ||
           original.slice(edit.start, edit.end).join("") !== edit.original) continue;
+      // Keep the draft code-point exact; compact money only in the edit list.
       draft.append(liveNode("span", original.slice(cursor, edit.start).join("")),
         liveNode("del", edit.original), document.createTextNode(" → "), liveNode("strong", edit.replacement));
       cursor = edit.end;
       const item = liveNode("li");
-      item.append(liveNode("del", edit.original), document.createTextNode(" → "), liveNode("strong", edit.replacement));
-      item.append(liveNode("p", [edit.unit, edit.period, edit.base_period,
-        Array.isArray(edit.evidence_ids) ? edit.evidence_ids.join(", ") : ""].filter(Boolean).join(" · "), "live-small"));
+      item.append(liveNode("del", draftMoney(edit.original)), document.createTextNode(" → "), liveNode("strong", draftMoney(edit.replacement)));
+      const fact = evidence.find((entry) => edit.evidence_ids?.includes(entry.evidence_id));
+      const components = fact?.components || edit.citations || [];
+      const annual = components.find((entry) => entry.period_type === "annual");
+      const nineMonths = components.find((entry) => entry.period_type === "ytd" &&
+        Math.round((Date.parse(entry.end) - Date.parse(entry.start)) / 86400000 / 30.4375) === 9);
+      if (annual && nineMonths && /Q4$/i.test(edit.period) &&
+          Math.abs(annual.value - nineMonths.value - edit.actual_value) < 0.01) {
+        item.append(liveNode("p", liveCopy("derivedQuarter"), "correction-derivation"));
+      }
       const citations = liveNode("ul", null, "correction-citations");
       for (const citation of Array.isArray(edit.citations) ? edit.citations : []) {
         const row = liveNode("li");
-        const label = [citation.evidence_id, citation.form, citation.accn, citation.period || citation.period_type,
-          citation.start, citation.end].filter(Boolean).join(" · ");
-        row.append(liveNode("span", `${label} · ${liveNumber(citation.value)} ${citation.unit || ""} `));
-        try {
-          const url = new URL(citation.url);
-          if (url.protocol === "https:" && url.host === "www.sec.gov" && !url.username && !url.password &&
-              url.pathname.startsWith("/Archives/edgar/data/")) {
-            const link = liveNode("a", liveCopy("filing"));
-            link.href = url.href;
-            link.rel = "noreferrer";
-            row.append(link);
-          }
-        } catch (_error) { /* Invalid citations remain plain text. */ }
+        const primary = liveNode("p", null, "citation-primary");
+        const value = [financialNumber(citation.value, citation.unit, edit.original), financialMetric(fact?.metric)].filter(Boolean).join(" ");
+        primary.append(liveNode("span", `${[citation.form, readablePeriod(citation, edit), value].filter(Boolean).join(" · ")}`));
+        const link = secLink(citation.url, liveCopy("filing"));
+        if (link) primary.append(document.createTextNode(" · "), link);
+        row.append(primary);
         citations.append(row);
       }
       item.append(citations);
+      liveRaw(item, edit);
       changes.append(item);
     }
     draft.append(liveNode("span", original.slice(cursor).join("")));
@@ -721,12 +810,13 @@
       const unchanged = liveNode("ol", null, "correction-unchanged");
       for (const item of corrections.not_corrected) {
         const row = liveNode("li");
-        row.append(liveNode("q", item.text), liveNode("p", item.reason?.[pageLanguage] || "", "live-small"));
+        row.append(liveNode("p", item.text, "correction-assertion"), liveNode("p", item.reason?.[pageLanguage] || "", "correction-reason"));
         unchanged.append(row);
       }
       section.append(liveNode("h6", liveCopy("notCorrected")), unchanged);
     }
     target.append(section);
+    return changes.children.length > 0;
   }
 
   function renderLiveTrace(result, target) {
@@ -747,35 +837,39 @@
     const head = liveNode("div", null, "trace-head");
     head.append(liveNode("p", liveCopy(result.mode === "recorded" ? "recorded" : result.mode === "mock" ? "mock" : "live"), "trace-mode"));
     if (result.verdict) head.append(liveNode("h4", liveVerdict(result.verdict), `trace-verdict is-${result.verdict}`));
-    const money = Number.isFinite(result.cost_usd) ? `$${result.cost_usd.toFixed(5)}` : "—";
-    head.append(liveNode("p", `${liveCopy(result.cost_is_bound ? "bound" : "cost")}: ${money} · ${liveNumber(result.latency_ms / 1000)} ${liveCopy("seconds")}`, "trace-metrics"));
+    const money = Number.isFinite(result.cost_usd) ? cost(result.cost_usd) : "—";
+    const duration = Number.isFinite(result.latency_ms) ? (result.latency_ms / 1000).toFixed(1) : "—";
+    head.append(liveNode("p", `${liveCopy(result.cost_is_bound ? "bound" : "cost")}: ${money} · ${duration} ${liveCopy("seconds")}`, "trace-metrics"));
     head.append(liveNode("p", result.model || "", "live-small"));
     if (result.started_at) head.append(liveNode("p", `${result.started_at} → ${result.finished_at}`, "live-small"));
     target.append(head);
-    renderLiveCorrections(result.corrections, target);
     const evidence = (result.evidence || []).filter((fact) => !fact.error);
+    const hasCorrection = renderLiveCorrections(result.corrections, target, evidence);
     const proof = liveNode("section", null, "live-proof");
     proof.append(liveNode("h5", liveCopy("evidence")));
     const rows = liveNode("div", null, "live-evidence");
     if (!evidence.length) rows.append(liveNode("p", liveCopy("noEvidence")));
     evidence.forEach((fact) => {
       const row = liveNode("div", null, "live-evidence-row");
-      row.append(liveNode("strong", `${fact.evidence_id} · ${fact.ticker || ""} ${fact.metric || ""}`));
-      row.append(liveNode("span", `${liveNumber(fact.value ?? fact.pct_change ?? fact.abs_change)} ${fact.unit || ""}`));
-      row.append(liveNode("span", `${fact.period || ""} · ${fact.start || ""} → ${fact.end || ""}`, "live-small"));
-      row.append(liveNode("span", [fact.concept, fact.accn, fact.period_type].filter(Boolean).join(" · "), "live-small"));
-      if (fact.filing_url) {
-        try {
-          const url = new URL(fact.filing_url);
-          if (url.protocol === "https:" && url.hostname === "www.sec.gov" && url.pathname.startsWith("/Archives/")) {
-            const link = liveNode("a", `${fact.form || "SEC"} · ${liveCopy("filing")}`);
-            link.href = url.href;
-            link.rel = "noreferrer";
-            row.append(link);
-          }
-        } catch (_error) { /* malformed provider fields stay plain text */ }
+      const current = fact.current_fact || fact.current;
+      const base = fact.base_fact || fact.base;
+      const growth = typeof fact.pct_change === "number";
+      const stated = (result.claims || []).find((claim) => claim.evidence_ids?.includes(fact.evidence_id))?.text || "";
+      const company = { AMZN: "Amazon", NVDA: "NVIDIA", AAPL: "Apple" }[fact.ticker] || fact.entity || fact.ticker || "";
+      const metric = financialMetric(fact.metric) + (growth ? `${pageLanguage === "zh" ? "" : " "}${liveCopy("growth")}` : "");
+      const subject = [company, metric].filter(Boolean).join(" ");
+      const period = growth && /^FY\d{4}$/.test(fact.period) && /^FY\d{4}$/.test(fact.base_period)
+        ? liveCopy("annualComparison")(fact.period.slice(2), fact.base_period.slice(2))
+        : growth && base ? `${readablePeriod(current || fact)} / ${readablePeriod(base)}` : readablePeriod(fact);
+      const forms = fact.derived ? [...new Set((fact.components || []).map((entry) => entry.form))].join(" − ")
+        : fact.form || current?.form;
+      const primary = liveNode("span", null, "evidence-primary");
+      primary.append(liveNode("span", `${financialNumber(growth ? fact.pct_change : fact.value ?? fact.abs_change,
+        growth ? "%" : fact.unit, stated)} · ${subject} · ${period}`));
+      if (forms) {
+        primary.append(document.createTextNode(" · "), secLink(fact.filing_url, forms) || liveNode("span", forms));
       }
-      liveRaw(row, fact);
+      liveRaw(row, fact, primary);
       rows.append(row);
     });
     proof.append(rows);
@@ -785,8 +879,10 @@
       result.claims.forEach((check) => {
         const item = liveNode("li");
         item.append(liveNode("strong", liveVerdict(check.program_verdict), `is-${check.program_verdict}`), liveNode("p", check.text));
-        item.append(liveNode("p", `${liveCopy("stated")}: ${liveNumber(check.stated_value_used)} · ${liveCopy("actual")}: ${liveNumber(check.actual_value)} · ${liveCopy("tolerance")}: ${liveNumber(check.tolerance)}`, "live-small"));
-        item.append(liveNode("p", `${liveCopy("strength")}: ${liveCopy(check.evidence_strength) || "—"} · ${(check.evidence_ids || []).join(", ")}`, "live-small"));
+        const source = evidence.find((fact) => check.evidence_ids?.includes(fact.evidence_id));
+        const unit = typeof source?.pct_change === "number" ? "%" : source?.unit || "";
+        item.append(liveNode("p", `${liveCopy("stated")}: ${financialNumber(check.stated_value_used, unit, check.text)} · ${liveCopy("actual")}: ${financialNumber(check.actual_value, unit, check.text)} · ${liveCopy("tolerance")}: ${financialNumber(check.tolerance, unit)}`, "live-small"));
+        item.append(liveNode("p", `${liveCopy("strength")}: ${liveCopy(check.evidence_strength) || "—"}`, "live-small"));
         liveRaw(item, check);
         claims.append(item);
       });
@@ -794,7 +890,8 @@
     }
     target.append(proof);
     const trace = liveNode("details", null, "live-trace");
-    trace.append(liveNode("summary", liveCopy("trace")));
+    trace.open = !hasCorrection;
+    trace.append(liveNode("summary", liveCopy("traceSteps")((result.events || []).length), "agent-trace-summary"));
     const steps = liveNode("ol", null, "agent-trace");
     (result.events || []).forEach((event, i) => {
       const step = liveNode("li", null, `trace-step trace-${event.kind}`);
@@ -802,9 +899,10 @@
       label.append(liveNode("span", String(i + 1).padStart(2, "0"), "trace-step-number"),
         liveNode("strong", `${liveCopy(event.kind === "preprocessing" ? "preprocessingEvent" : event.kind) || event.kind}${event.step ? ` ${event.step}` : ""}`));
       step.append(label);
-      step.append(liveNode("small", typeof event.at_ms === "number" ? `+${(event.at_ms / 1000).toFixed(3)} ${liveCopy("seconds")} · ${event.timestamp || ""}` : liveCopy("notRecorded"), "trace-time"));
+      step.append(liveNode("small", typeof event.at_ms === "number" ? `+${(event.at_ms / 1000).toFixed(1)} ${liveCopy("seconds")} · ${event.timestamp || ""}` : liveCopy("notRecorded"), "trace-time"));
       if (event.kind === "model") {
-        step.append(liveNode("p", `${(event.latency_ms / 1000).toFixed(3)} ${liveCopy("seconds")} · $${Number(event.cost_usd).toFixed(5)} · ${event.finish_reason || ""}`));
+        step.append(liveNode("p", `${(event.latency_ms / 1000).toFixed(1)} ${liveCopy("seconds")} · ${cost(event.cost_usd)} · ${event.finish_reason || ""}`));
+        liveRaw(step, event);
       } else if (event.kind === "tool_call") {
         step.append(liveNode("code", `${event.name}(${JSON.stringify(event.arguments)})`));
       } else if (event.kind === "tool_result") {
@@ -2368,16 +2466,7 @@
 
   function formatMoneyShort(value) {
     if (typeof value !== "number" || !Number.isFinite(value)) return getCopy("filing.notAvailable");
-    const sign = value < 0 ? "-" : "";
-    const absolute = Math.abs(value);
-    if (pageLanguage === "zh") {
-      if (absolute >= 100000000) return `${sign}${numberText(absolute / 100000000, 0)} 億美元`;
-      if (absolute >= 10000) return `${sign}${numberText(absolute / 10000, 0)} 萬美元`;
-      return `${sign}${numberText(absolute, 0)} 美元`;
-    }
-    if (absolute >= 1000000000) return `${sign}$${numberText(absolute / 1000000000)}B`;
-    if (absolute >= 1000000) return `${sign}$${numberText(absolute / 1000000)}M`;
-    return `${sign}$${numberText(absolute, 0)}`;
+    return financialNumber(value);
   }
 
   function formatPercent(value) {
@@ -2965,11 +3054,11 @@
   }
 
   function cost(value) {
-    return `$${Number(value).toFixed(3)}`;
+    return `$${Number(value).toFixed(2)}`;
   }
 
   function seconds(value) {
-    return `${Number(value).toFixed(1)}s`;
+    return `${Number(value).toFixed(1)} s`;
   }
 
   function providerName(provider) {

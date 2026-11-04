@@ -322,7 +322,7 @@ def test_sec_allowlist_redirect_rejection_and_six_hour_memory_disk_cache(tmp_pat
 
 def test_overall_timeout_keeps_reservation_and_returns_same_504_shape(tmp_path, monkeypatch):
     timeout = asyncio.timeout
-    monkeypatch.setattr(server.asyncio, "timeout", lambda seconds: timeout(.01 if seconds == 28 else seconds))
+    monkeypatch.setattr(server.asyncio, "timeout", lambda seconds: timeout(.01 if seconds == 55 else seconds))
     async def transport(req):
         await asyncio.Event().wait()
     async def run():

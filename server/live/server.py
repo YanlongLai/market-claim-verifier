@@ -439,7 +439,7 @@ async def handle(request):
         return reply({"error": "not_found"}, 404)
     fallback = LiveRun(services.model, services.sec, services.gate)
     try:
-        async with asyncio.timeout(28):
+        async with asyncio.timeout(55):
             if request.content_type != "application/json" or request.query:
                 raise LiveError("invalid_input", 400)
             raw = bytearray()

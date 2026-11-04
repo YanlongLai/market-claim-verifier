@@ -10,7 +10,7 @@ const diagnostic = originStatus => new Response(JSON.stringify({ error: "unavail
   origin_status: originStatus }), { status: 503, headers });
 const error = (code, status) => new Response(JSON.stringify({ error: code, demo: "data/live-demo.json" }), { status, headers });
 
-async function originFetch(env, path, options = {}, timeout = 25000) {
+async function originFetch(env, path, options = {}, timeout = 55000) {
   // Dashboard pastes can carry a trailing newline, which is invalid in a header.
   const clean = value => typeof value === "string" ? value.trim() : value;
   env = { ...env, LIVE_ORIGIN_HOST: clean(env.LIVE_ORIGIN_HOST), LIVE_ACCESS_CLIENT_ID: clean(env.LIVE_ACCESS_CLIENT_ID),
@@ -210,7 +210,7 @@ async function onCheck({ request, env }, action) {
       body: JSON.stringify({ ...(example ? { example_id: data.example_id } : { text: data.text.trim() }),
         password: typeof data.password === "string" ? data.password : "",
         ...(compare ? { providers: data.providers } : "provider" in data ? { provider: data.provider } : {}) }),
-    }, compare ? 195000 : example ? 65000 : 25000);
+    }, compare ? 195000 : example ? 65000 : 55000);
     if (compare && response.status === 200) {
       if (!Array.isArray(result?.runs) || !result.runs.length || result.runs.length > requestedProviders.length) return error("unavailable", 503);
       const runs = result.runs.map(run => publicEnvelope(run, true));

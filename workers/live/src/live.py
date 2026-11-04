@@ -27,9 +27,10 @@ from claimcheck.providers import BASETEN_DEFAULT_MODEL, get_provider
 from claimcheck.tools import TOOL_DEFINITIONS, ToolRunner
 
 MODEL = BASETEN_DEFAULT_MODEL
-MAX_CALLS = 4
-MAX_OUTPUT = 2000
-MAX_TOOLS = 6
+MAX_CALLS = 8  # a four-assertion post needs more model turns than a single claim
+MAX_OUTPUT = 6000  # multi-assertion posts need room for the final claim report
+MAX_TOOLS = 14
+MAX_ISSUERS = 4
 SCOPE = "US equities with SEC companyfacts only; no prices, forecasts, crypto, non-GAAP or investment advice."
 SEC_AGENT = "DappGo market-claim-verifier admin@dappgo.com"
 TOOL_NAMES = {"lookup_fact", "list_periods", "compute_change", "history_rank"}
@@ -150,7 +151,8 @@ class MemoryEdgar(EdgarClient):
         if "error" in resolved:
             raise LiveError("out_of_scope", 422)
         cik = resolved["cik"]
-        if cik not in self.issuers and len(self.issuers) >= 3:
+        # A short post may name several companies (the saved example names three).
+        if cik not in self.issuers and len(self.issuers) >= MAX_ISSUERS:
             raise LiveError("tool_limit", 422)
         self.issuers.add(cik)
         filename = f"companyfacts-CIK{cik}.json"
@@ -315,7 +317,7 @@ class LiveRun:
 
     async def bounded(self, claim: str) -> dict:
         try:
-            return await asyncio.wait_for(self.run(claim), timeout=28)
+            return await asyncio.wait_for(self.run(claim), timeout=50)
         except TimeoutError:
             raise LiveError("timeout", 504) from None
 
