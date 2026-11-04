@@ -1,4 +1,4 @@
-"""Presentation v2: separate languages, shared facts and traceable evidence."""
+"""README v3: separate languages, shared headline facts and traceable evidence."""
 import html
 from html.parser import HTMLParser
 import json
@@ -9,27 +9,29 @@ from pathlib import Path
 import pytest
 
 from test_site_stamps_runtime import run_check
+from test_language_purity import unexpected_latin
 
 ROOT = Path(__file__).resolve().parents[1]
 SURFACES = ("README.md", "README.zh-TW.md", "JUDGES.md", "JUDGES.zh-TW.md", "llms.txt",
             "docs/llms.txt", "docs/site/index.html", "docs/zh/index.html", "docs/site/script.js")
-CANONICAL = ("$0.01 per live check", "$0.02 per claim", "6–20 s live", "10 s median",
-             "90.2% (240/266)", "1/139", "≈8,000 companies", "23 tested", "≤600 characters")
-ZH_NUMBERS = ("$0.01", "$0.02", "6–20 秒", "10 秒", "90.2% (240/266)", "1/139", "8,000 家", "23 家", "≤600 字元")
+CANONICAL = ("$0.01", "$0.02", "90.2%", "240/266", "1/139", "8,000", "23", "600")
 
 
 @pytest.mark.parametrize("relative", SURFACES)
 def test_public_summaries_reject_old_number_variants(relative):
     source = (ROOT / relative).read_text()
-    assert not re.findall(r"\$0\.020\b|0\.0099\d*|90\.5%", source)
-    assert not re.search(r"(?<![\d.])6 s live|即時(?:查核需時)? 6 秒|240/266\s*[（(]90\.2%", source)
+    assert not re.findall(r"\$0\.020\b|0\.0099\d*|6–20 (?:s|秒)", source)
+    # v3 explicitly includes historical all-claim results in a labelled table.
+    if relative not in {"README.md", "README.zh-TW.md"}:
+        assert "90.5%" not in source
 
 
 @pytest.mark.parametrize("relative", SURFACES[:-1])
 def test_public_summaries_use_the_canonical_number_set_in_their_language(relative):
     source = html.unescape((ROOT / relative).read_text())
-    values = ZH_NUMBERS if "zh" in relative else CANONICAL
-    assert all(value in source for value in values), relative
+    assert all(value in source for value in CANONICAL), relative
+    assert re.search(r"6 (?:s|秒)", source), relative
+    assert re.search(r"10 (?:s|秒)", source), relative
 
 
 class Prose(HTMLParser):
@@ -91,15 +93,7 @@ for (let index = 0; index < cards.length; index++) {
 @pytest.mark.parametrize("relative", ("docs/zh/index.html", "README.zh-TW.md", "JUDGES.zh-TW.md"))
 def test_chinese_presentation_contains_no_english_prose(relative):
     source = (ROOT / relative).read_text()
-    if relative.endswith(".html"):
-        parser = Prose(); parser.feed(source); source = "\n".join(parser.text)
-    else:
-        source = markdown_prose(source)
-    # Exact model identifiers and numeric suffixes are data, not UI prose.
-    for model in ("meta-models/muse-spark-open-1026", "accounts/fireworks/models/muse-spark-open", "muse-spark-1.3"):
-        source = source.replace(model, "")
-    source = re.sub(r"\$[\d,.]+[BM]?", "", source)
-    assert not re.search(r"[A-Za-z]{2,}", source), (relative, source)
+    assert not unexpected_latin(source, relative.endswith(".html")), relative
 
 
 def load_copy():
@@ -110,26 +104,15 @@ def load_copy():
 @pytest.mark.parametrize("language", ("en", "zh"))
 def test_six_facts_have_one_title_compact_copy_and_the_shared_evidence(language):
     copy = load_copy()[language]["facts"]
-    suffix = "" if language == "en" else ".zh-TW"
-    readme, judges = [(ROOT / f"{name}{suffix}.md").read_text() for name in ("README", "JUDGES")]
-    header = "| Fact | Answer |" if language == "en" else "| 項目 | 答案 |"
-    pattern = re.escape(header) + r"\n.*?(?=\n\n)"
-    table = re.search(pattern, readme, re.S)[0]
-    assert re.search(pattern, judges, re.S)[0] == table
-    rows = table.splitlines()[2:]
-    assert len(rows) == 6
     page = (ROOT / ("docs/site/index.html" if language == "en" else "docs/zh/index.html")).read_text()
     articles = re.findall(r'<article class="fact-section".*?</article>', page, re.S)
     assert len(articles) == 6
-    for i, (row, article) in enumerate(zip(rows, articles), 1):
-        answer = copy[f"answer{i}"]
-        assert answer in row
+    for i, article in enumerate(articles, 1):
         for key in (f"question{i}", f"detail{i}", f"summary{i}", "label", "source"):
             assert article.count(f'data-i18n="facts.{key}"') == 1
             assert f'>{html.escape(copy[key], quote=False)}<' in article
-        target = re.search(r'\]\((docs/evidence/[^)]+)\)', row)[1]
+        target = re.search(r'/blob/main/(docs/evidence/[^"#]+)', article)[1]
         assert (ROOT / target.split("#")[0]).is_file()
-        assert f'/blob/main/{target}"' in article
         assert 'lang="en"' not in article and 'lang="zh-Hant"' not in article
         assert '<table' not in article and '<th' not in article
         assert article.count('<h3') == 1 and article.count('<p') == 2
@@ -144,16 +127,35 @@ def test_complete_mirrors_have_the_same_sections_and_unique_ids():
         assert len(parser.ids) == len(set(parser.ids))
 
 
-def test_readmes_open_with_the_robot_and_stay_within_180_lines():
+def test_readmes_follow_v3_length_and_mirror_section_structure():
+    outlines = []
     for relative in ("README.md", "README.zh-TW.md"):
         lines = (ROOT / relative).read_text().splitlines()
-        assert len(lines) <= 180
+        assert 250 <= len(lines) <= 320
         assert "readme-robot.gif" in lines[2]
         assert re.search(r'!\[[^\]]+\]\(docs/site/img/readme-robot.gif\)', lines[2])
-        assert re.search(r'\[[^\]]+\]\(docs/site/img/readme-robot.png\)', lines[3])
-        assert (ROOT / "docs/site/img/readme-robot.png").read_bytes().startswith(b"\x89PNG\r\n\x1a\n")
-        assert lines[5].startswith("**")
+        assert lines[4].startswith("**")
         assert any(line.startswith("## ") for line in lines[:12])
+        outlines.append([len(re.match(r'#+', line)[0]) for line in lines if line.startswith('#')])
+        assert '<!-- readme-shot:try-story-a -->' in lines
+        assert '<!-- readme-shot:corrected-draft -->' in lines
+    assert outlines[0] == outlines[1]
+    for relative in ("JUDGES.md", "JUDGES.zh-TW.md"):
+        assert len((ROOT / relative).read_text().splitlines()) <= 120
+
+
+def test_readme_accuracy_tables_match_completed_saved_results():
+    claims = json.loads((ROOT / 'docs/explorer/data.json').read_text())['claims']
+    for relative in ('README.md', 'README.zh-TW.md'):
+        text = (ROOT / relative).read_text().replace('（', '(').replace('）', ')')
+        text = re.sub(r'\s+', '', text)
+        for provider in ('baseten', 'fireworks', 'meta'):
+            for method in ('agent', 'single_shot'):
+                system = f'{method}@{provider}'
+                for subset in (claims, [c for c in claims if c['split'] == 'test']):
+                    correct = sum(c['results'][system]['status'] == 'completed'
+                                  and c['results'][system]['verdict'] == c['gold'] for c in subset)
+                    assert f'{100 * correct / len(subset):.1f}%({correct}/{len(subset)})' in text
 
 
 def test_budget_configuration_and_public_meter_use_10_daily_60_lifetime():

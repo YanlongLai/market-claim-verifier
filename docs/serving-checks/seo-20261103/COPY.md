@@ -14,9 +14,9 @@ Description length: 154 Unicode characters.
 
 ### Landing — Traditional Chinese
 
-Title: 財經貼文查核：用 SEC 申報文件驗證數字 · DappGo
+Title: [See the separate Traditional Chinese copy](COPY.zh-TW.md).
 
-Description: 貼上財經貼文，對照 SEC 申報文件查核數字。在 357 個說法的已保存測試中，Baseten 加入 SEC 查詢後準確率為 90.5%，未查詢為 20.7%。查看每個判定的引用、計算與限制；模型提出查核步驟，程式決定結果。網站重播已保存的證據，並非即時查核；測試採用修正後的參考答案，失敗也計入錯誤。
+Description: [See the separate Traditional Chinese copy](COPY.zh-TW.md).
 
 Description length: 151 Unicode characters.
 
@@ -34,15 +34,15 @@ Count labels: Financial claims, Recorded verdicts.
 
 ### Explorer — Traditional Chinese
 
-Title: SEC 證據如何改變模型準確率 · 財經貼文查核
+Title: [See the separate Traditional Chinese copy](COPY.zh-TW.md).
 
-Description: 探索 357 個財經說法與 2,142 個判決，比較使用 SEC 查詢工具的代理與一次回答。逐條查看修正後的參考答案、引用的申報文件、數字比對與已記錄的錯誤；失敗與預算攔截皆計入錯誤。事後修正重跑另列，並非新的獨立測試。
+Description: [See the separate Traditional Chinese copy](COPY.zh-TW.md).
 
 Description length: 110 Unicode characters.
 
-Dataset name: 財經貼文查核 — SEC 評估資料集
+Dataset name: [See the separate Traditional Chinese copy](COPY.zh-TW.md).
 
-Count labels: 財經說法, 已記錄的判決.
+Count labels: [See the separate Traditional Chinese copy](COPY.zh-TW.md).
 
 ## Image alternatives
 
@@ -50,17 +50,17 @@ English OG and explorer Twitter (existing landing-page OG wording): Market claim
 
 English landing Twitter (retained): A real post and SEC filing in the Market claim verifier demo.
 
-Traditional Chinese OG/Twitter: 財經貼文查核示範：對照貼文與已保存的 SEC 申報文件，旁邊是查核機器人。
+Traditional Chinese OG/Twitter: [See the separate Traditional Chinese copy](COPY.zh-TW.md).
 
 ## Visible copy changes
 
 English footer: All repository code and demo work were created during the hackathon.
 
-Traditional Chinese footer: 所有程式碼與示範作品皆於黑客松期間建立。
+Traditional Chinese footer: [See the separate Traditional Chinese copy](COPY.zh-TW.md).
 
-404 navigation addition: 繁體中文首頁
+404 navigation addition: [See the separate Traditional Chinese copy](COPY.zh-TW.md).
 
-The footer follows [README.md](../../../README.md#reproduce-or-extend); it makes no new claim about a named event. The generated Chinese body and accessibility labels reuse the existing [COPY dictionary](../../site/script.js) and can be read in full in the [generated page](../../zh/index.html). Language link labels remain EN / 中文. The static results caption uses the existing Chinese template with the published claim count.
+The footer follows [README.md](../../../README.md#reproduce-or-extend); it makes no new claim about a named event. The generated Chinese body and accessibility labels reuse the existing [COPY dictionary](../../site/script.js) and can be read in full in the [generated page](../../zh/index.html). Language link labels remain English / Traditional Chinese. The static results caption uses the existing Chinese template with the published claim count.
 
 ## Structured data and crawler directives
 
@@ -101,9 +101,9 @@ The model proposes; the program decides. Meta Muse models identify claims, selec
 ## Start here
 
 - [English website](https://hackathon.dappgo.com/)
-- [繁體中文網站](https://hackathon.dappgo.com/zh/)
+- [Traditional Chinese site](https://hackathon.dappgo.com/zh/)
 - [Results explorer — English](https://hackathon.dappgo.com/explorer/)
-- [結果瀏覽器 — 繁體中文](https://hackathon.dappgo.com/explorer/index.zh.html)
+- [Explorer — Traditional Chinese](https://hackathon.dappgo.com/explorer/index.zh.html)
 - [Published landing-page data](https://hackathon.dappgo.com/data/site.json)
 - [Per-claim explorer data](https://hackathon.dappgo.com/explorer/data.json)
 - [GitHub repository and CLI instructions](https://github.com/YanlongLai/market-claim-verifier)

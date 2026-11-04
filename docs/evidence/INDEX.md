@@ -11,7 +11,7 @@ The headline is **240/266 (90.2%) held-out text accuracy**, false support **1/13
 | Post-hoc text rechecks | [News and Threads fix recheck](real-world-2026-11-03-fixcheck/REPORT.md), [v2 agent rerun](eval-v2-2026-10-28-r2-posthoc/REPORT.md); previously seen inputs, not held out; no OCR/ASR retest. Empty single-shot rows are not results. |
 | Saved examples, animation, charts, methodology | [Site evidence tour](site-tour/index.html): retained stamp scene, input boundaries, post examples, all-claim results and trust explanation. |
 | Extended judge review | [Criteria, media studies, corrected gold and historical failure review](REVIEW_GUIDE.md). |
-| Technical reference and CLI | [English](TECHNICAL_GUIDE.md), [繁體中文](TECHNICAL_GUIDE.zh-TW.md): setup, commands, architecture, responsibilities and source policy. |
+| Technical reference and CLI | [English](TECHNICAL_GUIDE.md), [Traditional Chinese](TECHNICAL_GUIDE.zh-TW.md): setup, commands, architecture, responsibilities and source policy. |
 | Media and releases | [Controlled formats](fair-multimodal-v1/REPORT.md), [real AV](real-av-context-live/REPORT.md), [Tesla follow-ups](stock-context-posthoc-2026-10-30/REPORT.md), [L4 development claims](eval-l4-2026-10-29/ANALYSIS.md); retain their extraction, sampling and post-hoc labels. |
 | LoRA attempt | [Report](lora-2026-11-03/REPORT.md): tokenizer access blocked training; no trained adapter or improvement claim. |
 | Verification and retained attempts | [Offline entry point](../../AGENTS.md), [test-record policy](../TEST_RECORDS.md), [IA validation](../serving-checks/simplify-20261103/README.md). |

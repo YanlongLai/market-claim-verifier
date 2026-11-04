@@ -83,7 +83,7 @@ severity, score and filed value. Seek hook kept (`?stamp-t=`).
 1. Score definition + numbers for every card (this doc §1) → Owner check.
 2. Robot sheet (4 poses) → Owner picks / asks for changes.
 3. Three key frames (inspect, present+highlight, stamp) → Owner check.
-4. Full animation → Claude review (desktop/phone, dark/light, EN/中文, reduced motion) + second AI → Owner OK → publish.
+4. Full animation → Claude review (desktop/phone, dark/light, English/Traditional Chinese, reduced motion) + second AI → Owner OK → publish.
 
 ## 6. Post authors, dates and followers (Owner request, round 2)
 
@@ -93,9 +93,9 @@ Cards should feel like real posts / news / reposts, without pretending to be rea
 |---|---|---|---|---|---|
 | demo-thread (AMZN, NVDA ×2, AAPL Q4) | @tickerowl · "Ticker Owl" | retail-owl | Thread | 18.4K | ≥ last first-filing date among its facts (Apple FY2025 10-K, 2025-10-31) |
 | bigtech-thread (TSLA, AAPL FY2024, AAPL forecast) | @chartcoon · "Chart Coon" — fictional finance influencer | chart-raccoon | Thread | 52.1K | ≥ Tesla FY2025 10-K first filed (2026-01-29) |
-| tw-social-post (MSFT, KO) | 美股懶人包 · "US Stocks in 1 Minute" | lazy-cat | Social post | 4.3 萬 | ≥ Coca-Cola FY2024 10-K first filed (2025-02-20) |
+| tw-social-post (MSFT, KO) | US Stocks in 1 Minute · "US Stocks in 1 Minute" | lazy-cat | Social post | 4.3 ten-thousand units | ≥ Coca-Cola FY2024 10-K first filed (2025-02-20) |
 | one repost of the KO claim | "Market Recap" (repost) | repost-bird | Repost | 210K | same as the original |
-| one news-style card for AMZN (and its 中文 label) | 香蕉新聞快報 · "Banana News Flash" — fictional newsroom | banana-news | Article | 96K | ≥ Amazon Q3 2023 10-Q (2023-10-27) |
+| one news-style card for AMZN (and its Traditional Chinese label) | Banana News Flash · "Banana News Flash" — fictional newsroom | banana-news | Article | 96K | ≥ Amazon Q3 2023 10-Q (2023-10-27) |
 
 Rules (precision):
 - Names, handles and outlets are fictional and checked not to match well-known real accounts or outlets; no real logos.
@@ -105,7 +105,7 @@ Rules (precision):
   build otherwise. Numbers on the card are exactly the claim's stated values; the filed value comes from evidence.
 - Follower counts are round, plausible numbers for the persona type and are labelled as part of the example.
 
-Owner (round 2b): the individual can be a finance influencer; the media outlet is the fictional 香蕉新聞快報 /
+Owner (round 2b): the individual can be a finance influencer; the media outlet is the fictional Banana News Flash /
 Banana News Flash; other fictional personas are welcome (owl thread writer, lazy-cat blogger, repost bird).
 
 ## 7. Round 3 (Owner: fill the phone gap with detail)
@@ -176,7 +176,7 @@ stamp-down, approve, concern, shrug** (+ existing idle, inspect, present, stamp)
 Hero (smaller headline, lede, stage) → **How it works** (moved up; its three headings match strip steps 1–3) →
 A real post, checked → Does it work? → Why you can trust it → Run the check yourself.
 
-### 8.4 Spotlight (Owner round 5: "像探照燈…要有電影的效果")
+### 8.4 Spotlight (Owner round 5: "cinematic searchlight effect")
 
 The connector is a beam of light, not a line.
 - **Find:** a searchlight cone leaves the robot's visor, sweeps down the filing panel row by row, and locks on the

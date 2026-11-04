@@ -1,6 +1,6 @@
 # Market Claim Verifier
 
-[English](../../README.md) · [繁體中文](../../README.zh-TW.md)
+[English](../../README.md) · [Traditional Chinese](../../README.zh-TW.md)
 
 **Check financial claims against SEC filings with Meta’s open-weight Muse Spark Open, and inspect the evidence behind each verdict.**
 

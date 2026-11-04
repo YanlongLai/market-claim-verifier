@@ -1,100 +1,294 @@
-# 財經主張查核器
+# 財經貼文查核
 
-![稽核機器人比對貼文與申報文件，蓋上程式判定章](docs/site/img/readme-robot.gif)
-[靜態圖片](docs/site/img/readme-robot.png) <!-- 主機擷取指令會保留同一動圖路徑。 -->
+![查核機器人比對財經貼文與申報文件](docs/site/img/readme-robot.gif)
 
-**貼上財經貼文，逐一用美國證管會申報資料核對數字，並產出附出處的修正版草稿。**
+**貼上財經貼文，逐一用 SEC 申報資料核對數字，並產出附出處的修正版草稿。**
 
-[試用網站](https://hackathon.dappgo.com/zh/) · [已儲存查核](https://hackathon.dappgo.com/zh/#recorded-run) · [評審指南](JUDGES.zh-TW.md) · [英文](README.md)
+[即時網站](https://hackathon.dappgo.com/zh/) · [評審指南](JUDGES.zh-TW.md) · [證據索引](docs/evidence/INDEX.md)
+
+## 評審的三分鐘路徑
+
+| 步驟 | 開啟 | 檢視內容 |
+| --- | --- | --- |
+| 觀看 | [示範影片待發布](#demo-video) | 依序看貼文、申報文件、判定與修正版草稿。 |
+| 試用 | [即時查核](https://hackathon.dappgo.com/zh/#live-check) | 評審密碼在提交備註；選擇故事、輸入與平台。 |
+| 重播 | [已儲存查核](https://hackathon.dappgo.com/zh/#recorded-run) | 不需密碼；展開 SEC 證據與代理軌跡。這是已記錄執行。 |
+| 審核 | [保留測試報告](docs/evidence/eval-v2-2026-10-27/REPORT.zh-TW.md#評測指標) | 分母、失敗、費用與標準答案修正揭露。 |
+
+<a id="demo-video"></a>
+影片發布後會補上網址。網站、已儲存查核及原始軌跡現在即可查閱。
+
+## 構想
+
+DappGo 發布美股市場評論。內部事實查核發現一個反覆出現的問題：
+財經貼文可能數字正確，期間、單位或比較方式卻錯了。
+僅憑流暢的說明，無法確保抓出把全年營收寫成單季的錯誤。
+
+**模型提出，程式決定。** Muse Spark 選擇證據工具並提出解讀；
+Python 將主張綁定回傳證據，計算比較，
+最後判定支持、矛盾或證據不足。
+
+本作結合程式判定、附出處的修正版草稿與確定性的證據綁定。
+模型提出的數字不能僅因看似合理就成為修正值；
+修正必須使用程式計算值與該次查核保留的申報引用。
+
+![輸入、Muse Spark、SEC 證據、Python 判定與附出處草稿的流程](docs/site/img/architecture-v4.svg)
+
+1. 讀取輸入並擷取每個財務主張；輸入本身不當作證據。
+2. Muse Spark 選用 `lookup_fact`、`compute_change`、`history_rank` 與 `list_periods` 等工具。
+3. SEC 結果保留證據編號、公司、指標、單位、期間、申報識別碼與來源雜湊。
+4. Python 解析主張數字、精度和比較詞，驗證證據與財年／曆年期間。
+5. 程式計算判定；修正時刪除被否定的數字，填入附引用的申報值。
+6. 儲存請求、工具呼叫、用量、費用與耗時，以便檢視及重播。
+
+[代理迴圈](src/claimcheck/agent.py) · [程式檢查](src/claimcheck/checks.py) ·
+[草稿修正器](src/claimcheck/correction.py) · [證據紀錄契約](docs/EVIDENCE_RECORDS.md)
 
 ## 功能
 
-- 從文字或媒體擷取財務主張。
-- 模型選擇申報查找工具；程式核對數字、期間與證據識別碼。
-- 回傳支持、矛盾或證據不足，並為被證明錯誤的數字提供附出處的修正版草稿。
+### 輸入與涵蓋範圍
 
-## 為什麼做
+| 項目 | 目前契約 | 來源 |
+| --- | --- | --- |
+| 網站 | 貼上 600 字內文字；另有文字、圖片、PDF、音訊與影片範例。任意瀏覽器上傳仍在規劃中。 | [即時契約](docs/LIVE_CHECK.md)、[範例報告](docs/evidence/try-v3-site-2026-11-03/REPORT.md) |
+| CLI | 文字／Markdown、PNG／JPEG／WebP、文字型 PDF、音訊與影片。掃描 PDF 會標示未查核。 | [格式探測報告](docs/evidence/input-formats-2026-10-30/REPORT.md)、[輸入限制](docs/PROVIDERS.md#current-repository-input-contract) |
+| 公司 | 以 US-GAAP 申報的 SEC 公司：約 8,000 家；深入測試 23 家。ETF／基金與 IFRS 外國公司支援有限或不支援。 | [範圍與數量來源](docs/evidence/REVIEW_GUIDE.md#facts-in-detail) |
+| 期間 | SEC XBRL 期間大致自 2009 年起，直到最新申報；包含年度、季度與成長比較。 | [範圍報告](docs/evidence/REVIEW_GUIDE.md#facts-in-detail)、[期間規則](docs/evidence/TECHNICAL_GUIDE.md#technical-notes) |
+| 更新 | 即時 SEC 快取每 6 小時更新；已儲存示範保留原記錄來源。 | [即時設定報告](docs/evidence/readme-v3-2026-11-04/REPORT.md#scope-and-limits) |
 
-團隊原本就發布美股評論。
-內部查核發現，正確的數字也可能配錯期間、單位或比較方式。
-模型提出，程式判定。
+媒體先轉成主張文字。圖片使用 Muse OCR；音訊使用 Muse Voice Transcribe；
+影片結合轉錄與抽樣畫面。這些步驟可能漏掉主張、圖形幾何，
+或數字與投影片表頭的關係，亦不會認證上傳內容。
+[平台與媒體邊界](docs/PROVIDERS.md) · [媒體研究](docs/evidence/fair-multimodal-v1/REPORT.md)
 
-## 運作方式
+### 輸出
 
-![貼文、模型、申報事實、程式判定、修正版草稿](docs/site/img/architecture-v4.zh-TW.svg)
+| 輸出 | 意義 |
+| --- | --- |
+| 判定 | 對每個擷取主張給出支持、矛盾或證據不足。 |
+| 修正版草稿 | 刪除被否定的數字，填入程式值並引用申報；有歧義的修改保留原文與原因。 |
+| SEC 證據 | 數值、單位、期間及申報連結；推算季度會引用組成申報。 |
+| 代理軌跡 | 模型請求、所選工具、回傳證據編號與最終程式檢查。 |
+| 收據 | 平台／模型、估計費用或保留上限及實測耗時；媒體前處理另列。 |
 
-1. 讀取輸入，擷取每項財務主張。
-2. 模型選擇下一個申報查找工具。
-3. 將回傳證據綁定至公司、指標與期間。
-4. 程式計算判定並核對數值容差。
-5. 只修正被證明錯誤的數字，並附申報出處。
+僅核對列出的主張；草稿絕不表示整篇文章「已核准」。
+[修正報告](docs/evidence/corrected-draft-2026-11-03/REPORT.md) · [收據契約](docs/LIVE_CHECK.md#provider-receipts-compare-and-history)
 
-[在網站跟著一個數字查到底](https://hackathon.dappgo.com/zh/#how) · [模型與程式分工](docs/evidence/TECHNICAL_GUIDE.md#agentic-muse-chooses-the-next-check-python-checks-the-answer)
+### 平台
 
-## 試用
+所有查核路徑均使用 Meta 模型；託管平台與模型版本分別記錄。
 
-[網站](https://hackathon.dappgo.com/zh/#live-check)提供 3 個故事 × 5 種輸入（文字、圖片、文件、音訊、影片）。可選擇三家供應商或比較全部；公開歷史可重新開啟完整結果，**編輯並重新查核**會還原故事、輸入與供應商。評審密碼見提交說明；已儲存範例免密碼。
+| 路徑 | 固定查核模型 | 媒體前處理 |
+| --- | --- | --- |
+| Baseten | `meta-models/muse-spark-open-1026` | Meta OCR／ASR |
+| Fireworks | `accounts/fireworks/models/muse-spark-open` | Meta OCR／ASR |
+| Meta Model API | `muse-spark-1.3` | Meta OCR／ASR |
 
-命令列範例需先完成[本機設定](#本機執行)。第一個指令離線預覽；後兩個需供應商金鑰，並在指定預算內付費執行。
+開放與封閉 Spark 版本是不同模型。供應商列出某種輸入格式，
+不代表本專案使用該平台原生的圖片、音訊或影片端點。
+[平台報告與實測邊界](docs/PROVIDERS.md) · [已記錄模型清單](docs/evidence/eval-v2-2026-10-27/manifest.json)
+
+## 使用方式
+
+### 網站
+
+開啟[試用區](https://hackathon.dappgo.com/zh/#live-check)，選擇器提供
+[3 個故事 × 5 種輸入格式](docs/evidence/try-v3-site-2026-11-03/REPORT.md)：
+可選期間錯誤的貼文（故事 A）、全部正確故事，或混合主張故事。
+執行前先讀取所選輸入；尚無已儲存結果的媒體會明確標示待補。
+
+<!-- readme-shot:try-story-a -->
+*截圖待主機擷取 — [scripts/capture_readme_shots.py](scripts/capture_readme_shots.py).*
+
+選擇 Baseten、Fireworks 或 Meta Model API。「全部比較」會依序執行各平台，
+費用使用同一共用預算。輸入評審密碼可執行新查核；
+「查看已儲存結果」不需密碼，並保留歷史收據。
+
+<!-- readme-shot:corrected-draft -->
+*截圖待主機擷取 — [scripts/capture_readme_shots.py](scripts/capture_readme_shots.py).*
+
+展開「SEC 證據」與「代理軌跡」檢視判定。公開歷史可重開完整結果；
+「編輯並重跑」會還原故事、輸入與平台。已認證輸入及結果
+公開保留 [14 天](docs/evidence/readme-v3-2026-11-04/REPORT.md#scope-and-limits)。
+主機截圖會在本機呈現保留資料，不會執行新的正式環境查核。
+[擷取腳本](scripts/capture_readme_shots.py) · [截圖來源](docs/evidence/readme-v3-2026-11-04/REPORT.md#screenshots)
+
+### CLI 快速開始
+
+需要 Python 3.12–3.14 與 `uv`；完整驗證另需 Node 22+。
+[前置需求與離線驗證](AGENTS.md#offline-verification)。
 
 ```sh
-uv run python -m claimcheck verify --provider baseten --dry-run 'META 2025 年第 2 季營收為 $47.5B'
-uv run python -m claimcheck verify --provider baseten --budget 1 'META 2025 年第 2 季營收為 $47.5B'
-uv run python -m claimcheck post examples/posts/bigtech-thread.txt --provider baseten --budget 1
+git clone https://github.com/YanlongLai/market-claim-verifier.git
+cd market-claim-verifier
+uv sync
 ```
 
-## 產品事實
+不需金鑰、不呼叫模型或 SEC，即可預覽請求：
 
-| 項目 | 答案 |
+```sh
+uv run python -m claimcheck verify --provider baseten --dry-run \
+  'META Q2 2025 revenue was $47.5B'
+```
+
+在環境設定 `BASETEN_API_KEY`，再以明確費用上限查核單一主張：
+
+```sh
+uv run python -m claimcheck verify --provider baseten --budget 1 \
+  'META Q2 2025 revenue was $47.5B'
+```
+
+查核整篇貼文並保留 HTML／JSON 報告：
+
+```sh
+uv run python -m claimcheck post examples/posts/bigtech-thread.txt \
+  --provider baseten --budget 1
+```
+
+先讀取媒體，再查核擷取到的主張：
+
+```sh
+uv run python -m claimcheck ingest docs/examples/post.png --provider baseten --budget 1
+uv run python -m claimcheck ingest docs/examples/post.pdf --provider baseten --budget 1
+uv run python -m claimcheck ingest docs/examples/post.mp3 --provider baseten --budget 1
+uv run python -m claimcheck ingest docs/examples/post.mp4 --provider baseten --budget 1
+```
+
+圖片／音訊／影片前處理另需 `MODEL_API_KEY`。影音解碼
+需要 FFmpeg／ffprobe。Fireworks 查核使用 `FIREWORKS_API_KEY`；Meta 使用 `MODEL_API_KEY`。
+除了 `--dry-run` 外，上列指令會產生付費請求。上限表示允許花費的最大金額，
+並非固定售價。[CLI 參考](docs/evidence/TECHNICAL_GUIDE.md#run-it)
+
+以下是[已儲存 Apple 修正](docs/evidence/posts-2026-10-28/demo-thread-baseten/report.json)的可讀摘錄，
+顯示值依保留來源四捨五入；並非新產生的 CLI 輸出：
+
+```text
+Claim: Apple revenue in fiscal Q4 2025 alone was $416.2B.
+Program verdict: contradicted
+Filed quarter: $102.5B = annual revenue minus nine-month revenue
+Corrected draft: Apple revenue in fiscal Q4 2025 alone was ~~$416.2B~~ → $102.5B.
+Citations: both component SEC filings retained in the report
+```
+
+[修正計算與重播限制](docs/evidence/corrected-draft-2026-11-03/REPORT.md#retained-apple-example)
+
+## 費用與速度
+
+主要數字為即時 **$0.01／6 秒**（[正式環境收據](docs/evidence/live-prod-2026-11-03/REPORT.md)），
+以及 [Baseten 基準](docs/evidence/eval-v2-2026-10-27/REPORT.md#metrics)的**每題 $0.02／中位數 10 秒**。
+這些為已記錄觀察值的四捨五入；下列規劃區間不是實測極值，也不是服務承諾。
+
+| 工作 | 估計費用（美元） | 耗時 | 證據與邊界 |
+| --- | --- | --- | --- |
+| 即時文字查核 | 依輸入大小約 $0.01–0.04 | 6–25 秒 | [規劃區間與正式環境收據](docs/evidence/readme-v3-2026-11-04/REPORT.md#cost-and-speed)；一筆正式環境主張支持四捨五入的 $0.01／6 秒主要數字。 |
+| 即時媒體範例 | 文字查核加 OCR／ASR 前處理 | 查核加前處理耗時 | [媒體報告](docs/evidence/media-examples-2026-11-03/REPORT.md)；沒有固定加價，Meta 前處理在收據逐項列出。 |
+| Baseten 基準主張 | 每題 $0.02 | 中位數 10 秒；p95 21 秒 | [保留文字測試報告](docs/evidence/eval-v2-2026-10-27/REPORT.md#metrics)；已完成案例費用與延遲的四捨五入。 |
+| 共用即時預算 | 每日 $10；累計 $60 | 每日 UTC 午夜重設 | [目前設定報告](docs/evidence/readme-v3-2026-11-04/REPORT.md#scope-and-limits)；平台或額度停止可能提早暫停查核。 |
+
+較長貼文可能超過規劃區間；保留的多主張範例另有自己的
+[費用與耗時](docs/evidence/readme-v3-2026-11-04/REPORT.md#cost-and-speed)。
+一份媒體文件可能產生多個計費主張。費用包含抽取、工具迴圈呼叫、
+重試及前處理；帳本估值與保留額度並非供應商發票。
+[價格與計費](docs/PROVIDERS.md#price-comparison) · [呼叫前預留帳本](src/claimcheck/budget.py)
+
+## 準確率與證據
+
+**保留測試 90.2%（240/266）；錯誤支持 1/139**
+（[原始修正標準答案報告](docs/evidence/eval-v2-2026-10-27/REPORT.zh-TW.md#評測指標)）。
+錯誤支持的分母是標準答案為矛盾／證據不足的主張。
+失敗及缺漏結果均算錯；這是文字基準準確率，不是每篇貼文的保證。
+
+### 原始基準
+
+| 平台／方法 | 全部 357 題 | 保留 266 題 | 報告 |
+| --- | --- | --- | --- |
+| Baseten · 代理加 SEC 工具 | 90.5%（323/357） | 90.2%（240/266） | [原始報告](docs/evidence/eval-v2-2026-10-27/REPORT.zh-TW.md#評測指標) |
+| Baseten · 單次回答 | 20.7%（74/357） | 21.1%（56/266） | [原始報告](docs/evidence/eval-v2-2026-10-27/REPORT.zh-TW.md#評測指標) |
+| Fireworks · 代理加 SEC 工具 | 90.5%（323/357） | 89.1%（237/266） | [原始報告](docs/evidence/eval-v2-2026-10-27/REPORT.zh-TW.md#評測指標) |
+| Fireworks · 單次回答 | 19.9%（71/357） | 19.2%（51/266） | [原始報告](docs/evidence/eval-v2-2026-10-27/REPORT.zh-TW.md#評測指標) |
+| Meta · 代理加 SEC 工具 | 83.2%（297/357） | 82.0%（218/266） | [原始報告](docs/evidence/eval-v2-2026-10-27/REPORT.zh-TW.md#評測指標) |
+| Meta · 單次回答 | 44.3%（158/357） | 41.7%（111/266） | [原始報告](docs/evidence/eval-v2-2026-10-27/REPORT.zh-TW.md#評測指標) |
+
+全部題目欄包含開發集；只有保留測試欄供應主要數字。
+主張於執行前凍結。兩個標準答案事後修正；
+[註冊標準答案成績](docs/evidence/eval-v2-2026-10-27/REPORT-registered-gold.md)、
+[執行清單](docs/evidence/eval-v2-2026-10-27/manifest.json)與
+[逐題瀏覽器](https://hackathon.dappgo.com/explorer/index.zh.html)保留審核軌跡。
+[後續代理重跑](docs/evidence/eval-v2-2026-10-28-r2-posthoc/REPORT.md)屬事後檢查；
+空白的單次回答列不是結果。
+
+### 真實世界與媒體證據
+
+| 研究 | 可支持的結論 | 報告 |
+| --- | --- | --- |
+| 78 則 Threads／80 則新聞 | 抽取及查核涵蓋率、失敗與費用；涵蓋率不等於準確率。獨立標籤稀少，限制真實準確率主張。 | [原始真實世界報告](docs/evidence/real-world-2026-11-02/REPORT.md)、[來源審核](docs/evidence/real-world-2026-11-02/threads/GOLD_REVIEW.zh-TW.md) |
+| 凍結文字修正檢查 | 曾見輸入的回歸行為；不重測 OCR／ASR。 | [事後報告](docs/evidence/real-world-2026-11-03-fixcheck/REPORT.md) |
+| 配對媒體研究 | 各格式共用凍結的 Meta 前處理；原生圖片探測另列。 | [格式報告](docs/evidence/fair-multimodal-v1/REPORT.md) |
+| 真實網路簡報探測 | 保留影音失敗、事件期間上下文與證據缺口。 | [原始影音報告](docs/evidence/real-av-v1/REPORT.md)、[上下文重查](docs/evidence/real-av-context-live/REPORT.md) |
+
+[證據索引](docs/evidence/INDEX.md) · [真實世界瀏覽器](https://hackathon.dappgo.com/wild/) ·
+[測試紀錄保留政策](docs/TEST_RECORDS.md) · [版本化證據匯出](docs/EVIDENCE_RECORDS.md)
+
+### 離線驗證
+
+```sh
+bash scripts/verify.sh
+# After the locked dependency cache is populated:
+UV_OFFLINE=1 bash scripts/verify.sh
+```
+
+執行器先安裝鎖定依賴，再以網路防護且不含平台金鑰的環境執行 Python／Node 套件。
+在拋棄式副本重建圖表、檢查儲存資料的重現性及 Markdown 連結。
+不會執行即時評測、抓取 SEC 資料或渲染完整示範影片。
+[驗證收據](docs/VERIFICATION.md) · [驗證指南](AGENTS.md)
+
+## 限制與誠實揭露
+
+| 限制 | 影響 |
 | --- | --- |
-| 查核內容 | [以美國證管會申報核對財務主張，提供判定與附出處的修正。](docs/evidence/REVIEW_GUIDE.md#facts-in-detail) |
-| 涵蓋範圍 | [美國會計準則申報公司：約 8,000 家，已測試 23 家。結構化申報期間大致自 2009 年起至最新申報。](docs/evidence/REVIEW_GUIDE.md#facts-in-detail) |
-| 輸入格式 | [網站：≤600 字元。命令列：文字、圖片、文字型文件、音訊與影片。](docs/evidence/TECHNICAL_GUIDE.md#run-it) |
-| 費用與速度 | [即時查核每次 $0.01；即時 6–20 秒（單一主張 → 含四項主張的貼文）。基準測試每題 $0.02；中位數 10 秒。每日 $10；累計 $60。](docs/evidence/REVIEW_GUIDE.md#facts-in-detail) |
-| 準確率 | [保留測試 90.2% (240/266)；誤判為支持 1/139。](docs/evidence/eval-v2-2026-10-27/REPORT.md#metrics) |
-| 修正範圍 | [修正被證明錯誤的數字，並附申報出處。絕不標示整篇文章已核准。](docs/evidence/posts-2026-10-28/demo-thread-baseten/report.json) |
+| 修正標準答案 | 主要數字使用修正標籤；註冊標準答案報告仍可查閱。 |
+| 非乾淨執行目錄 | 原始清單記錄工作目錄有未提交變更；儲存結果描述該次執行。 |
+| 曾見輸入重查 | 事後與凍結逐字稿重查為回歸證據，並非新的保留評測；不重測 OCR／ASR。 |
+| 抽取與來源 | 漏抽、歧義期間、重列、非 GAAP 定義與抽樣畫面都可能讓查核無法完成。 |
+| 次數與費用 | [每 IP 每 10 分鐘 5 次、每日 $10、累計 $60](docs/evidence/readme-v3-2026-11-04/REPORT.md#scope-and-limits)；預算或平台停止可能中斷比較。 |
+| 修正 | 僅修改唯一綁定且被否定的數字；意見與未查核文字保留，絕不表示整篇文章已核准。 |
 
-## 證據與誠實揭露
+[完整限制](docs/evidence/REVIEW_GUIDE.md#limits) · [來源層級](docs/DATA_SOURCES.md) ·
+[歷史申報日期政策](docs/VERIFICATION_POLICY.md)。本專案不提供投資建議。
 
-[保留測試](docs/evidence/eval-v2-2026-10-27/REPORT.md#metrics) · [原先登記答案的分數](docs/evidence/eval-v2-2026-10-27/REPORT-registered-gold.md) · [執行清單](docs/evidence/eval-v2-2026-10-27/manifest.json) · [真實貼文涵蓋率](https://hackathon.dappgo.com/wild/) · [結果瀏覽器](https://hackathon.dappgo.com/explorer/index.zh.html) · [證據索引](docs/evidence/INDEX.md) · [完整限制](docs/evidence/REVIEW_GUIDE.md#limits)
-
-- 原始執行後修正了兩題參考答案；原先登記答案的分數仍保留。
-- 執行清單記錄當時工作目錄有未提交的變更。
-- 事後重查使用已看過的輸入，不是全新的保留測試。
-- 凍結對話重查未重測圖片辨識或語音轉錄；擷取可能遺漏主張。
-- 即時查核共用每日 $10、累計 $60 預算；每個網路位址每 10 分鐘限 5 次。驗證後的查核公開保留 14 天。
-
-## 程式庫導覽
+## 專案目錄
 
 | 路徑 | 用途 |
 | --- | --- |
-| [查核核心](src/claimcheck) | 工具迴圈、供應商、程式檢查與修正 |
-| [提示詞](prompts) | 版本化文字與雜湊 |
-| [第二版測試](eval/v2) | 凍結主張、修正後答案與參考計算 |
-| [證據](docs/evidence) | 報告、去敏紀錄與失敗嘗試 |
-| [英文網站](docs/site) | 英文頁、本機素材與已儲存資料 |
-| [繁中網站](docs/zh) | 自動產生的繁體中文鏡像 |
-| [即時服務](server/live) | 自架程式服務與持久歷史 |
-| [同源介面](functions/api) | 網站請求轉送 |
-| [測試](tests) | 離線固定資料與產品／網站回歸 |
-| [展示](demo) | 展示原始檔、旁白與保留製作紀錄 |
+| [src/claimcheck/](src/claimcheck) | 代理迴圈、SEC 工具、平台、確定性檢查與修正 |
+| [prompts/](prompts) | 版本化提示來源；執行紀錄保留雜湊 |
+| [eval/v2/](eval/v2) | 凍結主張、修正標籤與獨立標準答案計算 |
+| [docs/evidence/](docs/evidence) | 報告、清單、去除敏感資訊的軌跡與付費嘗試紀錄 |
+| [docs/site/](docs/site) | 首頁、雙語資料與已提交美術素材 |
+| [docs/explorer/](docs/explorer) | 逐題基準瀏覽器 |
+| [server/live/](server/live)／[workers/live/](workers/live) | 共用帳本即時服務與執行器 |
+| [tests/](tests) | 離線資料、程式回歸與網站生命週期測試 |
+| [scripts/](scripts)／[docs/scripts/](docs/scripts) | 驗證、截圖與資料／圖表建構器 |
+| [示範/](demo) | 獨立示範製作、測試與建置揭露 |
 
 ## 本機執行
 
-需 3.12–3.14 版直譯器、套件工具與 22 版以上執行環境，依下列指令設定：
-
 ```sh
-uv sync --frozen
-python3 scripts/serve_site.py
-bash scripts/verify.sh
+uv sync
+uv run python scripts/serve_site.py --port 8765
+# Open http://127.0.0.1:8765/
 ```
 
-本機預覽使用已提交檔案。驗證在可拋棄副本中執行，移除金鑰並禁止測試及建置器連網。快取備妥後，可用 `UV_OFFLINE=1 bash scripts/verify.sh` 離線安裝相依套件。[驗證指南](AGENTS.md) · [保留測試紀錄](docs/TEST_RECORDS.md) · [命令列細節](docs/evidence/TECHNICAL_GUIDE.md#run-it)
+預覽伺服器使用 Pages 疊加輸出與已提交結果。即時 API 路徑需要
+另外[設定自架服務](docs/LIVE_CHECK.md#exact-handoff-for-claude--owner)。
+新增證據連接器請參考[擴充指南](docs/EXTENDING.md)，
+未完成功能見[規劃工作](ROADMAP.md)。
 
-請在主機執行[擷取腳本](scripts/capture_readme_gif.py)，將佔位圖替換為寬 720 像素、6–8 秒、低於 3 百萬位元組的循環動圖，並更新靜態備用圖片；擷取只讀取本機已儲存場景。
+## 授權與致謝
 
-## 授權
+程式採 [MIT](LICENSE)。財務證據來自 SEC EDGAR 申報，保留公司與申報識別碼。
+模型使用 Meta Muse Spark 與 Muse Voice Transcribe，透過已記錄的平台路徑託管。
+[致謝與媒體來源](CREDITS.md)區分模型生成的美術／旁白與財務證據。
 
-[開放原始碼授權](LICENSE) · [出處與致謝](CREDITS.md)。原有服務在黑客松前已存在；此查核器、網站與證據自 2026-10-27 起於黑客松期間建立。[建置揭露](BUILD_LOG.md#build-log)。
-
-<a id="agentic-muse-chooses-the-next-check-python-checks-the-answer"></a><a id="check-a-whole-post"></a><a id="cost-speed-and-provider-choice"></a><a id="evaluation"></a><a id="evidence-you-can-audit"></a><a id="gap-score"></a><a id="how-meta-models-are-used"></a><a id="how-the-system-got-there"></a><a id="key-results"></a><a id="l4-earnings-release-evidence"></a><a id="limitations"></a><a id="local-pdf-input"></a><a id="one-real-run"></a><a id="other-inputs"></a><a id="real-results"></a><a id="real-world-test"></a><a id="reproduce-or-extend"></a><a id="review-several-files-for-one-stock"></a><a id="run-it"></a><a id="support-and-boundaries"></a><a id="technical-notes"></a><a id="technical-reference"></a><a id="text-verification-266-held-out-claims"></a><a id="try-it"></a><a id="what-it-does"></a><a id="why-meta-open-weights"></a><a id="why-you-can-trust-a-verdict"></a>
+DappGo 在黑客松前已存在；查核器、網站與證據於黑客松期間建立。
+[建置揭露](BUILD_LOG.md#build-log) · [更新紀錄](CHANGELOG.md) · [英文](README.md)

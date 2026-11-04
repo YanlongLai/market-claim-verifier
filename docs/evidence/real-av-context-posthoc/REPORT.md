@@ -1,33 +1,33 @@
-# 真實影音後續：期間來源與摘要安全
+# Real AV follow-up: period provenance and safe summaries
 
-本次實作三項修正：明確事件期間上下文、需四位年份錨點的 FY27 表頭解析，以及由程式結論產生最終摘要。[使用方式與限制](../../EVENT_CONTEXT.md) · [離線重播頁](replay.html) · [逐項 JSON](replay.json)。
+Three changes were implemented: explicit event-period context, FY27 header parsing requiring a four-digit year anchor, and final summaries generated from program conclusions. [Usage and limits](../../EVENT_CONTEXT.md) · [Offline replay](replay.html) · [Per-item JSON](replay.json) · [Traditional Chinese](REPORT.zh-TW.md).
 
-## 如何驗證
+## How verification worked
 
-直接重用上一輪六個真實影音案例已保存的 OCR／ASR 文字與抽取提案，重跑純程式篩選。原始輸入、引用、模型輸出與財務判定未被改寫；此輪沒有呼叫 API，也沒有新的財務判定。來源 metadata 明確標示為已檢視但未認證，不可當成 SEC 證據。
+Reuse saved OCR/ASR text and extraction proposals from the previous six real-media cases, rerunning only program filters. Original inputs, quotations, model outputs and financial verdicts were not rewritten. No API was called and no new financial verdict was produced. Source metadata is reviewed but unauthenticated; it is not SEC evidence.
 
-來源事件為 Microsoft FY2027 Q1，官方頁面標題作為完整年份的引用。這是已知失敗上的事後回歸檢查，不是盲測或準確率提升評測。解除引用篩選拒絕只代表可以進入查核，並不代表主張正確。
+The source event is Microsoft FY2027 Q1; the official page title supplies the four-digit anchor. This is a post-hoc regression on known failures, not a blind accuracy evaluation. Passing the quotation filter only permits verification; it does not establish truth.
 
-## 離線重播結果
+## Offline replay results
 
-在 13 個有抽取提案的 channel 中，原本 28 筆拒絕降為 8 筆；20 筆表頭提案取得明確年份錨點，可進入後續查核。另外 6 筆音訊提案符合嚴格的「本季」條件，記錄了單獨的事件期間來源。未完成 OCR 的 channel 沒有提案，不會被排除失敗紀錄或當成成功。
+Across 13 channels with proposals, 28 rejections became 8: 20 header proposals gained an explicit year anchor and could proceed. Six audio proposals satisfied the strict current-quarter rule and recorded separate event-period provenance. Incomplete OCR channels had no proposals; failures were not dropped or counted as success.
 
-這些是跨平台／重複畫面的主張出現次數，不是獨立事實。新的財務 verdict 數量仍是零；不能計算新的準確率。新增 API 花費 $0。88 項針對事件期間、主張篩選、摘要、ingestion 與 queue 的測試通過。
+These are occurrences across providers/repeated frames, not independent facts. New financial verdicts remain zero, so no new accuracy can be calculated. Added API spend was $0. 88 targeted tests for context, filtering, summaries, ingestion and queues passed.
 
-## 保留的限制
+## Retained limits
 
-- 音訊只有「本季」但提案或原始引用沒有對應字詞時，不會一律補上事件期間；不同年份、其他公司、guidance 與歷史／未來期間不覆蓋。
-- FY27 的世紀必須有明確來源錨點；不自動把 FY26 解讀為 2026。帶兩個期間的部分比較主張可能仍被拒絕。
-- 表頭文字存在，不等於數值與欄位已對齊。
-- 調整後 EPS、constant currency、現金流與營運指標仍可能缺乏證據。
-- 本次沒有重跑模型驗證，所以不能把重播後的 `to_verify` 改稱 `supported`。
+- Audio saying only “this quarter” is not automatically assigned an event period unless the proposal/source quotation meets the rule; other years, issuers, guidance and historical/future periods remain separate.
+- FY27 needs an explicit century anchor; FY26 is not silently interpreted as 2026. Some comparisons mentioning two periods remain rejected.
+- A present header does not prove row/column alignment.
+- Adjusted EPS, constant currency, cash flow and operating metrics can still lack evidence.
+- No model verification was rerun: `to_verify` must not be relabelled `supported`.
 
-## 下一步
+## Next steps
 
-先以新版本、有上限的付費檢查驗證已補上期間的主張，保留 original／context-bound 兩份獨立結果；接著補充 GAAP／調整後證據及跨模態對齊。最後再加入另一家公司與獨立標註的保留資料，才評估整體準確率。所有摘要需持續以程式有效證據為準。
+Use a separately versioned, bounded paid check for claims with added periods, retaining original and context-bound results independently. Add GAAP/adjusted evidence and cross-modal alignment, then another issuer and independently labelled held-out cases before measuring overall accuracy. Summaries must continue to follow valid program evidence.
 
-## 測試與重用
+## Tests and reuse
 
-[完整離線驗證](full-verification.log)通過 928 個產品測試、149 個 demo Python 測試、55 個 Node 測試，並通過圖表、三份輸出位元組一致性及連結檢查。完整套件使用隔離副本；之後補上的「Fiscal Year 字樣不能宣告為 calendar」防護包含在最終 [88 項針對性測試](targeted-tests.log)。最終連結檢查另存 [links.log](links.log)。
+[Full offline verification](full-verification.log) passed 928 product, 149 demo Python and 55 Node tests, figure rebuilds, three byte-identical outputs and links. It used a disposable copy. The later guard against treating “Fiscal Year” as calendar is included in the final [88 targeted tests](targeted-tests.log); final links are in [links.log](links.log).
 
-執行 `uv run python scripts/replay_event_context.py` 可離線重播，不讀取 API 金鑰或重跑財務模型。[來源快照](source-snapshot.zip)及[雜湊](source-snapshot.json)保留本次程式版本；原始付費輸入報告雜湊在 replay.json 中。
+Run `uv run python scripts/replay_event_context.py` offline, without keys or financial model calls. [Source snapshot](source-snapshot.zip) and [hashes](source-snapshot.json) retain the implementation version; replay.json retains hashes of original paid input reports.

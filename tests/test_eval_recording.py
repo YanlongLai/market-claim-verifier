@@ -120,6 +120,19 @@ def test_prompt_export_is_in_sync() -> None:
     assert in_sync, problems
 
 
+def test_english_prompt_export_preserves_runtime_text_and_hash() -> None:
+    from claimcheck.prompts import prompt_file_contents
+    entry = prompt_registry()['post_extraction']
+    exported = prompt_file_contents()[entry['file']]
+    assert entry['sha256'] in exported
+    assert '\\u5104' in exported and '\\u842c' in exported
+    assert not any('\u3400' <= char <= '\u9fff' for char in exported)
+    body = exported.split('```text\n', 1)[1].rsplit('\n```', 1)[0]
+    import re
+    decoded = re.sub(r'\\u([0-9a-f]{4})', lambda match: chr(int(match[1], 16)), body)
+    assert decoded == entry['text']
+
+
 def test_report_contains_audit_sections(tmp_path: Path) -> None:
     claims_path = tmp_path / "claims.jsonl"
     claims_path.write_text(json.dumps(_claim()) + "\n", encoding="utf-8")

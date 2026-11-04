@@ -263,9 +263,9 @@ reasoning, cost, latency) and `REPORT.md`. Gold labels for the 30 claims were co
   - **Cause:** "more than double" has no digits. The parser found no number, the comparator inference fell back to `eq`, and that overrode the model's correct `gt`.
   - **Fix:** growth multipliers are rewritten as percent growth before parsing. "more than double" → `gt 100%`. A bare "doubled" → `approx 100%` with ±15% of the implied rate. "tripled" → 200%.
   - **Rerun:** 4/4 checkable claims right. The before-fix run is kept as `bigtech-thread-baseten-before-multiplier-fix/`.
-- **Bug: Chinese 億 units.** First Chinese run on the Meta API: the extraction translated 億 literally ("500 hundred million US dollars"), and the parser read it as $500 million. That made a false Coca-Cola "revenue over 500 億美元" claim supported; actual 2024 revenue was $47.06B.
-  - **Fix:** the extraction prompt converts 億/萬 to billion/thousand, and the program also rewrites any literal "hundred million" / "ten thousand" before verification.
-  - **Rerun:** Microsoft FY2024 supported, Coca-Cola contradicted, Meta "623 億" contradicted (filed $62.36B rounds to 624 億). The before-fix run is kept.
+- **Bug: Chinese hundred-million units units.** First Chinese run on the Meta API: the extraction translated hundred-million units literally ("500 hundred million US dollars"), and the parser read it as $500 million. That made a false Coca-Cola "revenue over 500 hundred-million US dollars" claim supported; actual 2024 revenue was $47.06B.
+  - **Fix:** the extraction prompt converts hundred-million units/ten-thousand units to billion/thousand, and the program also rewrites any literal "hundred million" / "ten thousand" before verification.
+  - **Rerun:** Microsoft FY2024 supported, Coca-Cola contradicted, Meta "623 hundred-million units" contradicted (filed $62.36B rounds to 624 hundred-million units). The before-fix run is kept.
 - **Tests.** 199 pass, including 9 new ones for screening, scale words and multipliers.
 - **Spend.** Post runs: about $0.07 (Baseten) and $0.09–0.10 per run (Meta API). The per-provider budget cap was raised to $60 by the owner.
 - **Fix: ambiguous quarters (commit `102b20c`).** A claim like "Q2 2024" with no fiscal/calendar label, for a non-calendar issuer, now makes the program fetch the reading the model did not check (evidence IDs `P*`). If the two readings disagree, the verdict is insufficient evidence. Implemented by Codex, reviewed; 215 tests pass.

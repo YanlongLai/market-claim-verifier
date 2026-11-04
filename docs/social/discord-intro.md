@@ -12,4 +12,4 @@ Example: "Tesla grew revenue 3% in full-year 2025" → **False**. The filing sho
 
 🔗 https://yanlonglai.github.io/market-claim-verifier/site/
 
-**Want to help?** Reply with a real finance post or headline about a US-listed company (English or 中文) and I'll run it and share the result. Happy to connect with anyone working on finance or agents!
+**Want to help?** Reply with a real finance post or headline about a US-listed company (English or Traditional Chinese) and I'll run it and share the result. Happy to connect with anyone working on finance or agents!

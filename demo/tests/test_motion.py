@@ -41,7 +41,13 @@ def tone(path, frequency=230, seconds=.5, amplitude=.5):
 
 
 def test_storyboard_is_exactly_the_ten_approved_shots_and_locked_clone():
-    lines=[line for line in (DEMO/'SHOTLIST-v2.md').read_text().splitlines() if re.match(r'\| \d+ \|',line)]
+    # The English shot-list reading layer was translated for language purity.
+    # Approval remains bound to the exact original, not the translated prose.
+    archive=read_json(DEMO.parent/'docs/evidence/readme-v3-2026-11-04/original-language-sources.json')
+    original=next(row['text'] for row in archive['files'] if row['path']=='demo/SHOTLIST-v2.md')
+    lines=[line for line in original.splitlines() if re.match(r'\| \d+ \|',line)]
+    current=[line for line in (DEMO/'SHOTLIST-v2.md').read_text().splitlines() if re.match(r'\| \d+ \|',line)]
+    assert [line.split('|')[1:4] for line in current]==[line.split('|')[1:4] for line in lines]
     assert len(STORY['scenes'])==len(lines)==10 and STORY['version']==2
     for scene,line in zip(STORY['scenes'],lines):
         cells=[s.strip() for s in line.strip('|').split('|')]

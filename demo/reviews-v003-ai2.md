@@ -33,7 +33,7 @@ Applied the stated 56 px text / 96 px number bar visually and inspected represen
 | PASS | `m02-spread`, `m04-extract`, `m05-verdicts`, `m06-proof` — frames 03, 13, 18, 26–28 | Amazon’s **$143.1B** agrees with **143,083 USD millions** after rounding. All four proof-row values match the shot list, despite their overlap. |
 | PASS | `m04-extract`, `m05-verdicts` — frames 14, 19 | NVIDIA’s **FY2024 $60.9B** claim and **more than 2×** verdict are consistent. |
 | PASS | `m03-baseline`, `m08-results` — frames 08–11, 38–45 | **357 claims** throughout. Fireworks **20→90.5%**, Baseten **21→90.5%**, Meta **44→83%**. Maximum improvement is **70.5 percentage points**. |
-| PASS | `m09-chinese` — frames 46–48 | **500 億 = $50.0B**; filed revenue **$47.1B** is below that threshold. This agrees with the revised shot list. |
+| PASS | `m09-chinese` — frames 46–48 | **500 hundred-million units = $50.0B**; filed revenue **$47.1B** is below that threshold. This agrees with the revised shot list. |
 
 **5. Picture matches narration cue — FAIL for caption/cue synchronization**
 
@@ -80,5 +80,5 @@ The ten v002 fixes:
 | 6 | Explicit closing claim and reconciled CTA | **FIXED** | `m10-cta`, frame 49: explicit hackathon line, model credits, displayed `/market-claim-verifier/site/` URL and decoded QR all agree with the revised shot list. |
 | 7 | Correct results badge | **FIXED** | `m08-results`, frame 38 and frames 41–45: **“Up to +70.5 points”** is contained within the badge. |
 | 8 | Move baseline footnote upward | **FIXED** | `m03-baseline`, frames 08–11: all content ends by **y=849**, above y=880. |
-| 9 | Explain Chinese FALSE verdict | **FIXED** | `m09-chinese`, frames 46 and 48: the revised threshold claim separates the correct **500 億 = $50.0B** conversion from **Filed: $47.1B — FALSE**. |
+| 9 | Explain Chinese FALSE verdict | **FIXED** | `m09-chinese`, frames 46 and 48: the revised threshold claim separates the correct **500 hundred-million units = $50.0B** conversion from **Filed: $47.1B — FALSE**. |
 | 10 | Supply matching subtitle evidence | **FIXED** | The 26-cue `demo-v003.srt` matches the evidence hash and review-directory SRT. Captioned frames and 44 subtitle-panel PNGs are supplied. SRT entries contain at most two lines and 41 characters per line; synchronization defects are listed above. |

@@ -2,7 +2,7 @@
 
 2026-11-03. Based on `f54856f6b60477db15ee5a6a680a77d4be6e0ae1`, worktree `feat/corrected-draft`. No model calls, SEC fetches, deployment or push. No new quality/accuracy estimate or OCR/ASR test. The existing gate, budgets, authentication and self-hosted HTTP adapter are unchanged.
 
-The [live runner](../../../workers/live/src/live.py) passes program checks and retained evidence into the pure Python [correction builder](../../../src/claimcheck/correction.py). Pages passes its new `corrections` field, and the EN/繁中 site renders original spans as strike/insert text plus cited changes and explicit reasons for unedited assertions. See the [contract and limits](../../LIVE_CHECK.md#corrected-draft).
+The [live runner](../../../workers/live/src/live.py) passes program checks and retained evidence into the pure Python [correction builder](../../../src/claimcheck/correction.py). Pages passes its new `corrections` field, and the English/Traditional Chinese site renders original spans as strike/insert text plus cited changes and explicit reasons for unedited assertions. See the [contract and limits](../../LIVE_CHECK.md#corrected-draft).
 
 ## Retained Apple example
 
@@ -10,7 +10,7 @@ Round 2, based on `08953e9f`: the [generated envelope](apple-corrections.json) n
 
 There is **one edit** (Apple), and four `not_corrected` entries: Amazon's revenue check (`supported`), NVIDIA's revenue check (`supported`), NVIDIA's more-than-double check (`supported`), and the valuation opinion (`not_judged`). NVIDIA has two recorded checks, so the four source assertions produce five envelope records. The source contains no insufficient-evidence result; tests separately cover `insufficient_evidence`, with an explicit “not corrected” reason, without changing the saved verdicts.
 
-**Corrected draft — only listed assertions checked / 修正版草稿——僅核對列出的主張**
+**Corrected draft — only listed assertions checked**
 
 > Apple pulled in ~~$416.2 billion~~ → **$102.5 billion** of revenue in fiscal Q4 2025 alone.
 
@@ -36,10 +36,10 @@ Every attempt is retained. Focused tests load Python/Node network guards and rem
 | [10 full verifier](10-verify.log) | `UV_OFFLINE=1 bash scripts/verify.sh` after preview refresh; complete output retained |
 | [11 round-2 targeted](11-r2-targeted.log), [metadata](11-r2-targeted.json) | 149 passed, 1 failed: the new annual-input test incorrectly supplied enriched program output to the strict model-response parser |
 | [12 round-2 targeted](12-r2-targeted.log), [metadata](12-r2-targeted.json) | 150 passed after using the saved raw model JSON as the test-response template; includes the full post, supported single claim, saved-demo rendering and light/dark AA contrast |
-| [13 round-2 visual checks](13-r2-visual-check.log), [metadata](13-r2-visual-check.json) | Frontend source lint: 0 failures, 4 existing warnings. Browser inspector unavailable: Chrome exited before connection; native Chrome computer-use access was denied. No browser screenshot or computed-style result is claimed. Offline CSS contrast checks and EN/繁中 renderer checks passed |
+| [13 round-2 visual checks](13-r2-visual-check.log), [metadata](13-r2-visual-check.json) | Frontend source lint: 0 failures, 4 existing warnings. Browser inspector unavailable: Chrome exited before connection; native Chrome computer-use access was denied. No browser screenshot or computed-style result is claimed. Offline CSS contrast checks and English/Traditional Chinese renderer checks passed |
 | [14 round-2 full verifier](14-r2-verify.log), [metadata](14-r2-verify.json) | `UV_OFFLINE=1 bash scripts/verify.sh`; full output and exit status retained |
 
-[Unit tests](../../../tests/test_correction.py) cover unique/missing/repeated/overlapping spans, emoji offsets, stated scales and grouping, half-up rounding, EN/繁中 periods, explicit non-corrections, finite values, direct/derived/nested citations, growth directions and the no-model-number invariant. [Live tests](../../../tests/test_live_check.py) exercise the response envelope and malicious model-proposed replacements. [Pages tests](../../../tests/node/live-boundary.test.mjs) exercise its allowlist; [site runtime tests](../../../tests/test_site_live_runtime.py) pass the Python-generated envelope into shipped JavaScript and render hostile originals, replacements and URLs as inert text. Existing suites continue to cover budgets, authentication and server reuse.
+[Unit tests](../../../tests/test_correction.py) cover unique/missing/repeated/overlapping spans, emoji offsets, stated scales and grouping, half-up rounding, English/Traditional Chinese periods, explicit non-corrections, finite values, direct/derived/nested citations, growth directions and the no-model-number invariant. [Live tests](../../../tests/test_live_check.py) exercise the response envelope and malicious model-proposed replacements. [Pages tests](../../../tests/node/live-boundary.test.mjs) exercise its allowlist; [site runtime tests](../../../tests/test_site_live_runtime.py) pass the Python-generated envelope into shipped JavaScript and render hostile originals, replacements and URLs as inert text. Existing suites continue to cover budgets, authentication and server reuse.
 
 The existing demo compiler regenerated [hover-source.js](../../../demo/motion/v3/hover-source.js) and [preview-data.js](../../../demo/motion/v3/preview-data.js). Their only changes are the current site-script SHA-256. Measured host data, timing, keyframes, beats, cues and all narration text remain byte-identical; the receipt records before/after hashes. No voice, browser capture or media rendering ran.
 

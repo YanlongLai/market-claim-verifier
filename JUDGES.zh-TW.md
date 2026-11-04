@@ -1,42 +1,67 @@
-# 財經主張查核器 — 評審指南
+# 財經貼文查核 — 評審指南
 
-**貼上財經貼文，逐一用美國證管會申報資料核對數字，並產出附出處的修正版草稿。**
+**貼上財經貼文，逐一用 SEC 申報資料核對數字，並產出附出處的修正版草稿。**
 
-## 三分鐘導覽
+[即時網站](https://hackathon.dappgo.com/zh/) · [專案說明](README.zh-TW.md) · [證據索引](docs/evidence/INDEX.md)
 
-1. **觀看：**[展示影片待發布](#demo-video-todo)。
-2. **跟著查：**[一個數字](https://hackathon.dappgo.com/zh/#how)，再看[已儲存熱門貼文查核](https://hackathon.dappgo.com/zh/#recorded-run)；免密碼。
-3. **試用：**[3 個故事 × 5 種輸入](https://hackathon.dappgo.com/zh/#live-check)，可選擇供應商、比較與公開歷史。評審密碼見提交說明；已儲存範例免密碼。
-4. **核對：**[保留測試](docs/evidence/eval-v2-2026-10-27/REPORT.md#metrics) · [結果瀏覽器](https://hackathon.dappgo.com/explorer/index.zh.html) · [真實貼文涵蓋率](https://hackathon.dappgo.com/wild/) · [證據索引](docs/evidence/INDEX.md)。
+## 評審的三分鐘路徑
 
-## 產品事實
+| 步驟 | 開啟 | 檢視 |
+| --- | --- | --- |
+| 觀看 | [示範影片待發布](#demo-video-todo) | 貼文、證據、程式判定、修正版草稿。 |
+| 試用 | [即時查核](https://hackathon.dappgo.com/zh/#live-check) | 選故事、輸入與平台；評審密碼在提交備註。 |
+| 重播 | [已儲存查核](https://hackathon.dappgo.com/zh/#recorded-run) | 不需密碼；開啟修正版草稿、SEC 引用與代理軌跡。 |
+| 審核 | [原始基準](docs/evidence/eval-v2-2026-10-27/REPORT.zh-TW.md#評測指標) | 閱讀保留結果、失敗及標準答案修正揭露。 |
 
-| 項目 | 答案 |
+## 構想
+
+DappGo 內部事實查核發現正確數字搭配錯誤期間、單位或比較方式。
+Muse Spark 選擇 SEC 工具；Python 綁定證據、計算判定並產生附出處修正。
+**模型提出，程式決定。** [架構與流程](README.zh-TW.md#構想)。
+
+## 事實
+
+| 項目 | 答案與證據 |
 | --- | --- |
-| 查核內容 | [以美國證管會申報核對財務主張，提供判定與附出處的修正。](docs/evidence/REVIEW_GUIDE.md#facts-in-detail) |
-| 涵蓋範圍 | [美國會計準則申報公司：約 8,000 家，已測試 23 家。結構化申報期間大致自 2009 年起至最新申報。](docs/evidence/REVIEW_GUIDE.md#facts-in-detail) |
-| 輸入格式 | [網站：≤600 字元。命令列：文字、圖片、文字型文件、音訊與影片。](docs/evidence/TECHNICAL_GUIDE.md#run-it) |
-| 費用與速度 | [即時查核每次 $0.01；即時 6–20 秒（單一主張 → 含四項主張的貼文）。基準測試每題 $0.02；中位數 10 秒。每日 $10；累計 $60。](docs/evidence/REVIEW_GUIDE.md#facts-in-detail) |
-| 準確率 | [保留測試 90.2% (240/266)；誤判為支持 1/139。](docs/evidence/eval-v2-2026-10-27/REPORT.md#metrics) |
-| 修正範圍 | [修正被證明錯誤的數字，並附申報出處。絕不標示整篇文章已核准。](docs/evidence/posts-2026-10-28/demo-thread-baseten/report.json) |
+| 功能 | 擷取主張、查核 SEC 證據，回傳判定、修正版草稿、軌跡與收據。[修正報告](docs/evidence/corrected-draft-2026-11-03/REPORT.md)。 |
+| 範圍 | US-GAAP SEC 公司約 8,000 家；深入測試 23 家。SEC XBRL 期間大致從 2009 年起直到最新申報，含年度、季度及成長比較。[範圍報告](docs/evidence/REVIEW_GUIDE.md#facts-in-detail)。 |
+| 輸入 | 網站：600 字內文字與 3 個故事 × 5 種範例輸入。CLI：文字、圖片、PDF、音訊與影片。[網站報告](docs/evidence/try-v3-site-2026-11-03/REPORT.md)、[格式報告](docs/evidence/input-formats-2026-10-30/REPORT.md)。 |
+| 平台 | Baseten、Fireworks、Meta Model API，均為 Meta 查核模型；媒體使用 Meta OCR／ASR。[已記錄模型](docs/evidence/eval-v2-2026-10-27/manifest.json)。 |
+| 費用與速度 | 即時主要數字為 $0.01／6 秒。依輸入大小的規劃區間為 $0.01–0.04／6–25 秒，另加媒體前處理。基準每題 $0.02，中位數 10 秒，p95 21 秒。[收據與範圍](docs/evidence/readme-v3-2026-11-04/REPORT.md#cost-and-speed)。 |
+| 準確率 | 保留測試 90.2%（240/266）；矛盾／證據不足參考主張的錯誤支持為 1/139。失敗算錯。[原始報告](docs/evidence/eval-v2-2026-10-27/REPORT.zh-TW.md#評測指標)。 |
+| 修正 | 刪除被否定數字、填入程式值、引用組成申報。僅修改唯一綁定的已查核主張；並非文章核准。[保留 Apple 範例](docs/evidence/corrected-draft-2026-11-03/REPORT.md#retained-apple-example)。 |
+| 即時限制 | 每日 $10；累計 $60；每 IP 每 10 分鐘 5 次。已認證輸入／結果公開 14 天。[目前設定報告](docs/evidence/readme-v3-2026-11-04/REPORT.md#scope-and-limits)。 |
 
-## 限制
+## 準確率與證據
 
-- 原始執行後修正了兩題參考答案；原先登記答案的分數仍保留。
-- 執行清單記錄當時工作目錄有未提交的變更。
-- 事後重查使用已看過的輸入，不是全新的保留測試。
-- 凍結對話重查未重測圖片辨識或語音轉錄；擷取可能遺漏主張。
-- 即時查核共用每日 $10、累計 $60 預算；每個網路位址每 10 分鐘限 5 次。驗證後的查核公開保留 14 天。
+[專案基準表](README.zh-TW.md#原始基準)依平台比較代理與單次回答，
+將歷史全部題目欄與保留結果分開。
+[78 則 Threads／80 則新聞](docs/evidence/real-world-2026-11-02/REPORT.md)評估真實世界涵蓋；
+涵蓋率不等於準確率。[逐題瀏覽器](https://hackathon.dappgo.com/explorer/index.zh.html) · [真實世界瀏覽器](https://hackathon.dappgo.com/wild/)。
 
-失敗計為錯誤；誤判為支持的分母為 139 題參考答案為矛盾或證據不足的主張。擷取可能遺漏主張。[完整限制與模型識別碼](docs/evidence/REVIEW_GUIDE.md#limits) · [正式環境收據](docs/evidence/live-prod-2026-11-03/REPORT.md) · [現行即時設定](docs/LIVE_CHECK.md#limits-and-failure-behavior)。
+## 限制與誠實揭露
 
-## 驗證
+- 兩個標準答案於原始執行後修正；[註冊標準答案成績](docs/evidence/eval-v2-2026-10-27/REPORT-registered-gold.md)仍可查閱。
+- 原始[執行清單](docs/evidence/eval-v2-2026-10-27/manifest.json)記錄工作目錄有未提交變更。
+- [事後重查](docs/evidence/real-world-2026-11-03-fixcheck/REPORT.md)重用曾見輸入；凍結逐字稿不重測 OCR／ASR。
+- 抽取可能漏掉主張；歧義期間、抽樣畫面及缺漏證據限制涵蓋。
+- 比較依序使用共用額度；規劃區間不是實測極值或服務承諾；已儲存收據保留歷史值。
 
-`bash scripts/verify.sh` 在可拋棄副本中執行離線測試並重建已儲存資料。[驗證指南](AGENTS.md) · [專案說明](README.zh-TW.md) · [英文](JUDGES.md)。
+[完整限制](docs/evidence/REVIEW_GUIDE.md#limits) · [平台／輸入邊界](docs/PROVIDERS.md) · [測試紀錄政策](docs/TEST_RECORDS.md)。
 
-原有服務在黑客松前已存在；查核器、網站與證據自 2026-10-27 起建立。[建置揭露](BUILD_LOG.md#build-log) · [授權](LICENSE) · [出處與致謝](CREDITS.md)。
+## 離線驗證
+
+```sh
+bash scripts/verify.sh
+```
+
+先安裝鎖定依賴，接著在拋棄式副本離線驗證。
+[驗證指南](AGENTS.md) · [已記錄驗證](docs/VERIFICATION.md)。
+
+## 授權與致謝
+
+DappGo 在黑客松前已存在；查核器、網站與證據於黑客松期間建立。
+[建置揭露](BUILD_LOG.md#build-log) · [MIT](LICENSE) · [致謝](CREDITS.md) · [英文](JUDGES.md)。
 
 <a id="demo-video-todo"></a>
-展示影片待發布；已儲存查核與原始紀錄目前皆可讀取。
-
-<a id="60-second-path"></a><a id="bonus-categories"></a><a id="controlled-format-study"></a><a id="cost-accounting"></a><a id="four-equally-weighted-criteria"></a><a id="historical-results-and-failure-review"></a><a id="in-the-wild-todo"></a><a id="input-and-source-boundaries"></a><a id="limits-to-keep-in-view"></a><a id="live-check-todo"></a><a id="media-studies"></a><a id="original-text-evaluation"></a><a id="publication-links--todo-claude"></a><a id="real-company-materials-what-improved-what-remains-unresolved"></a><a id="verify-without-model-calls"></a><a id="what-is-new-during-the-hackathon"></a>
+示範影片待發布；已儲存查核與原始軌跡現在可查閱。

@@ -1,6 +1,6 @@
 # Market claim evaluation report
 
-**English** | [繁體中文](REPORT.zh-TW.md)
+**English** | [Traditional Chinese](REPORT.zh-TW.md)
 
 Generated: 2026-10-28T06:27:01.922840Z
 Run window: 2026-10-28T03:09:16.483765Z → 2026-10-28T06:26:51.462711Z

@@ -10,12 +10,12 @@ S1–S9 review instructions govern this change.
 
 - The public summaries use one price, timing and accuracy format. The
   [number regression tests](../../../../tests/test_site_copy.py) scan
-  README EN/繁中, JUDGES, both llms files, site EN/繁中 and site COPY.
+  README English/Traditional Chinese, JUDGES, both llms files, site English/Traditional Chinese and site COPY.
   The HTML scan includes JSON-LD, meta, OG and Twitter descriptions.
   Historical evidence retains its original measurements and scores.
 - The shared Facts table has two columns and eight bilingual answers.
-  English answers contain at most 84 characters; 繁中 at most 34.
-  Both site languages show the 繁中 answer below the English answer.
+  English answers contain at most 84 characters; Traditional Chinese at most 34.
+  Both site languages show the Traditional Chinese answer below the English answer.
   Nuance is in [Facts in detail](../../../evidence/REVIEW_GUIDE.md#facts-in-detail),
   linked once under each table. Site links use GitHub's rendered guide,
   where repository-relative references resolve.
@@ -69,7 +69,7 @@ The [inspector exception](inspect-baseline.log) and
 [Computer Use results](browser-access.log) are retained. Chrome exited
 before the inspector could open the page; the browser host was
 unavailable, and native Chrome access was rejected by Computer Use.
-No screenshots or visual scores are claimed. Desktop/375 px EN/繁中
+No screenshots or visual scores are claimed. Desktop/375 px English/Traditional Chinese
 confirmation remains pending, including the exact hero/table wrapping,
 paragraph measure, two-line card notes and absence of horizontal scroll.
 
