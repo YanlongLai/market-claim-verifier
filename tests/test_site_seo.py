@@ -84,6 +84,9 @@ def test_all_pages_have_consistent_canonical_metadata_and_valid_schema():
         if schema_type == "WebApplication":
             assert schema["operatingSystem"] == "Web" and schema["isAccessibleForFree"] is True
             assert schema["publisher"] == {"@type": "Organization", "name": "DappGo", "url": "https://dappgo.com"}
+        else:
+            assert schema["license"] == "https://github.com/YanlongLai/market-claim-verifier/blob/main/LICENSE"
+            assert schema["creator"] == {"@type": "Organization", "name": "DappGo", "url": "https://dappgo.com"}
 
 
 def test_metadata_uses_held_out_headline_and_keeps_full_counts_on_the_explorer():
