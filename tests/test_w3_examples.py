@@ -70,18 +70,42 @@ def test_fifteen_ids_hashes_one_story_per_five_formats_and_native_pdf():
         assert face["/BaseFont"] == "/NotoSerifTC-Regular" and "/FontFile2" in face["/FontDescriptor"]
 
 
+def rebuild_snapshot(folder):
+    """Bytes for every file, except that PNG zlib bytes are platform-specific (macOS vs Linux CI):
+    PNGs compare by decoded pixels, and each manifest PNG row must hash the PNG actually on disk."""
+    snapshot = {}
+    for path in folder.rglob("*"):
+        if not path.is_file():
+            continue
+        key = path.relative_to(folder)
+        if path.suffix == ".png":
+            with Image.open(path) as image:
+                snapshot[key] = ("png", image.size, image.mode, hashlib.sha256(image.tobytes()).hexdigest())
+        elif path.name == "manifest.json" and path.parent == folder:
+            rows = json.loads(path.read_text())
+            for row in rows:
+                if row.get("file", "").endswith(".png"):
+                    raw = (folder / row["file"]).read_bytes()
+                    assert row["sha256"] == hashlib.sha256(raw).hexdigest() and row["size_bytes"] == len(raw)
+                    row["sha256"] = row["size_bytes"] = "matches the PNG on disk"
+            snapshot[key] = rows
+        else:
+            snapshot[key] = path.read_bytes()
+    return snapshot
+
+
 def test_clean_rebuild_is_byte_identical_without_model_network_or_host_tools(tmp_path, monkeypatch):
     folder = isolate(tmp_path, monkeypatch)
     monkeypatch.setattr(assets.subprocess, "run", lambda *a, **k: pytest.fail("host command in offline rebuild"))
     monkeypatch.setattr(assets.subprocess, "check_output", lambda *a, **k: pytest.fail("host probe in offline rebuild"))
-    before = {p.relative_to(folder): p.read_bytes() for p in folder.rglob("*") if p.is_file()}
+    before = rebuild_snapshot(folder)
     # Remove generated outputs: a builder that merely preserves PNG/PDF cannot pass.
     for name in ("manifest.json", *(f"{s}.{ext}" for s in "abc" for ext in ("txt", "png", "pdf", "mp3.pending.txt", "mp4.pending.txt"))):
         (folder / name).unlink(missing_ok=True)
     for _ in range(2):
         assets.build()
         assets.build(check=True)
-        assert {p.relative_to(folder): p.read_bytes() for p in folder.rglob("*") if p.is_file()} == before
+        assert rebuild_snapshot(folder) == before
 
 
 def test_pending_notices_follow_media_readiness_and_check_rejects_stale_notices(tmp_path, monkeypatch):

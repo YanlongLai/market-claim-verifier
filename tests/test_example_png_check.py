@@ -37,3 +37,16 @@ def test_one_changed_pixel_is_stale(tmp_path, monkeypatch):
         assert "Stale example: a.png" in str(error)
     else:
         raise AssertionError("a changed pixel must be reported as stale")
+
+
+def test_build_mode_keeps_committed_bytes_for_identical_pixels(tmp_path):
+    image = Image.new("RGB", (64, 32), (240, 238, 230))
+    path = tmp_path / "a.png"
+    committed = encode(image, 9)
+    path.write_bytes(committed)
+    build_examples.put(path, encode(image, 1))
+    assert path.read_bytes() == committed
+    changed = image.copy()
+    changed.putpixel((1, 1), (0, 0, 0))
+    build_examples.put(path, encode(changed, 1))
+    assert path.read_bytes() == encode(changed, 1)

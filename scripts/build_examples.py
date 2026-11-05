@@ -61,12 +61,14 @@ def same_png_pixels(committed, raw):
 
 
 def put(path, raw, check=False):
+    committed = path.read_bytes() if path.is_file() else None
+    # A pixel-identical PNG keeps its committed bytes: saved recordings hash those exact bytes.
+    current = committed == raw or (committed is not None and path.suffix == ".png"
+                                   and same_png_pixels(committed, raw))
     if check:
-        committed = path.read_bytes() if path.is_file() else None
-        if committed != raw and not (committed is not None and path.suffix == ".png"
-                                     and same_png_pixels(committed, raw)):
+        if not current:
             raise ValueError(f"Stale example: {path.relative_to(EXAMPLES)}")
-    elif not path.is_file() or path.read_bytes() != raw:
+    elif not current:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(raw)
 
