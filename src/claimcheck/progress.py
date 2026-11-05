@@ -35,14 +35,14 @@ def safe_fields(kind, fields):
             out[key] = value
     # Error messages/bodies are deliberately excluded, including tool errors.
     if kind == "error":
-        from_codes = {"unavailable", "timeout", "provider_error", "credit_exhausted", "budget_exhausted",
+        from_codes = {"unavailable", "timeout", "provider_error", "provider_overloaded", "credit_exhausted", "budget_exhausted",
                       "total_budget_exhausted", "rate_limited", "invalid_model_output", "incomplete_model",
                       "tool_limit", "out_of_scope", "sec_unavailable", "preprocessing_failed",
                       "example_unavailable", "invalid_input", "unknown_example", "unknown_provider",
                       "unauthorized", "auth_rate_limited", "locked", "busy", "slow_down", "not_found", "failed"}
         if isinstance(fields.get("code"), str) and fields["code"] in from_codes:
             out["code"] = fields["code"]
-    for key in ("chars", "step", "claims", "claim_index", "status", "count",
+    for key in ("chars", "step", "claims", "claim_index", "status", "provider_status", "count",
                 "supported", "contradicted", "insufficient_evidence"):
         value = fields.get(key)
         if type(value) is int and 0 <= value < 1_000_000:

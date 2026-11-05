@@ -868,11 +868,17 @@ def get_provider(value: str | ProviderAdapter | None = None) -> ProviderAdapter:
     return _PROVIDER_INSTANCES[name]
 
 
+CLIENT_TIMEOUT_S = 90.0  # matches the live server; an unresponsive provider fails instead of hanging
+
+
 def create_client(provider: str, api_key: str) -> Any:
+    import httpx
     from openai import OpenAI
 
     adapter = get_provider(provider)
-    return OpenAI(base_url=adapter.base_url, api_key=api_key)
+    # Retries are explicit (claimcheck.retries); SDK retries would multiply long timeouts.
+    return OpenAI(base_url=adapter.base_url, api_key=api_key,
+                  timeout=httpx.Timeout(CLIENT_TIMEOUT_S, connect=10.0), max_retries=0)
 
 
 def _raw_response_for_trace(parsed: ParsedResponse) -> Any:

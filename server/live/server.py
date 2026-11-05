@@ -26,7 +26,7 @@ import httpx
 from workers.live.src.gate import prune, transition
 from claimcheck.providers import get_provider
 from server.live.progress import ProgressBuffer, RUN_ID, member_id
-from workers.live.src.live import (ExampleRun, LiveError, LiveRun, SEC_AGENT, provider_credit_exhausted,
+from workers.live.src.live import (ExampleRun, LiveError, LiveRun, SEC_AGENT, provider_credit_exhausted, provider_overloaded,
                                    validate_provider, validate_text)
 
 GATE_LOCK = asyncio.Lock()  # One process, one critical section, including pruning.
@@ -343,8 +343,10 @@ class Services:
                         body = "" if response.status_code == 402 else (await response.aread()).decode("utf-8", errors="replace")
                         if provider_credit_exhausted(response.status_code, body):
                             await self.gate("credit_exhausted", {"provider": provider})
-                            raise LiveError("credit_exhausted")
-                        raise LiveError("provider_error")
+                            raise LiveError("credit_exhausted", provider_status=response.status_code)
+                        if provider_overloaded(response.status_code, body):
+                            raise LiveError("provider_overloaded", provider_status=response.status_code)
+                        raise LiveError("provider_error", provider_status=response.status_code)
                     return json.loads(await response.aread())
         except (httpx.HTTPError, TimeoutError, ValueError):
             raise LiveError("provider_error") from None
@@ -392,7 +394,8 @@ def reply(value, status=200, *, public=False):
 
 def failure_envelope(run, error):
     run.log("error", code=error.code, status=error.status, cost_usd=run.cost,
-            cost_is_bound=run.cost_is_bound)
+            cost_is_bound=run.cost_is_bound,
+            **({"provider_status": error.provider_status} if error.provider_status else {}))
     return {**run.envelope(), "error": error.code, "demo": "data/live-demo.json",
             **({"budget": error.budget} if error.budget else {})}
 

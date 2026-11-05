@@ -416,6 +416,7 @@
       rate_limited: "5 checks / 10 min per IP, including a shared office IP. {reset} The saved demo is available below.",
       unavailable: "Live checking is unavailable. Follow the saved demo below.", timeout: "The check reached its time limit. No verdict was issued. Follow the saved demo below.",
       provider_error: "The model service did not complete this check. No verdict was issued. The saved demo is below.",
+      provider_overloaded: "The model provider is overloaded right now (it answered \u201cservice overloaded\u201d). No verdict was issued. Try another provider, or retry in a few minutes.",
       sec_unavailable: "SEC data is unavailable right now. No verdict was issued. The saved demo is below.",
       mock_input_only: "Offline mode replays the saved viral post or one-claim example only. Choose “Use Apple example”.",
       invalid_model_output: "The model did not return a complete claim report. No verdict was issued. The saved demo is below.",
@@ -479,7 +480,7 @@
       credit_exhausted: "此供應商暫停（額度已用完）。請查看已儲存的範例。",
       rate_limited: "每個 IP 每 10 分鐘限 5 次，共用辦公室 IP 也共用此額度。{reset} 下方示範仍可查看。",
       unavailable: "即時查核暫時無法使用。請查看下方已儲存的示範。", timeout: "查核已達時間上限，未作出裁定。請查看下方示範。",
-      provider_error: "模型服務未完成查核，未作出裁定。請查看下方示範。", sec_unavailable: "SEC 資料暫時無法取得，未作出裁定。請查看下方示範。",
+      provider_error: "模型服務未完成查核，未作出裁定。請查看下方示範。", provider_overloaded: "模型供應商目前過載（回應「service overloaded」），未作出裁定。請改用其他供應商，或幾分鐘後再試。", sec_unavailable: "SEC 資料暫時無法取得，未作出裁定。請查看下方示範。",
       mock_input_only: "離線模式僅重播已儲存的熱傳貼文或單一主張範例，請選擇「使用 Apple 範例」。",
       invalid_model_output: "模型未回傳完整報告，未作出裁定。請查看下方示範。", incomplete_model: "模型回應不完整，未作出裁定。請查看下方示範。",
       tool_limit: "此貼文超過簡短查核上限，請改用一家美股公司的一句敘述。"
@@ -651,7 +652,7 @@
     expected: "Expected outcome", expectedA: "Contradicted · $416.2B → $102.5B", expectedB: "Supported · nothing to correct",
     expectedC: "Contradicted · $164,501B → $164.5B · forecast and opinion not judged", reset: "Reset example", openInput: "Open input file",
     fireworksNote: "Fireworks responses are slow today (provider-side); Baseten is fastest.",
-    historyErrors: { provider_error: "Provider error", timeout: "Timeout", budget_exhausted: "Budget", total_budget_exhausted: "Budget",
+    historyErrors: { provider_error: "Provider error", provider_overloaded: "Provider overloaded", timeout: "Timeout", budget_exhausted: "Budget", total_budget_exhausted: "Budget",
       credit_exhausted: "Credit limit", rate_limited: "Rate limit", busy: "Server busy", locked: "Locked", slow_down: "Too many requests", sec_unavailable: "SEC unavailable", preprocessing_failed: "Input error",
       invalid_model_output: "Invalid response", incomplete_model: "Incomplete", tool_limit: "Tool limit", unavailable: "Unavailable", unknown: "Failed" },
     compareAll: "Compare on all", compareNote: "Sequential runs · separate provider budgets", run: "Run check", runCompare: "Compare providers",
@@ -674,7 +675,7 @@
     expected: "預期結果", expectedA: "證據矛盾 · $416.2B → $102.5B", expectedB: "證據支持 · 無需修正",
     expectedC: "證據矛盾 · $164,501B → $164.5B · 預測與意見不予判定", reset: "重設範例", openInput: "開啟輸入檔案",
     fireworksNote: "Fireworks 今日回應較慢（供應商端）；Baseten 最快。",
-    historyErrors: { provider_error: "供應商錯誤", timeout: "逾時", budget_exhausted: "預算上限", total_budget_exhausted: "預算上限",
+    historyErrors: { provider_error: "供應商錯誤", provider_overloaded: "供應商過載", timeout: "逾時", budget_exhausted: "預算上限", total_budget_exhausted: "預算上限",
       credit_exhausted: "額度上限", rate_limited: "頻率上限", busy: "伺服器忙碌", locked: "已鎖定", slow_down: "請求過於頻繁", sec_unavailable: "SEC 暫不可用", preprocessing_failed: "輸入錯誤",
       invalid_model_output: "回應無效", incomplete_model: "回應不完整", tool_limit: "工具次數上限", unavailable: "暫不可用", unknown: "失敗" },
     compareAll: "比較全部供應商", compareNote: "依序執行 · 各供應商獨立預算", run: "執行查核", runCompare: "比較供應商",
@@ -1690,7 +1691,7 @@
       row.type = "button";
       const errors = COPY[pageLanguage].matrix.historyErrors;
       const status = record.pending ? tryCopy("running") : record.verdict ? liveVerdict(record.verdict) : errors[record.error] || errors.unknown;
-      const verdict = liveNode("span", "", `history-verdict is-${record.pending ? "running" : record.verdict || "unchecked"}${record.error === "timeout" ? " is-timeout" : ""}`);
+      const verdict = liveNode("span", "", `history-verdict is-${record.pending ? "running" : record.verdict || "unchecked"}${["timeout", "provider_overloaded"].includes(record.error) ? " is-timeout" : ""}`);
       if (record.pending) { const spinner = liveNode("span", "", "try-spinner"); spinner.setAttribute("aria-hidden", "true"); verdict.append(spinner); }
       verdict.append(document.createTextNode(status));
       const subject = historySubject(record), relative = record.pending ? tryCopy("nowTime") : relativeHistoryTime(record.at);
@@ -1957,7 +1958,7 @@
         panel.pill.hidden = !stopped;
         if (stopped) {
           panel.pill.textContent = result?._notRun ? matrixCopy("notRun") : failed ? COPY[pageLanguage].matrix.historyErrors[result.error] || COPY[pageLanguage].matrix.historyErrors.unknown : liveVerdict(result?.verdict);
-          panel.pill.className = `history-verdict is-${failed ? "unchecked" : result?.verdict || "unchecked"}${result?.error === "timeout" ? " is-timeout" : ""}`;
+          panel.pill.className = `history-verdict is-${failed ? "unchecked" : result?.verdict || "unchecked"}${["timeout", "provider_overloaded"].includes(result?.error) ? " is-timeout" : ""}`;
         }
         const receipt = result ? runReceipt(result) : null;
         const time = duration(receipt?.latency_ms ?? Date.now() - started);

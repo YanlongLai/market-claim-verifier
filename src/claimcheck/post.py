@@ -24,7 +24,7 @@ from .providers import get_provider
 from .trace import TraceRecorder, redact, write_trace
 from .release_report import render_release_quote
 from .period_context import inherit_period
-from .retries import exception_status, retry_info, wait_for_retry
+from .retries import exception_status, overloaded_exception, retry_info, wait_for_retry
 
 EXTRACTION_PROMPT = """You extract financial claims from a social media post or article so they can be checked against SEC filings.
 
@@ -544,8 +544,10 @@ def check_post(
                 issuer_text=issuer_text,
             )
         except Exception as exc:
-            item.update(status="failed", error=f"provider/check failed ({type(exc).__name__})",
-                        http_status=exception_status(exc))
+            overloaded = overloaded_exception(exc)
+            item.update(status="failed", error=(f"provider overloaded (HTTP {exception_status(exc)}); retry later or use another provider"
+                                                if overloaded else f"provider/check failed ({type(exc).__name__})"),
+                        http_status=exception_status(exc), **({"code": "provider_overloaded"} if overloaded else {}))
             continue
         finally:
             trace_path = write_trace(traces, recorder)

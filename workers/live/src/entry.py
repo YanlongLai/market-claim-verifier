@@ -9,7 +9,7 @@ from pyodide.ffi import to_js
 from workers import DurableObject, Response, WorkerEntrypoint
 
 from gate import prune, transition
-from live import LiveError, LiveRun, SEC_AGENT, provider_credit_exhausted, validate_text
+from live import LiveError, LiveRun, SEC_AGENT, provider_credit_exhausted, provider_overloaded, validate_text
 
 
 def js_options(value):
@@ -113,10 +113,13 @@ class Services:
         if not response.ok:
             # A 402 remains a stop even if its body cannot be read. Never send
             # provider error text (which can include account details) to Pages.
-            if provider_credit_exhausted(response.status, "" if response.status == 402 else await response.text()):
+            body = "" if response.status == 402 else await response.text()
+            if provider_credit_exhausted(response.status, body):
                 await self.gate("credit_exhausted", {"provider": "baseten"})
-                raise LiveError("credit_exhausted")
-            raise LiveError("provider_error")
+                raise LiveError("credit_exhausted", provider_status=response.status)
+            if provider_overloaded(response.status, body):
+                raise LiveError("provider_overloaded", provider_status=response.status)
+            raise LiveError("provider_error", provider_status=response.status)
         return json.loads(await response.text())
 
 class Default(WorkerEntrypoint):

@@ -20,6 +20,7 @@ from uuid import uuid4
 
 from claimcheck.agent import SYSTEM_INSTRUCTIONS, VERDICT_SCHEMA, _parse_strict_verdict
 from claimcheck.budget import Ledger
+from claimcheck.retries import provider_overloaded  # noqa: F401  (re-exported for server/entry)
 from claimcheck.checks import evaluate_verdict
 from claimcheck.correction import build_corrections
 from claimcheck.edgar import EdgarClient
@@ -50,8 +51,11 @@ INSTRUCTIONS = SYSTEM_INSTRUCTIONS + "\n" + SCOPE + "\n" + (
 
 
 class LiveError(Exception):
-    def __init__(self, code: str, status: int = 503, budget: dict | None = None):
+    def __init__(self, code: str, status: int = 503, budget: dict | None = None,
+                 provider_status: int | None = None):
         self.code, self.status, self.budget = code, status, budget
+        # The model provider's own HTTP status, kept apart from our reply status.
+        self.provider_status = provider_status
         super().__init__(code)
 
 

@@ -473,6 +473,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
         return 2
 
+    progress = CLIProgress(secrets=[settings.model_api_key])
     try:
         client = create_client(provider, settings.model_api_key)
         edgar = EdgarClient(
@@ -485,7 +486,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             model,
             provider=provider,
             secrets=[settings.model_api_key],
-            on_event=CLIProgress(secrets=[settings.model_api_key]),
+            on_event=progress,
         )
         result = verify_claim(
             args.claim,
@@ -509,8 +510,31 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(f"Verification refused: {exc}", file=sys.stderr)
         return 2
     except Exception as exc:
+        _report_provider_failure(progress, provider, exc)
         print(f"Verification failed: {type(exc).__name__}", file=sys.stderr)
         return 1
+
+
+PROVIDER_NAMES = {"meta": "Meta Model API", "baseten": "Baseten", "fireworks": "Fireworks"}
+
+
+def _report_provider_failure(progress, provider: str, exc: BaseException) -> None:
+    """Name an overloaded or timed-out provider plainly instead of a bare exception class."""
+    from .retries import exception_status, overloaded_exception
+
+    status = exception_status(exc)
+    others = " or ".join(f"--provider {name}" for name in PROVIDER_NAMES if name != provider)
+    name = PROVIDER_NAMES.get(provider, provider)
+    if overloaded_exception(exc):
+        progress("error", {"code": "provider_overloaded", "provider_status": status})
+        print(f"{name} is overloaded right now (HTTP {status}: service overloaded). "
+              f"No verdict was issued. Try {others}, or retry in a few minutes.", file=sys.stderr)
+    elif type(exc).__name__ in {"APITimeoutError", "TimeoutException", "ReadTimeout"}:
+        progress("error", {"code": "timeout"})
+        print(f"{name} did not answer within 90 s. No verdict was issued. Try {others}, or retry later.",
+              file=sys.stderr)
+    elif status is not None:
+        progress("error", {"code": "provider_error", "provider_status": status})
 
 
 def _run_post(args: argparse.Namespace, settings: object) -> int:

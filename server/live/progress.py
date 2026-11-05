@@ -32,7 +32,7 @@ def terminal_text(kind, fields):
         "tool_call": ("name", "ticker", "metric", "base_period", "period"),
         "tool_result": ("name", "ticker", "metric", "period", "evidence_id", "value", "pct_change", "abs_change", "unit", "form"),
         "verdict": ("verdict", "claims", "cost_usd"),
-        "error": ("code", "cost_usd"),
+        "error": ("code", "provider_status", "cost_usd"),
     }
     for key in order[kind]:
         if key not in values:
@@ -42,7 +42,7 @@ def terminal_text(kind, fields):
             parts.append(f"${value:.5f}")
         elif key == "evidence_id":
             parts.append("→ " + value)
-        elif key in {"step", "claims", "base_period", "pct_change", "abs_change"}:
+        elif key in {"step", "claims", "base_period", "pct_change", "abs_change", "provider_status"}:
             parts.append(f"{key}={value}")
         else:
             parts.append(str(value))

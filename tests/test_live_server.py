@@ -211,7 +211,11 @@ def test_402_unreadable_body_stops_future_calls_and_persists(tmp_path, capsys, c
 
 @pytest.mark.parametrize("status,body,expected", [(403, "insufficient credits private-account-detail", "credit_exhausted"),
     (429, "quota exhausted private-account-detail", "credit_exhausted"), (403, "invalid key private-account-detail", "provider_error"),
-    (429, "rate limit private-account-detail", "provider_error")])
+    (429, "rate limit private-account-detail", "provider_error"),
+    (503, '{"error":{"message":"service overloaded, please try again later private-account-detail"}}', "provider_overloaded"),
+    (529, "busy private-account-detail", "provider_overloaded"),
+    (429, "model is overloaded private-account-detail", "provider_overloaded"),
+    (500, "internal error private-account-detail", "provider_error")])
 def test_baseten_error_shapes_are_redacted_without_false_credit_stops(tmp_path, status, body, expected):
     async def run():
         async with running(settings(tmp_path), lambda _: httpx.Response(status, text=body)) as (app, services):

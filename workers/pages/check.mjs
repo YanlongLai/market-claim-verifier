@@ -100,7 +100,7 @@ const exampleIds = new Set([...kinds, ...["a", "b", "c"].flatMap(story => kinds.
 const models = { baseten: "meta-models/muse-spark-open-1026", fireworks: "accounts/fireworks/models/muse-spark-open", meta: "muse-spark-1.3" };
 const preprocessingModels = new Set(["native-text", "native-pdf", "muse-spark-1.3", "muse-voice-transcribe-1.0", "muse-voice-transcribe-1.0 + muse-spark-1.3"]);
 const errors = new Set(["invalid_input", "unauthorized", "auth_rate_limited", "locked", "busy", "slow_down", "out_of_scope", "unavailable",
-  "unknown_provider", "budget_exhausted", "total_budget_exhausted", "credit_exhausted", "rate_limited", "provider_error",
+  "unknown_provider", "budget_exhausted", "total_budget_exhausted", "credit_exhausted", "rate_limited", "provider_error", "provider_overloaded",
   "sec_unavailable", "incomplete_model", "tool_limit", "invalid_model_output", "timeout", "unknown_example", "example_unavailable", "preprocessing_failed"]);
 const verdicts = new Set(["supported", "contradicted", "insufficient_evidence"]);
 const object = value => value !== null && typeof value === "object" && !Array.isArray(value);
