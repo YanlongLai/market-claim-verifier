@@ -116,3 +116,37 @@ assert.ok(tree.querySelector('#live-progress .history-verdict').textContent);
 assert.ok(![...timers.values()].some(timer=>timer.ms===700));
 """, language=language, error=error,
               page="docs/zh/index.html" if language == "zh" else "docs/site/index.html")
+
+
+@pytest.mark.parametrize("language", ["en", "zh"])
+@pytest.mark.parametrize("case", ["timeout_behind_proxy", "overloaded"])
+def test_slow_or_overloaded_provider_is_named_not_generic(language, case):
+    run_check(PROVIDER_FAILURE_SCENE.replace("CASE", case), language=language,
+              page="docs/zh/index.html" if language == "zh" else "docs/site/index.html")
+
+
+PROVIDER_FAILURE_SCENE = r"""
+context.AbortController=AbortController;
+let timerId=0;context.setTimeout=()=>++timerId;context.clearTimeout=()=>{};
+const failureCase='CASE';
+const errorLine=failureCase==='overloaded'?'error  provider_overloaded  provider_status=503  $0.04834':'error  timeout  $0.04693';
+// Behind the proxy the reply can be a bare "unavailable"; the server's own log line still says why.
+const reply=failureCase==='overloaded'?{error:'provider_overloaded'}:{error:'unavailable'};
+context.fetch=async(url,opts={})=>{
+  if(opts.method==='POST')return {ok:false,status:503,json:async()=>reply};
+  if(url.startsWith('/api/progress/'))return {ok:true,json:async()=>({lines:[{t_s:.1,text:'model  step=1  running'},{t_s:85,text:errorLine}],done:true,next:2})};
+  if(url==='/api/budget')return {ok:true,json:async()=>budgetFixture({status:'ready'})};
+  return publicFixture(url)||{ok:false,status:404,json:async()=>({})};
+};
+context.liveTest.setupLive();await new Promise(resolve=>setImmediate(resolve));
+const input=tree.querySelector('#live-input');input.value='Apple FY2025 revenue was $416B.';input.events.input();
+tree.querySelector('#live-password').value='offline-password';
+await tree.querySelector('#live-form').events.submit({preventDefault(){}});
+const zh=config.language==='zh';
+const status=tree.querySelector('#live-status').textContent;
+if(failureCase==='overloaded') assert.ok(status.includes(zh?'過載':'overloaded'),status);
+else assert.ok(status.includes(zh?'回應緩慢或過載':'slow or overloaded'),status);
+assert.ok(!status.includes(zh?'即時查核暫時無法使用':'Live checking is unavailable'),status);
+const pill=tree.querySelector('#live-progress .history-verdict');
+assert.ok(pill.className.includes('is-timeout'),pill.className);
+"""

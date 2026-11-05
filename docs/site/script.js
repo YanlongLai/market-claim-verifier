@@ -414,7 +414,7 @@
       total_budget_exhausted: "This provider is paused (lifetime cap). See the saved examples.",
       credit_exhausted: "This provider is paused (credit stop). See the saved examples.",
       rate_limited: "5 checks / 10 min per IP, including a shared office IP. {reset} The saved demo is available below.",
-      unavailable: "Live checking is unavailable. Follow the saved demo below.", timeout: "The check reached its time limit. No verdict was issued. Follow the saved demo below.",
+      unavailable: "Live checking is unavailable. Follow the saved demo below.", timeout: "The check reached its time limit, usually because the model provider is slow or overloaded. No verdict was issued. Try another provider, or retry in a few minutes.",
       provider_error: "The model service did not complete this check. No verdict was issued. The saved demo is below.",
       provider_overloaded: "The model provider is overloaded right now (it answered \u201cservice overloaded\u201d). No verdict was issued. Try another provider, or retry in a few minutes.",
       sec_unavailable: "SEC data is unavailable right now. No verdict was issued. The saved demo is below.",
@@ -479,7 +479,7 @@
       total_budget_exhausted: "此供應商暫停（累計預算已用完）。請查看已儲存的範例。",
       credit_exhausted: "此供應商暫停（額度已用完）。請查看已儲存的範例。",
       rate_limited: "每個 IP 每 10 分鐘限 5 次，共用辦公室 IP 也共用此額度。{reset} 下方示範仍可查看。",
-      unavailable: "即時查核暫時無法使用。請查看下方已儲存的示範。", timeout: "查核已達時間上限，未作出裁定。請查看下方示範。",
+      unavailable: "即時查核暫時無法使用。請查看下方已儲存的示範。", timeout: "查核已達時間上限，通常是模型供應商回應緩慢或過載，未作出裁定。請改用其他供應商，或幾分鐘後再試。",
       provider_error: "模型服務未完成查核，未作出裁定。請查看下方示範。", provider_overloaded: "模型供應商目前過載（回應「service overloaded」），未作出裁定。請改用其他供應商，或幾分鐘後再試。", sec_unavailable: "SEC 資料暫時無法取得，未作出裁定。請查看下方示範。",
       mock_input_only: "離線模式僅重播已儲存的熱傳貼文或單一主張範例，請選擇「使用 Apple 範例」。",
       invalid_model_output: "模型未回傳完整報告，未作出裁定。請查看下方示範。", incomplete_model: "模型回應不完整，未作出裁定。請查看下方示範。",
@@ -2008,6 +2008,7 @@
           panel.step = text.match(/step[= ]+(\d+)/)?.[1] || null;
         } else if (text.startsWith("program_check")) panel.stage = 4;
         else if (text.startsWith("verdict")) panel.stage = 5;
+        else if (text.startsWith("error")) panel.serverError = text.split(/\s+/)[1] || null;
         const row = liveNode("span", "", "terminal-line");
         row.append(liveNode("span", `+${line.t_s.toFixed(1)} s `, "terminal-time"), document.createTextNode(terminalDisplay(text)));
         panel.lines.append(row);
@@ -2047,15 +2048,19 @@
       window.removeEventListener?.("scroll", updateRunningBar);
       window.removeEventListener?.("resize", updateRunningBar);
       await pending;
-      if (finalRead) await Promise.allSettled(panels.map(panel => poll(panel)));
+      // One last read even when the reply was empty: a proxy "unavailable" can hide the server's own error.
+      await Promise.allSettled(panels.filter(panel => finalRead || !panel.done).map(panel => poll(panel)));
       panels.forEach((panel, index) => {
         panel.result = results.find(result => runReceipt(result).provider === panel.provider) || results[index] || { error: "unavailable" };
+        if (panel.result.error === "unavailable" && panel.serverError && panel.serverError !== "unavailable")
+          panel.result = { ...panel.result, error: panel.serverError };
         const failed = Boolean(panel.result.error || panel.result._notRun);
         panel.log.open = failed;
         if (!failed) panel.stage = 5;
       });
       pendingHistoryRows.forEach(row => { row.finished = true; });
       render();
+      return panels.map(panel => panel.result?.error || null);
     };
   }
 
@@ -2165,7 +2170,8 @@
       } catch (error) { if (request === resultRequest) liveStatus = error.name === "AbortError" ? "timeout" : "unavailable"; }
       finally {
         clearTimeout(timer);
-        await finishTerminals(postComplete, compareRuns.length ? compareRuns : [liveResult || { error: liveStatus, receipt: { provider } }]);
+        const serverErrors = await finishTerminals(postComplete, compareRuns.length ? compareRuns : [liveResult || { error: liveStatus, receipt: { provider } }]);
+        if (!compare && liveStatus === "unavailable" && serverErrors?.[0] && serverErrors[0] !== "unavailable") liveStatus = serverErrors[0];
         await Promise.allSettled([refreshLiveBudget(), refreshHistory()]);
         liveBusy = false;
         form.setAttribute("aria-busy", "false");
