@@ -4,6 +4,8 @@
 
 **貼上財經貼文，逐一用 SEC 申報資料核對數字，並產出附出處的修正版草稿。**
 
+**保留測試準確率 90.2%（240/266）· 錯誤支持 1/139**（[測量方式](#accuracy)）。於黑客松期間（2026 年 10 月 27 日至 11 月 4 日）建立：DappGo 在此之前已存在，但本儲存庫的內容皆為期間內新建（[建置揭露](BUILD_LOG.md#build-log)）。
+
 [即時網站](https://hackathon.dappgo.com/zh/) · [評審指南](JUDGES.zh-TW.md) · [證據索引](docs/evidence/INDEX.md)
 
 ## 評審的三分鐘路徑
@@ -102,7 +104,7 @@ Python 將主張綁定回傳證據，計算比較，
 
 選擇 Meta Model API、Baseten 或 Fireworks，預設選取 Baseten。「全部比較」會依序執行各平台，
 各自使用獨立的每日與累計預算；額度用完的供應商會標示並略過。輸入評審密碼可執行新查核；
-「查看已儲存結果」不需密碼，並保留歷史收據。
+「查看已儲存結果」不需密碼，並保留歷史收據。查核執行時，「目前狀態」面板會顯示該次請求的伺服器紀錄（每個模型步驟、每次 SEC 查詢與程式檢查）及六步驟進度列；「最近查核」列出最近 50 次公開執行。
 
 <!-- readme-shot:corrected-draft -->
 ![已儲存結果的修正版草稿與申報引用](docs/site/img/readme/corrected-draft.png)
@@ -212,6 +214,8 @@ Citations: both component SEC filings retained in the report
 重試及前處理；帳本估值與保留額度並非供應商發票。
 [價格與計費](docs/PROVIDERS.md#price-comparison) · [呼叫前預留帳本](src/claimcheck/budget.py)
 
+<a id="accuracy"></a>
+
 ## 準確率與證據
 
 **保留測試 90.2%（240/266）；錯誤支持 1/139**
@@ -311,5 +315,4 @@ uv run python scripts/serve_site.py --port 8765
 模型使用 Meta Muse Spark 與 Muse Voice Transcribe，透過已記錄的平台路徑託管。
 [致謝與媒體來源](CREDITS.md)區分模型生成的美術／旁白與財務證據。
 
-DappGo 在黑客松前已存在；查核器、網站與證據於黑客松期間建立。
 [建置揭露](BUILD_LOG.md#build-log) · [更新紀錄](CHANGELOG.md) · [英文](README.md)

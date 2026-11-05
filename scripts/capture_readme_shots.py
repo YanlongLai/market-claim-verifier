@@ -74,7 +74,7 @@ const fs = require('node:fs');
       return meter && !meter.hidden && document.querySelector(`#budget-${id}-text`)?.textContent;
     }));
     const passwordNote = await page.locator('#live-password-note').innerText();
-    if (passwordNote !== 'Judges: the password is our team name; saved examples need none.')
+    if (passwordNote !== 'Password is our team name. Saved results need none.')
       throw Error('Judge password note is stale');
     const section = await page.locator('#live-check').boundingBox();
     for (const selector of ['#budget-meta-meter','#budget-baseten-meter','#budget-fireworks-meter','#live-password-note']) {

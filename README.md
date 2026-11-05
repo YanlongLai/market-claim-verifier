@@ -4,6 +4,8 @@
 
 **Paste a finance post. Every number is checked against SEC filings, and you get a corrected draft with citations.**
 
+**90.2% held-out accuracy (240/266) · false support 1/139** ([how it was measured](#how-the-system-got-there)). Built during the hackathon, Oct 27 – Nov 4, 2026: DappGo existed before, but nothing in this repository did ([build disclosure](BUILD_LOG.md#build-log)).
+
 [Live site](https://hackathon.dappgo.com/) · [Judge guide](JUDGES.md) · [Evidence index](docs/evidence/INDEX.md)
 
 ## For judges — 3-minute path
@@ -15,8 +17,7 @@
 | Replay | [Saved check](https://hackathon.dappgo.com/#recorded-run) | No password. Expand the SEC evidence and agent trace. This is a recorded run. |
 | Audit | [Held-out benchmark report](docs/evidence/eval-v2-2026-10-27/REPORT.md#metrics) | Denominators, failures, costs and the corrected-gold disclosure. |
 
-<a id="demo-video"></a>
-Demo video (3 min): https://youtu.be/qIZTElkqpZc
+<a id="demo-video"></a>Demo video (3 min): https://youtu.be/qIZTElkqpZc
 
 <a id="agentic-muse-chooses-the-next-check-python-checks-the-answer"></a><a id="l4-earnings-release-evidence"></a>
 
@@ -105,7 +106,7 @@ Read the selected input before running it; unavailable saved media results are l
 ![Try section with story A selected](docs/site/img/readme/try-story-a.png)
 
 Choose Meta Model API, Baseten or Fireworks. Baseten is selected by default. **Compare on all** runs the providers sequentially and charges each provider’s own daily and lifetime budget; exhausted members are labeled and skipped. Enter the judge password to run a new check;
-**See saved result** requires none and preserves the historical receipt.
+**See saved result** requires none and preserves the historical receipt. While a check runs, the **Now** panel shows that request's own server log (each model step, every SEC lookup and the program check) with a six-step progress bar; **Recent checks** lists the last 50 public runs.
 
 <!-- readme-shot:corrected-draft -->
 ![Rendered saved result with the corrected draft and filing citations](docs/site/img/readme/corrected-draft.png)
@@ -316,5 +317,4 @@ Code: [MIT](LICENSE). Financial evidence: SEC EDGAR filings, with issuer and acc
 Models: Meta Muse Spark and Muse Voice Transcribe, hosted through the recorded provider routes.
 [Credits and media provenance](CREDITS.md) distinguish model-generated artwork and narration from financial evidence.
 
-DappGo existed before the hackathon; the verifier, site and evidence were built during it.
 [Build disclosure](BUILD_LOG.md#build-log) · [Changelog](CHANGELOG.md) · [Traditional Chinese](README.zh-TW.md)
