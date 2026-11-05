@@ -48,9 +48,23 @@ def encoded(value):
     return (json.dumps(value, ensure_ascii=False, indent=2) + "\n").encode()
 
 
+def same_png_pixels(committed, raw):
+    """PNG zlib output differs across platforms (e.g. zlib 1.2.13 on Linux CI vs macOS) for identical
+    pixels, so a PNG matches when its decoded size, mode and every pixel are identical."""
+    from io import BytesIO
+    try:
+        with Image.open(BytesIO(committed)) as left, Image.open(BytesIO(raw)) as right:
+            return (left.format == right.format == "PNG" and left.size == right.size
+                    and left.mode == right.mode and left.tobytes() == right.tobytes())
+    except OSError:
+        return False
+
+
 def put(path, raw, check=False):
     if check:
-        if not path.is_file() or path.read_bytes() != raw:
+        committed = path.read_bytes() if path.is_file() else None
+        if committed != raw and not (committed is not None and path.suffix == ".png"
+                                     and same_png_pixels(committed, raw)):
             raise ValueError(f"Stale example: {path.relative_to(EXAMPLES)}")
     elif not path.is_file() or path.read_bytes() != raw:
         path.parent.mkdir(parents=True, exist_ok=True)
