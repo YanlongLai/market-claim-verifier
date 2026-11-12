@@ -1,5 +1,6 @@
 import importlib.util
 import json
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -52,6 +53,12 @@ def test_isolation_and_timeout_receipt(monkeypatch,tmp_path,failure):
         assert command[command.index("--setting-sources")+1]==""
         assert json.loads(command[command.index("--settings")+1])["disableAllHooks"] is True
         assert "--bare" not in command
+        schema = json.loads(command[command.index("--json-schema")+1])
+        period_pattern = schema["properties"]["claims"]["items"]["properties"]["period"]["pattern"]
+        for period in ("2025Q2", "FY2025Q2", "FY2025"):
+            assert re.fullmatch(period_pattern, period)
+        for period in ("CY2025-Q2", "2025-Q2", "2025", "latest"):
+            assert not re.fullmatch(period_pattern, period)
         assert kwargs["timeout"]==180
         if failure: raise subprocess.TimeoutExpired(command,180)
         return subprocess.CompletedProcess(command,0,json.dumps({"structured_output":{"schema_version":"sec-proposals-v1","claims":[]}}),"")
