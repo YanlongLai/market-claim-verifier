@@ -793,6 +793,22 @@ class EdgarClient:
             }
         return {"error": "unknown_ticker", "ticker": target, "available_periods": []}
 
+    def issuer_snapshot_identity(self, ticker: str) -> dict[str, Any]:
+        """Check the companyfacts payload identity, not merely its cache filename."""
+        resolved = self.resolve_ticker(ticker)
+        if resolved.get("error"):
+            return resolved
+        try:
+            document, source_hash = self._facts_document(resolved["cik"])
+        except EdgarError:
+            return {"error": "companyfacts_unavailable"}
+        raw_cik = document.get("cik")
+        if isinstance(raw_cik, bool) or not str(raw_cik).isascii() or not str(raw_cik).isdigit():
+            return {"error": "companyfacts_identity_missing"}
+        if str(raw_cik).zfill(10) != resolved["cik"]:
+            return {"error": "companyfacts_identity_mismatch"}
+        return {**resolved, "source_sha256": source_hash}
+
     def fiscal_equals_calendar(self, ticker: str) -> bool | None:
         """Return the issuer's fiscal/calendar-year relationship when knowable."""
 
