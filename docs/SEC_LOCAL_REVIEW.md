@@ -23,7 +23,8 @@ observed. Never expose this helper as an end-user model-routing service.
 The issuer registry is **separate trusted input**, reviewed by the owner or a
 trusted data process. The model must not generate or edit it. Bind an issuer key
 to the selected source's market/ticker/CIK; the SEC ticker map must independently
-agree. A Taiwan issuer must not become Honeywell because a model guessed HON.
+agree. The loaded companyfacts payload must also contain the same CIK; a
+correctly named cache file alone is insufficient. A Taiwan issuer must not become Honeywell because a model guessed HON.
 The helper's proposed CIK is not itself evidence.
 
 Input schema: `sec-proposals-v1`, with up to 100 unique-id claims containing

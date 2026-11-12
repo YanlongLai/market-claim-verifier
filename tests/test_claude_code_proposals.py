@@ -20,7 +20,7 @@ def setup(monkeypatch, tmp_path):
     return out
 
 
-@pytest.mark.parametrize("auth", [{"loggedIn": False}, {"loggedIn":True,"authMethod":"api_key","subscriptionType":"max"}, {"loggedIn":True,"authMethod":"claude.ai","subscriptionType":"pro"}])
+@pytest.mark.parametrize("auth", [{"loggedIn": False}, {"loggedIn":True,"authMethod":"claude.ai","subscriptionType":"max","apiProvider":"thirdParty"}, {"loggedIn":True,"authMethod":"api_key","subscriptionType":"max"}, {"loggedIn":True,"authMethod":"claude.ai","subscriptionType":"pro"}])
 def test_auth_rejected_before_inference(monkeypatch,tmp_path,auth):
     out=setup(monkeypatch,tmp_path); calls=[]
     def run(command, **kwargs):

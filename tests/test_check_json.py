@@ -60,3 +60,15 @@ def test_malformed_issuer_is_omitted(tmp_path):
     doc = deepcopy(DOC)
     doc["claims"][0]["issuer_key"] = []
     assert check_document(doc, ISSUERS, fixture_client(tmp_path))["results"][0]["reason"] == "untrusted_issuer"
+
+
+def test_mislabeled_cache_payload_is_not_issuer_evidence(tmp_path):
+    import json
+    client = fixture_client(tmp_path)
+    path = tmp_path / "companyfacts-CIK0001326801.json"
+    document = json.loads(path.read_text())
+    document["cik"] = 773840
+    path.write_text(json.dumps(document))
+    result = check_document(DOC, ISSUERS, client)
+    assert result["results"][0]["reason"] == "companyfacts_identity_mismatch"
+    assert not result["publishable_statements"]

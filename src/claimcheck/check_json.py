@@ -56,6 +56,10 @@ def check_document(document: dict, issuers: dict, edgar: EdgarClient, *, enabled
         if resolved.get("error") or cik(resolved.get("cik")) != cik(identity["cik"]):
             row["reason"] = "sec_identity_mismatch"
             continue
+        snapshot = edgar.issuer_snapshot_identity(ticker)
+        if snapshot.get("error"):
+            row["reason"] = snapshot["error"]
+            continue
         if not all(isinstance(proposal.get(k), str) and proposal[k] for k in ("metric", "period", "unit")) or not finite(proposal.get("value")):
             row["reason"] = "invalid_claim"
             continue
