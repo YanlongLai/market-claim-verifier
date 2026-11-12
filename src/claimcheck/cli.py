@@ -46,6 +46,14 @@ def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="python -m claimcheck")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
+    check = subparsers.add_parser("check-json", help="model-free, issuer-bound SEC proposal checks")
+    check.add_argument("input", type=Path)
+    check.add_argument("--issuers", type=Path, required=True, help="separately reviewed issuer registry")
+    check.add_argument("--cache-dir", type=Path, required=True)
+    check.add_argument("--as-of", required=True)
+    check.add_argument("--sec", choices=("on", "off"), default="on")
+    check.add_argument("--allow-sec-network", action="store_true")
+
     edgar = subparsers.add_parser("edgar", help="look up a cached SEC EDGAR fact")
     edgar.add_argument("ticker")
     edgar.add_argument("metric")
@@ -196,6 +204,21 @@ def _default_eval_out() -> Path:
 def main(argv: Sequence[str] | None = None) -> int:
     cli_args = list(argv) if argv is not None else sys.argv[1:]
     args = _parser().parse_args(argv)
+    if args.command == "check-json":
+        from .check_json import check_document
+        def offline(url):
+            raise RuntimeError("SEC network disabled; prefetch reviewed evidence explicitly")
+        try:
+            client = EdgarClient(args.cache_dir, as_of=args.as_of,
+                                 fetcher=None if args.allow_sec_network else offline)
+            result = check_document(json.loads(args.input.read_text()),
+                                    json.loads(args.issuers.read_text()), client,
+                                    enabled=args.sec == "on")
+            _print_json(result)
+            return 0
+        except (ValueError, OSError) as exc:
+            print(f"Check input error: {exc}", file=sys.stderr)
+            return 2
     try:
         # EDGAR, evaluation reports, and dry runs do not need to inspect a key file.
         reads_key = (
